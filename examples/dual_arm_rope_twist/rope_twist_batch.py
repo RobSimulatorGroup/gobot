@@ -23,8 +23,7 @@ from gobot.rl import (
 )
 
 from build_scene import (
-    FIXTURE_LINK_NAME,
-    FIXTURE_ROBOT_NAMES,
+    FIXTURE_BODY_NAMES,
     HERE,
     JOINT_NAMES,
     ROBOT_NAMES,
@@ -48,17 +47,16 @@ from controllers import (
     fixture_wrenches_in_tool_frames,
     gravity_compensation_schedule,
     make_trial_layout,
+    maximum_box_vertex_penetration,
     maximum_shape_deformation,
     relative_transform_errors,
     rope_endpoint_index_sets,
-    rope_endpoints_in_body_frames,
+    rope_endpoints_in_affine_frames,
     rope_winding_turns,
     wrist_drive_torque_limit,
 )
 
 
-INTEGRATION_SCHEMES = ("newton_proxy", "sequential_split")
-DEFAULT_INTEGRATION_SCHEME = "newton_proxy"
 DEFAULT_COUPLING_ITERATIONS = 2
 
 
@@ -74,18 +72,33 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-envs", type=int, default=2)
     parser.add_argument("--environments-per-shard", type=int, default=1)
     parser.add_argument("--steps", type=int, default=CYCLE_TICKS)
+    parser.add_argument("--warmup-steps", type=int, default=0)
+    parser.add_argument(
+        "--maximum-step-latency-seconds",
+        type=float,
+        default=0.0,
+        help="stop after a physics step exceeds this latency; 0 disables",
+    )
+    parser.add_argument(
+        "--continue-after-cycle-complete",
+        action="store_true",
+        help="continue stepping in the controller safety hold until --steps",
+    )
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
     parser.add_argument(
-        "--integration-scheme",
-        choices=INTEGRATION_SCHEMES,
-        default=DEFAULT_INTEGRATION_SCHEME,
-    )
-    parser.add_argument(
         "--coupling-iterations",
         type=int,
         default=DEFAULT_COUPLING_ITERATIONS,
+    )
+    parser.add_argument(
+        "--relaxation-mode", choices=("fixed", "aitken"), default=None
+    )
+    parser.add_argument("--newton-max-iterations", type=int, default=16)
+    parser.add_argument("--line-search-max-iterations", type=int, default=8)
+    parser.add_argument(
+        "--linear-system-tolerance-rate", type=float, default=1.0e-3
     )
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--device", default="cuda:0")
@@ -106,6 +119,12 @@ def _parser() -> argparse.ArgumentParser:
         help="scale MuJoCo pad/fixture friction for grasp ablations",
     )
     parser.add_argument("--no-mujoco-graph", action="store_true")
+    parser.add_argument("--no-coupler-graph", action="store_true")
+    parser.add_argument(
+        "--defer-deformable-contact-forces",
+        action="store_true",
+        help="leave per-vertex IPC contact forces stale until explicitly refreshed",
+    )
     parser.add_argument(
         "--workspace",
         type=Path,
@@ -125,19 +144,27 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
     if args.steps <= 0:
         raise ValueError("--steps must be positive")
+    if args.warmup_steps < 0:
+        raise ValueError("--warmup-steps must be non-negative")
+    if args.maximum_step_latency_seconds < 0.0:
+        raise ValueError(
+            "--maximum-step-latency-seconds must be non-negative"
+        )
     if args.fixed_dt <= 0.0:
         raise ValueError("--fixed-dt must be positive")
     if args.rigid_substeps <= 0 or args.ipc_substeps <= 0:
         raise ValueError("solver substep counts must be positive")
     if args.coupling_iterations <= 0:
         raise ValueError("--coupling-iterations must be positive")
-    if (
-        args.integration_scheme == "newton_proxy"
-        and args.rigid_substeps != args.ipc_substeps
-    ):
+    if args.newton_max_iterations <= 0:
+        raise ValueError("--newton-max-iterations must be positive")
+    if args.line_search_max_iterations <= 0:
+        raise ValueError("--line-search-max-iterations must be positive")
+    if args.linear_system_tolerance_rate <= 0.0:
+        raise ValueError("--linear-system-tolerance-rate must be positive")
+    if args.rigid_substeps != args.ipc_substeps:
         raise ValueError(
-            "--integration-scheme newton_proxy requires equal rigid and IPC "
-            "substep counts"
+            "SolverCoupledProxy requires equal rigid and IPC substep counts"
         )
     if args.friction < 0.0:
         raise ValueError("--friction must be non-negative")
@@ -193,9 +220,116 @@ def _grip_sensor_specs() -> tuple[MuJoCoWarpContactSensorSpec, ...]:
         for side, robot_name, fixture_name in zip(
             ("left", "right"),
             ROBOT_NAMES,
-            FIXTURE_ROBOT_NAMES,
+            FIXTURE_BODY_NAMES,
             strict=True,
         )
+    )
+
+
+def _matrix_tensor(value: Any, reference: Any) -> Any:
+    return torch.as_tensor(
+        value["transform"]["matrix_row_major"],
+        dtype=reference.dtype,
+        device=reference.device,
+    ).reshape(4, 4)
+
+
+def _penetration_box_spec(
+    artifact: CompiledMuJoCoIpcArtifact,
+    initial_affine_transforms: Any,
+) -> dict[str, Any]:
+    manifest = artifact.ipc.manifest_data
+    links_by_path = {
+        str(link["path"]): link
+        for robot in manifest["robots"]
+        for link in robot["links"]
+    }
+    dynamic_indices = []
+    dynamic_local_transforms = []
+    dynamic_sizes = []
+    reference = initial_affine_transforms
+    for mapping in artifact.coupled_bodies:
+        if mapping.mode != "OneWay":
+            continue
+        link = links_by_path[mapping.ipc_path]
+        for shape in link["collision_shapes"]:
+            if bool(shape["disabled"]):
+                continue
+            if str(shape["shape_type"]) != "box":
+                raise RuntimeError(
+                    "rope penetration metric requires box OneWay proxies"
+                )
+            shape_transform = _matrix_tensor(shape, reference)
+            proxy_transform = reference[0, mapping.ipc_body_index]
+            dynamic_indices.append(mapping.ipc_body_index)
+            dynamic_local_transforms.append(
+                torch.linalg.solve(proxy_transform, shape_transform)
+            )
+            dynamic_sizes.append(tuple(float(value) for value in shape["size"]))
+
+    static_transforms = []
+    static_sizes = []
+    for shape in manifest["static_colliders"]:
+        if bool(shape["disabled"]):
+            continue
+        if str(shape["shape_type"]) != "box":
+            raise RuntimeError(
+                "rope penetration metric requires box static colliders"
+            )
+        static_transforms.append(_matrix_tensor(shape, reference))
+        static_sizes.append(tuple(float(value) for value in shape["size"]))
+
+    def stack_transforms(values: list[Any]) -> Any:
+        if values:
+            return torch.stack(values)
+        return torch.empty(
+            (0, 4, 4), dtype=reference.dtype, device=reference.device
+        )
+
+    sizes = dynamic_sizes + static_sizes
+    return {
+        "dynamic_indices": torch.as_tensor(
+            dynamic_indices, dtype=torch.long, device=reference.device
+        ),
+        "dynamic_local_transforms": stack_transforms(
+            dynamic_local_transforms
+        ),
+        "static_transforms": stack_transforms(static_transforms),
+        "sizes": torch.as_tensor(
+            sizes, dtype=reference.dtype, device=reference.device
+        ).reshape(-1, 3),
+    }
+
+
+def _penetration_box_transforms(
+    affine_transforms: Any, spec: dict[str, Any]
+) -> Any:
+    dynamic = affine_transforms.index_select(
+        1, spec["dynamic_indices"]
+    ) @ spec["dynamic_local_transforms"].unsqueeze(0)
+    static = spec["static_transforms"].unsqueeze(0).expand(
+        affine_transforms.shape[0], -1, -1, -1
+    )
+    return torch.cat((dynamic, static), dim=1)
+
+
+def _coupling_wrench_imbalance_ratio(
+    rigid_wrenches: Any,
+    ipc_wrenches: Any,
+    scales: Any,
+) -> Any:
+    expected = ipc_wrenches * scales
+    difference = torch.linalg.vector_norm(
+        rigid_wrenches - expected, dim=(1, 2)
+    )
+    reference = torch.maximum(
+        torch.linalg.vector_norm(rigid_wrenches, dim=(1, 2)),
+        torch.linalg.vector_norm(expected, dim=(1, 2)),
+    )
+    return torch.where(
+        reference > 1.0e-12,
+        difference / reference.clamp_min(1.0e-12),
+        torch.zeros_like(reference),
     )
 
 
@@ -233,6 +367,12 @@ def run(
             workspace=str(args.workspace.expanduser().resolve()),
         ),
         environments_per_shard=args.environments_per_shard,
+        newton_max_iterations=args.newton_max_iterations,
+        line_search_max_iterations=args.line_search_max_iterations,
+        linear_system_tolerance_rate=args.linear_system_tolerance_rate,
+        export_deformable_contact_forces=(
+            not args.defer_deformable_contact_forces
+        ),
     )
     rigid_availability = MuJoCoWarpProvider.availability()
     if not rigid_availability.available:
@@ -252,9 +392,10 @@ def run(
             torque_scale=args.coupling_feedback_scale,
             rigid_substeps=args.rigid_substeps,
             ipc_substeps=args.ipc_substeps,
-            integration_scheme=args.integration_scheme,
             coupling_iterations=args.coupling_iterations,
+            relaxation_mode=args.relaxation_mode,
             capture_mujoco_graphs=not args.no_mujoco_graph,
+            capture_coupler_graphs=not args.no_coupler_graph,
         ),
         libuipc_config=solver_config,
         mujoco_options={
@@ -294,9 +435,9 @@ def run(
                 mapping
                 for mapping in artifact.coupled_bodies
                 if mapping.robot_name == fixture_name
-                and mapping.link_name == FIXTURE_LINK_NAME
+                and mapping.link_name == fixture_name
             )
-            for fixture_name in FIXTURE_ROBOT_NAMES
+            for fixture_name in FIXTURE_BODY_NAMES
         )
         tool_body_ids = tuple(
             provider.rigid_solver.resolve_object_ids(
@@ -310,6 +451,9 @@ def run(
             )[0]
             for mapping in mappings
         )
+        fixture_proxy_indices = tuple(
+            mapping.ipc_body_index for mapping in mappings
+        )
         grip_sensors = tuple(
             provider.rigid_solver.contact_sensor(f"{side}_fixture_grip")
             for side in ("left", "right")
@@ -321,9 +465,9 @@ def run(
                 name
                 for pair in (
                     _pad_geom_names(ROBOT_NAMES[0]),
-                    (_fixture_geom_name(FIXTURE_ROBOT_NAMES[0]),),
+                    (_fixture_geom_name(FIXTURE_BODY_NAMES[0]),),
                     _pad_geom_names(ROBOT_NAMES[1]),
-                    (_fixture_geom_name(FIXTURE_ROBOT_NAMES[1]),),
+                    (_fixture_geom_name(FIXTURE_BODY_NAMES[1]),),
                 )
                 for name in pair
             ),
@@ -352,6 +496,20 @@ def run(
         positions = provider.arrays["ipc_positions"]
         initial_positions = positions.clone()
         initial_qpos = provider.arrays["qpos"].clone()
+        penetration_box_spec = _penetration_box_spec(
+            artifact, provider.arrays["ipc_affine_transforms"]
+        )
+        coupling_wrench_scales = torch.as_tensor(
+            tuple(
+                (
+                    *([mapping.force_scale * args.coupling_feedback_scale] * 3),
+                    *([mapping.torque_scale * args.coupling_feedback_scale] * 3),
+                )
+                for mapping in mappings
+            ),
+            dtype=positions.dtype,
+            device=positions.device,
+        ).unsqueeze(0)
         position_pointer = positions.data_ptr()
         qpos_pointer = provider.arrays["qpos"].data_ptr()
         command_template = torch.zeros(
@@ -402,12 +560,39 @@ def run(
         endpoint_indices = rope_endpoint_index_sets(
             provider.ipc_solver.deformable_bodies, positions.device
         )
-        attachment_reference = rope_endpoints_in_body_frames(
+        attachment_reference = rope_endpoints_in_affine_frames(
             positions,
             endpoint_indices,
-            provider.arrays,
-            fixture_body_ids,
+            provider.arrays["ipc_affine_targets"],
+            fixture_proxy_indices,
         ).clone()
+
+        if args.warmup_steps:
+            for _ in range(args.warmup_steps):
+                provider.step()
+                provider.sense()
+            provider.synchronize()
+            command = controller.reset().clone()
+            provider.reset(
+                all_envs,
+                qpos=initial_qpos,
+                qvel=torch.zeros_like(provider.arrays["qvel"]),
+                ctrl=torch.zeros_like(provider.arrays["ctrl"]),
+            )
+            for robot_index, robot_view in enumerate(robot_views):
+                robot_view.set_controls(command[:, robot_index])
+            initial_robot_states = tuple(
+                view.read_state() for view in robot_views
+            )
+            initial_joint_positions = torch.stack(
+                tuple(
+                    state.joint_position for state in initial_robot_states
+                ),
+                dim=1,
+            )
+            gravity_compensator.apply(
+                provider.arrays["qfrc_applied"], initial_joint_positions, 0
+            )
 
         peak_raw_torque = torch.zeros(
             args.num_envs, dtype=positions.dtype, device=positions.device
@@ -446,6 +631,10 @@ def run(
             device=positions.device,
         )
         peak_attachment_error = torch.zeros_like(peak_raw_torque)
+        peak_rope_vertex_penetration = torch.zeros_like(peak_raw_torque)
+        peak_coupling_wrench_imbalance_ratio = torch.zeros_like(
+            peak_raw_torque
+        )
         minimum_grip_contact_distance = torch.full_like(
             peak_raw_torque, torch.inf
         )
@@ -465,6 +654,9 @@ def run(
         evaluation_joint_velocity = None
         evaluation_wrist_effort = None
         executed_steps = 0
+        maximum_step_latency_seconds = 0.0
+        admission_aborted = False
+        admission_abort_reason = ""
         started = time.perf_counter()
         for _ in range(args.steps):
             applied_wrenches = fixture_wrenches_in_tool_frames(
@@ -493,8 +685,13 @@ def run(
                 joint_positions,
                 controller.gravity_schedule_indices,
             )
+            step_started = time.perf_counter()
             provider.step()
             provider.sense()
+            step_latency_seconds = time.perf_counter() - step_started
+            maximum_step_latency_seconds = max(
+                maximum_step_latency_seconds, step_latency_seconds
+            )
             executed_steps += 1
 
             applied_wrenches = fixture_wrenches_in_tool_frames(
@@ -551,19 +748,50 @@ def run(
                     torch.zeros_like(observed_minimum),
                 )
             )
-            contact_force = provider.arrays["ipc_contact_forces"].norm(
-                dim=2
-            ).amax(dim=1)
-            torch.maximum(
-                peak_contact_force,
-                contact_force,
-                out=peak_contact_force,
+            if solver_config.export_deformable_contact_forces:
+                contact_force = provider.arrays["ipc_contact_forces"].norm(
+                    dim=2
+                ).amax(dim=1)
+                torch.maximum(
+                    peak_contact_force,
+                    contact_force,
+                    out=peak_contact_force,
+                )
+            box_transforms = _penetration_box_transforms(
+                provider.arrays["ipc_affine_transforms"],
+                penetration_box_spec,
             )
-            local_endpoints = rope_endpoints_in_body_frames(
+            rope_vertex_penetration = maximum_box_vertex_penetration(
+                positions,
+                box_transforms,
+                penetration_box_spec["sizes"],
+            )
+            torch.maximum(
+                peak_rope_vertex_penetration,
+                rope_vertex_penetration,
+                out=peak_rope_vertex_penetration,
+            )
+            coupling_wrench_imbalance_ratio = (
+                _coupling_wrench_imbalance_ratio(
+                    provider.arrays["xfrc_applied"][
+                        :, list(fixture_body_ids)
+                    ],
+                    provider.arrays["ipc_affine_contact_wrenches"][
+                        :, list(fixture_proxy_indices)
+                    ],
+                    coupling_wrench_scales,
+                )
+            )
+            torch.maximum(
+                peak_coupling_wrench_imbalance_ratio,
+                coupling_wrench_imbalance_ratio,
+                out=peak_coupling_wrench_imbalance_ratio,
+            )
+            local_endpoints = rope_endpoints_in_affine_frames(
                 positions,
                 endpoint_indices,
-                provider.arrays,
-                fixture_body_ids,
+                provider.arrays["ipc_affine_targets"],
+                fixture_proxy_indices,
             )
             attachment_error = (
                 local_endpoints - attachment_reference
@@ -646,10 +874,23 @@ def run(
                     :, list(wrist_actuator_ids)
                 ].clone()
             if (
-                controller.tick >= TWIST_START_TICK
+                not args.continue_after_cycle_complete
+                and controller.tick >= TWIST_START_TICK
                 and controller.tick % 50 == 0
                 and controller.cycle_complete
             ):
+                break
+            if (
+                args.maximum_step_latency_seconds > 0.0
+                and step_latency_seconds
+                > args.maximum_step_latency_seconds
+            ):
+                admission_aborted = True
+                admission_abort_reason = (
+                    "physics step latency "
+                    f"{step_latency_seconds:.6f}s exceeded "
+                    f"{args.maximum_step_latency_seconds:.6f}s"
+                )
                 break
         provider.synchronize()
         elapsed = time.perf_counter() - started
@@ -824,6 +1065,14 @@ def run(
                     "maximum_attachment_error_meters": float(
                         peak_attachment_error[environment].item()
                     ),
+                    "maximum_rope_vertex_penetration_meters": float(
+                        peak_rope_vertex_penetration[environment].item()
+                    ),
+                    "maximum_coupling_wrench_imbalance_ratio": float(
+                        peak_coupling_wrench_imbalance_ratio[
+                            environment
+                        ].item()
+                    ),
                     "minimum_grip_contact_distance_meters": float(
                         reported_minimum_grip_distance[environment].item()
                     ),
@@ -843,12 +1092,13 @@ def run(
                 }
             )
 
+        diagnostics = provider.diagnostics
         return {
             "artifact": artifact.digest,
             "scene": str(scene_path),
             "task": "dual_fr3_three_strand_rope_twist",
             "robots": list(ROBOT_NAMES),
-            "fixtures": list(FIXTURE_ROBOT_NAMES),
+            "fixtures": list(FIXTURE_BODY_NAMES),
             "robot_count": 2,
             "robot_arm_joint_count": 14,
             "robot_gripper_joint_count": 4,
@@ -856,13 +1106,28 @@ def run(
             "attachment_count": len(
                 artifact.ipc.manifest_data["deformable_attachments"]
             ),
-            "fixture_coupling_count": len(artifact.coupled_bodies),
+            "fixture_coupling_count": len(mappings),
+            "one_way_proxy_count": sum(
+                mapping.mode == "OneWay" for mapping in artifact.coupled_bodies
+            ),
+            "proxy_count": diagnostics["proxy_count"],
+            "static_collider_count": diagnostics["static_collider_count"],
             "grip_mode": "mujoco_fixture_friction_contact",
             "drive_mode": args.drive_mode,
             "grip_friction_scale": args.grip_friction_scale,
             "device": args.device,
             "steps": executed_steps,
             "requested_steps": args.steps,
+            "warmup_steps": args.warmup_steps,
+            "admission_completed": (
+                not admission_aborted and executed_steps == args.steps
+            ),
+            "admission_aborted": admission_aborted,
+            "admission_abort_reason": admission_abort_reason,
+            "maximum_step_latency_seconds": maximum_step_latency_seconds,
+            "step_latency_limit_seconds": (
+                args.maximum_step_latency_seconds
+            ),
             "environments": args.num_envs,
             "environments_per_shard": args.environments_per_shard,
             "shards": provider.ipc_solver.shard_count,
@@ -871,21 +1136,32 @@ def run(
                 args.num_envs * executed_steps / elapsed
             ),
             "coupling_feedback_scale": args.coupling_feedback_scale,
-            "integration_scheme": provider.diagnostics["integration_scheme"],
-            "coupling_iterations": provider.diagnostics[
-                "coupling_iterations"
-            ],
-            "actual_coupling_iterations": provider.diagnostics[
+            "coupling_solver": diagnostics["coupling_solver"],
+            "coupling_iterations": diagnostics["coupling_iterations"],
+            "actual_coupling_iterations": diagnostics[
                 "actual_coupling_iterations"
             ],
-            "relaxation_mode": provider.diagnostics["relaxation_mode"],
-            "interface_residual": provider.diagnostics[
-                "interface_residual"
+            "relaxation_mode": diagnostics["relaxation_mode"],
+            "interface_residual": diagnostics["interface_residual"],
+            "aitken_coefficient": diagnostics["aitken_coefficient"],
+            "coupler_graph_captured": diagnostics[
+                "coupler_graph_captured"
             ],
-            "aitken_coefficient": provider.diagnostics[
-                "aitken_coefficient"
+            "coupler_graph_capture_reason": diagnostics[
+                "coupler_graph_capture_reason"
             ],
-            "feedback_source": provider.diagnostics["feedback_source"],
+            "phase_latency_ms": dict(diagnostics["phase_latency_ms"]),
+            "newton_max_iterations": solver_config.newton_max_iterations,
+            "line_search_max_iterations": (
+                solver_config.line_search_max_iterations
+            ),
+            "linear_system_tolerance_rate": (
+                solver_config.linear_system_tolerance_rate
+            ),
+            "deformable_contact_forces_exported": (
+                solver_config.export_deformable_contact_forces
+            ),
+            "feedback_source": diagnostics["feedback_source"],
             "exact_contact_wrench": provider.capabilities.exact_contact_wrench,
             "collision_ownership": dict(artifact.collision_ownership),
             "wrist_drive_torque_limit_newton_meters": drive_torque_limit,
@@ -931,6 +1207,12 @@ def run(
             ),
             "maximum_attachment_error_range_meters": _range(
                 peak_attachment_error
+            ),
+            "maximum_rope_vertex_penetration_range_meters": _range(
+                peak_rope_vertex_penetration
+            ),
+            "maximum_coupling_wrench_imbalance_ratio_range": _range(
+                peak_coupling_wrench_imbalance_ratio
             ),
             "minimum_grip_contact_distance_range_meters": _range(
                 reported_minimum_grip_distance

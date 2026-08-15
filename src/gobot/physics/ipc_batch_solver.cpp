@@ -7,6 +7,7 @@
 #include "gobot/physics/ipc_batch_solver.hpp"
 
 #include <array>
+#include <cmath>
 #include <dlfcn.h>
 #include <filesystem>
 #include <limits>
@@ -70,7 +71,8 @@ bool ValidateApi(const IpcBatchSolverModuleApi* api, std::string* error) {
         api->capture_checkpoint == nullptr ||
         api->rewind_checkpoint == nullptr ||
         api->commit_checkpoint == nullptr ||
-        api->synchronize == nullptr ||
+        api->synchronize == nullptr || api->set_output_flags == nullptr ||
+        api->refresh_outputs == nullptr ||
         api->deformable_body_count == nullptr ||
         api->deformable_body_info == nullptr ||
         api->affine_body_count == nullptr ||
@@ -79,6 +81,10 @@ bool ValidateApi(const IpcBatchSolverModuleApi* api, std::string* error) {
                         "IPC batch solver module API table is incomplete");
     }
     return true;
+}
+
+bool ValidOutputFlags(std::uint32_t output_flags) {
+    return (output_flags & ~IpcBatchSolverOutputAll) == 0;
 }
 
 bool CheckedAdd(std::size_t value,
@@ -167,6 +173,17 @@ public:
                     "IPC batch environment count must be a positive multiple "
                     "of environments_per_shard");
         }
+        if (!ValidOutputFlags(config.output_flags)) {
+            return SetError(error,
+                            "IPC batch output flags contain unknown bits");
+        }
+        if (config.newton_max_iterations == 0 ||
+            config.line_search_max_iterations == 0 ||
+            !std::isfinite(config.linear_system_tolerance_rate) ||
+            config.linear_system_tolerance_rate <= 0.0) {
+            return SetError(error,
+                            "IPC batch solver iteration parameters are invalid");
+        }
         config_ = config;
         module_path_ = requested_module_path.empty() ? DefaultModulePath()
                                                      : requested_module_path;
@@ -240,7 +257,11 @@ public:
                 config.al_ipc_mu_scale_abd,
                 config.al_ipc_toi_threshold,
                 config.al_ipc_alpha_lower_bound,
-                config.al_ipc_decay_factor};
+                config.al_ipc_decay_factor,
+                config.newton_max_iterations,
+                config.line_search_max_iterations,
+                config.linear_system_tolerance_rate,
+                config.output_flags};
 
         std::array<char, kErrorCapacity> module_error{};
         session_ = api_->create(&artifact_view, &module_config,
@@ -404,6 +425,42 @@ public:
         return true;
     }
 
+    bool SetOutputFlags(std::uint32_t output_flags) {
+        if (!buffers_bound_) {
+            return Fail(nullptr,
+                        "IPC batch solver device buffers are not bound");
+        }
+        if (!ValidOutputFlags(output_flags)) {
+            return Fail(nullptr,
+                        "IPC batch output flags contain unknown bits");
+        }
+        std::array<char, kErrorCapacity> error{};
+        if (!api_->set_output_flags(session_, output_flags, error.data(),
+                                    error.size())) {
+            return Fail(error.data(),
+                        "IPC batch solver could not set output flags");
+        }
+        return RefreshDiagnostics();
+    }
+
+    bool RefreshOutputs(std::uint32_t output_flags) {
+        if (!buffers_bound_) {
+            return Fail(nullptr,
+                        "IPC batch solver device buffers are not bound");
+        }
+        if (!ValidOutputFlags(output_flags) || output_flags == 0) {
+            return Fail(nullptr,
+                        "IPC batch refresh flags must contain known output bits");
+        }
+        std::array<char, kErrorCapacity> error{};
+        if (!api_->refresh_outputs(session_, output_flags, error.data(),
+                                   error.size())) {
+            return Fail(error.data(),
+                        "IPC batch solver could not refresh outputs");
+        }
+        return RefreshDiagnostics();
+    }
+
     bool RefreshDiagnostics() {
         IpcBatchSolverModuleDiagnostics diagnostics;
         std::array<char, kErrorCapacity> error{};
@@ -424,6 +481,19 @@ public:
         diagnostics_.static_collider_count_per_environment =
                 diagnostics.static_collider_count_per_environment;
         diagnostics_.last_step_latency_ms = diagnostics.last_step_latency_ms;
+        diagnostics_.last_checkpoint_latency_ms =
+                diagnostics.last_checkpoint_latency_ms;
+        diagnostics_.last_target_staging_latency_ms =
+                diagnostics.last_target_staging_latency_ms;
+        diagnostics_.last_ipc_advance_latency_ms =
+                diagnostics.last_ipc_advance_latency_ms;
+        diagnostics_.last_reaction_export_latency_ms =
+                diagnostics.last_reaction_export_latency_ms;
+        diagnostics_.last_state_sync_latency_ms =
+                diagnostics.last_state_sync_latency_ms;
+        diagnostics_.output_flags = diagnostics.output_flags;
+        diagnostics_.deformable_contact_force_frame =
+                diagnostics.deformable_contact_force_frame;
         diagnostics_.contact_constitution =
                 diagnostics.contact_constitution != nullptr
                         ? diagnostics.contact_constitution
@@ -544,6 +614,14 @@ bool IpcBatchSolverSession::CommitCheckpoint() {
 
 bool IpcBatchSolverSession::Synchronize() {
     return impl_->Synchronize();
+}
+
+bool IpcBatchSolverSession::SetOutputFlags(std::uint32_t output_flags) {
+    return impl_->SetOutputFlags(output_flags);
+}
+
+bool IpcBatchSolverSession::RefreshOutputs(std::uint32_t output_flags) {
+    return impl_->RefreshOutputs(output_flags);
 }
 
 const std::vector<IpcSolverBodyInfo>&

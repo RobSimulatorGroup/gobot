@@ -22,6 +22,18 @@ from ._libuipc_provider import (
 )
 
 
+_OUTPUT_DEFORMABLE_STATE = 1 << 0
+_OUTPUT_AFFINE_STATE = 1 << 1
+_OUTPUT_DEFORMABLE_CONTACT_FORCES = 1 << 2
+_OUTPUT_AFFINE_CONTACT_WRENCHES = 1 << 3
+_OUTPUT_ALL = (
+    _OUTPUT_DEFORMABLE_STATE
+    | _OUTPUT_AFFINE_STATE
+    | _OUTPUT_DEFORMABLE_CONTACT_FORCES
+    | _OUTPUT_AFFINE_CONTACT_WRENCHES
+)
+
+
 @dataclass(frozen=True)
 class LibuipcBatchConfig:
     """Configuration for a fixed-capacity native libuipc batch.
@@ -40,6 +52,10 @@ class LibuipcBatchConfig:
     al_ipc_toi_threshold: float = 0.1
     al_ipc_alpha_lower_bound: float = 1.0e-6
     al_ipc_decay_factor: float = 0.3
+    newton_max_iterations: int = 16
+    line_search_max_iterations: int = 8
+    linear_system_tolerance_rate: float = 1.0e-3
+    export_deformable_contact_forces: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.solver, LibuipcConfig):
@@ -51,6 +67,26 @@ class LibuipcBatchConfig:
         if isinstance(self.environments_per_shard, bool) or shard_size <= 0:
             raise ValueError("environments_per_shard must be positive")
         object.__setattr__(self, "environments_per_shard", shard_size)
+        for name in (
+            "newton_max_iterations",
+            "line_search_max_iterations",
+        ):
+            value = getattr(self, name)
+            try:
+                count = operator.index(value)
+            except TypeError as error:
+                raise TypeError(f"{name} must be an integer") from error
+            if isinstance(value, bool) or count <= 0:
+                raise ValueError(f"{name} must be positive")
+            object.__setattr__(self, name, count)
+        tolerance = float(self.linear_system_tolerance_rate)
+        if not math.isfinite(tolerance) or tolerance <= 0.0:
+            raise ValueError(
+                "linear_system_tolerance_rate must be finite and positive"
+            )
+        object.__setattr__(self, "linear_system_tolerance_rate", tolerance)
+        if not isinstance(self.export_deformable_contact_forces, bool):
+            raise TypeError("export_deformable_contact_forces must be a bool")
         constitution = str(self.contact_constitution).lower()
         if constitution not in ("ipc", "al-ipc"):
             raise ValueError("contact_constitution must be 'ipc' or 'al-ipc'")
@@ -72,6 +108,9 @@ class LibuipcBatchConfig:
 
     def solver_mapping(self, num_envs: int) -> Mapping[str, Any]:
         values = dict(self.solver.solver_mapping())
+        output_flags = _OUTPUT_ALL
+        if not self.export_deformable_contact_forces:
+            output_flags &= ~_OUTPUT_DEFORMABLE_CONTACT_FORCES
         values.update(
             {
                 "environment_count": int(num_envs),
@@ -83,6 +122,12 @@ class LibuipcBatchConfig:
                 "al_ipc_toi_threshold": self.al_ipc_toi_threshold,
                 "al_ipc_alpha_lower_bound": self.al_ipc_alpha_lower_bound,
                 "al_ipc_decay_factor": self.al_ipc_decay_factor,
+                "newton_max_iterations": self.newton_max_iterations,
+                "line_search_max_iterations": self.line_search_max_iterations,
+                "linear_system_tolerance_rate": (
+                    self.linear_system_tolerance_rate
+                ),
+                "output_flags": output_flags,
             }
         )
         return values
@@ -148,6 +193,7 @@ class LibuipcBatchSolver:
         self._generation = 1
         self._frame = 0
         self._checkpoint_frame: int | None = None
+        self._deformable_contact_force_frame = 0
         self.wrench_source = (
             "pose_error"
             if self.config.contact_constitution == "al-ipc"
@@ -227,6 +273,16 @@ class LibuipcBatchSolver:
                 "al_ipc_toi_threshold": self.config.al_ipc_toi_threshold,
                 "al_ipc_alpha_lower_bound": self.config.al_ipc_alpha_lower_bound,
                 "al_ipc_decay_factor": self.config.al_ipc_decay_factor,
+                "newton_max_iterations": self.config.newton_max_iterations,
+                "line_search_max_iterations": (
+                    self.config.line_search_max_iterations
+                ),
+                "linear_system_tolerance_rate": (
+                    self.config.linear_system_tolerance_rate
+                ),
+                "export_deformable_contact_forces": (
+                    self.config.export_deformable_contact_forces
+                ),
             },
             "device": self._device_name,
             "num_envs": self._num_envs,
@@ -403,6 +459,11 @@ class LibuipcBatchSolver:
         return self._generation
 
     @property
+    def frame(self) -> int:
+        self._require_open()
+        return self._frame
+
+    @property
     def fixed_time_step(self) -> float:
         return self.config.solver.fixed_time_step
 
@@ -477,6 +538,15 @@ class LibuipcBatchSolver:
                 ),
                 "exact_contact_wrench": self.capabilities.exact_contact_wrench,
                 "checkpoint_active": self._checkpoint_frame is not None,
+                "export_deformable_contact_forces": (
+                    self.config.export_deformable_contact_forces
+                ),
+                "deformable_contact_force_frame": int(
+                    values.get(
+                        "deformable_contact_force_frame",
+                        self._deformable_contact_force_frame,
+                    )
+                ),
                 "static_collider_count": sum(
                     not bool(collider["disabled"])
                     for collider in self.artifact.static_colliders
@@ -531,7 +601,23 @@ class LibuipcBatchSolver:
             raise ValueError("libuipc batch step count must be positive")
         self._session.step(count)
         self._frame += count
+        if self.config.export_deformable_contact_forces:
+            self._deformable_contact_force_frame = self._frame
         return self._arrays
+
+    def refresh_deformable_contact_forces(self) -> Any:
+        """Refresh the per-vertex force buffer without advancing physics."""
+
+        self._require_open()
+        refresh = getattr(self._session, "refresh_outputs", None)
+        if callable(refresh):
+            refresh(_OUTPUT_DEFORMABLE_CONTACT_FORCES)
+        elif not self.config.export_deformable_contact_forces:
+            raise RuntimeError(
+                "native libuipc batch session has no lazy output refresh API"
+            )
+        self._deformable_contact_force_frame = self._frame
+        return self._arrays["contact_forces"]
 
     def capture_checkpoint(self) -> None:
         self._require_open()
@@ -583,7 +669,9 @@ class LibuipcBatchSolver:
         self._session.reset()
         self._frame = 0
         self._checkpoint_frame = None
+        self._deformable_contact_force_frame = 0
         self._arrays["affine_target_twists"].zero_()
+        self._arrays["contact_forces"].zero_()
         self._arrays["affine_contact_wrenches"].zero_()
         return self._arrays
 

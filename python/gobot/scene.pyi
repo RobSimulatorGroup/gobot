@@ -15,6 +15,7 @@ from ._core import (
     Node3D,
     PhysicsCoupling,
     PhysicsCouplingMode,
+    RigidBody3D,
     Robot3D,
     RobotMode,
     Scene,

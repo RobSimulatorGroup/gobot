@@ -28,8 +28,8 @@ from .mujoco_ipc import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcBodyMapping,
     MuJoCoIpcConfig,
-    MuJoCoIpcCoupler,
     MuJoCoIpcProvider,
+    SolverCoupledProxy,
 )
 from .newton import (
     NewtonModelConfig,
@@ -53,7 +53,6 @@ __all__ = [
     "MuJoCoWarpRobotLayout",
     "MuJoCoIpcBodyMapping",
     "MuJoCoIpcConfig",
-    "MuJoCoIpcCoupler",
     "MuJoCoIpcProvider",
     "NewtonModelConfig",
     "NewtonProvider",
@@ -68,4 +67,5 @@ __all__ = [
     "SensorBatchState",
     "SensorBatchView",
     "SimulationCapacityError",
+    "SolverCoupledProxy",
 ]

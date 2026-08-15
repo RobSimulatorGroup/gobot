@@ -28,6 +28,10 @@ struct IpcBatchSolverConfig {
     double al_ipc_toi_threshold{0.1};
     double al_ipc_alpha_lower_bound{1.0e-6};
     double al_ipc_decay_factor{0.3};
+    std::uint32_t newton_max_iterations{16};
+    std::uint32_t line_search_max_iterations{8};
+    double linear_system_tolerance_rate{1.0e-3};
+    std::uint32_t output_flags{IpcBatchSolverOutputAll};
 };
 
 struct IpcBatchSolverDiagnostics {
@@ -40,6 +44,13 @@ struct IpcBatchSolverDiagnostics {
     std::size_t affine_body_count_per_environment{0};
     std::size_t static_collider_count_per_environment{0};
     double last_step_latency_ms{0.0};
+    double last_checkpoint_latency_ms{0.0};
+    double last_target_staging_latency_ms{0.0};
+    double last_ipc_advance_latency_ms{0.0};
+    double last_reaction_export_latency_ms{0.0};
+    double last_state_sync_latency_ms{0.0};
+    std::uint32_t output_flags{IpcBatchSolverOutputAll};
+    std::uint64_t deformable_contact_force_frame{0};
     std::string contact_constitution{"ipc"};
     bool exact_contact_wrench{true};
     bool checkpoint_active{false};
@@ -69,6 +80,8 @@ public:
     bool RewindCheckpoint();
     bool CommitCheckpoint();
     bool Synchronize();
+    bool SetOutputFlags(std::uint32_t output_flags);
+    bool RefreshOutputs(std::uint32_t output_flags);
 
     const std::vector<IpcSolverBodyInfo>& GetDeformableBodies() const;
     const std::vector<IpcSolverBodyInfo>& GetAffineBodies() const;

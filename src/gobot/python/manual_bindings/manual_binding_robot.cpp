@@ -4,7 +4,7 @@ namespace gobot::python {
 namespace {
 
 const std::string& RuntimeRobotNameForHandle(const PyNodeHandle& handle) {
-    return RuntimeRobotForNodeHandle(handle)->GetName();
+    return RuntimeRigidSystemForNodeHandle(handle)->GetName();
 }
 
 const PhysicsLinkState& RequiredLinkStateForHandle(const PyLink3DHandle& handle) {

@@ -200,6 +200,56 @@
             "type": "MeshInstance3D"
         },
         {
+            "name": "workcell_floor_collision",
+            "parent": 1,
+            "properties": {
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
+                "disabled": false,
+                "physics_material": "SubResource(PhysicsMaterial3D_0)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rest_offset": 0.0,
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "semantic_label": "",
+                "shape": "SubResource(BoxShape3D_0)",
+                "visible": false
+            },
+            "type": "CollisionShape3D"
+        },
+        {
             "name": "left_robot_pedestal",
             "parent": 0,
             "properties": {
@@ -352,7 +402,7 @@
         },
         {
             "name": "fr3_link0",
-            "parent": 4,
+            "parent": 5,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -437,7 +487,7 @@
         },
         {
             "name": "fr3_link0_visual",
-            "parent": 5,
+            "parent": 6,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -490,13 +540,13 @@
         },
         {
             "name": "fr3_link0_collision",
-            "parent": 5,
+            "parent": 6,
             "properties": {
                 "collision_layer": 2,
                 "collision_mask": 2,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_0)",
+                "physics_material": "SubResource(PhysicsMaterial3D_1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -540,7 +590,7 @@
         },
         {
             "name": "fr3_joint1",
-            "parent": 5,
+            "parent": 6,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -628,7 +678,7 @@
         },
         {
             "name": "fr3_link1",
-            "parent": 8,
+            "parent": 9,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -713,7 +763,7 @@
         },
         {
             "name": "fr3_link1_visual",
-            "parent": 9,
+            "parent": 10,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -766,13 +816,13 @@
         },
         {
             "name": "fr3_link1_collision",
-            "parent": 9,
+            "parent": 10,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_1)",
+                "physics_material": "SubResource(PhysicsMaterial3D_2)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -816,7 +866,7 @@
         },
         {
             "name": "fr3_joint2",
-            "parent": 9,
+            "parent": 10,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -904,7 +954,7 @@
         },
         {
             "name": "fr3_link2",
-            "parent": 12,
+            "parent": 13,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -989,7 +1039,7 @@
         },
         {
             "name": "fr3_link2_visual",
-            "parent": 13,
+            "parent": 14,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -1042,13 +1092,13 @@
         },
         {
             "name": "fr3_link2_collision",
-            "parent": 13,
+            "parent": 14,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_2)",
+                "physics_material": "SubResource(PhysicsMaterial3D_3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1092,7 +1142,7 @@
         },
         {
             "name": "fr3_joint3",
-            "parent": 13,
+            "parent": 14,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -1180,7 +1230,7 @@
         },
         {
             "name": "fr3_link3",
-            "parent": 16,
+            "parent": 17,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1265,7 +1315,7 @@
         },
         {
             "name": "fr3_link3_visual",
-            "parent": 17,
+            "parent": 18,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -1318,13 +1368,13 @@
         },
         {
             "name": "fr3_link3_collision",
-            "parent": 17,
+            "parent": 18,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_3)",
+                "physics_material": "SubResource(PhysicsMaterial3D_4)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1368,7 +1418,7 @@
         },
         {
             "name": "fr3_joint4",
-            "parent": 17,
+            "parent": 18,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -1456,7 +1506,7 @@
         },
         {
             "name": "fr3_link4",
-            "parent": 20,
+            "parent": 21,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1541,7 +1591,7 @@
         },
         {
             "name": "fr3_link4_visual",
-            "parent": 21,
+            "parent": 22,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -1594,13 +1644,13 @@
         },
         {
             "name": "fr3_link4_collision",
-            "parent": 21,
+            "parent": 22,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_4)",
+                "physics_material": "SubResource(PhysicsMaterial3D_5)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1644,7 +1694,7 @@
         },
         {
             "name": "fr3_joint5",
-            "parent": 21,
+            "parent": 22,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -1732,7 +1782,7 @@
         },
         {
             "name": "fr3_link5",
-            "parent": 24,
+            "parent": 25,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1817,7 +1867,7 @@
         },
         {
             "name": "fr3_link5_visual",
-            "parent": 25,
+            "parent": 26,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -1870,13 +1920,13 @@
         },
         {
             "name": "fr3_link5_collision",
-            "parent": 25,
+            "parent": 26,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_5)",
+                "physics_material": "SubResource(PhysicsMaterial3D_6)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1920,7 +1970,7 @@
         },
         {
             "name": "fr3_joint6",
-            "parent": 25,
+            "parent": 26,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -2008,7 +2058,7 @@
         },
         {
             "name": "fr3_link6",
-            "parent": 28,
+            "parent": 29,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -2093,7 +2143,7 @@
         },
         {
             "name": "fr3_link6_visual",
-            "parent": 29,
+            "parent": 30,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -2146,13 +2196,13 @@
         },
         {
             "name": "fr3_link6_collision",
-            "parent": 29,
+            "parent": 30,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_6)",
+                "physics_material": "SubResource(PhysicsMaterial3D_7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2196,7 +2246,7 @@
         },
         {
             "name": "fr3_joint7",
-            "parent": 29,
+            "parent": 30,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -2284,7 +2334,7 @@
         },
         {
             "name": "fr3_link7",
-            "parent": 32,
+            "parent": 33,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -2369,7 +2419,7 @@
         },
         {
             "name": "fr3_link7_visual",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -2422,13 +2472,13 @@
         },
         {
             "name": "fr3_link7_collision",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
-                "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_7)",
+                "disabled": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_8)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2472,7 +2522,7 @@
         },
         {
             "name": "fr3_hand_visual",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -2525,13 +2575,13 @@
         },
         {
             "name": "fr3_hand_collision",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
-                "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_8)",
+                "disabled": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_9)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2575,7 +2625,7 @@
         },
         {
             "name": "fr3_finger_joint1",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -2663,7 +2713,7 @@
         },
         {
             "name": "fr3_leftfinger",
-            "parent": 38,
+            "parent": 39,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -2748,7 +2798,7 @@
         },
         {
             "name": "fr3_leftfinger_visual",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -2801,13 +2851,13 @@
         },
         {
             "name": "fr3_leftfinger_collision",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_9)",
+                "physics_material": "SubResource(PhysicsMaterial3D_10)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2844,20 +2894,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_0)",
+                "shape": "SubResource(BoxShape3D_1)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_2",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_10)",
+                "physics_material": "SubResource(PhysicsMaterial3D_11)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2894,20 +2944,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_1)",
+                "shape": "SubResource(BoxShape3D_2)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_3",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_11)",
+                "physics_material": "SubResource(PhysicsMaterial3D_12)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2944,20 +2994,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_2)",
+                "shape": "SubResource(BoxShape3D_3)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_4",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_12)",
+                "physics_material": "SubResource(PhysicsMaterial3D_13)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2994,14 +3044,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_3)",
+                "shape": "SubResource(BoxShape3D_4)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "left_fr3_left_rubber_pad",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -3054,13 +3104,13 @@
         },
         {
             "name": "left_fr3_left_rubber_pad_collision",
-            "parent": 39,
+            "parent": 40,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_13)",
+                "physics_material": "SubResource(PhysicsMaterial3D_14)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3097,14 +3147,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_4)",
+                "shape": "SubResource(BoxShape3D_5)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_finger_joint2",
-            "parent": 33,
+            "parent": 34,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -3192,7 +3242,7 @@
         },
         {
             "name": "fr3_rightfinger",
-            "parent": 47,
+            "parent": 48,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -3277,7 +3327,7 @@
         },
         {
             "name": "fr3_rightfinger_visual",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -3330,13 +3380,13 @@
         },
         {
             "name": "fr3_rightfinger_collision",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_14)",
+                "physics_material": "SubResource(PhysicsMaterial3D_15)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3373,20 +3423,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_5)",
+                "shape": "SubResource(BoxShape3D_6)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_2",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_15)",
+                "physics_material": "SubResource(PhysicsMaterial3D_16)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3423,20 +3473,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_6)",
+                "shape": "SubResource(BoxShape3D_7)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_3",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_16)",
+                "physics_material": "SubResource(PhysicsMaterial3D_17)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3473,20 +3523,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_7)",
+                "shape": "SubResource(BoxShape3D_8)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_4",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_17)",
+                "physics_material": "SubResource(PhysicsMaterial3D_18)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3523,14 +3573,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_8)",
+                "shape": "SubResource(BoxShape3D_9)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "left_fr3_right_rubber_pad",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -3583,13 +3633,13 @@
         },
         {
             "name": "left_fr3_right_rubber_pad_collision",
-            "parent": 48,
+            "parent": 49,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_18)",
+                "physics_material": "SubResource(PhysicsMaterial3D_19)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3626,10 +3676,108 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_9)",
+                "shape": "SubResource(BoxShape3D_10)",
                 "visible": false
             },
             "type": "CollisionShape3D"
+        },
+        {
+            "name": "left_fr3_hand_collision_proxy",
+            "parent": 34,
+            "properties": {
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
+                "disabled": false,
+                "physics_material": "SubResource(PhysicsMaterial3D_20)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.11299999803304672
+                        ]
+                    }
+                },
+                "rest_offset": 0.0,
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "semantic_label": "",
+                "shape": "SubResource(BoxShape3D_11)",
+                "visible": false
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "robot_left_fr3_fr3_link7_ipc_collision_proxy",
+            "parent": 0,
+            "properties": {
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
+                "script": null,
+                "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../left_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7"
+                },
+                "torque_scale": 1.0
+            },
+            "type": "PhysicsCoupling"
+        },
+        {
+            "name": "robot_left_fr3_fr3_leftfinger_ipc_collision_proxy",
+            "parent": 0,
+            "properties": {
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
+                "script": null,
+                "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../left_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7/fr3_finger_joint1/fr3_leftfinger"
+                },
+                "torque_scale": 1.0
+            },
+            "type": "PhysicsCoupling"
+        },
+        {
+            "name": "robot_left_fr3_fr3_rightfinger_ipc_collision_proxy",
+            "parent": 0,
+            "properties": {
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
+                "script": null,
+                "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../left_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7/fr3_finger_joint2/fr3_rightfinger"
+                },
+                "torque_scale": 1.0
+            },
+            "type": "PhysicsCoupling"
         },
         {
             "name": "right_fr3",
@@ -3678,7 +3826,7 @@
         },
         {
             "name": "fr3_link0",
-            "parent": 56,
+            "parent": 61,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -3763,7 +3911,7 @@
         },
         {
             "name": "fr3_link0_visual",
-            "parent": 57,
+            "parent": 62,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -3816,13 +3964,13 @@
         },
         {
             "name": "fr3_link0_collision",
-            "parent": 57,
+            "parent": 62,
             "properties": {
                 "collision_layer": 2,
                 "collision_mask": 2,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_19)",
+                "physics_material": "SubResource(PhysicsMaterial3D_21)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3866,7 +4014,7 @@
         },
         {
             "name": "fr3_joint1",
-            "parent": 57,
+            "parent": 62,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -3954,7 +4102,7 @@
         },
         {
             "name": "fr3_link1",
-            "parent": 60,
+            "parent": 65,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4039,7 +4187,7 @@
         },
         {
             "name": "fr3_link1_visual",
-            "parent": 61,
+            "parent": 66,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -4092,13 +4240,13 @@
         },
         {
             "name": "fr3_link1_collision",
-            "parent": 61,
+            "parent": 66,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_20)",
+                "physics_material": "SubResource(PhysicsMaterial3D_22)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4142,7 +4290,7 @@
         },
         {
             "name": "fr3_joint2",
-            "parent": 61,
+            "parent": 66,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -4230,7 +4378,7 @@
         },
         {
             "name": "fr3_link2",
-            "parent": 64,
+            "parent": 69,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4315,7 +4463,7 @@
         },
         {
             "name": "fr3_link2_visual",
-            "parent": 65,
+            "parent": 70,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -4368,13 +4516,13 @@
         },
         {
             "name": "fr3_link2_collision",
-            "parent": 65,
+            "parent": 70,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_21)",
+                "physics_material": "SubResource(PhysicsMaterial3D_23)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4418,7 +4566,7 @@
         },
         {
             "name": "fr3_joint3",
-            "parent": 65,
+            "parent": 70,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -4506,7 +4654,7 @@
         },
         {
             "name": "fr3_link3",
-            "parent": 68,
+            "parent": 73,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4591,7 +4739,7 @@
         },
         {
             "name": "fr3_link3_visual",
-            "parent": 69,
+            "parent": 74,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -4644,13 +4792,13 @@
         },
         {
             "name": "fr3_link3_collision",
-            "parent": 69,
+            "parent": 74,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_22)",
+                "physics_material": "SubResource(PhysicsMaterial3D_24)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4694,7 +4842,7 @@
         },
         {
             "name": "fr3_joint4",
-            "parent": 69,
+            "parent": 74,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -4782,7 +4930,7 @@
         },
         {
             "name": "fr3_link4",
-            "parent": 72,
+            "parent": 77,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4867,7 +5015,7 @@
         },
         {
             "name": "fr3_link4_visual",
-            "parent": 73,
+            "parent": 78,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -4920,13 +5068,13 @@
         },
         {
             "name": "fr3_link4_collision",
-            "parent": 73,
+            "parent": 78,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_23)",
+                "physics_material": "SubResource(PhysicsMaterial3D_25)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4970,7 +5118,7 @@
         },
         {
             "name": "fr3_joint5",
-            "parent": 73,
+            "parent": 78,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -5058,7 +5206,7 @@
         },
         {
             "name": "fr3_link5",
-            "parent": 76,
+            "parent": 81,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -5143,7 +5291,7 @@
         },
         {
             "name": "fr3_link5_visual",
-            "parent": 77,
+            "parent": 82,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -5196,13 +5344,13 @@
         },
         {
             "name": "fr3_link5_collision",
-            "parent": 77,
+            "parent": 82,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_24)",
+                "physics_material": "SubResource(PhysicsMaterial3D_26)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5246,7 +5394,7 @@
         },
         {
             "name": "fr3_joint6",
-            "parent": 77,
+            "parent": 82,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -5334,7 +5482,7 @@
         },
         {
             "name": "fr3_link6",
-            "parent": 80,
+            "parent": 85,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -5419,7 +5567,7 @@
         },
         {
             "name": "fr3_link6_visual",
-            "parent": 81,
+            "parent": 86,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -5472,13 +5620,13 @@
         },
         {
             "name": "fr3_link6_collision",
-            "parent": 81,
+            "parent": 86,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_25)",
+                "physics_material": "SubResource(PhysicsMaterial3D_27)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5522,7 +5670,7 @@
         },
         {
             "name": "fr3_joint7",
-            "parent": 81,
+            "parent": 86,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -5610,7 +5758,7 @@
         },
         {
             "name": "fr3_link7",
-            "parent": 84,
+            "parent": 89,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -5695,7 +5843,7 @@
         },
         {
             "name": "fr3_link7_visual",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -5748,13 +5896,13 @@
         },
         {
             "name": "fr3_link7_collision",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
-                "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_26)",
+                "disabled": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_28)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5798,7 +5946,7 @@
         },
         {
             "name": "fr3_hand_visual",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -5851,13 +5999,13 @@
         },
         {
             "name": "fr3_hand_collision",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
-                "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_27)",
+                "disabled": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_29)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5901,7 +6049,7 @@
         },
         {
             "name": "fr3_finger_joint1",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -5989,7 +6137,7 @@
         },
         {
             "name": "fr3_leftfinger",
-            "parent": 90,
+            "parent": 95,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -6074,7 +6222,7 @@
         },
         {
             "name": "fr3_leftfinger_visual",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -6127,13 +6275,13 @@
         },
         {
             "name": "fr3_leftfinger_collision",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_28)",
+                "physics_material": "SubResource(PhysicsMaterial3D_30)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6170,20 +6318,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_10)",
+                "shape": "SubResource(BoxShape3D_12)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_2",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_29)",
+                "physics_material": "SubResource(PhysicsMaterial3D_31)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6220,20 +6368,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_11)",
+                "shape": "SubResource(BoxShape3D_13)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_3",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_30)",
+                "physics_material": "SubResource(PhysicsMaterial3D_32)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6270,20 +6418,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_12)",
+                "shape": "SubResource(BoxShape3D_14)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_leftfinger_collision_4",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_31)",
+                "physics_material": "SubResource(PhysicsMaterial3D_33)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6320,14 +6468,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_13)",
+                "shape": "SubResource(BoxShape3D_15)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "right_fr3_left_rubber_pad",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -6380,13 +6528,13 @@
         },
         {
             "name": "right_fr3_left_rubber_pad_collision",
-            "parent": 91,
+            "parent": 96,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_32)",
+                "physics_material": "SubResource(PhysicsMaterial3D_34)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6423,14 +6571,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_14)",
+                "shape": "SubResource(BoxShape3D_16)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_finger_joint2",
-            "parent": 85,
+            "parent": 90,
             "properties": {
                 "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
@@ -6518,7 +6666,7 @@
         },
         {
             "name": "fr3_rightfinger",
-            "parent": 99,
+            "parent": 104,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -6603,7 +6751,7 @@
         },
         {
             "name": "fr3_rightfinger_visual",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -6656,13 +6804,13 @@
         },
         {
             "name": "fr3_rightfinger_collision",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_33)",
+                "physics_material": "SubResource(PhysicsMaterial3D_35)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6699,20 +6847,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_15)",
+                "shape": "SubResource(BoxShape3D_17)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_2",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_34)",
+                "physics_material": "SubResource(PhysicsMaterial3D_36)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6749,20 +6897,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_16)",
+                "shape": "SubResource(BoxShape3D_18)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_3",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_35)",
+                "physics_material": "SubResource(PhysicsMaterial3D_37)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6799,20 +6947,20 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_17)",
+                "shape": "SubResource(BoxShape3D_19)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "fr3_rightfinger_collision_4",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": true,
-                "physics_material": "SubResource(PhysicsMaterial3D_36)",
+                "physics_material": "SubResource(PhysicsMaterial3D_38)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6849,14 +6997,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_18)",
+                "shape": "SubResource(BoxShape3D_20)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "right_fr3_right_rubber_pad",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -6909,13 +7057,13 @@
         },
         {
             "name": "right_fr3_right_rubber_pad_collision",
-            "parent": 100,
+            "parent": 105,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_37)",
+                "physics_material": "SubResource(PhysicsMaterial3D_39)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6952,147 +7100,112 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_19)",
+                "shape": "SubResource(BoxShape3D_21)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
-            "name": "left_rope_fixture",
+            "name": "right_fr3_hand_collision_proxy",
+            "parent": 90,
+            "properties": {
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
+                "disabled": false,
+                "physics_material": "SubResource(PhysicsMaterial3D_40)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.11299999803304672
+                        ]
+                    }
+                },
+                "rest_offset": 0.0,
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "semantic_label": "",
+                "shape": "SubResource(BoxShape3D_22)",
+                "visible": false
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "robot_right_fr3_fr3_link7_ipc_collision_proxy",
             "parent": 0,
             "properties": {
-                "mode": "Motion",
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
                 "script": null,
                 "semantic_label": "",
-                "source_path": "",
-                "visible": true
+                "target_body_path": {
+                    "str_data": "../right_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7"
+                },
+                "torque_scale": 1.0
             },
-            "type": "Robot3D"
+            "type": "PhysicsCoupling"
         },
         {
-            "name": "fixture_free_joint",
-            "parent": 108,
+            "name": "robot_right_fr3_fr3_leftfinger_ipc_collision_proxy",
+            "parent": 0,
             "properties": {
-                "actuator_config": null,
-                "affine_actuator_control_gain": 0.0,
-                "affine_actuator_enabled": false,
-                "affine_actuator_force_offset": 0.0,
-                "affine_actuator_inherit_range": 0.0,
-                "affine_actuator_position_gain": 0.0,
-                "affine_actuator_velocity_gain": 0.0,
-                "armature": 0.0,
-                "axis": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "child_link": "rope_fixture",
-                "control_lower_limit": 0.0,
-                "control_upper_limit": 0.0,
-                "damping": 0.0,
-                "drive_damping": 0.0,
-                "drive_mode": "Passive",
-                "drive_stiffness": 0.0,
-                "effort_limit": 0.0,
-                "force_lower_limit": 0.0,
-                "force_upper_limit": 0.0,
-                "friction_loss": 0.0,
-                "gear": [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                ],
-                "initial_position": 0.0,
-                "joint_position": 0.0,
-                "joint_type": "Floating",
-                "lower_limit": 0.0,
-                "parent_link": "",
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
                 "script": null,
                 "semantic_label": "",
-                "upper_limit": 0.0,
-                "velocity_limit": 0.0,
-                "visible": true
+                "target_body_path": {
+                    "str_data": "../right_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7/fr3_finger_joint1/fr3_leftfinger"
+                },
+                "torque_scale": 1.0
             },
-            "type": "Joint3D"
+            "type": "PhysicsCoupling"
         },
         {
-            "name": "rope_fixture",
-            "parent": 109,
+            "name": "robot_right_fr3_fr3_rightfinger_ipc_collision_proxy",
+            "parent": 0,
+            "properties": {
+                "enabled": true,
+                "force_scale": 1.0,
+                "mode": "OneWay",
+                "script": null,
+                "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../right_fr3/fr3_link0/fr3_joint1/fr3_link1/fr3_joint2/fr3_link2/fr3_joint3/fr3_link3/fr3_joint4/fr3_link4/fr3_joint5/fr3_link5/fr3_joint6/fr3_link6/fr3_joint7/fr3_link7/fr3_finger_joint2/fr3_rightfinger"
+                },
+                "torque_scale": 1.0
+            },
+            "type": "PhysicsCoupling"
+        },
+        {
+            "name": "left_rope_fixture",
+            "parent": 0,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -7153,7 +7266,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -7173,11 +7286,11 @@
                 "semantic_label": "",
                 "visible": true
             },
-            "type": "Link3D"
+            "type": "RigidBody3D"
         },
         {
             "name": "fixture_body_visual",
-            "parent": 110,
+            "parent": 117,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7230,13 +7343,13 @@
         },
         {
             "name": "fixture_body_collision",
-            "parent": 110,
+            "parent": 117,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_38)",
+                "physics_material": "SubResource(PhysicsMaterial3D_41)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7273,14 +7386,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_20)",
+                "shape": "SubResource(BoxShape3D_23)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "rope_coral_mount",
-            "parent": 110,
+            "parent": 117,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7333,7 +7446,7 @@
         },
         {
             "name": "rope_gold_mount",
-            "parent": 110,
+            "parent": 117,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7386,7 +7499,7 @@
         },
         {
             "name": "rope_blue_mount",
-            "parent": 110,
+            "parent": 117,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7440,139 +7553,6 @@
         {
             "name": "right_rope_fixture",
             "parent": 0,
-            "properties": {
-                "mode": "Motion",
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "semantic_label": "",
-                "source_path": "",
-                "visible": true
-            },
-            "type": "Robot3D"
-        },
-        {
-            "name": "fixture_free_joint",
-            "parent": 116,
-            "properties": {
-                "actuator_config": null,
-                "affine_actuator_control_gain": 0.0,
-                "affine_actuator_enabled": false,
-                "affine_actuator_force_offset": 0.0,
-                "affine_actuator_inherit_range": 0.0,
-                "affine_actuator_position_gain": 0.0,
-                "affine_actuator_velocity_gain": 0.0,
-                "armature": 0.0,
-                "axis": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "child_link": "rope_fixture",
-                "control_lower_limit": 0.0,
-                "control_upper_limit": 0.0,
-                "damping": 0.0,
-                "drive_damping": 0.0,
-                "drive_mode": "Passive",
-                "drive_stiffness": 0.0,
-                "effort_limit": 0.0,
-                "force_lower_limit": 0.0,
-                "force_upper_limit": 0.0,
-                "friction_loss": 0.0,
-                "gear": [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                ],
-                "initial_position": 0.0,
-                "joint_position": 0.0,
-                "joint_type": "Floating",
-                "lower_limit": 0.0,
-                "parent_link": "",
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "semantic_label": "",
-                "upper_limit": 0.0,
-                "velocity_limit": 0.0,
-                "visible": true
-            },
-            "type": "Joint3D"
-        },
-        {
-            "name": "rope_fixture",
-            "parent": 117,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -7633,7 +7613,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -7653,11 +7633,11 @@
                 "semantic_label": "",
                 "visible": true
             },
-            "type": "Link3D"
+            "type": "RigidBody3D"
         },
         {
             "name": "fixture_body_visual",
-            "parent": 118,
+            "parent": 123,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7710,13 +7690,13 @@
         },
         {
             "name": "fixture_body_collision",
-            "parent": 118,
+            "parent": 123,
             "properties": {
                 "collision_layer": 1,
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_39)",
+                "physics_material": "SubResource(PhysicsMaterial3D_42)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7753,14 +7733,14 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(BoxShape3D_21)",
+                "shape": "SubResource(BoxShape3D_24)",
                 "visible": false
             },
             "type": "CollisionShape3D"
         },
         {
             "name": "rope_coral_mount",
-            "parent": 118,
+            "parent": 123,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7813,7 +7793,7 @@
         },
         {
             "name": "rope_gold_mount",
-            "parent": 118,
+            "parent": 123,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -7866,7 +7846,7 @@
         },
         {
             "name": "rope_blue_mount",
-            "parent": 118,
+            "parent": 123,
             "properties": {
                 "cast_shadow": true,
                 "material": null,
@@ -8101,11 +8081,11 @@
                 "enabled": true,
                 "force_scale": 1.0,
                 "mode": "TwoWay",
-                "rigid_link_path": {
-                    "str_data": "../left_rope_fixture/fixture_free_joint/rope_fixture"
-                },
                 "script": null,
                 "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../left_rope_fixture"
+                },
                 "torque_scale": 1.0
             },
             "type": "PhysicsCoupling"
@@ -8119,7 +8099,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../left_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../left_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8145,7 +8125,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../left_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../left_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8171,7 +8151,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../left_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../left_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8195,11 +8175,11 @@
                 "enabled": true,
                 "force_scale": 1.0,
                 "mode": "TwoWay",
-                "rigid_link_path": {
-                    "str_data": "../right_rope_fixture/fixture_free_joint/rope_fixture"
-                },
                 "script": null,
                 "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../right_rope_fixture"
+                },
                 "torque_scale": 1.0
             },
             "type": "PhysicsCoupling"
@@ -8213,7 +8193,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../right_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../right_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8239,7 +8219,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../right_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../right_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8265,7 +8245,7 @@
                 },
                 "enabled": true,
                 "rigid_link_path": {
-                    "str_data": "../right_rope_fixture/fixture_free_joint/rope_fixture"
+                    "str_data": "../right_rope_fixture"
                 },
                 "script": null,
                 "semantic_label": "",
@@ -8300,6 +8280,33 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "BoxShape3D_0",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        2.200000047683716,
+                        1.2000000476837158,
+                        0.05000000074505806
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_0",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
         },
         {
             "__ID__": "BoxMesh_1",
@@ -8342,7 +8349,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_0",
+            "__ID__": "PhysicsMaterial3D_1",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8359,7 +8366,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_1",
+            "__ID__": "PhysicsMaterial3D_2",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8376,7 +8383,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_2",
+            "__ID__": "PhysicsMaterial3D_3",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8393,7 +8400,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_3",
+            "__ID__": "PhysicsMaterial3D_4",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8410,7 +8417,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_4",
+            "__ID__": "PhysicsMaterial3D_5",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8427,7 +8434,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_5",
+            "__ID__": "PhysicsMaterial3D_6",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8444,7 +8451,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_6",
+            "__ID__": "PhysicsMaterial3D_7",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8461,7 +8468,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_7",
+            "__ID__": "PhysicsMaterial3D_8",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8478,33 +8485,6 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_8",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 0.25,
-            "torsional_friction": 0.004999999888241291
-        },
-        {
-            "__ID__": "BoxShape3D_0",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.02199999988079071,
-                        0.014999999664723873,
-                        0.019999999552965164
-                    ]
-                }
-            }
-        },
-        {
             "__ID__": "PhysicsMaterial3D_9",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
@@ -8512,7 +8492,7 @@
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
+            "sliding_friction": 0.25,
             "torsional_friction": 0.004999999888241291
         },
         {
@@ -8525,8 +8505,8 @@
                     "rows": 3,
                     "storage": [
                         0.02199999988079071,
-                        0.008799999952316284,
-                        0.003800000064074993
+                        0.014999999664723873,
+                        0.019999999552965164
                     ]
                 }
             }
@@ -8551,9 +8531,9 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
-                        0.017500000074505806,
-                        0.007000000216066837,
-                        0.023499999195337296
+                        0.02199999988079071,
+                        0.008799999952316284,
+                        0.003800000064074993
                     ]
                 }
             }
@@ -8579,6 +8559,33 @@
                     "rows": 3,
                     "storage": [
                         0.017500000074505806,
+                        0.007000000216066837,
+                        0.023499999195337296
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_12",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_4",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.017500000074505806,
                         0.015200000256299973,
                         0.01850000023841858
                     ]
@@ -8586,7 +8593,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_12",
+            "__ID__": "PhysicsMaterial3D_13",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8614,7 +8621,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_4",
+            "__ID__": "BoxShape3D_5",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -8630,7 +8637,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_13",
+            "__ID__": "PhysicsMaterial3D_14",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,
@@ -8639,33 +8646,6 @@
             "rolling_friction": 0.0,
             "sliding_friction": 2.0,
             "torsional_friction": 0.0
-        },
-        {
-            "__ID__": "BoxShape3D_5",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.02199999988079071,
-                        0.014999999664723873,
-                        0.019999999552965164
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "PhysicsMaterial3D_14",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
-            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxShape3D_6",
@@ -8677,8 +8657,8 @@
                     "rows": 3,
                     "storage": [
                         0.02199999988079071,
-                        0.008799999952316284,
-                        0.003800000064074993
+                        0.014999999664723873,
+                        0.019999999552965164
                     ]
                 }
             }
@@ -8703,9 +8683,9 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
-                        0.017500000074505806,
-                        0.007000000216066837,
-                        0.023499999195337296
+                        0.02199999988079071,
+                        0.008799999952316284,
+                        0.003800000064074993
                     ]
                 }
             }
@@ -8731,6 +8711,33 @@
                     "rows": 3,
                     "storage": [
                         0.017500000074505806,
+                        0.007000000216066837,
+                        0.023499999195337296
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_17",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_9",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.017500000074505806,
                         0.015200000256299973,
                         0.01850000023841858
                     ]
@@ -8738,7 +8745,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_17",
+            "__ID__": "PhysicsMaterial3D_18",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8766,7 +8773,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_9",
+            "__ID__": "BoxShape3D_10",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -8782,7 +8789,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_18",
+            "__ID__": "PhysicsMaterial3D_19",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,
@@ -8793,13 +8800,40 @@
             "torsional_friction": 0.0
         },
         {
+            "__ID__": "BoxShape3D_11",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.15600000321865082,
+                        0.15600000321865082,
+                        0.11999999731779099
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_20",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_9",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_0)",
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_19",
+            "__ID__": "PhysicsMaterial3D_21",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8816,7 +8850,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_20",
+            "__ID__": "PhysicsMaterial3D_22",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8833,7 +8867,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_21",
+            "__ID__": "PhysicsMaterial3D_23",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8850,7 +8884,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_22",
+            "__ID__": "PhysicsMaterial3D_24",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8867,7 +8901,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_23",
+            "__ID__": "PhysicsMaterial3D_25",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8884,7 +8918,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_24",
+            "__ID__": "PhysicsMaterial3D_26",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8901,7 +8935,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_25",
+            "__ID__": "PhysicsMaterial3D_27",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8918,7 +8952,7 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_26",
+            "__ID__": "PhysicsMaterial3D_28",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -8935,60 +8969,6 @@
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_27",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 0.25,
-            "torsional_friction": 0.004999999888241291
-        },
-        {
-            "__ID__": "BoxShape3D_10",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.02199999988079071,
-                        0.014999999664723873,
-                        0.019999999552965164
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "PhysicsMaterial3D_28",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
-            "torsional_friction": 0.004999999888241291
-        },
-        {
-            "__ID__": "BoxShape3D_11",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.02199999988079071,
-                        0.008799999952316284,
-                        0.003800000064074993
-                    ]
-                }
-            }
-        },
-        {
             "__ID__": "PhysicsMaterial3D_29",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
@@ -8996,7 +8976,7 @@
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
+            "sliding_friction": 0.25,
             "torsional_friction": 0.004999999888241291
         },
         {
@@ -9008,9 +8988,9 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
-                        0.017500000074505806,
-                        0.007000000216066837,
-                        0.023499999195337296
+                        0.02199999988079071,
+                        0.014999999664723873,
+                        0.019999999552965164
                     ]
                 }
             }
@@ -9035,6 +9015,60 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
+                        0.02199999988079071,
+                        0.008799999952316284,
+                        0.003800000064074993
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_31",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_14",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.017500000074505806,
+                        0.007000000216066837,
+                        0.023499999195337296
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_32",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_15",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
                         0.017500000074505806,
                         0.015200000256299973,
                         0.01850000023841858
@@ -9043,7 +9077,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_31",
+            "__ID__": "PhysicsMaterial3D_33",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -9071,7 +9105,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_14",
+            "__ID__": "BoxShape3D_16",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -9087,7 +9121,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_32",
+            "__ID__": "PhysicsMaterial3D_34",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,
@@ -9098,7 +9132,7 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "BoxShape3D_15",
+            "__ID__": "BoxShape3D_17",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -9109,60 +9143,6 @@
                         0.02199999988079071,
                         0.014999999664723873,
                         0.019999999552965164
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "PhysicsMaterial3D_33",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
-            "torsional_friction": 0.004999999888241291
-        },
-        {
-            "__ID__": "BoxShape3D_16",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.02199999988079071,
-                        0.008799999952316284,
-                        0.003800000064074993
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "PhysicsMaterial3D_34",
-            "__TYPE__": "PhysicsMaterial3D",
-            "contact_compliance": 0.0,
-            "contact_damping": 1.0,
-            "resource_name": "",
-            "restitution": 0.0,
-            "rolling_friction": 9.999999747378752e-05,
-            "sliding_friction": 1.25,
-            "torsional_friction": 0.004999999888241291
-        },
-        {
-            "__ID__": "BoxShape3D_17",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.017500000074505806,
-                        0.007000000216066837,
-                        0.023499999195337296
                     ]
                 }
             }
@@ -9187,6 +9167,60 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
+                        0.02199999988079071,
+                        0.008799999952316284,
+                        0.003800000064074993
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_36",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_19",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.017500000074505806,
+                        0.007000000216066837,
+                        0.023499999195337296
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_37",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "BoxShape3D_20",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
                         0.017500000074505806,
                         0.015200000256299973,
                         0.01850000023841858
@@ -9195,7 +9229,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_36",
+            "__ID__": "PhysicsMaterial3D_38",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
@@ -9223,7 +9257,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_19",
+            "__ID__": "BoxShape3D_21",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -9239,7 +9273,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_37",
+            "__ID__": "PhysicsMaterial3D_39",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,
@@ -9248,6 +9282,33 @@
             "rolling_friction": 0.0,
             "sliding_friction": 2.0,
             "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "BoxShape3D_22",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.15600000321865082,
+                        0.15600000321865082,
+                        0.11999999731779099
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_40",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxMesh_7",
@@ -9267,7 +9328,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_20",
+            "__ID__": "BoxShape3D_23",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -9283,7 +9344,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_38",
+            "__ID__": "PhysicsMaterial3D_41",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,
@@ -9362,7 +9423,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_21",
+            "__ID__": "BoxShape3D_24",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -9378,7 +9439,7 @@
             }
         },
         {
-            "__ID__": "PhysicsMaterial3D_39",
+            "__ID__": "PhysicsMaterial3D_42",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999974752427e-07,
             "contact_damping": 1.0,

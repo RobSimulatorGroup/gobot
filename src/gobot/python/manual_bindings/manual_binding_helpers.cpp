@@ -1620,7 +1620,7 @@ const PhysicsSensorSnapshot* FindSensorSnapshot(const PhysicsRobotSnapshot& robo
     return nullptr;
 }
 
-SimulationServer* SimulationServerForRobotHandle(const PyRobot3DHandle& handle) {
+SimulationServer* SimulationServerForNodeHandle(const PyNodeHandle& handle) {
     EngineContext* context = ResolveHandleContext(handle.state ? handle.state->context : nullptr);
     if (context == nullptr) {
         throw std::runtime_error("Gobot robot node is not associated with an app context");
@@ -1632,6 +1632,10 @@ SimulationServer* SimulationServerForRobotHandle(const PyRobot3DHandle& handle) 
     }
 
     return simulation;
+}
+
+SimulationServer* SimulationServerForRobotHandle(const PyRobot3DHandle& handle) {
+    return SimulationServerForNodeHandle(handle);
 }
 
 SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle) {
@@ -1654,24 +1658,38 @@ SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle) {
     return runtime_scene;
 }
 
-Robot3D* RuntimeRobotForNodeHandle(const PyNodeHandle& handle) {
+Node* RuntimeRigidSystemForNodeHandle(const PyNodeHandle& handle) {
     Node* node = handle.Resolve();
     for (Node* current = node; current != nullptr; current = current->GetParent()) {
+        if (Object::PointerCastTo<RigidBody3D>(current) != nullptr) {
+            return current;
+        }
         if (auto* robot = Object::PointerCastTo<Robot3D>(current)) {
             return robot;
         }
     }
-    throw std::runtime_error("Gobot runtime node '" + node->GetName() + "' is not under a Robot3D node");
+    throw std::runtime_error(
+            "Gobot runtime node '" + node->GetName() +
+            "' is not under a Robot3D or RigidBody3D node");
 }
 
 SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle) {
-    Robot3D* robot = RuntimeRobotForNodeHandle(handle);
-    const PyRobot3DHandle robot_handle(robot,
-                                       "Robot3D",
-                                       handle.state ? handle.state->context : nullptr,
-                                       handle.state ? handle.state->scene_epoch : 0,
-                                       PyNodeOwnership::Borrowed);
-    return RuntimeSceneForRobotHandle(robot_handle);
+    Node* node = handle.Resolve();
+    SimulationServer* simulation = SimulationServerForNodeHandle(handle);
+    SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+    if (runtime_scene == nullptr || !runtime_scene->IsValid()) {
+        throw std::runtime_error("simulation runtime scene has not been built");
+    }
+    const Node* runtime_root = runtime_scene->GetSceneRoot();
+    if (runtime_root == nullptr) {
+        throw std::runtime_error("simulation runtime scene has no scene root");
+    }
+    if (node != runtime_root && !runtime_root->IsAncestorOf(node)) {
+        throw std::runtime_error(
+                "Gobot node '" + node->GetName() +
+                "' is not part of the active runtime scene");
+    }
+    return runtime_scene;
 }
 
 Ref<PhysicsWorld> RuntimeWorldForRobotHandle(const PyRobot3DHandle& handle) {
@@ -1781,13 +1799,20 @@ const PhysicsRobotState& RequiredRobotStateForHandle(const PyRobot3DHandle& hand
 }
 
 const PhysicsRobotState& RequiredRobotStateForNodeHandle(const PyNodeHandle& handle) {
-    Robot3D* robot = RuntimeRobotForNodeHandle(handle);
-    const PyRobot3DHandle robot_handle(robot,
-                                       "Robot3D",
-                                       handle.state ? handle.state->context : nullptr,
-                                       handle.state ? handle.state->scene_epoch : 0,
-                                       PyNodeOwnership::Borrowed);
-    return RequiredRobotStateForHandle(robot_handle);
+    Node* rigid_system = RuntimeRigidSystemForNodeHandle(handle);
+    RuntimeSceneForNodeHandle(handle);
+    Ref<PhysicsWorld> world = SimulationServerForNodeHandle(handle)->GetWorld();
+    if (!world.IsValid()) {
+        throw std::runtime_error("simulation world has not been built from a scene");
+    }
+    const PhysicsRobotState* state =
+            FindRobotState(world->GetSceneState(), rigid_system->GetName());
+    if (state == nullptr) {
+        throw std::runtime_error(
+                "Gobot runtime state has no rigid system '" +
+                rigid_system->GetName() + "'");
+    }
+    return *state;
 }
 
 const PhysicsSceneState& RequiredSceneStateForHandle(const PyRobot3DHandle& handle) {
@@ -2230,6 +2255,16 @@ PyLink3DHandle MakeLink3DHandle(Link3D* node,
     return PyLink3DHandle(node, "Link3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
+PyRigidBody3DHandle MakeRigidBody3DHandle(RigidBody3D* node,
+                                           PyNodeOwnership ownership,
+                                           EngineContext* context,
+                                           std::uint64_t epoch) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyRigidBody3DHandle(
+            node, "RigidBody3D", resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
 PyJoint3DHandle MakeJoint3DHandle(Joint3D* node,
                                   PyNodeOwnership ownership,
                                   EngineContext* context,
@@ -2436,6 +2471,9 @@ PyNodeHandle MakeTypedNodeHandle(Node* node,
     if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
         return MakeJoint3DHandle(joint, ownership, context, epoch);
     }
+    if (auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
+        return MakeRigidBody3DHandle(rigid_body, ownership, context, epoch);
+    }
     if (auto* link = Object::PointerCastTo<Link3D>(node)) {
         return MakeLink3DHandle(link, ownership, context, epoch);
     }
@@ -2500,6 +2538,10 @@ py::object MakeTypedNodeObject(Node* node,
     }
     if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
         return py::cast(MakeJoint3DHandle(joint, ownership, context, epoch));
+    }
+    if (auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
+        return py::cast(MakeRigidBody3DHandle(
+                rigid_body, ownership, context, epoch));
     }
     if (auto* link = Object::PointerCastTo<Link3D>(node)) {
         return py::cast(MakeLink3DHandle(link, ownership, context, epoch));

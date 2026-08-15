@@ -34,7 +34,6 @@ from .providers import (
     MuJoCoWarpRobotLayout,
     MuJoCoIpcBodyMapping,
     MuJoCoIpcConfig,
-    MuJoCoIpcCoupler,
     MuJoCoIpcProvider,
     NewtonModelConfig,
     NewtonProvider,
@@ -46,6 +45,7 @@ from .providers import (
     SensorBatchState,
     SensorBatchView,
     SimulationCapacityError,
+    SolverCoupledProxy,
 )
 from .rsl_rl import (
     RslRlBaseRunnerCfg,

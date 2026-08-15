@@ -2068,7 +2068,15 @@ bool MuJoCoPhysicsWorld::WriteEnvironmentLinkVelocity(std::size_t environment_in
         return false;
     }
 
-    const MuJoCoJointBinding* free_joint = nullptr;
+    auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+    auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+    if (model == nullptr || data == nullptr) {
+        SetLastError("MuJoCo floating base velocity state is unavailable.");
+        return false;
+    }
+
+    int qpos_address = -1;
+    int dof_address = -1;
     for (const MuJoCoJointBinding& binding : joint_bindings_) {
         if (binding.robot_index != robot_index ||
             binding.joint_type != mjJNT_FREE ||
@@ -2078,32 +2086,39 @@ bool MuJoCoPhysicsWorld::WriteEnvironmentLinkVelocity(std::size_t environment_in
         const PhysicsJointSnapshot& joint =
                 scene_snapshot_.robots[robot_index].joints[binding.joint_index];
         if (joint.child_link == link_name) {
-            free_joint = &binding;
+            qpos_address = binding.qpos_address;
+            dof_address = binding.dof_address;
             break;
         }
     }
-    if (free_joint == nullptr || free_joint->qpos_address < 0 || free_joint->dof_address < 0) {
+    const PhysicsRobotSnapshot& robot = scene_snapshot_.robots[robot_index];
+    if (qpos_address < 0 && robot.standalone_rigid_body &&
+        robot.links.size() == 1 && robot.links.front().name == link_name) {
+        const std::string joint_name = GetRobotPrefix(robot_index) + "free_joint";
+        const int joint_id = mj_name2id(model, mjOBJ_JOINT, joint_name.c_str());
+        if (joint_id >= 0 && model->jnt_type[joint_id] == mjJNT_FREE) {
+            qpos_address = model->jnt_qposadr[joint_id];
+            dof_address = model->jnt_dofadr[joint_id];
+        }
+    }
+    if (qpos_address < 0 || dof_address < 0) {
         SetLastError(fmt::format("Link '{}::{}' is not driven by a floating joint.",
                                  robot_name,
                                  link_name));
         return false;
     }
 
-    auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-    auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
-    if (model == nullptr || data == nullptr ||
-        free_joint->qpos_address + 6 >= model->nq ||
-        free_joint->dof_address + 5 >= model->nv) {
+    if (qpos_address + 6 >= model->nq || dof_address + 5 >= model->nv) {
         SetLastError("MuJoCo floating base velocity state is unavailable.");
         return false;
     }
 
-    const int dof = free_joint->dof_address;
+    const int dof = dof_address;
     data->qvel[dof + 0] = linear_velocity.x();
     data->qvel[dof + 1] = linear_velocity.y();
     data->qvel[dof + 2] = linear_velocity.z();
     const Vector3 angular_velocity_body = WorldAngularVelocityToFreeJointQvel(
-            data->qpos + free_joint->qpos_address + 3,
+            data->qpos + qpos_address + 3,
             angular_velocity);
     data->qvel[dof + 3] = angular_velocity_body.x();
     data->qvel[dof + 4] = angular_velocity_body.y();
@@ -3439,7 +3454,7 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel(bool build_runtime_bindings) {
     }
 
     if (robot_indices.empty()) {
-        SetLastError("MuJoCo backend requires at least one Robot3D in the scene.");
+        SetLastError("MuJoCo backend requires at least one Robot3D or RigidBody3D in the scene.");
         return false;
     }
 
@@ -3599,9 +3614,16 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel(bool build_runtime_bindings) {
         BuildSensorBindings();
     }
 
-    LOG_INFO("MuJoCo {} compiled: robots={}, nq={}, nv={}, joints={}",
+    const std::size_t standalone_body_count = static_cast<std::size_t>(
+            std::count_if(scene_snapshot_.robots.begin(),
+                          scene_snapshot_.robots.end(),
+                          [](const PhysicsRobotSnapshot& rigid_system) {
+                              return rigid_system.standalone_rigid_body;
+                          }));
+    LOG_INFO("MuJoCo {} compiled: Robot3D={}, RigidBody3D={}, nq={}, nv={}, joints={}",
              build_runtime_bindings ? "runtime model" : "scene artifact",
-             robot_bindings_.size(),
+             scene_snapshot_.robots.size() - standalone_body_count,
+             standalone_body_count,
              model->nq,
              model->nv,
              model->njnt);
@@ -3655,7 +3677,16 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         SetMuJoCoPose(body, RelativeTransform(parent_global_transform, link.global_transform));
         ConfigureBodyInertial(body, link);
 
-        if (parent_joint != nullptr) {
+        if (robot.standalone_rigid_body) {
+            mjsJoint* free_joint = mjs_addFreeJoint(body);
+            if (!free_joint) {
+                SetLastError(fmt::format(
+                        "MuJoCo failed to create a free joint for RigidBody3D '{}'.",
+                        robot.name));
+                return false;
+            }
+            mjs_setName(free_joint->element, (prefix + "free_joint").c_str());
+        } else if (parent_joint != nullptr) {
             AddJointToBody(body, *parent_joint, link.global_transform, prefix + parent_joint->name);
         }
 
@@ -3685,7 +3716,10 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         AddJointActuators(parent_spec, joint, prefix + joint.name);
     }
 
-    LOG_INFO("Added authored Gobot robot '{}' to MuJoCo spec with prefix '{}'.", robot.name, prefix);
+    LOG_INFO("Added authored Gobot {} '{}' to MuJoCo spec with prefix '{}'.",
+             robot.standalone_rigid_body ? "RigidBody3D" : "Robot3D",
+             robot.name,
+             prefix);
     GOB_UNUSED(robot_index);
     return true;
 }
@@ -4748,6 +4782,49 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
         if (binding.dof_address >= 0 && binding.dof_address < model->nv) {
             data->qvel[binding.dof_address] = joint_state.velocity;
         }
+    }
+
+    for (std::size_t robot_index = 0;
+         robot_index < scene_snapshot_.robots.size() &&
+         robot_index < state.robots.size();
+         ++robot_index) {
+        const PhysicsRobotSnapshot& robot_snapshot =
+                scene_snapshot_.robots[robot_index];
+        const PhysicsRobotState& robot_state = state.robots[robot_index];
+        if (!robot_snapshot.standalone_rigid_body ||
+            robot_snapshot.links.size() != 1 || robot_state.links.size() != 1) {
+            continue;
+        }
+        const std::string joint_name = GetRobotPrefix(robot_index) + "free_joint";
+        const int joint_id = mj_name2id(model, mjOBJ_JOINT, joint_name.c_str());
+        if (joint_id < 0 || model->jnt_type[joint_id] != mjJNT_FREE) {
+            continue;
+        }
+        const int qpos = model->jnt_qposadr[joint_id];
+        const int dof = model->jnt_dofadr[joint_id];
+        if (qpos < 0 || qpos + 6 >= model->nq ||
+            dof < 0 || dof + 5 >= model->nv) {
+            continue;
+        }
+        const PhysicsLinkState& link_state = robot_state.links.front();
+        Quaternion orientation(link_state.global_transform.linear());
+        orientation.normalize();
+        const Vector3 position = link_state.global_transform.translation();
+        data->qpos[qpos + 0] = position.x();
+        data->qpos[qpos + 1] = position.y();
+        data->qpos[qpos + 2] = position.z();
+        data->qpos[qpos + 3] = orientation.w();
+        data->qpos[qpos + 4] = orientation.x();
+        data->qpos[qpos + 5] = orientation.y();
+        data->qpos[qpos + 6] = orientation.z();
+        data->qvel[dof + 0] = link_state.linear_velocity.x();
+        data->qvel[dof + 1] = link_state.linear_velocity.y();
+        data->qvel[dof + 2] = link_state.linear_velocity.z();
+        const Vector3 angular_velocity_body =
+                orientation.conjugate() * link_state.angular_velocity;
+        data->qvel[dof + 3] = angular_velocity_body.x();
+        data->qvel[dof + 4] = angular_velocity_body.y();
+        data->qvel[dof + 5] = angular_velocity_body.z();
     }
 
     mj_forward(model, data);

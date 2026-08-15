@@ -37,9 +37,19 @@ def main():
     coupling.torque_scale = 0.25
     assert coupling.enabled
     assert coupling.rigid_link_path == "../press/press_head"
+    coupling.target_body_path = "../press_body"
+    assert coupling.target_body_path == "../press_body"
+    assert coupling.rigid_link_path == "../press_body"
     assert coupling.mode == gobot.PhysicsCouplingMode.OneWay
     assert coupling.force_scale == 0.75
     assert coupling.torque_scale == 0.25
+
+    rigid_body = gobot.create_node("RigidBody3D", "press_body")
+    assert isinstance(rigid_body, gobot.RigidBody3D)
+    assert isinstance(rigid_body, gobot.Link3D)
+    assert not isinstance(rigid_body, gobot.Robot3D)
+    rigid_body.mass = 2.5
+    assert rigid_body.mass == 2.5
 
     attachment = gobot.create_node(
         "DeformableAttachment3D", "rope_endpoint"

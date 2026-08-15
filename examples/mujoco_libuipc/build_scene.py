@@ -158,14 +158,14 @@ def create_scene():
     root.add_child(soft)
 
     ground_coupling = gobot.create_node("PhysicsCoupling", "ground_coupling")
-    ground_coupling.rigid_link_path = "../static_colliders/ground"
+    ground_coupling.target_body_path = "../static_colliders/ground"
     ground_coupling.mode = gobot.PhysicsCouplingMode.OneWay
     ground_coupling.force_scale = 1.0
     ground_coupling.torque_scale = 1.0
     root.add_child(ground_coupling)
 
     press_coupling = gobot.create_node("PhysicsCoupling", "press_head_coupling")
-    press_coupling.rigid_link_path = "../press/press_frame/press_slide/press_head"
+    press_coupling.target_body_path = "../press/press_frame/press_slide/press_head"
     press_coupling.mode = gobot.PhysicsCouplingMode.TwoWay
     press_coupling.force_scale = 1.0
     press_coupling.torque_scale = 1.0

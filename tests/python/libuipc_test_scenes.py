@@ -187,10 +187,21 @@ def _static_box_scene():
     return root
 
 
+def _press_with_static_box_scene():
+    root = _press_scene()
+    static_box = gobot.create_box_collision(
+        "loose_far_ground", (0.8, 0.65, 0.05)
+    )
+    static_box.position = (0.0, 0.0, -1.0)
+    root.add_child(static_box)
+    return root
+
+
 _SCENE_BUILDERS: dict[str, Callable[[], object]] = {
     "soft_cube_stack.jscn": _stack_scene,
     "soft_cube_press.jscn": _press_scene,
     "soft_cube_static_box.jscn": _static_box_scene,
+    "soft_cube_press_static_box.jscn": _press_with_static_box_scene,
 }
 
 

@@ -167,8 +167,8 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
             GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH, &error));
     EXPECT_NE(error.find("ABI"), std::string::npos);
-    EXPECT_NE(error.find("v1"), std::string::npos);
     EXPECT_NE(error.find("v2"), std::string::npos);
+    EXPECT_NE(error.find("v3"), std::string::npos);
 
     error.clear();
     ASSERT_TRUE(gobot::IpcBatchSolverSession::IsModuleAvailable(
@@ -220,6 +220,28 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_EQ(positions.data(), position_storage);
     EXPECT_EQ(wrenches.data(), wrench_storage);
     ASSERT_TRUE(session->Synchronize()) << session->GetLastError();
+    EXPECT_EQ(session->GetDiagnostics().output_flags,
+              gobot::IpcBatchSolverOutputAll);
+    EXPECT_GT(session->GetDiagnostics().last_target_staging_latency_ms,
+              0.0);
+
+    const double previous_contact_force = contact_forces[2];
+    const std::uint32_t lazy_outputs =
+            gobot::IpcBatchSolverOutputAll &
+            ~gobot::IpcBatchSolverOutputDeformableContactForces;
+    ASSERT_TRUE(session->SetOutputFlags(lazy_outputs))
+            << session->GetLastError();
+    ASSERT_TRUE(session->Step()) << session->GetLastError();
+    EXPECT_DOUBLE_EQ(contact_forces[2], previous_contact_force);
+    EXPECT_DOUBLE_EQ(wrenches[2], 3.0);
+    EXPECT_EQ(session->GetDiagnostics().deformable_contact_force_frame, 2);
+    ASSERT_TRUE(session->RefreshOutputs(
+            gobot::IpcBatchSolverOutputDeformableContactForces))
+            << session->GetLastError();
+    EXPECT_DOUBLE_EQ(contact_forces[2], 3.0);
+    EXPECT_EQ(session->GetDiagnostics().deformable_contact_force_frame, 3);
+    ASSERT_TRUE(session->SetOutputFlags(gobot::IpcBatchSolverOutputAll))
+            << session->GetLastError();
 
     ASSERT_TRUE(session->CaptureCheckpoint()) << session->GetLastError();
     EXPECT_TRUE(session->GetDiagnostics().checkpoint_active);
@@ -231,7 +253,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     ASSERT_TRUE(session->RewindCheckpoint()) << session->GetLastError();
     EXPECT_EQ(positions, checkpoint_positions);
     EXPECT_EQ(wrenches, checkpoint_wrenches);
-    EXPECT_EQ(session->GetDiagnostics().frame, 2);
+    EXPECT_EQ(session->GetDiagnostics().frame, 3);
     ASSERT_TRUE(session->Step()) << session->GetLastError();
     EXPECT_EQ(positions, replay_positions);
     EXPECT_EQ(wrenches, replay_wrenches);

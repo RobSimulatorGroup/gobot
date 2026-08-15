@@ -22,6 +22,7 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 #include "gobot/scene/tactile_sensor_3d.hpp"
@@ -122,7 +123,7 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "PhysicsCoupling",
         "Physics Coupling",
         "Node",
-        "Explicit rigid-link binding between rigid and deformable physics solvers.",
+        "Explicit rigid-body interface between rigid and deformable physics solvers.",
         []() -> Node* { return CreateNodeInstance<PhysicsCoupling>(); }
     });
 
@@ -228,6 +229,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "Robot link node with inertial metadata and visual/collision children.",
         []() -> Node* { return CreateNodeInstance<Link3D>(); }
+    });
+
+    RegisterNodeType({
+        "RigidBody3D",
+        "Rigid Body",
+        "Link3D",
+        "Standalone free rigid body with inertial, visual, and collision children.",
+        []() -> Node* { return CreateNodeInstance<RigidBody3D>(); }
     });
 
     RegisterNodeType({

@@ -240,6 +240,7 @@ struct PhysicsRobotSnapshot {
     std::string name;
     std::string scene_path;
     std::uint64_t stable_id{0};
+    bool standalone_rigid_body{false};
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
     std::vector<PhysicsSensorSnapshot> sensors;

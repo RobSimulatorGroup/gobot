@@ -27,6 +27,9 @@ public:
     void SetRigidLinkPath(const NodePath& path);
     [[nodiscard]] const NodePath& GetRigidLinkPath() const;
 
+    void SetTargetBodyPath(const NodePath& path);
+    [[nodiscard]] const NodePath& GetTargetBodyPath() const;
+
     void SetMode(PhysicsCouplingMode mode);
     [[nodiscard]] PhysicsCouplingMode GetMode() const;
 
@@ -38,7 +41,7 @@ public:
 
 private:
     bool enabled_{true};
-    NodePath rigid_link_path_;
+    NodePath target_body_path_;
     PhysicsCouplingMode mode_{PhysicsCouplingMode::TwoWay};
     RealType force_scale_{1.0};
     RealType torque_scale_{1.0};

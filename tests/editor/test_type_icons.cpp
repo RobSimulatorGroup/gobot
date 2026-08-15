@@ -9,6 +9,8 @@ TEST(TestTypeIcons, uses_distinct_icons_for_editor_node_categories) {
     EXPECT_STREQ(gobot::GetTypeIcon("Node3D"), ICON_MDI_AXIS);
     EXPECT_EQ(gobot::GetTypeEditorIcon("Node3D").kind, gobot::EditorIconKind::Axis3D);
     EXPECT_STREQ(gobot::GetTypeIcon("Robot3D"), ICON_MDI_ROBOT_INDUSTRIAL);
+    EXPECT_STREQ(gobot::GetTypeIcon("RigidBody3D"), ICON_MDI_CUBE_SEND);
+    EXPECT_STREQ(gobot::GetTypeIcon("PhysicsCoupling"), ICON_MDI_TRANSIT_CONNECTION_VARIANT);
     EXPECT_STREQ(gobot::GetTypeIcon("Terrain3D"), ICON_MDI_TERRAIN);
     EXPECT_STREQ(gobot::GetTypeIcon("Joint3D"), ICON_MDI_SOURCE_COMMIT);
     EXPECT_EQ(gobot::GetTypeEditorIcon("Joint3D").kind, gobot::EditorIconKind::Joint3D);

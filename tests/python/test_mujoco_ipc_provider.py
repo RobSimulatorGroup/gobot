@@ -23,8 +23,8 @@ from gobot.ipc import (
 from gobot.rl import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
-    MuJoCoIpcCoupler,
     MuJoCoIpcProvider,
+    SolverCoupledProxy,
 )
 
 
@@ -194,6 +194,9 @@ class _FakeIpcSolver:
         self.target_set_calls = 0
         self.fail_next_reset = False
         self.fail_next_rewind = False
+        self.capture_count = 0
+        self.rewind_count = 0
+        self.commit_count = 0
         self._checkpoint = None
         self.runtime_fingerprint = "fake-ipc"
         self.capabilities = gobot.sim.ProviderCapabilities(
@@ -242,6 +245,7 @@ class _FakeIpcSolver:
         return self._arrays
 
     def capture_checkpoint(self):
+        self.capture_count += 1
         if self._checkpoint is not None:
             raise RuntimeError("fake IPC checkpoint already active")
         self._checkpoint = {
@@ -256,6 +260,7 @@ class _FakeIpcSolver:
         }
 
     def rewind_checkpoint(self):
+        self.rewind_count += 1
         if self.fail_next_rewind:
             self.fail_next_rewind = False
             raise RuntimeError("injected IPC checkpoint rewind failure")
@@ -267,6 +272,7 @@ class _FakeIpcSolver:
                 self._arrays[name].copy_(value)
 
     def commit_checkpoint(self):
+        self.commit_count += 1
         if self._checkpoint is None:
             raise RuntimeError("fake IPC checkpoint is not active")
         self._checkpoint = None
@@ -375,6 +381,7 @@ class _FakeNativeBatchSession:
         self.frame = 0
         self.closed = False
         self.checkpoint = None
+        self.refresh_output_flags = []
 
     def bind_device_buffers(self, buffers):
         self.buffers = buffers
@@ -390,6 +397,10 @@ class _FakeNativeBatchSession:
     def step(self, count):
         self.frame += count
         self.buffers["positions"].add_(0.01 * count)
+
+    def refresh_outputs(self, output_flags):
+        self.refresh_output_flags.append(output_flags)
+        self.buffers["contact_forces"].fill_(float(self.frame))
 
     def reset(self):
         self.frame = 0
@@ -494,6 +505,27 @@ def test_ipc_schema_v3_normalizes_missing_static_colliders() -> None:
     assert restored.static_colliders == ()
     assert restored.manifest_data["static_colliders"] == ()
 
+
+def test_ipc_schema_v4_remains_readable() -> None:
+    artifact = _artifact().ipc
+    mapping = dict(artifact.to_mapping())
+    manifest = json.loads(mapping["manifest"])
+    manifest["schema_version"] = 4
+    manifest_text = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    mapping["schema_version"] = 4
+    mapping["manifest"] = manifest_text
+    mapping["manifest_sha256"] = "sha256:" + hashlib.sha256(
+        manifest_text.encode("utf-8")
+    ).hexdigest()
+
+    restored = CompiledIpcSceneArtifact.from_mapping(mapping)
+
+    assert restored.schema_version == 4
+    assert restored.static_colliders == artifact.static_colliders
+
+
 def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
     artifact = _artifact()
     session = _FakeNativeBatchSession()
@@ -510,6 +542,7 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
         _torch=torch,
     )
     assert solver.shard_count == 2
+    assert solver.frame == 0
     assert solver.arrays["positions"].shape[0] == 4
     assert solver.arrays["affine_targets"].shape == (
         4,
@@ -528,6 +561,7 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
         mapping.ipc_path for mapping in artifact.coupled_bodies
     )
     solver.step(nsteps=2)
+    assert solver.frame == 2
     assert solver.arrays["positions"].data_ptr() == storage.data_ptr()
     assert torch.allclose(storage, torch.full_like(storage, 0.02))
     solver.capture_checkpoint()
@@ -546,6 +580,39 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
     assert torch.count_nonzero(storage) == 0
     solver.close()
     assert session.closed
+
+
+def test_libuipc_batch_lazy_contact_force_refresh() -> None:
+    artifact = _artifact()
+    session = _FakeNativeBatchSession()
+    config = LibuipcBatchConfig(
+        solver=LibuipcConfig(fixed_time_step=0.01),
+        environments_per_shard=2,
+        newton_max_iterations=12,
+        line_search_max_iterations=6,
+        linear_system_tolerance_rate=2.0e-3,
+        export_deformable_contact_forces=False,
+    )
+    mapping = config.solver_mapping(2)
+    assert mapping["newton_max_iterations"] == 12
+    assert mapping["line_search_max_iterations"] == 6
+    assert mapping["linear_system_tolerance_rate"] == 2.0e-3
+    assert mapping["output_flags"] & (1 << 2) == 0
+    solver = LibuipcBatchSolver(
+        artifact.ipc,
+        num_envs=2,
+        config=config,
+        device="cpu",
+        _session=session,
+        _torch=torch,
+    )
+    solver.step(nsteps=3)
+    assert torch.count_nonzero(solver.arrays["contact_forces"]) == 0
+    refreshed = solver.refresh_deformable_contact_forces()
+    assert torch.all(refreshed == 3.0)
+    assert solver.diagnostics["deformable_contact_force_frame"] == 3
+    assert session.refresh_output_flags == [1 << 2]
+    solver.close()
 
 
 def test_libuipc_al_ipc_config_reports_approximate_proxy_feedback() -> None:
@@ -584,6 +651,14 @@ def test_libuipc_al_ipc_config_reports_approximate_proxy_feedback() -> None:
         ValueError,
         lambda: LibuipcBatchConfig(al_ipc_decay_factor=0.0),
     )
+    _raises(
+        ValueError,
+        lambda: LibuipcBatchConfig(newton_max_iterations=0),
+    )
+    _raises(
+        TypeError,
+        lambda: LibuipcBatchConfig(export_deformable_contact_forces=1),
+    )
 
 
 def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
@@ -596,6 +671,7 @@ def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
         environments_per_shard=2,
         force_scale=2.0,
         torque_scale=0.5,
+        coupling_iterations=1,
         capture_mujoco_graphs=False,
     )
     provider = MuJoCoIpcProvider(
@@ -605,11 +681,17 @@ def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
     assert provider.capabilities.graph_capture is False
     assert provider.capabilities.masked_reset is False
     assert provider.capacities["shards"] == 2
+    assert provider.frame == 0
+    assert not provider.diagnostics["coupler_graph_captured"]
+    assert "requires CUDA" in provider.diagnostics[
+        "coupler_graph_capture_reason"
+    ]
 
     rigid.arrays["xpos"][..., 0] = 0.25
     rigid.arrays["xfrc_applied"][..., 0] = 10.0
     actions = torch.full((4, 1), 0.5)
     provider.step(actions)
+    assert provider.frame == 1
     assert ipc.step_count == 1
     assert rigid.step_count == 1
     assert torch.equal(rigid.last_actions, actions)
@@ -628,6 +710,7 @@ def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
     # its previous contribution before applying the next IPC wrench.
     rigid.arrays["xfrc_applied"][..., 0].add_(5.0)
     provider.step()
+    assert provider.frame == 2
     expected = torch.tensor(
         [[15.0, 0.0, 0.0, 0.0, 0.0, 0.0],
          [19.0, 8.0, 12.0, 4.0, 5.0, 6.0]]
@@ -644,13 +727,13 @@ def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
     provider.reset(torch.ones(4, dtype=torch.bool))
     assert rigid.reset_count == 1
     assert ipc.reset_count == 1
-    assert provider.diagnostics["frame"] == 0
+    assert provider.frame == 0
     provider.close()
     assert rigid.closed and ipc.closed
     _raises(RuntimeError, lambda: provider.step())
 
 
-def test_coupler_five_phase_protocol_binding_scales_and_storage() -> None:
+def test_solver_coupled_proxy_x1_scales_storage_and_skips_checkpoints() -> None:
     artifact = _artifact()
     mappings = tuple(
         replace(mapping, force_scale=0.5, torque_scale=0.25)
@@ -662,38 +745,39 @@ def test_coupler_five_phase_protocol_binding_scales_and_storage() -> None:
     ipc = _FakeIpcSolver(artifact, 2)
     _raises(
         ValueError,
-        lambda: MuJoCoIpcCoupler(rigid, ipc, mappings, force_scale=-1.0),
+        lambda: SolverCoupledProxy(rigid, ipc, mappings, force_scale=-1.0),
     )
     _raises(
         ValueError,
-        lambda: MuJoCoIpcCoupler(rigid, ipc, mappings, torque_scale=float("nan")),
+        lambda: SolverCoupledProxy(
+            rigid, ipc, mappings, torque_scale=float("nan")
+        ),
     )
-    coupler = MuJoCoIpcCoupler(
+    coupler = SolverCoupledProxy(
         rigid,
         ipc,
         mappings,
         force_scale=2.0,
         torque_scale=4.0,
+        coupling_iterations=1,
+        relaxation_mode="fixed",
     )
     storage = coupler.storage_signature
 
-    coupler.PushRigidPose()
-    assert coupler.phase == "StepIpc"
-    coupler.StepIpc()
-    assert coupler.phase == "ApplyFeedback"
-    coupler.ApplyFeedback()
-    assert coupler.phase == "StepRigid"
+    coupler.step()
+    assert coupler.phase == "Idle"
     expected = torch.tensor(
         [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
          [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]
     )
     assert torch.allclose(rigid.arrays["xfrc_applied"], expected)
-    coupler.StepRigid()
-    assert coupler.phase == "Finalize"
-    coupler.Finalize()
-    assert coupler.phase == "Idle"
     assert coupler.storage_signature == storage
     assert ipc.target_set_calls == 0
+    assert ipc.capture_count == 0
+    assert ipc.rewind_count == 0
+    assert ipc.commit_count == 0
+    assert "rigid_checkpoint" not in coupler.phase_latency_ms
+    assert "ipc_checkpoint" not in coupler.phase_latency_ms
     coupler.release_wrenches()
     assert torch.count_nonzero(rigid.arrays["xfrc_applied"]) == 0
 
@@ -708,6 +792,7 @@ def test_step_failure_releases_owned_wrench_and_full_reset_recovers() -> None:
             num_envs=2,
             device="cpu",
             environments_per_shard=2,
+            coupling_iterations=1,
             capture_mujoco_graphs=False,
         ),
         rigid_solver=rigid,
@@ -745,6 +830,7 @@ def test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement() -> None:
             num_envs=2,
             device="cpu",
             environments_per_shard=2,
+            coupling_iterations=1,
             capture_mujoco_graphs=False,
         ),
         rigid_solver=rigid,
@@ -764,32 +850,30 @@ def test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement() -> None:
     provider.close()
 
 
-def test_mujoco_ipc_config_validates_solver_substeps() -> None:
-    config = MuJoCoIpcConfig(rigid_substeps=2, ipc_substeps=3)
+def test_mujoco_ipc_config_requires_matching_solver_substeps() -> None:
+    config = MuJoCoIpcConfig(rigid_substeps=2, ipc_substeps=2)
     assert config.rigid_substeps == 2
-    assert config.ipc_substeps == 3
+    assert config.ipc_substeps == 2
+    _raises(
+        ValueError,
+        lambda: MuJoCoIpcConfig(rigid_substeps=2, ipc_substeps=3),
+    )
     _raises(ValueError, lambda: MuJoCoIpcConfig(rigid_substeps=0))
     _raises(ValueError, lambda: MuJoCoIpcConfig(ipc_substeps=True))
     _raises(TypeError, lambda: MuJoCoIpcConfig(ipc_substeps=1.5))
     _raises(TypeError, lambda: MuJoCoIpcConfig(require_full_reset=False))
 
 
-def test_newton_proxy_config_defaults_and_requires_matching_microsteps() -> None:
-    config = MuJoCoIpcConfig(integration_scheme="newton_proxy")
+def test_solver_coupled_proxy_config_defaults() -> None:
+    config = MuJoCoIpcConfig()
     assert config.coupling_iterations == 2
     assert config.relaxation_mode == "aitken"
     assert config.relaxation_factor == 1.0
     assert config.relaxation_min == 0.1
     assert config.relaxation_max == 1.0
-    assert MuJoCoIpcConfig().relaxation_mode == "fixed"
-    _raises(
-        ValueError,
-        lambda: MuJoCoIpcConfig(
-            integration_scheme="newton_proxy",
-            rigid_substeps=2,
-            ipc_substeps=1,
-        ),
-    )
+    assert config.capture_coupler_graphs
+    assert not MuJoCoIpcConfig(capture_coupler_graphs=False).capture_coupler_graphs
+    assert MuJoCoIpcConfig(coupling_iterations=1).relaxation_mode == "fixed"
     _raises(
         ValueError,
         lambda: MuJoCoIpcConfig(relaxation_factor=0.05),
@@ -800,7 +884,7 @@ def test_newton_proxy_config_defaults_and_requires_matching_microsteps() -> None
     )
 
 
-def test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> None:
+def test_solver_coupled_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> None:
     artifact = _artifact()
     rigid = _FakeNewtonRigidSolver(artifact, 2)
     ipc = _FakeNewtonIpcSolver(artifact, 2)
@@ -811,7 +895,6 @@ def test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> Non
             num_envs=2,
             device="cpu",
             environments_per_shard=2,
-            integration_scheme="newton_proxy",
             coupling_iterations=3,
             relaxation_mode="aitken",
             capture_mujoco_graphs=False,
@@ -827,6 +910,9 @@ def test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> Non
     assert ipc.step_nsteps == [1, 1, 1]
     assert rigid.step_count == 1
     assert ipc.step_count == 1
+    assert ipc.capture_count == 1
+    assert ipc.rewind_count == 2
+    assert ipc.commit_count == 1
     assert torch.equal(rigid.last_actions, actions)
     expected_twist = torch.tensor(
         [3.0, 0.0, 0.0, 0.0, 0.0, 2.0], dtype=torch.float64
@@ -853,7 +939,7 @@ def test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> Non
     provider.close()
 
 
-def test_newton_proxy_residual_does_not_increase_with_more_iterations() -> None:
+def test_solver_coupled_proxy_residual_does_not_increase_with_more_iterations() -> None:
     artifact = _artifact()
     residuals = []
     for coupling_iterations in (1, 2, 4):
@@ -865,7 +951,6 @@ def test_newton_proxy_residual_does_not_increase_with_more_iterations() -> None:
                 num_envs=2,
                 device="cpu",
                 environments_per_shard=2,
-                integration_scheme="newton_proxy",
                 coupling_iterations=coupling_iterations,
                 relaxation_mode="aitken",
                 capture_mujoco_graphs=False,
@@ -883,7 +968,7 @@ def test_newton_proxy_residual_does_not_increase_with_more_iterations() -> None:
     assert residuals[2] <= residuals[1]
 
 
-def test_newton_proxy_no_gravity_impulse_balance_is_below_one_percent() -> None:
+def test_solver_coupled_proxy_no_gravity_impulse_balance_is_below_one_percent() -> None:
     artifact = _artifact()
     rigid = _FakeImpulseRigidSolver(artifact, 2)
     ipc = _FakeImpulseIpcSolver(artifact, 2)
@@ -893,7 +978,6 @@ def test_newton_proxy_no_gravity_impulse_balance_is_below_one_percent() -> None:
             num_envs=2,
             device="cpu",
             environments_per_shard=2,
-            integration_scheme="newton_proxy",
             coupling_iterations=4,
             relaxation_mode="aitken",
             capture_mujoco_graphs=False,
@@ -919,11 +1003,10 @@ def test_aitken_relaxation_is_per_body_bounded_and_masks_one_way() -> None:
     artifact = _artifact()
     rigid = _FakeNewtonRigidSolver(artifact, 2)
     ipc = _FakeNewtonIpcSolver(artifact, 2)
-    coupler = MuJoCoIpcCoupler(
+    coupler = SolverCoupledProxy(
         rigid,
         ipc,
         artifact.coupled_bodies,
-        integration_scheme="newton_proxy",
         coupling_iterations=2,
         relaxation_mode="aitken",
         relaxation_factor=0.5,
@@ -977,7 +1060,6 @@ def test_newton_checkpoint_failure_faults_until_full_reset() -> None:
             num_envs=2,
             device="cpu",
             environments_per_shard=2,
-            integration_scheme="newton_proxy",
             coupling_iterations=2,
             capture_mujoco_graphs=False,
         ),
@@ -999,7 +1081,6 @@ def test_composite_supports_explicit_solver_subcycling() -> None:
     artifact = _artifact()
     rigid = _FakeRigidSolver(artifact, 4)
     ipc = _FakeIpcSolver(artifact, 4)
-    ipc.fixed_time_step = 0.02
     provider = MuJoCoIpcProvider(
         artifact,
         config=MuJoCoIpcConfig(
@@ -1007,7 +1088,8 @@ def test_composite_supports_explicit_solver_subcycling() -> None:
             device="cpu",
             environments_per_shard=2,
             rigid_substeps=2,
-            ipc_substeps=1,
+            ipc_substeps=2,
+            coupling_iterations=1,
         ),
         rigid_solver=rigid,
         ipc_solver=ipc,
@@ -1016,16 +1098,17 @@ def test_composite_supports_explicit_solver_subcycling() -> None:
     provider.step()
 
     assert provider.fixed_time_step == 0.02
-    assert rigid.step_nsteps == [2]
-    assert ipc.step_nsteps == [1]
+    assert rigid.step_nsteps == [1, 1]
+    assert ipc.step_nsteps == [1, 1]
     assert provider.capabilities.exact_contact_wrench is True
     assert provider.capabilities.sensor_batch is True
     assert provider.capabilities.solver_substeps is True
     assert provider.capabilities.runtime_checkpoint is False
     assert provider.capabilities.reset_scope == "full_batch_only"
-    assert provider.diagnostics["integration_scheme"] == "sequential_split"
+    assert provider.diagnostics["coupling_solver"] == "SolverCoupledProxy"
+    assert provider.diagnostics["rollback_enabled"] is False
     assert provider.diagnostics["rigid_substeps"] == 2
-    assert provider.diagnostics["ipc_substeps"] == 1
+    assert provider.diagnostics["ipc_substeps"] == 2
     provider.close()
 
 
@@ -1066,17 +1149,19 @@ def main() -> int:
     test_composite_artifact_has_explicit_mapping_and_ownership()
     test_composite_rejects_v1_and_missing_physics_coupling()
     test_ipc_schema_v3_normalizes_missing_static_colliders()
+    test_ipc_schema_v4_remains_readable()
     test_libuipc_batch_solver_owns_stable_tensor_storage()
+    test_libuipc_batch_lazy_contact_force_refresh()
     test_libuipc_al_ipc_config_reports_approximate_proxy_feedback()
     test_mujoco_ipc_step_order_wrench_ownership_and_full_reset()
-    test_coupler_five_phase_protocol_binding_scales_and_storage()
+    test_solver_coupled_proxy_x1_scales_storage_and_skips_checkpoints()
     test_step_failure_releases_owned_wrench_and_full_reset_recovers()
     test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement()
-    test_mujoco_ipc_config_validates_solver_substeps()
-    test_newton_proxy_config_defaults_and_requires_matching_microsteps()
-    test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist()
-    test_newton_proxy_residual_does_not_increase_with_more_iterations()
-    test_newton_proxy_no_gravity_impulse_balance_is_below_one_percent()
+    test_mujoco_ipc_config_requires_matching_solver_substeps()
+    test_solver_coupled_proxy_config_defaults()
+    test_solver_coupled_proxy_rewinds_each_iteration_and_transfers_origin_twist()
+    test_solver_coupled_proxy_residual_does_not_increase_with_more_iterations()
+    test_solver_coupled_proxy_no_gravity_impulse_balance_is_below_one_percent()
     test_aitken_relaxation_is_per_body_bounded_and_masks_one_way()
     test_newton_checkpoint_failure_faults_until_full_reset()
     test_composite_supports_explicit_solver_subcycling()

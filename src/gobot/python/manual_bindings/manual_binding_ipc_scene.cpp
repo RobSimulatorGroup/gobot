@@ -122,6 +122,17 @@ void RegisterManualIpcSceneBindings(
                         SetNodeValue(handle, "rigid_link_path", NodePath(value));
                     })
             .def_property(
+                    "target_body_path",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return static_cast<std::string>(
+                                handle.ResolveAs<PhysicsCoupling>()
+                                        ->GetTargetBodyPath());
+                    },
+                    [](PyPhysicsCouplingHandle& handle,
+                       const std::string& value) {
+                        SetNodeValue(handle, "target_body_path", NodePath(value));
+                    })
+            .def_property(
                     "mode",
                     [](const PyPhysicsCouplingHandle& handle) {
                         return handle.ResolveAs<PhysicsCoupling>()->GetMode();

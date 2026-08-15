@@ -40,11 +40,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
-    parser.add_argument(
-        "--integration-scheme",
-        choices=("sequential_split", "newton_proxy"),
-        default="sequential_split",
-    )
     parser.add_argument("--coupling-iterations", type=int, default=2)
     parser.add_argument(
         "--relaxation-mode", choices=("fixed", "aitken"), default=None
@@ -97,12 +92,9 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--ipc-substeps must be positive")
     if args.coupling_iterations <= 0:
         raise ValueError("--coupling-iterations must be positive")
-    if (
-        args.integration_scheme == "newton_proxy"
-        and args.rigid_substeps != args.ipc_substeps
-    ):
+    if args.rigid_substeps != args.ipc_substeps:
         raise ValueError(
-            "--integration-scheme=newton_proxy requires matching substeps"
+            "SolverCoupledProxy requires matching rigid and IPC substeps"
         )
     if not 0.0 < args.press_depth <= 0.17:
         raise ValueError("--press-depth must be in (0, 0.17]")
@@ -162,7 +154,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             environments_per_shard=args.environments_per_shard,
             rigid_substeps=args.rigid_substeps,
             ipc_substeps=args.ipc_substeps,
-            integration_scheme=args.integration_scheme,
             coupling_iterations=args.coupling_iterations,
             relaxation_mode=args.relaxation_mode,
             relaxation_factor=args.relaxation_factor,
@@ -314,7 +305,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "feedback_source": provider.diagnostics["feedback_source"],
             "exact_contact_wrench": provider.capabilities.exact_contact_wrench,
-            "integration_scheme": provider.diagnostics["integration_scheme"],
+            "coupling_solver": provider.diagnostics["coupling_solver"],
             "contact_constitution": provider.diagnostics["contact_pipeline"],
             "coupling_iterations": provider.diagnostics[
                 "coupling_iterations"

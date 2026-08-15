@@ -32,17 +32,17 @@ SCENE_ROOT_NAME = "dual_arm_rope_twist"
 LEFT_ROBOT_NAME = "left_fr3"
 RIGHT_ROBOT_NAME = "right_fr3"
 ROBOT_NAMES = (LEFT_ROBOT_NAME, RIGHT_ROBOT_NAME)
-LEFT_FIXTURE_ROBOT_NAME = "left_rope_fixture"
-RIGHT_FIXTURE_ROBOT_NAME = "right_rope_fixture"
-FIXTURE_ROBOT_NAMES = (
-    LEFT_FIXTURE_ROBOT_NAME,
-    RIGHT_FIXTURE_ROBOT_NAME,
+LEFT_FIXTURE_BODY_NAME = "left_rope_fixture"
+RIGHT_FIXTURE_BODY_NAME = "right_rope_fixture"
+FIXTURE_BODY_NAMES = (
+    LEFT_FIXTURE_BODY_NAME,
+    RIGHT_FIXTURE_BODY_NAME,
 )
-FIXTURE_LINK_NAME = "rope_fixture"
 TOOL_LINK_NAME = "fr3_link7"
 ARM_JOINT_NAMES = tuple(f"fr3_joint{index}" for index in range(1, 8))
 FINGER_JOINT_NAMES = ("fr3_finger_joint1", "fr3_finger_joint2")
 FINGER_LINK_NAMES = ("fr3_leftfinger", "fr3_rightfinger")
+ROBOT_IPC_PROXY_LINK_NAMES = (TOOL_LINK_NAME, *FINGER_LINK_NAMES)
 JOINT_NAMES = ARM_JOINT_NAMES + FINGER_JOINT_NAMES
 ROBOT_LINK_NAMES = tuple(f"fr3_link{index}" for index in range(8)) + (
     *FINGER_LINK_NAMES,
@@ -87,6 +87,11 @@ GRIP_PAD_FRICTION = 2.00
 GRIP_CONTACT_OFFSET = 0.0
 GRIP_REST_OFFSET = 0.0
 GRIP_CONTACT_COMPLIANCE = 1.0e-6
+# The imported FR3 hand uses two triangle meshes. A tight primitive proxy is
+# both cheaper and substantially better conditioned as a driven libuipc affine
+# body, while still blocking the rope across the palm and flange.
+HAND_COLLISION_PROXY_SIZE = (0.156, 0.156, 0.120)
+HAND_COLLISION_PROXY_POSITION = (0.0, 0.0, 0.113)
 FIXTURE_SIZE = (0.050, 0.040, 0.040)
 FIXTURE_VISUAL_SIZE = (0.050, 0.0380, 0.0380)
 FIXTURE_MASS = 0.080
@@ -94,6 +99,9 @@ FIXTURE_FRICTION = 2.00
 FIXTURE_CENTER_X = 0.270
 FIXTURE_MOUNT_LENGTH = 0.010
 ATTACHMENT_STRENGTH_RATE = 400.0
+WORKCELL_FLOOR_SIZE = (2.20, 1.20, 0.05)
+WORKCELL_FLOOR_POSITION = (0.0, 0.0, -0.025)
+WORKCELL_FLOOR_FRICTION = 0.8
 
 LEFT_BASE_POSITION = (-0.90, 0.0, 0.0)
 RIGHT_BASE_POSITION = (0.90, 0.0, 0.0)
@@ -150,6 +158,17 @@ def _nodes_by_name(root: Any) -> dict[str, Any]:
         nodes[node.name] = node
         pending.extend(node.children)
     return nodes
+
+
+def _path_from_root(root: Any, node: Any) -> str:
+    names: list[str] = []
+    current = node
+    while current.name != root.name:
+        if current.parent is None:
+            raise RuntimeError(f"{node.name!r} is not below {root.name!r}")
+        names.append(current.name)
+        current = current.parent
+    return "../" + "/".join(reversed(names))
 
 
 def _translation(position: tuple[float, float, float]) -> np.ndarray:
@@ -307,6 +326,29 @@ def _create_fr3_robot(
         )
         finger.add_child(pad_collision)
 
+    for collision_name in ("fr3_link7_collision", "fr3_hand_collision"):
+        nodes[collision_name].disabled = True
+    hand_collision = gobot.create_box_collision(
+        f"{name}_hand_collision_proxy",
+        HAND_COLLISION_PROXY_SIZE,
+        HAND_COLLISION_PROXY_POSITION,
+    )
+    hand_collision.visible = False
+    hand_collision.physics_material = {
+        "sliding_friction": 0.25,
+        "torsional_friction": 0.005,
+        "rolling_friction": 0.0001,
+    }
+    nodes[TOOL_LINK_NAME].add_child(hand_collision)
+
+    for link_name in ROBOT_IPC_PROXY_LINK_NAMES:
+        coupling = gobot.create_node(
+            "PhysicsCoupling", f"robot_{name}_{link_name}_ipc_collision_proxy"
+        )
+        coupling.target_body_path = _path_from_root(root, nodes[link_name])
+        coupling.mode = gobot.PhysicsCouplingMode.OneWay
+        root.add_child(coupling)
+
     # The authored pose is the task-local q=0 for both physics compilers.
     robot.mode = gobot.RobotMode.Motion
     return robot
@@ -325,19 +367,12 @@ def _set_box_inertia(
     )
 
 
-def _create_fixture_robot(
+def _create_fixture_body(
     root: Any,
-    robot_name: str,
+    body_name: str,
     center_x: float,
 ) -> None:
-    robot = gobot.create_node("Robot3D", robot_name)
-    robot.mode = gobot.RobotMode.Assembly
-
-    floating = gobot.create_node("Joint3D", "fixture_free_joint")
-    floating.joint_type = gobot.JointType.Floating
-    floating.child_link = FIXTURE_LINK_NAME
-
-    fixture = gobot.create_node("Link3D", FIXTURE_LINK_NAME)
+    fixture = gobot.create_node("RigidBody3D", body_name)
     fixture.position = (center_x, 0.0, ROPE_CENTER_Z)
     _set_box_inertia(fixture, FIXTURE_MASS, FIXTURE_SIZE)
 
@@ -379,10 +414,7 @@ def _create_fixture_robot(
         mount.semantic_label = "rope_fixture_mount"
         fixture.add_child(mount)
 
-    robot.add_child(floating)
-    floating.add_child(fixture)
-    root.add_child(robot)
-    robot.mode = gobot.RobotMode.Motion
+    root.add_child(fixture)
 
 
 def _positive_tetrahedron(
@@ -470,15 +502,15 @@ def _create_strand(
     return body
 
 
-def _fixture_path(robot_name: str) -> str:
-    return f"../{robot_name}/fixture_free_joint/{FIXTURE_LINK_NAME}"
+def _fixture_path(body_name: str) -> str:
+    return f"../{body_name}"
 
 
-def _add_fixture_coupling(root: Any, robot_name: str, side: str) -> None:
+def _add_fixture_coupling(root: Any, body_name: str, side: str) -> None:
     coupling = gobot.create_node(
         "PhysicsCoupling", f"{side}_fixture_coupling"
     )
-    coupling.rigid_link_path = _fixture_path(robot_name)
+    coupling.target_body_path = _fixture_path(body_name)
     coupling.mode = gobot.PhysicsCouplingMode.TwoWay
     coupling.force_scale = 1.0
     coupling.torque_scale = 1.0
@@ -488,7 +520,7 @@ def _add_fixture_coupling(root: Any, robot_name: str, side: str) -> None:
 def _add_rope_attachment(
     root: Any,
     rope_name: str,
-    fixture_robot_name: str,
+    fixture_body_name: str,
     side: str,
 ) -> None:
     section_size = ROPE_SIDES + 1
@@ -501,7 +533,7 @@ def _add_rope_attachment(
         "DeformableAttachment3D", f"{rope_name}_{side}_fixture_mount"
     )
     attachment.deformable_body_path = f"../{rope_name}"
-    attachment.rigid_link_path = _fixture_path(fixture_robot_name)
+    attachment.rigid_link_path = _fixture_path(fixture_body_name)
     attachment.vertex_indices = indices
     attachment.strength_rate = ATTACHMENT_STRENGTH_RATE
     root.add_child(attachment)
@@ -511,13 +543,23 @@ def create_scene() -> Any:
     fr3_builder = _load_fr3_builder()
     root = gobot.create_node("Node3D", SCENE_ROOT_NAME)
 
-    _add_box_visual(
+    floor = _add_box_visual(
         root,
         "workcell_floor",
-        (2.20, 1.20, 0.05),
-        (0.0, 0.0, -0.025),
+        WORKCELL_FLOOR_SIZE,
+        WORKCELL_FLOOR_POSITION,
         (0.12, 0.14, 0.16, 1.0),
     )
+    floor_collision = gobot.create_box_collision(
+        "workcell_floor_collision", WORKCELL_FLOOR_SIZE
+    )
+    floor_collision.visible = False
+    floor_collision.physics_material = {
+        "sliding_friction": WORKCELL_FLOOR_FRICTION,
+        "torsional_friction": 0.0,
+        "rolling_friction": 0.0,
+    }
+    floor.add_child(floor_collision)
     for side, position in (
         ("left", LEFT_BASE_POSITION),
         ("right", RIGHT_BASE_POSITION),
@@ -542,11 +584,11 @@ def create_scene() -> Any:
         RIGHT_ROBOT_NAME,
         _yaw_transform(RIGHT_BASE_POSITION, math.pi),
     )
-    _create_fixture_robot(
-        root, LEFT_FIXTURE_ROBOT_NAME, -FIXTURE_CENTER_X
+    _create_fixture_body(
+        root, LEFT_FIXTURE_BODY_NAME, -FIXTURE_CENTER_X
     )
-    _create_fixture_robot(
-        root, RIGHT_FIXTURE_ROBOT_NAME, FIXTURE_CENTER_X
+    _create_fixture_body(
+        root, RIGHT_FIXTURE_BODY_NAME, FIXTURE_CENTER_X
     )
 
     strand_colors = (
@@ -559,14 +601,14 @@ def create_scene() -> Any:
     ):
         root.add_child(_create_strand(name, offset, color))
 
-    for fixture_robot_name, side in (
-        (LEFT_FIXTURE_ROBOT_NAME, "left"),
-        (RIGHT_FIXTURE_ROBOT_NAME, "right"),
+    for fixture_body_name, side in (
+        (LEFT_FIXTURE_BODY_NAME, "left"),
+        (RIGHT_FIXTURE_BODY_NAME, "right"),
     ):
-        _add_fixture_coupling(root, fixture_robot_name, side)
+        _add_fixture_coupling(root, fixture_body_name, side)
         for rope_name in ROPE_NAMES:
             _add_rope_attachment(
-                root, rope_name, fixture_robot_name, side
+                root, rope_name, fixture_body_name, side
             )
     return root
 

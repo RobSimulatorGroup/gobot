@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _MIN_READABLE_SCHEMA_VERSION = 3
 _PRODUCER = "gobot"
 _FORMAT = "gobot-ipc"
@@ -490,7 +490,7 @@ def _decode_surface_mesh_blob(data: bytes) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class CompiledIpcSceneArtifact:
-    """Schema-v4 IPC scene manifest and its content-addressed binary blobs."""
+    """Schema-v5 IPC scene manifest and its content-addressed binary blobs."""
 
     schema_version: int
     producer: str
@@ -887,6 +887,15 @@ class CompiledIpcSceneArtifact:
             robot = _require_mapping(raw_robot, "robot")
             robot_path = str(robot["path"])
             robot_name = str(robot["name"])
+            robot_kind = (
+                str(robot.get("kind", ""))
+                if schema_version >= 5
+                else "articulation"
+            )
+            if robot_kind not in ("articulation", "rigid_body"):
+                raise ValueError(
+                    "IPC schema v5 rigid systems require kind articulation or rigid_body"
+                )
             _validate_transform(robot.get("transform"), "robot transform")
             links = robot.get("links")
             joints = robot.get("joints")
@@ -905,7 +914,13 @@ class CompiledIpcSceneArtifact:
                     raise ValueError("IPC robot contains duplicate link names")
                 link_by_name[name] = link
                 link_path = str(link["path"])
-                if not link_path.startswith(robot_path.rstrip("/") + "/"):
+                if robot_kind == "rigid_body" and link_path != robot_path:
+                    raise ValueError(
+                        "IPC standalone rigid body link path must equal its body path"
+                    )
+                if robot_kind == "articulation" and not link_path.startswith(
+                    robot_path.rstrip("/") + "/"
+                ):
                     raise ValueError("IPC robot link path is outside its robot")
                 if link_path in robot_link_paths:
                     raise ValueError("IPC manifest contains duplicate robot link paths")
@@ -1143,6 +1158,14 @@ class CompiledIpcSceneArtifact:
             )
             if root_link_paths != expected_root_paths:
                 raise ValueError("IPC robot root link paths do not match its topology")
+            if robot_kind == "rigid_body" and (
+                len(links) != 1
+                or bool(joints)
+                or robot_name != str(links[0]["name"])
+            ):
+                raise ValueError(
+                    "IPC standalone rigid body must contain one same-named link and no joints"
+                )
             for link_name in link_by_name:
                 visited: set[str] = set()
                 current = link_name

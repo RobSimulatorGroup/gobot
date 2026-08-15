@@ -58,6 +58,7 @@
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/sensor_noise_model.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
+#include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
@@ -208,6 +209,10 @@ struct PyLink3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
 };
 
+struct PyRigidBody3DHandle : public PyLink3DHandle {
+    using PyLink3DHandle::PyLink3DHandle;
+};
+
 struct PyJoint3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
 };
@@ -344,6 +349,7 @@ using PyDeformableAttachment3DClass =
         py::class_<PyDeformableAttachment3DHandle, PyNodeHandle>;
 using PyRobot3DClass = py::class_<PyRobot3DHandle, PyNode3DHandle>;
 using PyLink3DClass = py::class_<PyLink3DHandle, PyNode3DHandle>;
+using PyRigidBody3DClass = py::class_<PyRigidBody3DHandle, PyLink3DHandle>;
 using PyJoint3DClass = py::class_<PyJoint3DHandle, PyNode3DHandle>;
 using PyCollisionShape3DClass = py::class_<PyCollisionShape3DHandle, PyNode3DHandle>;
 using PyMeshInstance3DClass = py::class_<PyMeshInstance3DHandle, PyNode3DHandle>;
@@ -385,6 +391,11 @@ PyCollisionShape3DHandle MakeCollisionShape3DHandle(CollisionShape3D* node,
                                                     PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
                                                     EngineContext* context = nullptr,
                                                     std::uint64_t epoch = 0);
+PyRigidBody3DHandle MakeRigidBody3DHandle(
+        RigidBody3D* node,
+        PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+        EngineContext* context = nullptr,
+        std::uint64_t epoch = 0);
 PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
                                                 PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
                                                 EngineContext* context = nullptr,
@@ -465,7 +476,7 @@ const PhysicsJointState* FindJointState(const PhysicsRobotState& robot, const st
 const PhysicsSensorState* FindSensorState(const PhysicsRobotState& robot, const std::string& sensor_name);
 SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle);
 SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle);
-Robot3D* RuntimeRobotForNodeHandle(const PyNodeHandle& handle);
+Node* RuntimeRigidSystemForNodeHandle(const PyNodeHandle& handle);
 const PhysicsRobotState& RequiredRobotStateForNodeHandle(const PyNodeHandle& handle);
 const PhysicsRobotSnapshot& RequiredRobotSnapshotForHandle(const PyRobot3DHandle& handle);
 const PhysicsRobotState& RequiredRobotStateForHandle(const PyRobot3DHandle& handle);

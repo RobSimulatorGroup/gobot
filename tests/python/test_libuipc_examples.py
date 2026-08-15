@@ -117,7 +117,7 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
             ("static_colliders", "ground", "OneWay"),
             ("press", "press_head", "TwoWay"),
         ]
-        assert artifact.ipc.schema_version == 4
+        assert artifact.ipc.schema_version == 5
         assert tuple(
             mapping.ipc_body_index for mapping in artifact.coupled_bodies
         ) == (0, 1)

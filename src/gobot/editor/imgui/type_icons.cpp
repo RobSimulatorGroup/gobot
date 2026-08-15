@@ -71,6 +71,8 @@ const std::unordered_map<std::string_view, EditorIcon>& TypeIconMap() {
             {"Robot3D", FontIcon(ICON_MDI_ROBOT_INDUSTRIAL, kRobotColor)},
             {"Link3D", FontIcon(ICON_MDI_LINK, kRobotColor)},
             {"Joint3D", JointIcon()},
+            {"RigidBody3D", FontIcon(ICON_MDI_CUBE_SEND, kPhysicsColor)},
+            {"PhysicsCoupling", FontIcon(ICON_MDI_TRANSIT_CONNECTION_VARIANT, kPhysicsColor)},
 
             {"Sensor3D", FontIcon(ICON_MDI_RADAR, kSensorColor)},
             {"IMUSensor3D", FontIcon(ICON_MDI_GAUGE, kSensorColor)},

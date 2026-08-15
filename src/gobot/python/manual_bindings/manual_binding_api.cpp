@@ -14,6 +14,8 @@ void RegisterManualApis(py::module_& module) {
                     module, "DeformableAttachment3D");
     auto robot3d_class = py::class_<PyRobot3DHandle, PyNode3DHandle>(module, "Robot3D");
     auto link3d_class = py::class_<PyLink3DHandle, PyNode3DHandle>(module, "Link3D");
+    auto rigid_body3d_class =
+            py::class_<PyRigidBody3DHandle, PyLink3DHandle>(module, "RigidBody3D");
     auto joint3d_class = py::class_<PyJoint3DHandle, PyNode3DHandle>(module, "Joint3D");
     auto collision_shape_class =
             py::class_<PyCollisionShape3DHandle, PyNode3DHandle>(module, "CollisionShape3D");
@@ -46,6 +48,7 @@ void RegisterManualApis(py::module_& module) {
     py::implicitly_convertible<PyPhysicsCouplingHandle, PyNodeHandle>();
     py::implicitly_convertible<PyDeformableAttachment3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyRigidBody3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyJoint3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyCollisionShape3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyMeshInstance3DHandle, PyNodeHandle>();
@@ -61,6 +64,7 @@ void RegisterManualApis(py::module_& module) {
     py::implicitly_convertible<PyTactileSensor3DHandle, PyNodeHandle>();
 
     GOB_UNUSED(velocity_command_debug3d_class);
+    GOB_UNUSED(rigid_body3d_class);
 
     RegisterManualAppContextBindings(module);
     RegisterManualNodeBindings(node_class, node3d_class);

@@ -17,6 +17,7 @@
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
@@ -62,6 +63,7 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot_sn
 
 struct ResolvedRobotSceneBinding {
     Robot3D* robot{nullptr};
+    RigidBody3D* rigid_body{nullptr};
     std::vector<Link3D*> links;
     std::vector<Joint3D*> joints;
 };
@@ -112,9 +114,11 @@ bool ResolveSceneBindings(const PhysicsSceneBindings& bindings,
 
         ResolvedRobotSceneBinding robot_binding;
         robot_binding.robot = ResolveBoundNode<Robot3D>(binding.robot_id, resolved->scene_root);
-        if (robot_binding.robot == nullptr) {
+        robot_binding.rigid_body =
+                ResolveBoundNode<RigidBody3D>(binding.robot_id, resolved->scene_root);
+        if (robot_binding.robot == nullptr && robot_binding.rigid_body == nullptr) {
             *error = fmt::format(
-                    "Physics scene robot '{}' is no longer alive inside the compiled scene root.",
+                    "Physics scene rigid system '{}' is no longer alive inside the compiled scene root.",
                     robot_snapshot.name);
             return false;
         }
@@ -1082,7 +1086,19 @@ bool SimulationServer::ApplyWorldStateToScene() {
         ResolvedRobotSceneBinding* scene_binding =
                 FindRobotSceneBinding(resolved_bindings, scene_snapshot, robot_index, robot_state.name);
         Robot3D* robot = scene_binding != nullptr ? scene_binding->robot : nullptr;
-        if (!robot || robot->GetMode() != RobotMode::Motion) {
+        RigidBody3D* rigid_body =
+                scene_binding != nullptr ? scene_binding->rigid_body : nullptr;
+        if ((robot == nullptr && rigid_body == nullptr) ||
+            (robot != nullptr && robot->GetMode() != RobotMode::Motion)) {
+            continue;
+        }
+
+        if (rigid_body != nullptr) {
+            const PhysicsLinkState* body_state =
+                    FindLinkState(robot_state, rigid_body->GetName());
+            if (body_state != nullptr) {
+                ApplyLinkGlobalTransform(rigid_body, body_state->global_transform);
+            }
             continue;
         }
 

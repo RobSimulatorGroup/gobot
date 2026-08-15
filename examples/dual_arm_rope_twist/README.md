@@ -11,17 +11,24 @@ wrist turns.
 This is a two-way co-simulation task rather than two unrelated simulations in
 one scene:
 
-1. MuJoCo Warp closes four finger joints onto two free 6-DoF fixtures. There is
+1. The scene authors each fixture as a standalone `RigidBody3D`; MuJoCo Warp
+   gives it an internal free joint and closes four finger joints onto the two
+   free 6-DoF bodies. There is
    no weld between a gripper and fixture; the grasp is carried by box-on-pad
    contact with Coulomb friction.
 2. The fixture poses drive two libuipc affine proxies. Six
    `DeformableAttachment3D` nodes attach one end section of each tetrahedral
    strand to the corresponding proxy.
-3. libuipc advances elasticity, large deformation, self/inter-strand contact,
+3. Each robot's hand (`fr3_link7`) and two fingers are OneWay libuipc collision
+   proxies, while the workcell floor is a fixed loose collider. They block the
+   rope without returning duplicate rigid-rigid reactions to MuJoCo.
+4. libuipc advances elasticity, large deformation, self/inter-strand contact,
    friction, and CCD, then exports the exact force and torque on each fixture.
-4. The default Newton proxy coupling rolls both solvers back to the same
-   microstep start, performs two Aitken-relaxed interface iterations, and
-   commits one physical microstep. The resulting wrench passes through the
+5. `SolverCoupledProxy` rolls both solvers back to the same microstep start
+   when a second interface iteration is requested, then commits one physical
+   microstep. The accurate profile performs two Aitken-relaxed interface
+   iterations; the interactive profile performs one checkpoint-free,
+   fixed-relaxation iteration. The resulting wrench passes through the
    friction grasps and opposes both robot wrists.
 
 The robots use the same positive local `fr3_joint7` velocity command. Because
@@ -57,9 +64,29 @@ measured strand winding, wrist speeds, actuator efforts, fixture slip, mount
 error, rope reaction torque, and the active drive mode. Press `P` to restart the
 physical cycle.
 
-Editor Play defaults to `newton_proxy` with two Aitken-relaxed coupling
-iterations. The compatibility/performance baseline remains available with
-`GOBOT_ROPE_TWIST_INTEGRATION_SCHEME=sequential_split`.
+Editor Play uses `GOBOT_ROPE_TWIST_QUALITY=interactive|accurate` and
+defaults to `interactive`:
+
+- `interactive`: standard IPC, Newton x1, fixed relaxation 1.0, scene readback
+  every 2 steps, and contact-force refresh every 4 steps. The current checked-in
+  solver limits are the accurate `16/8/1e-3` fallback because both evaluated
+  interactive candidates missed the interface-residual admission bound.
+- `accurate`: standard IPC, Newton x2 with Aitken relaxation, the established
+  `16/8/1e-3` solver limits, and all display outputs refreshed every step.
+
+Select the accuracy profile explicitly with:
+
+```bash
+GOBOT_ROPE_TWIST_QUALITY=accurate uv run gobot_editor --path examples/dual_arm_rope_twist
+```
+
+`GOBOT_ROPE_TWIST_COUPLING_ITERATIONS` overrides the selected profile's Proxy
+iteration count. Headless batch trials default to x2 accuracy runs.
+
+The composite step is not represented as one CUDA Graph because every
+libuipc `advance()`/`sync()` is a required host boundary. Gobot separately
+captures graph-safe checkpoint, kinematic gather, and wrench relaxation/apply
+segments and falls back to eager execution when capture is unavailable.
 
 The Physics panel's `Contact force arrows` toggle also controls the runtime
 force overlay. Magenta arrows show libuipc contact forces on rope vertices, green
@@ -71,7 +98,10 @@ before the green arrows are drawn in world coordinates. Nonzero rope-contact
 arrows use a 15 mm minimum display length so weak IPC forces remain visible;
 their directions and labels still use the unscaled world-space force in newtons.
 Every rope vertex above the 0.001 N display threshold is drawn without a
-strongest-contact count limit.
+strongest-contact count limit. In the interactive profile the overlay is at
+most four physics steps old; disabling the toggle clears contact arrows
+immediately. Per-vertex IPC contact forces are not exported on other
+interactive steps.
 
 The default `showcase` mode still computes and applies MuJoCo/libuipc reaction
 forces; it only raises the wrist torque cap to the stock FR3 joint limit. To run
@@ -100,15 +130,41 @@ uv run python examples/dual_arm_rope_twist/rope_twist_batch.py \
 
 Use `--drive-mode showcase` for the same `12 N m` constant-speed mode used by
 Editor Play. The default remains `finite-torque` so automated runs still measure
-a physical stall. Batch runs also default to `newton_proxy` with two coupling
-iterations; use `--integration-scheme sequential_split` for the legacy
-single-pass baseline.
+a physical stall. Batch runs default to `SolverCoupledProxy` with two coupling
+iterations; `--coupling-iterations 1` selects the checkpoint-free interactive
+fast path.
+
+The headless entry point also exposes `--relaxation-mode`,
+`--newton-max-iterations`, `--line-search-max-iterations`,
+`--linear-system-tolerance-rate`, and `--no-coupler-graph` for controlled
+performance comparisons. `--warmup-steps` warms the fixed provider and then
+resets it before the measured run.
+`--defer-deformable-contact-forces` matches the interactive editor's lazy
+per-vertex force upload; the batch default remains immediate export so contact
+metrics stay complete.
+
+Run the same-process profile/graph benchmark with:
+
+```bash
+uv run python benchmark/dual_arm_rope_twist_benchmark.py \
+  --environment-counts 1 64 \
+  --module-path build/<matching-build>/python/gobot/libgobot_libuipc_solver.so
+```
+
+The benchmark stops a run after any physics step exceeds five seconds and
+records it as an admission failure instead of using a partial run in speedup
+comparisons. Override the guard with
+`--maximum-step-latency-seconds`; use `0` to disable it.
+Use `--environments-per-shard` to compare one libuipc world with an explicitly
+split batch while keeping the total environment count fixed.
 
 The default upper bound is a 40,000-step twist followed by a hold, but the run
 exits early after every environment has physically stalled. The JSON result
 contains actual wrist turns and speeds, actuator efforts, strand winding,
 fixture contact forces, grasp slip, attachment error, and both requested and
-executed step counts.
+executed step counts. Pass `--continue-after-cycle-complete` only for a soak:
+the finite-torque controller completes its normal safety hold, then advances
+with zero wrist command until `--steps` is reached.
 
 Useful ablations:
 

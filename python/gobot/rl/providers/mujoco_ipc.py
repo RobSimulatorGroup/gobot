@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
 import operator
+import time
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
@@ -23,6 +25,25 @@ from .base import (
     validate_compiled_artifact,
 )
 from .mujoco_warp import MuJoCoWarpProvider
+
+
+@contextmanager
+def _nvtx_range(torch_runtime: Any, name: str):
+    cuda = getattr(torch_runtime, "cuda", None)
+    nvtx = getattr(cuda, "nvtx", None)
+    pushed = False
+    if nvtx is not None:
+        try:
+            if bool(cuda.is_available()):
+                nvtx.range_push(name)
+                pushed = True
+        except Exception:
+            pushed = False
+    try:
+        yield
+    finally:
+        if pushed:
+            nvtx.range_pop()
 
 
 _COLLISION_OWNERSHIP_V3 = MappingProxyType(
@@ -190,7 +211,8 @@ class CompiledMuJoCoIpcArtifact:
             if rigid_robot is None:
                 raise ValueError(
                     f"PhysicsCoupling {coupling['coupling_path']!r} references "
-                    f"robot {robot_name!r}, which has no matching MuJoCo robot"
+                    f"rigid system {robot_name!r}, which has no matching "
+                    "MuJoCo rigid system"
                 )
             rigid_body_names = set(rigid_robot.body_names)
             link_name = str(coupling["link_name"])
@@ -337,13 +359,13 @@ class MuJoCoIpcConfig:
     torque_scale: float = 1.0
     rigid_substeps: int = 1
     ipc_substeps: int = 1
-    integration_scheme: str = "sequential_split"
     coupling_iterations: int = 2
     relaxation_mode: str | None = None
     relaxation_factor: float = 1.0
     relaxation_min: float = 0.1
     relaxation_max: float = 1.0
     capture_mujoco_graphs: bool = True
+    capture_coupler_graphs: bool = True
 
     def __post_init__(self) -> None:
         for name in (
@@ -369,17 +391,9 @@ class MuJoCoIpcConfig:
             if not math.isfinite(value) or value < 0.0:
                 raise ValueError(f"{name} must be finite and non-negative")
             object.__setattr__(self, name, value)
-        integration_scheme = str(self.integration_scheme)
-        if integration_scheme not in ("sequential_split", "newton_proxy"):
-            raise ValueError(
-                "integration_scheme must be 'sequential_split' or 'newton_proxy'"
-            )
-        object.__setattr__(self, "integration_scheme", integration_scheme)
         relaxation_mode = self.relaxation_mode
         if relaxation_mode is None:
-            relaxation_mode = (
-                "aitken" if integration_scheme == "newton_proxy" else "fixed"
-            )
+            relaxation_mode = "aitken" if self.coupling_iterations > 1 else "fixed"
         relaxation_mode = str(relaxation_mode)
         if relaxation_mode not in ("fixed", "aitken"):
             raise ValueError("relaxation_mode must be 'fixed' or 'aitken'")
@@ -399,12 +413,9 @@ class MuJoCoIpcConfig:
             raise ValueError(
                 "relaxation_factor must be within relaxation_min and relaxation_max"
             )
-        if (
-            integration_scheme == "newton_proxy"
-            and self.rigid_substeps != self.ipc_substeps
-        ):
+        if self.rigid_substeps != self.ipc_substeps:
             raise ValueError(
-                "newton_proxy requires rigid_substeps == ipc_substeps"
+                "SolverCoupledProxy requires rigid_substeps == ipc_substeps"
             )
         device = str(self.device)
         if not device:
@@ -413,14 +424,22 @@ class MuJoCoIpcConfig:
         object.__setattr__(
             self, "capture_mujoco_graphs", bool(self.capture_mujoco_graphs)
         )
+        object.__setattr__(
+            self, "capture_coupler_graphs", bool(self.capture_coupler_graphs)
+        )
 
     @property
     def shard_count(self) -> int:
         return self.num_envs // self.environments_per_shard
 
 
-class MuJoCoIpcCoupler:
-    """CUDA tensor exchange between rigid and IPC solver state."""
+class SolverCoupledProxy:
+    """Staggered rollback coupling between MuJoCo and libuipc.
+
+    MuJoCo owns rigid state, libuipc owns deformable state and contact, and
+    authored mappings own the proxy exchange. OneWay mappings transfer only
+    kinematics; TwoWay mappings also return the relaxed affine wrench.
+    """
 
     def __init__(
         self,
@@ -430,14 +449,12 @@ class MuJoCoIpcCoupler:
         *,
         force_scale: float = 1.0,
         torque_scale: float = 1.0,
-        rigid_substeps: int = 1,
-        ipc_substeps: int = 1,
-        integration_scheme: str = "sequential_split",
         coupling_iterations: int = 2,
         relaxation_mode: str | None = None,
         relaxation_factor: float = 1.0,
         relaxation_min: float = 0.1,
         relaxation_max: float = 1.0,
+        capture_graphs: bool = True,
     ) -> None:
         self.rigid_solver = rigid_solver
         self.ipc_solver = ipc_solver
@@ -453,32 +470,16 @@ class MuJoCoIpcCoupler:
                 force_scale = numeric_value
             else:
                 torque_scale = numeric_value
-        for name, value in (
-            ("rigid_substeps", rigid_substeps),
-            ("ipc_substeps", ipc_substeps),
-            ("coupling_iterations", coupling_iterations),
-        ):
+        for name, value in (("coupling_iterations", coupling_iterations),):
             try:
                 count = operator.index(value)
             except TypeError as error:
                 raise TypeError(f"{name} must be an integer") from error
             if isinstance(value, bool) or count <= 0:
                 raise ValueError(f"{name} must be positive")
-            if name == "rigid_substeps":
-                rigid_substeps = count
-            elif name == "ipc_substeps":
-                ipc_substeps = count
-            else:
-                coupling_iterations = count
-        integration_scheme = str(integration_scheme)
-        if integration_scheme not in ("sequential_split", "newton_proxy"):
-            raise ValueError(
-                "integration_scheme must be 'sequential_split' or 'newton_proxy'"
-            )
+            coupling_iterations = count
         if relaxation_mode is None:
-            relaxation_mode = (
-                "aitken" if integration_scheme == "newton_proxy" else "fixed"
-            )
+            relaxation_mode = "aitken" if coupling_iterations > 1 else "fixed"
         relaxation_mode = str(relaxation_mode)
         if relaxation_mode not in ("fixed", "aitken"):
             raise ValueError("relaxation_mode must be 'fixed' or 'aitken'")
@@ -499,10 +500,6 @@ class MuJoCoIpcCoupler:
         ):
             raise ValueError(
                 "relaxation_factor must be within relaxation_min and relaxation_max"
-            )
-        if integration_scheme == "newton_proxy" and rigid_substeps != ipc_substeps:
-            raise ValueError(
-                "newton_proxy requires rigid_substeps == ipc_substeps"
             )
         self._torch = getattr(rigid_solver, "_torch", None)
         if self._torch is None:
@@ -549,7 +546,10 @@ class MuJoCoIpcCoupler:
             raise RuntimeError(
                 "MuJoCo and libuipc coupling tensors must be on the same device"
             )
-        if not self._targets.is_contiguous() or not self._native_wrenches.is_contiguous():
+        if (
+            not self._targets.is_contiguous()
+            or not self._native_wrenches.is_contiguous()
+        ):
             raise RuntimeError("IPC coupling tensors must be contiguous")
 
         body_names = tuple(mapping.mujoco_body_name for mapping in self.mappings)
@@ -583,10 +583,8 @@ class MuJoCoIpcCoupler:
         self._applied_wrenches = self._torch.zeros_like(self._selected_wrenches)
         self._force_scale = float(force_scale)
         self._torque_scale = float(torque_scale)
-        self._rigid_substeps = int(rigid_substeps)
-        self._ipc_substeps = int(ipc_substeps)
-        self._integration_scheme = integration_scheme
         self._coupling_iterations = int(coupling_iterations)
+        self._uses_rollback = self._coupling_iterations > 1
         self._relaxation_mode = relaxation_mode
         self._relaxation_factor = relaxation_values["relaxation_factor"]
         self._relaxation_min = relaxation_values["relaxation_min"]
@@ -609,12 +607,22 @@ class MuJoCoIpcCoupler:
         self._phase = "Idle"
         self._completed_steps = 0
         self._last_coupling_iterations = 0
-        self._last_interface_residual = 0.0
-        self._last_relaxation_coefficient = self._relaxation_factor
+        self._last_interface_residual_device = self._torch.zeros(
+            (), dtype=self._xfrc.dtype, device=self._xfrc.device
+        )
+        self._last_relaxation_coefficient_device = self._torch.full(
+            (),
+            self._relaxation_factor,
+            dtype=self._xfrc.dtype,
+            device=self._xfrc.device,
+        )
+        self._capture_graphs_requested = bool(capture_graphs)
+        self._cuda_graphs: dict[str, Any] = {}
+        self._cuda_graph_capture_reason = "coupler graph capture not initialized"
+        self._phase_latency_ms: dict[str, float] = {}
         if self._wrench_source == "pose_error":
             self._initialize_pose_error_feedback()
-        if self._integration_scheme == "newton_proxy":
-            self._initialize_newton_proxy(rigid_arrays, ipc_arrays)
+        self._initialize_proxy(rigid_arrays, ipc_arrays)
         self._storage_signature = self._capture_storage_signature()
 
         self._targets.zero_()
@@ -636,6 +644,11 @@ class MuJoCoIpcCoupler:
             ("feedback_mask", self._feedback_mask),
             ("force_scales", self._force_scales),
             ("torque_scales", self._torque_scales),
+            ("last_interface_residual", self._last_interface_residual_device),
+            (
+                "last_relaxation_coefficient",
+                self._last_relaxation_coefficient_device,
+            ),
         ]
         if self._wrench_source == "pose_error":
             values.extend(
@@ -658,26 +671,39 @@ class MuJoCoIpcCoupler:
                     ),
                 )
             )
-        if self._integration_scheme == "newton_proxy":
-            values.extend(
-                (
-                    ("subtree_com", self._subtree_com),
-                    ("root_body_ids", self._root_body_ids),
-                    ("cvel", self._cvel),
-                    ("affine_target_twists", self._target_twists),
-                    ("com_positions", self._com_positions),
-                    ("spatial_velocities", self._spatial_velocities),
-                    ("origin_twists", self._origin_twists),
-                    ("origin_minus_com", self._origin_minus_com),
-                    ("angular_cross_offset", self._angular_cross_offset),
-                    ("checkpoint_applied_wrenches", self._checkpoint_applied_wrenches),
-                    ("iteration_guess", self._iteration_guess),
-                    ("iteration_feedback", self._iteration_feedback),
-                    ("iteration_residual", self._iteration_residual),
-                    ("previous_residual", self._previous_residual),
-                    ("aitken_delta", self._aitken_delta),
-                    ("aitken_factors", self._aitken_factors),
-                )
+        values.extend(
+            (
+                ("subtree_com", self._subtree_com),
+                ("root_body_ids", self._root_body_ids),
+                ("cvel", self._cvel),
+                ("affine_target_twists", self._target_twists),
+                ("com_positions", self._com_positions),
+                ("spatial_velocities", self._spatial_velocities),
+                ("origin_twists", self._origin_twists),
+                ("origin_minus_com", self._origin_minus_com),
+                ("angular_cross_offset", self._angular_cross_offset),
+                ("iteration_guess", self._iteration_guess),
+                ("iteration_feedback", self._iteration_feedback),
+                ("iteration_residual", self._iteration_residual),
+                ("previous_residual", self._previous_residual),
+                ("aitken_delta", self._aitken_delta),
+                ("aitken_factors", self._aitken_factors),
+                ("aitken_product", self._aitken_product),
+                ("aitken_squared", self._aitken_squared),
+                ("aitken_numerator", self._aitken_numerator),
+                ("aitken_denominator", self._aitken_denominator),
+                ("aitken_safe_denominator", self._aitken_safe_denominator),
+                ("aitken_updated", self._aitken_updated),
+                ("aitken_previous_factors", self._aitken_previous_factors),
+                ("aitken_valid", self._aitken_valid),
+                ("interface_residual_norms", self._interface_residual_norms),
+                ("two_way_body_ids", self._two_way_body_ids),
+                ("two_way_aitken_factors", self._two_way_aitken_factors),
+            )
+        )
+        if self._uses_rollback:
+            values.append(
+                ("checkpoint_applied_wrenches", self._checkpoint_applied_wrenches)
             )
             values.extend(
                 (f"rigid_checkpoint:{name}", value)
@@ -685,12 +711,12 @@ class MuJoCoIpcCoupler:
             )
         return tuple((name, int(value.data_ptr())) for name, value in values)
 
-    def _initialize_newton_proxy(
+    def _initialize_proxy(
         self, rigid_arrays: Mapping[str, Any], ipc_arrays: Mapping[str, Any]
     ) -> None:
         if self._target_twists is None:
             raise RuntimeError(
-                "newton_proxy requires IPC affine_target_twists storage"
+                "SolverCoupledProxy requires IPC affine_target_twists storage"
             )
         expected_twists = (self._num_envs, self._body_count, 6)
         if tuple(self._target_twists.shape) != expected_twists:
@@ -703,7 +729,7 @@ class MuJoCoIpcCoupler:
         for name in ("subtree_com", "cvel"):
             if name not in rigid_arrays:
                 raise RuntimeError(
-                    f"newton_proxy requires MuJoCo array {name!r}"
+                    f"SolverCoupledProxy requires MuJoCo array {name!r}"
                 )
         self._subtree_com = rigid_arrays["subtree_com"]
         self._cvel = rigid_arrays["cvel"]
@@ -725,7 +751,7 @@ class MuJoCoIpcCoupler:
             model_root_ids = getattr(model, "body_rootid", None)
             if model_root_ids is None:
                 raise RuntimeError(
-                    "newton_proxy requires MuJoCo body_rootid metadata"
+                    "SolverCoupledProxy requires MuJoCo body_rootid metadata"
                 )
             root_body_ids = tuple(
                 int(model_root_ids[body_id]) for body_id in self._body_id_values
@@ -742,15 +768,16 @@ class MuJoCoIpcCoupler:
         self._root_body_ids = self._torch.as_tensor(
             root_body_ids, dtype=self._torch.long, device=self._xpos.device
         )
-        for name in (
-            "capture_checkpoint",
-            "rewind_checkpoint",
-            "commit_checkpoint",
-        ):
-            if not callable(getattr(self.ipc_solver, name, None)):
-                raise RuntimeError(
-                    f"newton_proxy requires IPC {name}() support"
-                )
+        if self._uses_rollback:
+            for name in (
+                "capture_checkpoint",
+                "rewind_checkpoint",
+                "commit_checkpoint",
+            ):
+                if not callable(getattr(self.ipc_solver, name, None)):
+                    raise RuntimeError(
+                        f"SolverCoupledProxy x2+ requires IPC {name}() support"
+                    )
 
         self._com_positions = self._torch.empty_like(self._positions)
         self._spatial_velocities = self._torch.empty(
@@ -765,8 +792,10 @@ class MuJoCoIpcCoupler:
         )
         self._origin_minus_com = self._torch.empty_like(self._positions)
         self._angular_cross_offset = self._torch.empty_like(self._positions)
-        self._checkpoint_applied_wrenches = self._torch.empty_like(
-            self._applied_wrenches
+        self._checkpoint_applied_wrenches = (
+            self._torch.empty_like(self._applied_wrenches)
+            if self._uses_rollback
+            else None
         )
         self._iteration_guess = self._torch.empty_like(self._applied_wrenches)
         self._iteration_feedback = self._torch.empty_like(
@@ -785,32 +814,71 @@ class MuJoCoIpcCoupler:
             dtype=self._applied_wrenches.dtype,
             device=self._applied_wrenches.device,
         )
+        self._aitken_product = self._torch.empty_like(
+            self._iteration_residual
+        )
+        self._aitken_squared = self._torch.empty_like(
+            self._iteration_residual
+        )
+        self._aitken_numerator = self._torch.empty_like(
+            self._aitken_factors
+        )
+        self._aitken_denominator = self._torch.empty_like(
+            self._aitken_factors
+        )
+        self._aitken_safe_denominator = self._torch.empty_like(
+            self._aitken_factors
+        )
+        self._aitken_updated = self._torch.empty_like(self._aitken_factors)
+        self._aitken_previous_factors = self._torch.empty_like(
+            self._aitken_factors
+        )
+        self._aitken_valid = self._torch.empty_like(
+            self._aitken_factors, dtype=self._torch.bool
+        )
+        self._interface_residual_norms = self._torch.empty(
+            (self._num_envs, self._body_count),
+            dtype=self._iteration_residual.dtype,
+            device=self._iteration_residual.device,
+        )
+        two_way_body_ids = tuple(
+            index
+            for index, mapping in enumerate(self.mappings)
+            if mapping.mode == "TwoWay"
+        )
+        self._two_way_body_ids = self._torch.as_tensor(
+            two_way_body_ids,
+            dtype=self._torch.long,
+            device=self._xfrc.device,
+        )
+        self._two_way_aitken_factors = self._torch.empty(
+            (self._num_envs, len(two_way_body_ids), 1),
+            dtype=self._aitken_factors.dtype,
+            device=self._aitken_factors.device,
+        )
 
         checkpoint_names = []
         names_method = getattr(self.rigid_solver, "_checkpoint_array_names", None)
-        if callable(names_method):
+        if self._uses_rollback and callable(names_method):
             checkpoint_names.extend(str(name) for name in names_method())
-        checkpoint_names.extend(
-            (
-                "time",
-                "qpos",
-                "qvel",
-                "act",
-                "qacc_warmstart",
-                "ctrl",
-                "qfrc_applied",
-                "xfrc_applied",
-                "mocap_pos",
-                "mocap_quat",
-                "eq_active",
-                "userdata",
-                "plugin_state",
-                "xpos",
-                "xmat",
-                "subtree_com",
-                "cvel",
+        if self._uses_rollback and not checkpoint_names:
+            checkpoint_names.extend(
+                (
+                    "time",
+                    "qpos",
+                    "qvel",
+                    "act",
+                    "qacc_warmstart",
+                    "ctrl",
+                    "qfrc_applied",
+                    "xfrc_applied",
+                    "mocap_pos",
+                    "mocap_quat",
+                    "eq_active",
+                    "userdata",
+                    "plugin_state",
+                )
             )
-        )
         unique_names = tuple(dict.fromkeys(checkpoint_names))
         self._rigid_checkpoint_arrays = {
             name: self._torch.empty_like(rigid_arrays[name])
@@ -818,11 +886,13 @@ class MuJoCoIpcCoupler:
             if name in rigid_arrays
             and callable(getattr(rigid_arrays[name], "copy_", None))
         }
-        for required in ("qpos", "qvel", "xfrc_applied"):
-            if required not in self._rigid_checkpoint_arrays:
-                raise RuntimeError(
-                    f"newton_proxy cannot checkpoint MuJoCo array {required!r}"
-                )
+        if self._uses_rollback:
+            for required in ("qpos", "qvel", "xfrc_applied"):
+                if required not in self._rigid_checkpoint_arrays:
+                    raise RuntimeError(
+                        "SolverCoupledProxy cannot checkpoint MuJoCo array "
+                        f"{required!r}"
+                    )
         self._rigid_checkpoint_counters: dict[str, int] = {}
         self._rigid_counter_names = tuple(
             name
@@ -831,25 +901,33 @@ class MuJoCoIpcCoupler:
         )
 
     def _capture_rigid_checkpoint(self) -> None:
-        rigid_arrays = self.rigid_solver.arrays
-        for name, destination in self._rigid_checkpoint_arrays.items():
-            destination.copy_(rigid_arrays[name])
+        self._replay_or_call(
+            "checkpoint", self._capture_rigid_checkpoint_device
+        )
         self._rigid_checkpoint_counters = {
             name: int(getattr(self.rigid_solver, name))
             for name in self._rigid_counter_names
         }
+
+    def _capture_rigid_checkpoint_device(self) -> None:
+        rigid_arrays = self.rigid_solver.arrays
+        for name, destination in self._rigid_checkpoint_arrays.items():
+            destination.copy_(rigid_arrays[name])
         self._checkpoint_applied_wrenches.copy_(self._applied_wrenches)
 
     def _rewind_rigid_checkpoint(self) -> None:
-        rigid_arrays = self.rigid_solver.arrays
-        for name, source in self._rigid_checkpoint_arrays.items():
-            rigid_arrays[name].copy_(source)
+        self._replay_or_call("rewind", self._rewind_rigid_checkpoint_device)
         for name, value in self._rigid_checkpoint_counters.items():
             setattr(self.rigid_solver, name, value)
-        self._applied_wrenches.copy_(self._checkpoint_applied_wrenches)
         forward = getattr(self.rigid_solver, "forward", None)
         if callable(forward):
             forward()
+
+    def _rewind_rigid_checkpoint_device(self) -> None:
+        rigid_arrays = self.rigid_solver.arrays
+        for name, source in self._rigid_checkpoint_arrays.items():
+            rigid_arrays[name].copy_(source)
+        self._applied_wrenches.copy_(self._checkpoint_applied_wrenches)
 
     def _gather_rigid_twist(self) -> None:
         self._torch.index_select(
@@ -1031,14 +1109,13 @@ class MuJoCoIpcCoupler:
         # MuJoCo applies xfrc_applied at xipos, the body center of mass.
         self._computed_wrenches[..., 3:].copy_(self._world_torque[..., 0])
 
-    def _validate_storage(self) -> None:
+    def validate_storage(self) -> None:
         if self._capture_storage_signature() != self._storage_signature:
             raise RuntimeError(
                 "MuJoCo+IPC coupling storage changed after construction"
             )
 
-    def _gather_rigid_pose(self) -> None:
-        self._validate_storage()
+    def _gather_rigid_pose_unchecked(self) -> None:
         self._torch.index_select(
             self._xpos, 1, self._body_ids, out=self._positions
         )
@@ -1051,7 +1128,12 @@ class MuJoCoIpcCoupler:
         self._targets[..., :3, 3].copy_(self._positions)
 
     def _gather_rigid_kinematics(self) -> None:
-        self._gather_rigid_pose()
+        self._replay_or_call(
+            "gather_kinematics", self._gather_rigid_kinematics_unchecked
+        )
+
+    def _gather_rigid_kinematics_unchecked(self) -> None:
+        self._gather_rigid_pose_unchecked()
         self._gather_rigid_twist()
 
     def _compute_scaled_feedback(self, destination: Any) -> None:
@@ -1063,6 +1145,9 @@ class MuJoCoIpcCoupler:
         destination.mul_(self._feedback_mask)
 
     def _replace_owned_wrenches(self, wrenches: Any) -> None:
+        self._replace_owned_wrenches_unchecked(wrenches)
+
+    def _replace_owned_wrenches_unchecked(self, wrenches: Any) -> None:
         self._torch.index_select(
             self._xfrc, 1, self._body_ids, out=self._selected_wrenches
         )
@@ -1077,20 +1162,48 @@ class MuJoCoIpcCoupler:
         if self._relaxation_mode == "aitken" and iteration > 0:
             self._aitken_delta.copy_(self._iteration_residual)
             self._aitken_delta.sub_(self._previous_residual)
-            numerator = (
-                self._previous_residual * self._aitken_delta
-            ).sum(dim=-1, keepdim=True)
-            denominator = self._aitken_delta.square().sum(
-                dim=-1, keepdim=True
+            self._torch.mul(
+                self._previous_residual,
+                self._aitken_delta,
+                out=self._aitken_product,
             )
-            updated = -self._aitken_factors * numerator / denominator.clamp_min(
-                self._torch.finfo(denominator.dtype).eps
+            self._torch.sum(
+                self._aitken_product,
+                dim=-1,
+                keepdim=True,
+                out=self._aitken_numerator,
             )
-            valid = (denominator > self._torch.finfo(denominator.dtype).eps) & (
-                self._torch.isfinite(updated)
+            self._torch.mul(
+                self._aitken_delta,
+                self._aitken_delta,
+                out=self._aitken_squared,
             )
-            self._aitken_factors.copy_(
-                self._torch.where(valid, updated, self._aitken_factors)
+            self._torch.sum(
+                self._aitken_squared,
+                dim=-1,
+                keepdim=True,
+                out=self._aitken_denominator,
+            )
+            epsilon = self._torch.finfo(self._aitken_denominator.dtype).eps
+            self._aitken_previous_factors.copy_(self._aitken_factors)
+            self._aitken_safe_denominator.copy_(self._aitken_denominator)
+            self._aitken_safe_denominator.clamp_min_(epsilon)
+            self._aitken_updated.copy_(self._aitken_factors)
+            self._aitken_updated.mul_(self._aitken_numerator).neg_()
+            self._aitken_updated.div_(self._aitken_safe_denominator)
+            self._torch.gt(
+                self._aitken_denominator,
+                epsilon,
+                out=self._aitken_valid,
+            )
+            self._aitken_valid.logical_and_(
+                self._torch.isfinite(self._aitken_updated)
+            )
+            self._torch.where(
+                self._aitken_valid,
+                self._aitken_updated,
+                self._aitken_previous_factors,
+                out=self._aitken_factors,
             )
             self._aitken_factors.clamp_(
                 min=self._relaxation_min, max=self._relaxation_max
@@ -1103,15 +1216,206 @@ class MuJoCoIpcCoupler:
         self._next_wrenches.mul_(self._feedback_mask)
         self._previous_residual.copy_(self._iteration_residual)
 
-    def newton_microstep(self, actions: Any | None = None) -> None:
-        """Advance one shared MuJoCo/libuipc microstep with rollback iteration."""
+    def _relax_iteration(self, iteration: int) -> None:
+        self._compute_scaled_feedback(self._iteration_feedback)
+        self._update_relaxed_wrench(iteration)
+        self._iteration_guess.copy_(self._next_wrenches)
 
-        if self._integration_scheme != "newton_proxy":
-            raise RuntimeError("newton_microstep requires newton_proxy integration")
+    def _update_proxy_metrics(self) -> None:
+        self._torch.linalg.vector_norm(
+            self._iteration_residual,
+            dim=-1,
+            out=self._interface_residual_norms,
+        )
+        self._torch.amax(
+            self._interface_residual_norms,
+            out=self._last_interface_residual_device,
+        )
+        if self._two_way_body_ids.numel() != 0:
+            self._torch.index_select(
+                self._aitken_factors,
+                1,
+                self._two_way_body_ids,
+                out=self._two_way_aitken_factors,
+            )
+            self._torch.mean(
+                self._two_way_aitken_factors,
+                out=self._last_relaxation_coefficient_device,
+            )
+        else:
+            self._last_relaxation_coefficient_device.fill_(
+                self._relaxation_factor
+            )
+
+    def _timed(
+        self, phase: str, operation: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        start = time.perf_counter()
+        with _nvtx_range(self._torch, f"MuJoCoIpc/{phase}"):
+            result = operation(*args, **kwargs)
+        elapsed = (time.perf_counter() - start) * 1000.0
+        self._phase_latency_ms[phase] = (
+            self._phase_latency_ms.get(phase, 0.0) + elapsed
+        )
+        return result
+
+    def _replay_or_call(self, name: str, operation: Any) -> None:
+        graph = self._cuda_graphs.get(name)
+        if graph is None:
+            operation()
+            return
+        with _nvtx_range(self._torch, f"MuJoCoIpcGraph/{name}"):
+            graph.replay()
+
+    def _graph_mutable_tensors(self) -> tuple[Any, ...]:
+        names = (
+            "_xfrc",
+            "_targets",
+            "_positions",
+            "_rotations",
+            "_selected_wrenches",
+            "_next_wrenches",
+            "_applied_wrenches",
+            "_last_interface_residual_device",
+            "_last_relaxation_coefficient_device",
+            "_target_twists",
+            "_com_positions",
+            "_spatial_velocities",
+            "_origin_twists",
+            "_origin_minus_com",
+            "_angular_cross_offset",
+            "_checkpoint_applied_wrenches",
+            "_iteration_guess",
+            "_iteration_feedback",
+            "_iteration_residual",
+            "_previous_residual",
+            "_aitken_delta",
+            "_aitken_factors",
+            "_aitken_product",
+            "_aitken_squared",
+            "_aitken_numerator",
+            "_aitken_denominator",
+            "_aitken_safe_denominator",
+            "_aitken_updated",
+            "_aitken_previous_factors",
+            "_aitken_valid",
+            "_interface_residual_norms",
+            "_two_way_aitken_factors",
+            "_computed_wrenches",
+            "_relative_rotation",
+            "_rotation_error",
+            "_local_rotation_error",
+            "_local_torque",
+            "_world_torque",
+            "_world_center",
+            "_center_acceleration_force",
+        )
+        values = [
+            getattr(self, name)
+            for name in names
+            if getattr(self, name, None) is not None
+        ]
+        if self._uses_rollback:
+            values.extend(self._rigid_checkpoint_arrays.values())
+            rigid_arrays = self.rigid_solver.arrays
+            values.extend(
+                rigid_arrays[name]
+                for name in self._rigid_checkpoint_arrays
+            )
+        unique = []
+        pointers = set()
+        for value in values:
+            data_ptr = getattr(value, "data_ptr", None)
+            if not callable(data_ptr):
+                continue
+            pointer = int(data_ptr())
+            if pointer in pointers:
+                continue
+            pointers.add(pointer)
+            unique.append(value)
+        return tuple(unique)
+
+    def initialize_cuda_graphs(self) -> None:
+        """Capture graph-safe tensor exchange segments, falling back to eager."""
+
+        self.validate_storage()
+        self._cuda_graphs.clear()
+        if not self._capture_graphs_requested:
+            self._cuda_graph_capture_reason = "coupler graph capture disabled"
+            return
+        if getattr(self._xfrc.device, "type", "cpu") != "cuda":
+            self._cuda_graph_capture_reason = (
+                "coupler graph capture requires CUDA tensors"
+            )
+            return
+        cuda = getattr(self._torch, "cuda", None)
+        if cuda is None or not bool(cuda.is_available()) or not hasattr(
+            cuda, "CUDAGraph"
+        ):
+            self._cuda_graph_capture_reason = (
+                "Torch CUDA graph support is unavailable"
+            )
+            return
+
+        operations = {
+            "checkpoint": self._capture_rigid_checkpoint_device,
+            "rewind": self._rewind_rigid_checkpoint_device,
+            "gather_kinematics": self._gather_rigid_kinematics_unchecked,
+            "apply_guess": lambda: self._replace_owned_wrenches_unchecked(
+                self._iteration_guess
+            ),
+            "relax_first": lambda: self._relax_iteration(0),
+            "relax_next": lambda: self._relax_iteration(1),
+            "metrics": self._update_proxy_metrics,
+        }
+        if not self._uses_rollback:
+            del operations["checkpoint"]
+            del operations["rewind"]
+            del operations["relax_next"]
+
+        mutable = self._graph_mutable_tensors()
+        snapshots = tuple(value.clone() for value in mutable)
+        device = self._xfrc.device
+        try:
+            capture_stream = cuda.Stream(device=device)
+            current_stream = cuda.current_stream(device)
+            capture_stream.wait_stream(current_stream)
+            with cuda.stream(capture_stream):
+                for operation in operations.values():
+                    operation()
+            capture_stream.synchronize()
+            for name, operation in operations.items():
+                graph = cuda.CUDAGraph()
+                with cuda.graph(graph, stream=capture_stream):
+                    operation()
+                self._cuda_graphs[name] = graph
+            capture_stream.synchronize()
+            for value, snapshot in zip(mutable, snapshots, strict=True):
+                value.copy_(snapshot)
+            cuda.synchronize(device)
+        except Exception as error:
+            self._cuda_graphs.clear()
+            try:
+                for value, snapshot in zip(mutable, snapshots, strict=True):
+                    value.copy_(snapshot)
+                cuda.synchronize(device)
+            except Exception:
+                pass
+            self._cuda_graph_capture_reason = (
+                f"{type(error).__name__}: {error}"
+            )
+            return
+        self._cuda_graph_capture_reason = ""
+
+    def step(self, actions: Any | None = None) -> None:
+        """Advance one shared MuJoCo/libuipc proxy-coupled microstep."""
+
         self._require_phase("Idle")
-        self._phase = "CaptureCheckpoint"
-        self._capture_rigid_checkpoint()
-        self.ipc_solver.capture_checkpoint()
+        self._phase_latency_ms = {}
+        if self._uses_rollback:
+            self._phase = "CaptureCheckpoint"
+            self._timed("rigid_checkpoint", self._capture_rigid_checkpoint)
+            self._timed("ipc_checkpoint", self.ipc_solver.capture_checkpoint)
         self._iteration_guess.copy_(self._applied_wrenches)
         self._iteration_guess.mul_(self._feedback_mask)
         self._aitken_factors.fill_(self._relaxation_factor)
@@ -1119,36 +1423,41 @@ class MuJoCoIpcCoupler:
         for iteration in range(self._coupling_iterations):
             if iteration > 0:
                 self._phase = "RewindCheckpoint"
-                self._rewind_rigid_checkpoint()
-                self.ipc_solver.rewind_checkpoint()
-            self._replace_owned_wrenches(self._iteration_guess)
+                self._timed("rigid_checkpoint", self._rewind_rigid_checkpoint)
+                self._timed("ipc_checkpoint", self.ipc_solver.rewind_checkpoint)
+            self._replay_or_call(
+                "apply_guess",
+                lambda: self._replace_owned_wrenches_unchecked(
+                    self._iteration_guess
+                ),
+            )
 
             self._phase = "StepRigid"
-            self.rigid_solver.step(actions, nsteps=1)
+            self._timed("rigid_advance", self.rigid_solver.step, actions, nsteps=1)
             self._phase = "PushRigidKinematics"
-            self._gather_rigid_kinematics()
+            self._timed("target_exchange", self._gather_rigid_kinematics)
             self._phase = "StepIpc"
-            self.ipc_solver.step(nsteps=1)
+            self._timed("ipc_advance", self.ipc_solver.step, nsteps=1)
             self._phase = "RelaxFeedback"
-            self._compute_scaled_feedback(self._iteration_feedback)
-            self._update_relaxed_wrench(iteration)
-            self._iteration_guess.copy_(self._next_wrenches)
+            graph_name = "relax_first" if iteration == 0 else "relax_next"
+            self._timed(
+                "reaction_exchange",
+                self._replay_or_call,
+                graph_name,
+                lambda value=iteration: self._relax_iteration(value),
+            )
 
-        self._replace_owned_wrenches(self._iteration_guess)
-        self._phase = "CommitCheckpoint"
-        self.ipc_solver.commit_checkpoint()
-        self._last_coupling_iterations = self._coupling_iterations
-        self._last_interface_residual = float(
-            self._torch.linalg.vector_norm(
-                self._iteration_residual, dim=-1
-            ).max().item()
+        self._replay_or_call(
+            "apply_guess",
+            lambda: self._replace_owned_wrenches_unchecked(
+                self._iteration_guess
+            ),
         )
-        two_way = self._feedback_mask[0, :, 0].to(dtype=self._torch.bool)
-        if bool(two_way.any().item()):
-            coefficient = self._aitken_factors[:, two_way, :].mean()
-            self._last_relaxation_coefficient = float(coefficient.item())
-        else:
-            self._last_relaxation_coefficient = self._relaxation_factor
+        if self._uses_rollback:
+            self._phase = "CommitCheckpoint"
+            self._timed("ipc_checkpoint", self.ipc_solver.commit_checkpoint)
+        self._last_coupling_iterations = self._coupling_iterations
+        self._replay_or_call("metrics", self._update_proxy_metrics)
         self._completed_steps += 1
         self._phase = "Idle"
 
@@ -1161,51 +1470,7 @@ class MuJoCoIpcCoupler:
     def sync_rigid_pose(self) -> None:
         """Synchronize targets outside a step, for construction/reset/forward."""
 
-        if self._integration_scheme == "newton_proxy":
-            self._gather_rigid_kinematics()
-        else:
-            self._gather_rigid_pose()
-
-    def push_rigid_pose(self) -> None:
-        """PushRigidPose: gather every mapped MuJoCo body into proxy targets."""
-
-        self._require_phase("Idle")
-        self._gather_rigid_pose()
-        self._phase = "StepIpc"
-
-    def step_ipc(self) -> None:
-        """StepIpc: advance libuipc through one configured macro tick."""
-
-        self._require_phase("StepIpc")
-        self.ipc_solver.step(nsteps=self._ipc_substeps)
-        self._phase = "ApplyFeedback"
-
-    def apply_feedback(self) -> None:
-        """ApplyFeedback: replace only this coupler's TwoWay wrench contribution."""
-
-        self._require_phase("ApplyFeedback")
-        self._validate_storage()
-        self._compute_scaled_feedback(self._next_wrenches)
-        self._replace_owned_wrenches(self._next_wrenches)
-        self._phase = "StepRigid"
-
-    def step_rigid(self, actions: Any | None = None) -> None:
-        """StepRigid: advance MuJoCo through one configured macro tick."""
-
-        self._require_phase("StepRigid")
-        self.rigid_solver.step(actions, nsteps=self._rigid_substeps)
-        self._phase = "Finalize"
-
-    def finalize(self) -> None:
-        """Finalize: validate storage and complete the fixed tick."""
-
-        self._require_phase("Finalize")
-        self._validate_storage()
-        self._completed_steps += 1
-        self._last_coupling_iterations = 1
-        self._last_interface_residual = 0.0
-        self._last_relaxation_coefficient = self._relaxation_factor
-        self._phase = "Idle"
+        self._gather_rigid_kinematics()
 
     def release_wrenches(self) -> None:
         """Remove only forces previously contributed by this coupler."""
@@ -1224,8 +1489,10 @@ class MuJoCoIpcCoupler:
     def recover(self) -> None:
         self.release_wrenches()
         self._last_coupling_iterations = 0
-        self._last_interface_residual = 0.0
-        self._last_relaxation_coefficient = self._relaxation_factor
+        self._last_interface_residual_device.zero_()
+        self._last_relaxation_coefficient_device.fill_(
+            self._relaxation_factor
+        )
         self._phase = "Idle"
 
     @property
@@ -1246,22 +1513,27 @@ class MuJoCoIpcCoupler:
 
     @property
     def last_interface_residual(self) -> float:
-        return self._last_interface_residual
+        return float(self._last_interface_residual_device.item())
 
     @property
     def last_relaxation_coefficient(self) -> float:
-        return self._last_relaxation_coefficient
+        return float(self._last_relaxation_coefficient_device.item())
+
+    @property
+    def cuda_graph_captured(self) -> bool:
+        return bool(self._cuda_graphs)
+
+    @property
+    def cuda_graph_capture_reason(self) -> str:
+        return self._cuda_graph_capture_reason
+
+    @property
+    def phase_latency_ms(self) -> Mapping[str, float]:
+        return MappingProxyType(dict(self._phase_latency_ms))
 
     @property
     def storage_signature(self) -> tuple[tuple[str, int], ...]:
         return self._storage_signature
-
-    PushRigidPose = push_rigid_pose
-    StepIpc = step_ipc
-    ApplyFeedback = apply_feedback
-    StepRigid = step_rigid
-    Finalize = finalize
-
 
 class _MuJoCoIpcRobotViewAdapter:
     def __init__(
@@ -1289,10 +1561,10 @@ class _MuJoCoIpcRobotViewAdapter:
 class MuJoCoIpcProvider(BatchPhysicsProvider):
     """Composite simulator with MuJoCo rigid authority and libuipc FEM/contact.
 
-    Per fixed tick the coupler gathers current MuJoCo link poses, advances the
-    isolated libuipc subscenes, scatters IPC proxy contact wrenches into
-    ``xfrc_applied``, and finally advances MuJoCo. All hot-path exchange uses
-    stable tensors on one device.
+    Each microstep runs a staggered SolverCoupledProxy iteration: apply the
+    current interface wrench, advance MuJoCo, synchronize proxy kinematics,
+    advance libuipc, then harvest and relax the new wrench. Iteration two and
+    above rewind both solvers to the same microstep start.
     """
 
     accepts_device_actions = True
@@ -1364,22 +1636,21 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 )
             self.ipc_solver = ipc_solver
             self._validate_solvers()
-            self.coupler = MuJoCoIpcCoupler(
+            self.coupler = SolverCoupledProxy(
                 self.rigid_solver,
                 self.ipc_solver,
                 self.artifact.coupled_bodies,
                 force_scale=self.config.force_scale,
                 torque_scale=self.config.torque_scale,
-                rigid_substeps=self.config.rigid_substeps,
-                ipc_substeps=self.config.ipc_substeps,
-                integration_scheme=self.config.integration_scheme,
                 coupling_iterations=self.config.coupling_iterations,
                 relaxation_mode=self.config.relaxation_mode,
                 relaxation_factor=self.config.relaxation_factor,
                 relaxation_min=self.config.relaxation_min,
                 relaxation_max=self.config.relaxation_max,
+                capture_graphs=self.config.capture_coupler_graphs,
             )
             self.coupler.sync_rigid_pose()
+            self.coupler.initialize_cuda_graphs()
             self._arrays = self._make_array_views()
         except Exception:
             coupler = getattr(self, "coupler", None)
@@ -1467,23 +1738,16 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 f"{rigid_dt} * {self.config.rigid_substeps} != "
                 f"{ipc_dt} * {self.config.ipc_substeps}"
             )
-        if self.config.integration_scheme == "newton_proxy":
-            if self.config.rigid_substeps != self.config.ipc_substeps:
-                raise ValueError(
-                    "newton_proxy requires rigid_substeps == ipc_substeps"
-                )
-            if not math.isclose(
-                rigid_dt, ipc_dt, rel_tol=0.0, abs_tol=1.0e-12
-            ):
-                raise ValueError(
-                    "newton_proxy requires equal MuJoCo and libuipc microstep dt"
-                )
-            if not bool(
-                getattr(self.ipc_solver.capabilities, "runtime_checkpoint", False)
-            ):
-                raise ValueError(
-                    "newton_proxy requires libuipc runtime checkpoint support"
-                )
+        if not math.isclose(rigid_dt, ipc_dt, rel_tol=0.0, abs_tol=1.0e-12):
+            raise ValueError(
+                "SolverCoupledProxy requires equal MuJoCo and libuipc microstep dt"
+            )
+        if self.config.coupling_iterations > 1 and not bool(
+            getattr(self.ipc_solver.capabilities, "runtime_checkpoint", False)
+        ):
+            raise ValueError(
+                "SolverCoupledProxy x2+ requires libuipc runtime checkpoint support"
+            )
         ipc_shard_count = int(getattr(self.ipc_solver, "shard_count", -1))
         if ipc_shard_count != self.config.shard_count:
             raise ValueError(
@@ -1555,6 +1819,11 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         return self.config.num_envs
 
     @property
+    def frame(self) -> int:
+        self._require_open()
+        return self._step_count
+
+    @property
     def generation(self) -> int:
         return self._generation
 
@@ -1606,6 +1875,20 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
     @property
     def diagnostics(self) -> Mapping[str, Any]:
         self._require_open()
+        mujoco_diagnostics = dict(
+            getattr(self.rigid_solver, "diagnostics", {})
+        )
+        ipc_diagnostics = dict(getattr(self.ipc_solver, "diagnostics", {}))
+        phase_latency_ms = dict(self.coupler.phase_latency_ms)
+        for source, target in (
+            ("last_checkpoint_latency_ms", "ipc_checkpoint_native"),
+            ("last_target_staging_latency_ms", "target_staging_native"),
+            ("last_ipc_advance_latency_ms", "ipc_advance_native"),
+            ("last_reaction_export_latency_ms", "reaction_export_native"),
+            ("last_state_sync_latency_ms", "state_sync_native"),
+        ):
+            if source in ipc_diagnostics:
+                phase_latency_ms[target] = float(ipc_diagnostics[source])
         return MappingProxyType(
             {
                 "provider": "mujoco-libuipc",
@@ -1620,16 +1903,21 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                     for collider in self.artifact.ipc.static_colliders
                 ),
                 "collision_ownership": dict(self.artifact.collision_ownership),
-                "mujoco": dict(getattr(self.rigid_solver, "diagnostics", {})),
-                "libuipc": dict(getattr(self.ipc_solver, "diagnostics", {})),
+                "mujoco": mujoco_diagnostics,
+                "libuipc": ipc_diagnostics,
                 "graph_captured": False,
                 "graph_capture_reason": (
                     self.capabilities.graph_capture_reason
                 ),
+                "coupler_graph_captured": self.coupler.cuda_graph_captured,
+                "coupler_graph_capture_reason": (
+                    self.coupler.cuda_graph_capture_reason
+                ),
+                "phase_latency_ms": phase_latency_ms,
                 "feedback_source": self.coupler.feedback_source,
-                "contact_pipeline": dict(
-                    getattr(self.ipc_solver, "diagnostics", {})
-                ).get("contact_constitution", "ipc"),
+                "contact_pipeline": ipc_diagnostics.get(
+                    "contact_constitution", "ipc"
+                ),
                 "faulted": self._faulted,
                 "fault_reason": self._fault_reason,
                 "coupler_phase": self.coupler.phase,
@@ -1637,7 +1925,8 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "reset_scope": "full_batch_only",
                 "affine_target_staging": "per_shard_device_host_device",
                 "contact_wrench_staging": "per_shard_device_host_device",
-                "integration_scheme": self.config.integration_scheme,
+                "coupling_solver": "SolverCoupledProxy",
+                "rollback_enabled": self.config.coupling_iterations > 1,
                 "coupling_iterations": self.config.coupling_iterations,
                 "actual_coupling_iterations": (
                     self.coupler.last_coupling_iterations
@@ -1675,15 +1964,8 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         try:
             for index in range(count):
                 step_actions = actions if index == 0 else None
-                if self.config.integration_scheme == "newton_proxy":
-                    for _ in range(self.config.rigid_substeps):
-                        self.coupler.newton_microstep(step_actions)
-                else:
-                    self.coupler.push_rigid_pose()
-                    self.coupler.step_ipc()
-                    self.coupler.apply_feedback()
-                    self.coupler.step_rigid(step_actions)
-                    self.coupler.finalize()
+                for _ in range(self.config.rigid_substeps):
+                    self.coupler.step(step_actions)
         except Exception as error:
             self._faulted = True
             self._fault_reason = str(error)
@@ -1759,6 +2041,17 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         sense()
         return self._arrays
 
+    def refresh_deformable_contact_forces(self) -> Any:
+        self._require_operational()
+        refresh = getattr(
+            self.ipc_solver, "refresh_deformable_contact_forces", None
+        )
+        if not callable(refresh):
+            raise NotImplementedError(
+                "IPC solver does not support lazy contact-force refresh"
+            )
+        return refresh()
+
     def synchronize(self) -> None:
         self._require_operational()
         synchronize = getattr(self.ipc_solver, "synchronize", None)
@@ -1804,7 +2097,7 @@ __all__ = [
     "CompiledMuJoCoIpcArtifact",
     "MuJoCoIpcBodyMapping",
     "MuJoCoIpcConfig",
-    "MuJoCoIpcCoupler",
     "MuJoCoIpcProvider",
+    "SolverCoupledProxy",
     "validate_mujoco_ipc_artifact",
 ]

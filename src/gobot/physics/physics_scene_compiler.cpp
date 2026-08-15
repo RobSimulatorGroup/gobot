@@ -28,6 +28,7 @@
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
@@ -574,6 +575,29 @@ void CollectSceneNodes(const Node* node,
     const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
     const Affine3 global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
 
+    if (const auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
+        PhysicsRobotSnapshot rigid_snapshot;
+        rigid_snapshot.name = rigid_body->GetName();
+        rigid_snapshot.scene_path = CanonicalScenePath(rigid_body);
+        rigid_snapshot.standalone_rigid_body = true;
+        PhysicsRobotSceneBinding scene_binding;
+        scene_binding.robot_id = rigid_body->GetInstanceId();
+        CollectRobotNodes(node,
+                          &rigid_snapshot,
+                          &scene_binding,
+                          &snapshot->loose_collision_shapes,
+                          parent_global_transform);
+        snapshot->total_link_count += rigid_snapshot.links.size();
+        snapshot->total_joint_count += rigid_snapshot.joints.size();
+        snapshot->total_sensor_count += rigid_snapshot.sensors.size();
+        for (const PhysicsLinkSnapshot& link : rigid_snapshot.links) {
+            snapshot->total_collision_shape_count += link.collision_shapes.size();
+        }
+        snapshot->robots.push_back(std::move(rigid_snapshot));
+        bindings->robots.push_back(std::move(scene_binding));
+        return;
+    }
+
     if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.name = robot->GetName();
@@ -641,7 +665,7 @@ void CollectSceneNodes(const Node* node,
         coupling_snapshot.name = coupling->GetName();
         coupling_snapshot.scene_path = CanonicalScenePath(coupling);
         coupling_snapshot.enabled = coupling->IsEnabled();
-        const Node* target = ResolveNodePath(*coupling, coupling->GetRigidLinkPath());
+        const Node* target = ResolveNodePath(*coupling, coupling->GetTargetBodyPath());
         coupling_snapshot.rigid_link_path = Object::PointerCastTo<Link3D>(target) != nullptr
                 ? CanonicalScenePath(target)
                 : std::string{};
@@ -664,7 +688,9 @@ void AssignStableIds(PhysicsSceneSnapshot* snapshot) {
     };
     std::vector<Entry> entries;
     for (PhysicsRobotSnapshot& robot : snapshot->robots) {
-        entries.push_back({robot.scene_path, &robot.stable_id});
+        if (!robot.standalone_rigid_body) {
+            entries.push_back({robot.scene_path, &robot.stable_id});
+        }
         for (PhysicsLinkSnapshot& link : robot.links) {
             entries.push_back({link.scene_path, &link.stable_id});
             for (PhysicsShapeSnapshot& shape : link.collision_shapes) {
@@ -700,6 +726,11 @@ void AssignStableIds(PhysicsSceneSnapshot* snapshot) {
             stable_id *= UINT64_C(1099511628211);
         }
         *entry.id = stable_id;
+    }
+    for (PhysicsRobotSnapshot& robot : snapshot->robots) {
+        if (robot.standalone_rigid_body && robot.links.size() == 1) {
+            robot.stable_id = robot.links.front().stable_id;
+        }
     }
 }
 
@@ -812,9 +843,27 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
     };
 
     for (const PhysicsRobotSnapshot& robot : compiled_scene->snapshot.robots) {
-        validate_identity(robot.scene_path, robot.stable_id, "Robot3D");
+        if (robot.standalone_rigid_body) {
+            if (robot.links.size() != 1 || !robot.joints.empty() ||
+                robot.scene_path.empty() || robot.name.empty() ||
+                robot.links.empty() ||
+                robot.scene_path != robot.links.front().scene_path ||
+                robot.name != robot.links.front().name ||
+                robot.stable_id != robot.links.front().stable_id) {
+                AddDiagnostic(
+                        compiled_scene,
+                        PhysicsSceneCompileSeverity::Error,
+                        robot.scene_path,
+                        "RigidBody3D must compile as exactly one free physical link.");
+                valid = false;
+            }
+        } else {
+            validate_identity(robot.scene_path, robot.stable_id, "Robot3D");
+        }
         for (const PhysicsLinkSnapshot& link : robot.links) {
-            validate_identity(link.scene_path, link.stable_id, "Link3D");
+            validate_identity(
+                    link.scene_path, link.stable_id,
+                    robot.standalone_rigid_body ? "RigidBody3D" : "Link3D");
             for (const PhysicsShapeSnapshot& shape : link.collision_shapes) {
                 validate_identity(shape.scene_path, shape.stable_id, "CollisionShape3D");
             }
@@ -951,14 +1000,14 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
             AddDiagnostic(compiled_scene,
                           PhysicsSceneCompileSeverity::Error,
                           coupling.scene_path,
-                          "Enabled PhysicsCoupling requires a valid Link3D path and finite, "
+                          "Enabled PhysicsCoupling requires a valid rigid body path and finite, "
                           "non-negative force scales.");
             valid = false;
         } else if (!coupled_links.insert(coupling.rigid_link_path).second) {
             AddDiagnostic(compiled_scene,
                           PhysicsSceneCompileSeverity::Error,
                           coupling.scene_path,
-                          "Multiple enabled PhysicsCoupling nodes target the same Link3D.");
+                          "Multiple enabled PhysicsCoupling nodes target the same rigid body.");
             valid = false;
         }
     }

@@ -98,6 +98,72 @@ using uipc::geometry::view;
 constexpr std::string_view kTetEncoding = "gobot.tetrahedral-mesh.le.v1";
 constexpr std::string_view kTetMagic = "GOBTIPC1";
 constexpr std::string_view kTriangleEncoding = "gobot.triangle-mesh.le.v1";
+
+using SteadyClock = std::chrono::steady_clock;
+
+double ElapsedMilliseconds(SteadyClock::time_point start) {
+    return std::chrono::duration<double, std::milli>(
+                   SteadyClock::now() - start)
+            .count();
+}
+
+bool HasOutputFlag(std::uint32_t flags,
+                   IpcBatchSolverOutputFlag flag) {
+    return (flags & static_cast<std::uint32_t>(flag)) != 0;
+}
+
+void ValidateOutputFlags(std::uint32_t flags) {
+    if ((flags & ~IpcBatchSolverOutputAll) != 0) {
+        throw std::runtime_error(
+                "libuipc batch output flags contain unknown bits");
+    }
+}
+
+class PinnedDoubleBuffer final {
+public:
+    ~PinnedDoubleBuffer() {
+        if (data_ != nullptr) {
+            cudaFreeHost(data_);
+        }
+    }
+
+    PinnedDoubleBuffer(const PinnedDoubleBuffer&) = delete;
+    PinnedDoubleBuffer& operator=(const PinnedDoubleBuffer&) = delete;
+    PinnedDoubleBuffer() = default;
+
+    void resize(std::size_t size) {
+        if (size == size_) {
+            return;
+        }
+        if (data_ != nullptr) {
+            cudaFreeHost(data_);
+            data_ = nullptr;
+            size_ = 0;
+        }
+        if (size == 0) {
+            return;
+        }
+        const cudaError_t result = cudaHostAlloc(
+                reinterpret_cast<void**>(&data_), size * sizeof(double),
+                cudaHostAllocPortable);
+        if (result != cudaSuccess) {
+            throw std::runtime_error(
+                    std::string("allocating pinned libuipc staging: ") +
+                    cudaGetErrorString(result));
+        }
+        size_ = size;
+    }
+
+    double* data() { return data_; }
+    const double* data() const { return data_; }
+    std::size_t size() const { return size_; }
+    double& operator[](std::size_t index) { return data_[index]; }
+    const double& operator[](std::size_t index) const { return data_[index]; }
+
+private:
+    double* data_{nullptr};
+    std::size_t size_{0};
+};
 constexpr std::string_view kTriangleMagic = "GOBTTRI1";
 
 struct TetMeshData {
@@ -586,13 +652,26 @@ public:
             double al_ipc_mu_scale_abd = 1.0e5,
             double al_ipc_toi_threshold = 0.1,
             double al_ipc_alpha_lower_bound = 1.0e-6,
-            double al_ipc_decay_factor = 0.3)
+            double al_ipc_decay_factor = 0.3,
+            std::uint32_t newton_max_iterations = 16,
+            std::uint32_t line_search_max_iterations = 8,
+            double linear_system_tolerance_rate = 1.0e-3,
+            std::uint32_t output_flags = IpcBatchSolverOutputAll)
         : environment_count_(environment_count),
           device_index_(config.device_index),
           external_affine_proxies_(external_affine_proxies),
           contact_constitution_(std::move(contact_constitution)),
-          exact_contact_wrench_(contact_constitution_ == "ipc") {
+          exact_contact_wrench_(contact_constitution_ == "ipc"),
+          output_flags_(output_flags) {
         ValidateConfig(config);
+        ValidateOutputFlags(output_flags_);
+        if (newton_max_iterations == 0 ||
+            line_search_max_iterations == 0 ||
+            !std::isfinite(linear_system_tolerance_rate) ||
+            linear_system_tolerance_rate <= 0.0) {
+            throw std::runtime_error(
+                    "libuipc solver iteration parameters are invalid");
+        }
         if (contact_constitution_ != "ipc" &&
             contact_constitution_ != "al-ipc") {
             throw std::runtime_error(
@@ -617,11 +696,12 @@ public:
         ConfigureLibuipc(config);
         const Json manifest = Json::parse(
                 std::string_view(artifact.manifest, artifact.manifest_size));
-        if ((artifact.schema_version != 3 && artifact.schema_version != 4) ||
+        if ((artifact.schema_version != 3 && artifact.schema_version != 4 &&
+             artifact.schema_version != 5) ||
             manifest.value("schema_version", 0) != artifact.schema_version ||
             manifest.value("format", std::string{}) != "gobot-ipc") {
             throw std::runtime_error(
-                    "libuipc module requires a Gobot IPC schema v3 or v4 artifact");
+                    "libuipc module requires a Gobot IPC schema v3, v4, or v5 artifact");
         }
         for (std::size_t index = 0; index < artifact.blob_count; ++index) {
             const IpcSolverArtifactBlobView& blob = artifact.blobs[index];
@@ -668,12 +748,14 @@ public:
         // libuipc's strict offline defaults can spend hundreds of Newton
         // iterations resolving driven affine joints.  These are the same
         // tolerances used by its interactive affine-body examples.
-        scene_config["newton"]["max_iter"] = 16;
+        scene_config["newton"]["max_iter"] = newton_max_iterations;
         scene_config["newton"]["velocity_tol"] = 0.1;
         scene_config["newton"]["transrate_tol"] = 10.0;
         scene_config["newton"]["ccd_tol"] = 5.0e-4;
-        scene_config["line_search"]["max_iter"] = 8;
-        scene_config["linear_system"]["tol_rate"] = 1.0e-3;
+        scene_config["line_search"]["max_iter"] =
+                line_search_max_iterations;
+        scene_config["linear_system"]["tol_rate"] =
+                linear_system_tolerance_rate;
         scene_ = std::make_unique<Scene>(scene_config);
         scene_->contact_tabular().default_model(
                 config.friction_coefficient, config.contact_resistance);
@@ -839,8 +921,10 @@ public:
         }
         ActivateDevice();
         device_buffers_ = buffers;
+        target_row_major_.resize(initial_affine_transforms_.size() * 16);
+        target_twists_.resize(initial_affine_transforms_.size() * 6);
         device_buffers_bound_ = true;
-        WriteDeviceState();
+        WriteDeviceState(IpcBatchSolverOutputAll);
     }
 
     void StepDevice(std::uint32_t steps) {
@@ -852,20 +936,28 @@ public:
             throw std::runtime_error("libuipc step count must be positive");
         }
         ActivateDevice();
-        const auto start = std::chrono::steady_clock::now();
+        const auto start = SteadyClock::now();
+        last_target_staging_latency_ms_ = 0.0;
+        last_ipc_advance_latency_ms_ = 0.0;
+        last_reaction_export_latency_ms_ = 0.0;
+        last_state_sync_latency_ms_ = 0.0;
         for (std::uint32_t index = 0; index < steps; ++index) {
+            const auto staging_start = SteadyClock::now();
             UploadAffineTargetsAndTwists();
+            last_target_staging_latency_ms_ +=
+                    ElapsedMilliseconds(staging_start);
+            const auto advance_start = SteadyClock::now();
             world_->advance();
+            last_ipc_advance_latency_ms_ +=
+                    ElapsedMilliseconds(advance_start);
             if (!world_->is_valid()) {
                 throw std::runtime_error(
                         "libuipc batch world became invalid while stepping");
             }
         }
         frame_ = world_->frame();
-        WriteDeviceState();
-        const auto end = std::chrono::steady_clock::now();
-        last_step_latency_ms_ =
-                std::chrono::duration<double, std::milli>(end - start).count();
+        WriteDeviceState(output_flags_);
+        last_step_latency_ms_ = ElapsedMilliseconds(start);
     }
 
     void ResetDevice() {
@@ -886,7 +978,7 @@ public:
             throw std::runtime_error(
                     "libuipc batch solver recovered an invalid frame");
         }
-        WriteDeviceState();
+        WriteDeviceState(IpcBatchSolverOutputAll);
     }
 
     void CaptureDeviceCheckpoint() {
@@ -935,7 +1027,7 @@ public:
         }
         attachment_target_transforms_ = checkpoint_attachment_targets_;
         frame_ = world_->frame();
-        WriteDeviceState();
+        WriteDeviceState(IpcBatchSolverOutputAll);
     }
 
     void CommitDeviceCheckpoint() {
@@ -953,6 +1045,44 @@ public:
     void SynchronizeDevice() {
         ActivateDevice();
         world_->sync();
+    }
+
+    void SetOutputFlags(std::uint32_t output_flags) {
+        ValidateOutputFlags(output_flags);
+        output_flags_ = output_flags;
+    }
+
+    void RefreshOutputs(std::uint32_t output_flags) {
+        if (!device_buffers_bound_) {
+            throw std::runtime_error(
+                    "libuipc batch device buffers are not bound");
+        }
+        ValidateOutputFlags(output_flags);
+        if (output_flags == IpcBatchSolverOutputNone) {
+            throw std::runtime_error(
+                    "libuipc batch refresh output flags are empty");
+        }
+        ActivateDevice();
+        last_reaction_export_latency_ms_ = 0.0;
+        last_state_sync_latency_ms_ = 0.0;
+        WriteDeviceState(output_flags);
+    }
+
+    std::uint32_t OutputFlags() const { return output_flags_; }
+    std::uint64_t DeformableContactForceFrame() const {
+        return deformable_contact_force_frame_;
+    }
+    double LastTargetStagingLatencyMs() const {
+        return last_target_staging_latency_ms_;
+    }
+    double LastIpcAdvanceLatencyMs() const {
+        return last_ipc_advance_latency_ms_;
+    }
+    double LastReactionExportLatencyMs() const {
+        return last_reaction_export_latency_ms_;
+    }
+    double LastStateSyncLatencyMs() const {
+        return last_state_sync_latency_ms_;
     }
 
 private:
@@ -1051,72 +1181,106 @@ private:
         affine_accessor_->copy_from(*affine_state_);
     }
 
-    void WriteDeviceState() {
+    void WriteDeviceState(std::uint32_t output_flags) {
+        ValidateOutputFlags(output_flags);
         const std::size_t vertex_count = initial_fem_positions_.size();
-        fem_accessor_->copy_position_to(
-                DeviceView(device_buffers_.deformable_positions,
-                           vertex_count, sizeof(Vector3)));
-        fem_accessor_->copy_velocity_to(
-                DeviceView(device_buffers_.deformable_velocities,
-                           vertex_count, sizeof(Vector3)));
-        world_->sync();
-
         const std::size_t affine_count = initial_affine_transforms_.size();
-        if (affine_count != 0) {
-            affine_accessor_->copy_transform_to(
-                    DeviceView(device_buffers_.affine_transforms,
-                               affine_count, sizeof(Matrix4x4)));
+        const bool export_deformable_state = HasOutputFlag(
+                output_flags, IpcBatchSolverOutputDeformableState);
+        const bool export_affine_state = HasOutputFlag(
+                output_flags, IpcBatchSolverOutputAffineState);
+        if (export_deformable_state || export_affine_state) {
+            const auto state_start = SteadyClock::now();
+            if (export_deformable_state) {
+                fem_accessor_->copy_position_to(
+                        DeviceView(device_buffers_.deformable_positions,
+                                   vertex_count, sizeof(Vector3)),
+                        0, vertex_count);
+                fem_accessor_->copy_velocity_to(
+                        DeviceView(device_buffers_.deformable_velocities,
+                                   vertex_count, sizeof(Vector3)),
+                        0, vertex_count);
+            }
+            if (export_affine_state && affine_count != 0) {
+                affine_accessor_->copy_transform_to(
+                        DeviceView(device_buffers_.affine_transforms,
+                                   affine_count, sizeof(Matrix4x4)),
+                        0, affine_count);
+            }
+            world_->sync();
+            last_state_sync_latency_ms_ +=
+                    ElapsedMilliseconds(state_start);
         }
-        if (frame_ != 0 && affine_count != 0) {
-            affine_accessor_->copy_to(*affine_state_);
-        }
-        world_->sync();
 
         const std::size_t deformable_force_scalars = vertex_count * 3;
         const std::size_t affine_wrench_scalars = affine_count * 6;
-        if (frame_ != 0 && exact_contact_wrench_) {
-            if (!deformable_attachment_vertices_.empty()) {
-                fem_accessor_->copy_to(*fem_state_);
+        const bool export_deformable_contact = HasOutputFlag(
+                output_flags,
+                IpcBatchSolverOutputDeformableContactForces);
+        const bool export_affine_wrench = HasOutputFlag(
+                output_flags,
+                IpcBatchSolverOutputAffineContactWrenches);
+        if (export_deformable_contact || export_affine_wrench) {
+            const auto reaction_start = SteadyClock::now();
+            if (frame_ != 0 && exact_contact_wrench_) {
+                if (!contact_forces_current_ ||
+                    contact_force_host_frame_ != frame_) {
+                    if (!deformable_attachment_vertices_.empty()) {
+                        fem_accessor_->copy_to(*fem_state_);
+                    }
+                    if (affine_count != 0) {
+                        affine_accessor_->copy_to(*affine_state_);
+                    }
+                    world_->sync();
+                    RefreshContactForces();
+                    contact_force_host_frame_ = frame_;
+                    contact_forces_current_ = true;
+                }
+                if (export_deformable_contact &&
+                    deformable_force_scalars != 0) {
+                    RequireCuda(
+                            cudaMemcpy(
+                                    device_buffers_.deformable_contact_forces.data,
+                                    contact_forces_.data(),
+                                    deformable_force_scalars * sizeof(double),
+                                    cudaMemcpyHostToDevice),
+                            "uploading batched deformable contact forces");
+                    deformable_contact_force_frame_ = frame_;
+                }
+                if (export_affine_wrench && affine_wrench_scalars != 0) {
+                    RequireCuda(
+                            cudaMemcpy(
+                                    device_buffers_.affine_contact_wrenches.data,
+                                    affine_contact_wrenches_.data(),
+                                    affine_wrench_scalars * sizeof(double),
+                                    cudaMemcpyHostToDevice),
+                            "uploading batched affine contact wrenches");
+                }
+            } else {
+                if (export_deformable_contact &&
+                    deformable_force_scalars != 0) {
+                    RequireCuda(
+                            cudaMemset(
+                                    device_buffers_.deformable_contact_forces.data,
+                                    0,
+                                    deformable_force_scalars * sizeof(double)),
+                            "clearing batched deformable contact forces");
+                    deformable_contact_force_frame_ = frame_;
+                }
+                if (export_affine_wrench && affine_wrench_scalars != 0) {
+                    RequireCuda(
+                            cudaMemset(
+                                    device_buffers_.affine_contact_wrenches.data,
+                                    0,
+                                    affine_wrench_scalars * sizeof(double)),
+                            "clearing batched affine contact wrenches");
+                }
+                contact_force_host_frame_ = frame_;
+                contact_forces_current_ = frame_ == 0;
             }
-            RefreshContactForces();
-            if (deformable_force_scalars != 0) {
-                RequireCuda(
-                        cudaMemcpy(
-                                device_buffers_.deformable_contact_forces.data,
-                                contact_forces_.data(),
-                                deformable_force_scalars * sizeof(double),
-                                cudaMemcpyHostToDevice),
-                        "uploading batched deformable contact forces");
-            }
-            if (affine_wrench_scalars != 0) {
-                RequireCuda(
-                        cudaMemcpy(
-                                device_buffers_.affine_contact_wrenches.data,
-                                affine_contact_wrenches_.data(),
-                                affine_wrench_scalars * sizeof(double),
-                                cudaMemcpyHostToDevice),
-                        "uploading batched affine contact wrenches");
-            }
-        } else {
-            if (deformable_force_scalars != 0) {
-                RequireCuda(
-                        cudaMemset(
-                                device_buffers_.deformable_contact_forces.data,
-                                0,
-                                deformable_force_scalars * sizeof(double)),
-                        "clearing batched deformable contact forces");
-            }
-            if (affine_wrench_scalars != 0) {
-                RequireCuda(
-                        cudaMemset(
-                                device_buffers_.affine_contact_wrenches.data,
-                                0,
-                                affine_wrench_scalars * sizeof(double)),
-                        "clearing batched affine contact wrenches");
-            }
+            last_reaction_export_latency_ms_ +=
+                    ElapsedMilliseconds(reaction_start);
         }
-        RequireCuda(cudaDeviceSynchronize(),
-                    "synchronizing libuipc batch device state");
     }
 
     static void ValidateConfig(const IpcSolverModuleConfig& config) {
@@ -1296,7 +1460,7 @@ private:
                         "IPC schema v3 PhysicsCoupling references an unknown Link3D path");
             }
             const Json& robot = *found->second.robot;
-            const Json& link = *found->second.link;
+            Json link = *found->second.link;
             if (coupling.at("robot_name").get<std::string>() !=
                         robot.at("name").get<std::string>() ||
                 coupling.at("link_name").get<std::string>() !=
@@ -1312,9 +1476,11 @@ private:
                 throw std::runtime_error(
                         "IPC schema v3 PhysicsCoupling target has no enabled collision shape");
             }
+            link["external_proxy_mode"] = mode;
             selected.push_back({
                     {"joints", Json::array()},
-                    {"links", Json::array({link})},
+                    {"kind", robot.value("kind", "articulation")},
+                    {"links", Json::array({std::move(link)})},
                     {"name", robot.at("name")},
                     {"path", robot.at("path")},
                     {"root_link_paths", Json::array({link_path})},
@@ -1799,12 +1965,24 @@ private:
                 inertia(1, 2) = inertia(2, 1) = inertia_off_diagonal.z();
                 const auto mass_matrix =
                         uipc::geometry::affine_body::from_rigid_body(mass, center, inertia);
+                const bool one_way_proxy =
+                        external_affine_proxies_ &&
+                        link.value("external_proxy_mode", "TwoWay") == "OneWay";
                 affine.apply_to(mesh, config.affine_stiffness, mass_matrix,
                                 std::max(mass / 1000.0, 1.0e-9));
                 if (articulated) {
                     auto fixed = mesh.instances().find<IndexT>(uipc::builtin::is_fixed);
                     view(*fixed)[0] = root_paths.contains(
                             link.at("path").get<std::string>()) ? 1 : 0;
+                } else if (one_way_proxy) {
+                    // OneWay bodies are prescribed collision geometry. Keeping
+                    // them out of the Newton unknowns avoids conditioning the
+                    // deformable solve on unrelated robot-link constraints.
+                    auto fixed = mesh.instances().find<IndexT>(uipc::builtin::is_fixed);
+                    view(*fixed)[0] = 1;
+                    auto external_kinetic = mesh.instances().find<IndexT>(
+                            uipc::builtin::external_kinetic);
+                    view(*external_kinetic)[0] = 1;
                 } else {
                     constraint.apply_to(
                             mesh, Vector2{config.kinematic_strength,
@@ -1895,18 +2073,23 @@ private:
                     } else {
                         affine_targets_.emplace(path, target);
                     }
-                    scene_->animator().insert(
-                            *object,
-                            [target](uipc::core::Animation::UpdateInfo& info) {
-                                auto geometry =
-                                        info.geo_slots()[0]->geometry().as<SimplicialComplex>();
-                                auto constrained = geometry->instances().find<IndexT>(
-                                        uipc::builtin::is_constrained);
-                                auto aim = geometry->instances().find<Matrix4x4>(
-                                        uipc::builtin::aim_transform);
-                                view(*constrained)[0] = 1;
-                                view(*aim)[0] = target->value;
-                            });
+                    if (!one_way_proxy) {
+                        scene_->animator().insert(
+                                *object,
+                                [target](uipc::core::Animation::UpdateInfo& info) {
+                                    auto geometry = info.geo_slots()[0]
+                                                            ->geometry()
+                                                            .as<SimplicialComplex>();
+                                    auto constrained =
+                                            geometry->instances().find<IndexT>(
+                                                    uipc::builtin::is_constrained);
+                                    auto aim =
+                                            geometry->instances().find<Matrix4x4>(
+                                                    uipc::builtin::aim_transform);
+                                    view(*constrained)[0] = 1;
+                                    view(*aim)[0] = target->value;
+                                });
+                    }
                 }
             }
 
@@ -2394,21 +2577,29 @@ private:
     std::vector<double> contact_forces_;
     std::vector<double> affine_contact_wrenches_;
     std::vector<double> affine_transforms_;
-    std::vector<double> target_row_major_;
-    std::vector<double> target_twists_;
+    PinnedDoubleBuffer target_row_major_;
+    PinnedDoubleBuffer target_twists_;
     std::optional<std::uint64_t> checkpoint_frame_;
     std::vector<Matrix4x4> checkpoint_affine_targets_;
     std::vector<Matrix4x4> checkpoint_attachment_targets_;
     IpcBatchSolverModuleBuffers device_buffers_{};
     double inverse_time_step_squared_{0.0};
     std::uint64_t frame_{0};
+    std::uint64_t contact_force_host_frame_{0};
+    std::uint64_t deformable_contact_force_frame_{0};
     double last_step_latency_ms_{0.0};
+    double last_target_staging_latency_ms_{0.0};
+    double last_ipc_advance_latency_ms_{0.0};
+    double last_reaction_export_latency_ms_{0.0};
+    double last_state_sync_latency_ms_{0.0};
     std::size_t environment_count_{1};
     std::size_t static_collider_count_per_environment_{0};
     std::uint32_t device_index_{0};
     bool external_affine_proxies_{false};
     std::string contact_constitution_{"ipc"};
     bool exact_contact_wrench_{true};
+    std::uint32_t output_flags_{IpcBatchSolverOutputAll};
+    bool contact_forces_current_{true};
     bool device_buffers_bound_{false};
     bool initial_state_dumped_{false};
 };
@@ -2436,6 +2627,7 @@ public:
                   config.contact_constitution != nullptr
                           ? config.contact_constitution
                           : ""),
+          output_flags_(config.output_flags),
           workspace_suffix_(MakeBatchWorkspaceSuffix()) {
         if (environment_count_ == 0 || environments_per_shard_ == 0 ||
             environment_count_ % environments_per_shard_ != 0) {
@@ -2445,8 +2637,9 @@ public:
         }
         if (!config.external_affine_proxies) {
             throw std::runtime_error(
-                    "libuipc batch v2 requires external affine proxies");
+                    "libuipc batch v3 requires external affine proxies");
         }
+        ValidateOutputFlags(output_flags_);
         const std::filesystem::path workspace_root =
                 config.solver.workspace != nullptr &&
                                 config.solver.workspace[0] != '\0'
@@ -2484,7 +2677,11 @@ public:
                     config.al_ipc_mu_scale_abd,
                     config.al_ipc_toi_threshold,
                     config.al_ipc_alpha_lower_bound,
-                    config.al_ipc_decay_factor));
+                    config.al_ipc_decay_factor,
+                    config.newton_max_iterations,
+                    config.line_search_max_iterations,
+                    config.linear_system_tolerance_rate,
+                    output_flags_));
         }
         const auto& first_deformables = shards_.front()->DeformableBodies();
         const auto& first_affines = shards_.front()->AffineBodies();
@@ -2553,14 +2750,24 @@ public:
             throw std::runtime_error(
                     "libuipc batch device buffers are not bound");
         }
-        const auto start = std::chrono::steady_clock::now();
+        const auto start = SteadyClock::now();
+        last_target_staging_latency_ms_ = 0.0;
+        last_ipc_advance_latency_ms_ = 0.0;
+        last_reaction_export_latency_ms_ = 0.0;
+        last_state_sync_latency_ms_ = 0.0;
         for (const auto& shard : shards_) {
             shard->StepDevice(steps);
+            last_target_staging_latency_ms_ +=
+                    shard->LastTargetStagingLatencyMs();
+            last_ipc_advance_latency_ms_ +=
+                    shard->LastIpcAdvanceLatencyMs();
+            last_reaction_export_latency_ms_ +=
+                    shard->LastReactionExportLatencyMs();
+            last_state_sync_latency_ms_ +=
+                    shard->LastStateSyncLatencyMs();
         }
         frame_ += steps;
-        const auto end = std::chrono::steady_clock::now();
-        last_step_latency_ms_ =
-                std::chrono::duration<double, std::milli>(end - start).count();
+        last_step_latency_ms_ = ElapsedMilliseconds(start);
     }
 
     void Reset() {
@@ -2584,10 +2791,12 @@ public:
             throw std::runtime_error(
                     "libuipc batch checkpoint slot is already active");
         }
+        const auto start = SteadyClock::now();
         for (const auto& shard : shards_) {
             shard->CaptureDeviceCheckpoint();
         }
         checkpoint_frame_ = frame_;
+        last_checkpoint_latency_ms_ = ElapsedMilliseconds(start);
     }
 
     void RewindCheckpoint() {
@@ -2595,10 +2804,12 @@ public:
             throw std::runtime_error(
                     "libuipc batch checkpoint slot is not active");
         }
+        const auto start = SteadyClock::now();
         for (const auto& shard : shards_) {
             shard->RewindDeviceCheckpoint();
         }
         frame_ = *checkpoint_frame_;
+        last_checkpoint_latency_ms_ = ElapsedMilliseconds(start);
     }
 
     void CommitCheckpoint() {
@@ -2606,10 +2817,12 @@ public:
             throw std::runtime_error(
                     "libuipc batch checkpoint slot is not active");
         }
+        const auto start = SteadyClock::now();
         for (const auto& shard : shards_) {
             shard->CommitDeviceCheckpoint();
         }
         checkpoint_frame_.reset();
+        last_checkpoint_latency_ms_ = ElapsedMilliseconds(start);
     }
 
     void Synchronize() {
@@ -2618,6 +2831,31 @@ public:
         }
         RequireCuda(cudaDeviceSynchronize(),
                     "synchronizing libuipc batch shards");
+    }
+
+    void SetOutputFlags(std::uint32_t output_flags) {
+        ValidateOutputFlags(output_flags);
+        for (const auto& shard : shards_) {
+            shard->SetOutputFlags(output_flags);
+        }
+        output_flags_ = output_flags;
+    }
+
+    void RefreshOutputs(std::uint32_t output_flags) {
+        ValidateOutputFlags(output_flags);
+        if (output_flags == IpcBatchSolverOutputNone) {
+            throw std::runtime_error(
+                    "libuipc batch refresh output flags are empty");
+        }
+        last_reaction_export_latency_ms_ = 0.0;
+        last_state_sync_latency_ms_ = 0.0;
+        for (const auto& shard : shards_) {
+            shard->RefreshOutputs(output_flags);
+            last_reaction_export_latency_ms_ +=
+                    shard->LastReactionExportLatencyMs();
+            last_state_sync_latency_ms_ +=
+                    shard->LastStateSyncLatencyMs();
+        }
     }
 
     const std::vector<BodyRecord>& DeformableBodies() const {
@@ -2636,6 +2874,31 @@ public:
     }
     std::uint64_t Frame() const { return frame_; }
     double LastStepLatencyMs() const { return last_step_latency_ms_; }
+    double LastCheckpointLatencyMs() const {
+        return last_checkpoint_latency_ms_;
+    }
+    double LastTargetStagingLatencyMs() const {
+        return last_target_staging_latency_ms_;
+    }
+    double LastIpcAdvanceLatencyMs() const {
+        return last_ipc_advance_latency_ms_;
+    }
+    double LastReactionExportLatencyMs() const {
+        return last_reaction_export_latency_ms_;
+    }
+    double LastStateSyncLatencyMs() const {
+        return last_state_sync_latency_ms_;
+    }
+    std::uint32_t OutputFlags() const { return output_flags_; }
+    std::uint64_t DeformableContactForceFrame() const {
+        if (shards_.empty()) {
+            return 0;
+        }
+        return std::ranges::min(
+                shards_ | std::views::transform([](const auto& shard) {
+                    return shard->DeformableContactForceFrame();
+                }));
+    }
     const std::string& ContactConstitution() const {
         return contact_constitution_;
     }
@@ -2662,6 +2925,7 @@ private:
     std::size_t deformable_vertex_count_per_environment_{0};
     std::size_t static_collider_count_per_environment_{0};
     std::string contact_constitution_;
+    std::uint32_t output_flags_{IpcBatchSolverOutputAll};
     std::string workspace_suffix_;
     WorkspaceLease workspace_lease_;
     std::vector<std::unique_ptr<Session>> shards_;
@@ -2669,6 +2933,11 @@ private:
     std::vector<BodyRecord> affine_bodies_;
     std::uint64_t frame_{0};
     double last_step_latency_ms_{0.0};
+    double last_checkpoint_latency_ms_{0.0};
+    double last_target_staging_latency_ms_{0.0};
+    double last_ipc_advance_latency_ms_{0.0};
+    double last_reaction_export_latency_ms_{0.0};
+    double last_state_sync_latency_ms_{0.0};
     std::optional<std::uint64_t> checkpoint_frame_;
     bool buffers_bound_{false};
 };
@@ -2960,6 +3229,24 @@ bool BatchSynchronize(void* session, char* error, std::size_t error_size) {
                  [&] { CastBatch(session)->Synchronize(); });
 }
 
+bool BatchSetOutputFlags(void* session,
+                         std::uint32_t output_flags,
+                         char* error,
+                         std::size_t error_size) {
+    return Guard(error, error_size, [&] {
+        CastBatch(session)->SetOutputFlags(output_flags);
+    });
+}
+
+bool BatchRefreshOutputs(void* session,
+                         std::uint32_t output_flags,
+                         char* error,
+                         std::size_t error_size) {
+    return Guard(error, error_size, [&] {
+        CastBatch(session)->RefreshOutputs(output_flags);
+    });
+}
+
 std::size_t BatchDeformableBodyCount(void* session) {
     try {
         return CastBatch(session)->DeformableBodies().size();
@@ -3023,6 +3310,13 @@ bool BatchDiagnostics(void* session,
                 value->AffineBodies().size(),
                 value->StaticColliderCountPerEnvironment(),
                 value->LastStepLatencyMs(),
+                value->LastCheckpointLatencyMs(),
+                value->LastTargetStagingLatencyMs(),
+                value->LastIpcAdvanceLatencyMs(),
+                value->LastReactionExportLatencyMs(),
+                value->LastStateSyncLatencyMs(),
+                value->OutputFlags(),
+                value->DeformableContactForceFrame(),
                 value->ContactConstitution().c_str(),
                 value->ExactContactWrench(),
                 value->CheckpointActive(),
@@ -3061,6 +3355,8 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchRewindCheckpoint,
         &BatchCommitCheckpoint,
         &BatchSynchronize,
+        &BatchSetOutputFlags,
+        &BatchRefreshOutputs,
         &BatchDeformableBodyCount,
         &BatchDeformableBodyInfo,
         &BatchAffineBodyCount,

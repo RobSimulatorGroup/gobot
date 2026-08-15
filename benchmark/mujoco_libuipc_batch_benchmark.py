@@ -29,11 +29,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
     parser.add_argument(
-        "--integration-scheme",
-        choices=("sequential_split", "newton_proxy"),
-        default="sequential_split",
-    )
-    parser.add_argument(
         "--coupling-iterations", type=int, nargs="+", default=(2,)
     )
     parser.add_argument(
@@ -90,7 +85,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 example_args.fixed_dt = args.fixed_dt
                 example_args.rigid_substeps = args.rigid_substeps
                 example_args.ipc_substeps = args.ipc_substeps
-                example_args.integration_scheme = args.integration_scheme
                 example_args.coupling_iterations = iteration_count
                 example_args.relaxation_mode = args.relaxation_mode
                 example_args.contact_constitution = contact_constitution

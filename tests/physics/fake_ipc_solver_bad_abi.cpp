@@ -15,7 +15,7 @@ const gobot::IpcSolverModuleApi kApi{
 
 const gobot::IpcBatchSolverModuleApi kBatchApi{
         gobot::GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION - 1,
-        "legacy-batch-abi-v1"};
+        "legacy-batch-abi-v2"};
 
 } // namespace
 

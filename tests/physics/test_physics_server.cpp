@@ -20,6 +20,7 @@
 #include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/resources/physics_material_3d.hpp>
 #include <gobot/scene/resources/sensor_noise_model.hpp>
+#include <gobot/scene/rigid_body_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
 #include <gobot/scene/terrain_3d.hpp>
@@ -450,6 +451,38 @@ TEST(TestPhysicsServer, scene_compiler_keeps_import_provenance_out_of_runtime_sn
     EXPECT_EQ(first.bindings.robots[0].link_ids[0], link->GetInstanceId());
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, scene_compiler_keeps_standalone_rigid_body_as_one_free_link) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("world");
+    auto* body = gobot::Object::New<gobot::RigidBody3D>();
+    body->SetName("fixture");
+    body->SetMass(0.5);
+    body->SetInertiaDiagonal({0.1, 0.1, 0.1});
+    root->AddChild(body);
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("fixture_collision");
+    collision->SetShape(gobot::MakeRef<gobot::BoxShape3D>());
+    body->AddChild(collision);
+
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &compiled));
+    ASSERT_EQ(compiled.snapshot.robots.size(), 1u);
+    const gobot::PhysicsRobotSnapshot& rigid_system = compiled.snapshot.robots[0];
+    EXPECT_TRUE(rigid_system.standalone_rigid_body);
+    EXPECT_EQ(rigid_system.name, "fixture");
+    ASSERT_EQ(rigid_system.links.size(), 1u);
+    EXPECT_TRUE(rigid_system.joints.empty());
+    EXPECT_EQ(rigid_system.scene_path, rigid_system.links[0].scene_path);
+    EXPECT_EQ(rigid_system.stable_id, rigid_system.links[0].stable_id);
+    EXPECT_EQ(rigid_system.links[0].name, "fixture");
+    ASSERT_EQ(compiled.bindings.robots.size(), 1u);
+    EXPECT_EQ(compiled.bindings.robots[0].robot_id, body->GetInstanceId());
+    ASSERT_EQ(compiled.bindings.robots[0].link_ids.size(), 1u);
+    EXPECT_EQ(compiled.bindings.robots[0].link_ids[0], body->GetInstanceId());
+
+    gobot::Object::Delete(root);
 }
 
 TEST(TestPhysicsServer, stable_ids_are_derived_from_canonical_paths) {
@@ -1349,6 +1382,44 @@ TEST(TestPhysicsServer, mujoco_compiles_authored_floating_joint) {
     EXPECT_EQ(world->GetSceneState().robots[0].joints[0].joint_name, "floating_base_joint");
 
     gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_compiles_standalone_rigid_body_with_internal_free_joint) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* body = gobot::Object::New<gobot::RigidBody3D>();
+    body->SetName("fixture");
+    body->SetMass(0.5);
+    body->SetInertiaDiagonal({0.1, 0.1, 0.1});
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("fixture_collision");
+    collision->SetShape(gobot::MakeRef<gobot::BoxShape3D>());
+    body->AddChild(collision);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world =
+            physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
+    ASSERT_TRUE(BuildWorldFromScene(world, body)) << world->GetLastError();
+    const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->nq, 7);
+    EXPECT_EQ(artifact->nv, 6);
+    EXPECT_NE(artifact->content.find("fixture_free_joint"), std::string::npos);
+    ASSERT_EQ(world->GetSceneState().robots.size(), 1u);
+    EXPECT_EQ(world->GetSceneState().robots[0].name, "fixture");
+    EXPECT_TRUE(world->GetSceneState().robots[0].joints.empty());
+    ASSERT_TRUE(world->ResetLinkState(
+            "fixture", "fixture", {0.2, -0.1, 0.8},
+            gobot::Quaternion::Identity(), {0.1, 0.2, 0.3},
+            {0.4, 0.5, 0.6}));
+    const gobot::PhysicsLinkState& state =
+            world->GetSceneState().robots[0].links[0];
+    EXPECT_TRUE(state.global_transform.translation().isApprox(
+            gobot::Vector3(0.2, -0.1, 0.8)));
+    EXPECT_TRUE(state.linear_velocity.isApprox(gobot::Vector3(0.1, 0.2, 0.3)));
+    EXPECT_TRUE(state.angular_velocity.isApprox(gobot::Vector3(0.4, 0.5, 0.6)));
+
+    gobot::Object::Delete(body);
 #endif
 }
 

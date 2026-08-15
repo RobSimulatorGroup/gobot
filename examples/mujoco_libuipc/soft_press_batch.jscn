@@ -756,11 +756,11 @@
                 "enabled": true,
                 "force_scale": 1.0,
                 "mode": "OneWay",
-                "rigid_link_path": {
-                    "str_data": "../static_colliders/ground"
-                },
                 "script": null,
                 "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../static_colliders/ground"
+                },
                 "torque_scale": 1.0
             },
             "type": "PhysicsCoupling"
@@ -772,11 +772,11 @@
                 "enabled": true,
                 "force_scale": 1.0,
                 "mode": "TwoWay",
-                "rigid_link_path": {
-                    "str_data": "../press/press_frame/press_slide/press_head"
-                },
                 "script": null,
                 "semantic_label": "",
+                "target_body_path": {
+                    "str_data": "../press/press_frame/press_slide/press_head"
+                },
                 "torque_scale": 1.0
             },
             "type": "PhysicsCoupling"

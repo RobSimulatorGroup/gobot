@@ -3,8 +3,8 @@
 This example runs a batch of independent soft-body press environments on one
 CUDA device. MuJoCo Warp owns the prismatic press articulation and rigid
 dynamics. libuipc owns FEM deformation and every contact pair involving the
-soft block. `MuJoCoIpcCoupler` exchanges rigid poses and reaction wrenches once
-per fixed step.
+soft block. `SolverCoupledProxy` exchanges rigid pose/twist targets and relaxed
+reaction wrenches per fixed step.
 
 ## Editor Play Mode
 
@@ -74,7 +74,7 @@ uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
   --module-path "$PWD/build/libuipc-novcpkg/python/gobot/libgobot_libuipc_solver.so"
 ```
 
-The default benchmark preserves the sequential IPC baseline at 4, 64, and 256
+The default benchmark measures SolverCoupledProxy at 4, 64, and 256
 environments. Pass a prior JSON report as `--baseline-json`; the
 256-environment run then fails if throughput regresses by more than 10 percent.
 To record the Newton/AL-IPC correctness matrix, run:
@@ -82,7 +82,6 @@ To record the Newton/AL-IPC correctness matrix, run:
 ```bash
 uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
   --environment-counts 1 64 \
-  --integration-scheme newton_proxy \
   --coupling-iterations 1 2 4 \
   --contact-constitutions ipc al-ipc
 ```
@@ -109,23 +108,26 @@ Useful options:
 - `--repeats`: number of timed runs used for the median.
 - `--press-depth`: final prismatic target in meters, limited to `0.17`.
 - `--fixed-dt`: shared MuJoCo/libuipc timestep.
-- `--integration-scheme`: `sequential_split` (default) or rollback-based
-  `newton_proxy`.
-- `--coupling-iterations`: interface iterations per Newton microstep.
+- `--coupling-iterations`: Proxy interface iterations per physical microstep.
+  x1 skips checkpoints; x2+ rewinds both solvers between iterations.
 - `--relaxation-mode`: fixed or bounded Aitken interface relaxation.
 - `--contact-constitution`: standard `ipc` or experimental `al-ipc`.
 - `--no-mujoco-graph`: disable MuJoCo Warp CUDA graph capture for debugging.
 - `--rebuild-scene`: regenerate the `.jscn` before running.
 
-The native batch C ABI is v2, while the compiled IPC/composite artifact is
-schema v4 with schema-v3 read compatibility. The composite provider requires
-fixed topology and full-batch reset. Newton mode additionally requires equal
-rigid/IPC microsteps and uses a single-slot native checkpoint for rollback; any
+The native batch C ABI is v3. The IPC artifact is schema v5 with schema-v3/v4
+read compatibility; v5 distinguishes articulated robots from standalone rigid
+bodies. The composite artifact remains schema v4 with schema-v3 read
+compatibility. The composite provider requires
+fixed topology, equal rigid/IPC microsteps, and full-batch reset. x2+ uses a
+single-slot native checkpoint for rollback; any
 number of interface iterations still commits one physical microstep. A partial
 reset is rejected because shard-local history cannot yet be restored
 selectively. The composite provider reports `graph_capture=false` because
-libuipc shards are stepped outside capture; its MuJoCo Warp subsolver can still
-replay a captured graph. libuipc currently stages the small affine pose/twist
-table D2H/H2D once per shard and step. The Play display adds batched CPU
-readback only in its viewport callback; the headless batch path does not
-perform that display synchronization.
+libuipc shards are stepped outside capture. Its MuJoCo Warp subsolver and the
+graph-safe checkpoint, kinematics, relaxation, and wrench-application segments
+can still replay captured graphs; libuipc `World::advance()` / `World::sync()`
+remain host boundaries. libuipc currently stages the small affine pose/twist
+table D2H/H2D once per shard and step. The Play display adds batched CPU readback
+only in its viewport callback; the headless batch path does not perform that
+display synchronization.

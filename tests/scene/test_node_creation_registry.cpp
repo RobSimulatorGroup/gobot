@@ -15,6 +15,7 @@
 #include <gobot/scene/node_creation_registry.hpp>
 #include <gobot/scene/physics_coupling.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
+#include <gobot/scene/rigid_body_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
 #include <gobot/scene/tactile_sensor_3d.hpp>
@@ -43,6 +44,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* terrain = FindEntry("Terrain3D");
     const auto* robot = FindEntry("Robot3D");
     const auto* link = FindEntry("Link3D");
+    const auto* rigid_body = FindEntry("RigidBody3D");
     const auto* joint = FindEntry("Joint3D");
     const auto* sensor = FindEntry("Sensor3D");
     const auto* deformable = FindEntry("DeformableBody3D");
@@ -72,6 +74,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(terrain, nullptr);
     ASSERT_NE(robot, nullptr);
     ASSERT_NE(link, nullptr);
+    ASSERT_NE(rigid_body, nullptr);
     ASSERT_NE(joint, nullptr);
     ASSERT_NE(sensor, nullptr);
     ASSERT_NE(deformable, nullptr);
@@ -101,6 +104,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(terrain->parent_id, "Node3D");
     EXPECT_EQ(robot->parent_id, "Node3D");
     EXPECT_EQ(link->parent_id, "Node3D");
+    EXPECT_EQ(rigid_body->parent_id, "Link3D");
     EXPECT_EQ(joint->parent_id, "Node3D");
     EXPECT_EQ(sensor->parent_id, "Node3D");
     EXPECT_EQ(deformable->parent_id, "Node3D");
@@ -201,6 +205,17 @@ TEST(TestNodeCreationRegistry, creates_robot_semantic_nodes) {
     ASSERT_NE(link_node, nullptr);
     EXPECT_NE(gobot::Object::PointerCastTo<gobot::Link3D>(link_node), nullptr);
     gobot::Object::Delete(link_node);
+
+    gobot::Node* rigid_body_node =
+            gobot::NodeCreationRegistry::CreateNode("RigidBody3D");
+    ASSERT_NE(rigid_body_node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::RigidBody3D>(rigid_body_node),
+              nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::Link3D>(rigid_body_node),
+              nullptr);
+    EXPECT_EQ(gobot::Object::PointerCastTo<gobot::Robot3D>(rigid_body_node),
+              nullptr);
+    gobot::Object::Delete(rigid_body_node);
 
     gobot::Node* joint_node = gobot::NodeCreationRegistry::CreateNode("Joint3D");
     ASSERT_NE(joint_node, nullptr);

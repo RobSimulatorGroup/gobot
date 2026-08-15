@@ -13,7 +13,20 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 2;
+inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 3;
+
+enum IpcBatchSolverOutputFlag : std::uint32_t {
+    IpcBatchSolverOutputNone = 0,
+    IpcBatchSolverOutputDeformableState = 1U << 0U,
+    IpcBatchSolverOutputAffineState = 1U << 1U,
+    IpcBatchSolverOutputDeformableContactForces = 1U << 2U,
+    IpcBatchSolverOutputAffineContactWrenches = 1U << 3U,
+    IpcBatchSolverOutputAll =
+            IpcBatchSolverOutputDeformableState |
+            IpcBatchSolverOutputAffineState |
+            IpcBatchSolverOutputDeformableContactForces |
+            IpcBatchSolverOutputAffineContactWrenches,
+};
 
 enum class IpcSolverDeviceScalarType : std::uint32_t {
     Float64 = 1,
@@ -50,6 +63,10 @@ struct IpcBatchSolverModuleConfig {
     double al_ipc_toi_threshold{0.1};
     double al_ipc_alpha_lower_bound{1.0e-6};
     double al_ipc_decay_factor{0.3};
+    std::uint32_t newton_max_iterations{16};
+    std::uint32_t line_search_max_iterations{8};
+    double linear_system_tolerance_rate{1.0e-3};
+    std::uint32_t output_flags{IpcBatchSolverOutputAll};
 };
 
 struct IpcBatchSolverModuleDiagnostics {
@@ -61,6 +78,13 @@ struct IpcBatchSolverModuleDiagnostics {
     std::size_t affine_body_count_per_environment{0};
     std::size_t static_collider_count_per_environment{0};
     double last_step_latency_ms{0.0};
+    double last_checkpoint_latency_ms{0.0};
+    double last_target_staging_latency_ms{0.0};
+    double last_ipc_advance_latency_ms{0.0};
+    double last_reaction_export_latency_ms{0.0};
+    double last_state_sync_latency_ms{0.0};
+    std::uint32_t output_flags{IpcBatchSolverOutputAll};
+    std::uint64_t deformable_contact_force_frame{0};
     const char* contact_constitution{nullptr};
     bool exact_contact_wrench{false};
     bool checkpoint_active{false};
@@ -99,6 +123,14 @@ struct IpcBatchSolverModuleApi {
     bool (*synchronize)(void* session,
                         char* error,
                         std::size_t error_size){nullptr};
+    bool (*set_output_flags)(void* session,
+                             std::uint32_t output_flags,
+                             char* error,
+                             std::size_t error_size){nullptr};
+    bool (*refresh_outputs)(void* session,
+                            std::uint32_t output_flags,
+                            char* error,
+                            std::size_t error_size){nullptr};
 
     std::size_t (*deformable_body_count)(void* session){nullptr};
     bool (*deformable_body_info)(void* session,

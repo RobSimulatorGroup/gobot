@@ -86,7 +86,8 @@ void* Create(const IpcSolverArtifactView* artifact,
              char* error,
              std::size_t error_size) {
     if (artifact == nullptr || config == nullptr || artifact->manifest == nullptr ||
-        (artifact->schema_version != 3 && artifact->schema_version != 4) ||
+        (artifact->schema_version != 3 && artifact->schema_version != 4 &&
+         artifact->schema_version != 5) ||
         artifact->format == nullptr ||
         std::string_view(artifact->format) != "gobot-ipc") {
         WriteError(error, error_size, "fake IPC module rejected the artifact");
@@ -283,6 +284,8 @@ struct BatchSession {
     std::vector<double> checkpoint_contact_forces;
     std::vector<double> checkpoint_transforms;
     std::vector<double> checkpoint_wrenches;
+    std::uint32_t output_flags{gobot::IpcBatchSolverOutputAll};
+    std::uint64_t deformable_contact_force_frame{0};
     bool bound{false};
     bool checkpoint_active{false};
 };
@@ -311,6 +314,7 @@ void InitializeBatchBuffers(BatchSession* session) {
                     transforms + environment * 16);
         std::fill_n(wrenches + environment * 6, 6, 0.0);
     }
+    session->deformable_contact_force_frame = session->frame;
 }
 
 void* BatchCreate(const IpcSolverArtifactView* artifact,
@@ -327,6 +331,7 @@ void* BatchCreate(const IpcSolverArtifactView* artifact,
     auto session = std::make_unique<BatchSession>();
     session->environment_count = config->environment_count;
     session->environments_per_shard = config->environments_per_shard;
+    session->output_flags = config->output_flags;
     return session.release();
 }
 
@@ -374,14 +379,21 @@ bool BatchStep(void* opaque,
             const std::size_t offset = (environment * 2 + vertex) * 3;
             positions[offset] += 0.25 * static_cast<double>(steps);
             velocities[offset] = 0.25;
-            contact_forces[offset + 2] =
-                    static_cast<double>((vertex + 1) * session->frame);
+            if ((session->output_flags &
+                 gobot::IpcBatchSolverOutputDeformableContactForces) != 0) {
+                contact_forces[offset + 2] =
+                        static_cast<double>((vertex + 1) * session->frame);
+            }
         }
         std::copy_n(targets + environment * 16, 16,
                     transforms + environment * 16);
         std::fill_n(wrenches + environment * 6, 6, 0.0);
         wrenches[environment * 6 + 2] =
                 static_cast<double>(session->frame);
+    }
+    if ((session->output_flags &
+         gobot::IpcBatchSolverOutputDeformableContactForces) != 0) {
+        session->deformable_contact_force_frame = session->frame;
     }
     return true;
 }
@@ -472,6 +484,50 @@ bool BatchSynchronize(void* opaque, char* error, std::size_t error_size) {
     return true;
 }
 
+bool BatchSetOutputFlags(void* opaque,
+                         std::uint32_t output_flags,
+                         char* error,
+                         std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr ||
+        (output_flags & ~gobot::IpcBatchSolverOutputAll) != 0) {
+        WriteError(error, error_size,
+                   "fake IPC batch output flags are invalid");
+        return false;
+    }
+    session->output_flags = output_flags;
+    return true;
+}
+
+bool BatchRefreshOutputs(void* opaque,
+                         std::uint32_t output_flags,
+                         char* error,
+                         std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound || output_flags == 0 ||
+        (output_flags & ~gobot::IpcBatchSolverOutputAll) != 0) {
+        WriteError(error, error_size,
+                   "fake IPC batch refresh flags are invalid");
+        return false;
+    }
+    if ((output_flags &
+         gobot::IpcBatchSolverOutputDeformableContactForces) != 0) {
+        double* contact_forces =
+                Data(session->buffers.deformable_contact_forces);
+        for (std::size_t environment = 0;
+             environment < session->environment_count; ++environment) {
+            for (std::size_t vertex = 0; vertex < 2; ++vertex) {
+                const std::size_t offset =
+                        (environment * 2 + vertex) * 3;
+                contact_forces[offset + 2] = static_cast<double>(
+                        (vertex + 1) * session->frame);
+            }
+        }
+        session->deformable_contact_force_frame = session->frame;
+    }
+    return true;
+}
+
 std::size_t BatchDeformableBodyCount(void*) { return 1; }
 
 bool BatchDeformableBodyInfo(void* opaque,
@@ -523,6 +579,13 @@ bool BatchDiagnostics(void* opaque,
             1,
             0,
             0.25,
+            0.05,
+            0.04,
+            0.10,
+            0.03,
+            0.08,
+            session->output_flags,
+            session->deformable_contact_force_frame,
             "ipc",
             true,
             session->checkpoint_active,
@@ -542,6 +605,8 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchRewindCheckpoint,
         &BatchCommitCheckpoint,
         &BatchSynchronize,
+        &BatchSetOutputFlags,
+        &BatchRefreshOutputs,
         &BatchDeformableBodyCount,
         &BatchDeformableBodyInfo,
         &BatchAffineBodyCount,

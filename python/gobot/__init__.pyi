@@ -24,6 +24,7 @@ from ._core import (
     PhysicsIntegratorType,
     PhysicsJacobianType,
     PhysicsSolverType,
+    RigidBody3D,
     Robot3D,
     RobotMode,
     Scene,

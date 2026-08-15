@@ -924,6 +924,7 @@ std::string PhysicsWorld::GetCheckpointCompatibilityKey() const {
     for (const PhysicsRobotSnapshot& robot : scene_snapshot_.robots) {
         append(robot.scene_path);
         append_integer(robot.stable_id);
+        append_integer(robot.standalone_rigid_body);
         for (const PhysicsLinkSnapshot& link : robot.links) {
             append(link.scene_path);
             append_integer(link.stable_id);

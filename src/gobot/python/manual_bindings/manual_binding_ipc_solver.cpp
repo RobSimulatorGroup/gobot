@@ -96,6 +96,16 @@ IpcBatchSolverConfig BatchConfigFromPython(const py::dict& value) {
             config.al_ipc_alpha_lower_bound);
     config.al_ipc_decay_factor = ConfigValue(
             value, "al_ipc_decay_factor", config.al_ipc_decay_factor);
+    config.newton_max_iterations = ConfigValue(
+            value, "newton_max_iterations", config.newton_max_iterations);
+    config.line_search_max_iterations = ConfigValue(
+            value, "line_search_max_iterations",
+            config.line_search_max_iterations);
+    config.linear_system_tolerance_rate = ConfigValue(
+            value, "linear_system_tolerance_rate",
+            config.linear_system_tolerance_rate);
+    config.output_flags = ConfigValue(
+            value, "output_flags", config.output_flags);
     return config;
 }
 
@@ -138,6 +148,19 @@ py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
     result["static_collider_count_per_environment"] =
             diagnostics.static_collider_count_per_environment;
     result["last_step_latency_ms"] = diagnostics.last_step_latency_ms;
+    result["last_checkpoint_latency_ms"] =
+            diagnostics.last_checkpoint_latency_ms;
+    result["last_target_staging_latency_ms"] =
+            diagnostics.last_target_staging_latency_ms;
+    result["last_ipc_advance_latency_ms"] =
+            diagnostics.last_ipc_advance_latency_ms;
+    result["last_reaction_export_latency_ms"] =
+            diagnostics.last_reaction_export_latency_ms;
+    result["last_state_sync_latency_ms"] =
+            diagnostics.last_state_sync_latency_ms;
+    result["output_flags"] = diagnostics.output_flags;
+    result["deformable_contact_force_frame"] =
+            diagnostics.deformable_contact_force_frame;
     result["contact_constitution"] = diagnostics.contact_constitution;
     result["exact_contact_wrench"] = diagnostics.exact_contact_wrench;
     result["checkpoint_active"] = diagnostics.checkpoint_active;
@@ -436,6 +459,23 @@ public:
         }
     }
 
+    void SetOutputFlags(std::uint32_t output_flags) {
+        if (!RequireSession().SetOutputFlags(output_flags)) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void RefreshOutputs(std::uint32_t output_flags) {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().RefreshOutputs(output_flags);
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
     py::list DeformableBodies() const {
         return BodyInfoToPython(RequireSession().GetDeformableBodies());
     }
@@ -528,6 +568,12 @@ void RegisterManualIpcSolverBindings(py::module_& module) {
             .def("commit_checkpoint",
                  &PyIpcBatchSolverSession::CommitCheckpoint)
             .def("synchronize", &PyIpcBatchSolverSession::Synchronize)
+            .def("set_output_flags",
+                 &PyIpcBatchSolverSession::SetOutputFlags,
+                 py::arg("output_flags"))
+            .def("refresh_outputs",
+                 &PyIpcBatchSolverSession::RefreshOutputs,
+                 py::arg("output_flags"))
             .def_property_readonly("deformable_bodies",
                                    &PyIpcBatchSolverSession::DeformableBodies)
             .def_property_readonly("affine_bodies",

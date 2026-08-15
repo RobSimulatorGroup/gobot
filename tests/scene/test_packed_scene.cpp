@@ -14,6 +14,7 @@
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/light_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/rigid_body_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/velocity_command_debug_3d.hpp>
 
@@ -244,23 +245,70 @@ TEST(TestPackedScene, preserves_physics_coupling_properties) {
     auto* coupling = gobot::Object::New<gobot::PhysicsCoupling>();
     coupling->SetName("press_feedback");
     coupling->SetEnabled(false);
-    coupling->SetRigidLinkPath(gobot::NodePath("../press/press_head"));
+    coupling->SetTargetBodyPath(gobot::NodePath("../press"));
     coupling->SetMode(gobot::PhysicsCouplingMode::OneWay);
     coupling->SetForceScale(0.75);
     coupling->SetTorqueScale(0.25);
 
     const gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
     ASSERT_TRUE(packed->Pack(coupling));
+    const gobot::SceneState::NodeData* coupling_data =
+            packed->GetState()->GetNodeData(0);
+    ASSERT_NE(coupling_data, nullptr);
+    EXPECT_NE(FindProperty(*coupling_data, "target_body_path"), nullptr);
+    EXPECT_EQ(FindProperty(*coupling_data, "rigid_link_path"), nullptr);
     gobot::Node* restored_node = packed->Instantiate();
     auto* restored = gobot::Object::PointerCastTo<gobot::PhysicsCoupling>(restored_node);
     ASSERT_NE(restored, nullptr);
     EXPECT_FALSE(restored->IsEnabled());
-    EXPECT_EQ(restored->GetRigidLinkPath(), gobot::NodePath("../press/press_head"));
+    EXPECT_EQ(restored->GetTargetBodyPath(), gobot::NodePath("../press"));
+    EXPECT_EQ(restored->GetRigidLinkPath(), gobot::NodePath("../press"));
     EXPECT_EQ(restored->GetMode(), gobot::PhysicsCouplingMode::OneWay);
     EXPECT_DOUBLE_EQ(restored->GetForceScale(), 0.75);
     EXPECT_DOUBLE_EQ(restored->GetTorqueScale(), 0.25);
 
     gobot::Object::Delete(coupling);
+    gobot::Object::Delete(restored);
+
+    const gobot::Ref<gobot::PackedScene> legacy = gobot::MakeRef<gobot::PackedScene>();
+    gobot::SceneState::NodeData legacy_data;
+    legacy_data.type = "PhysicsCoupling";
+    legacy_data.name = "legacy_press_feedback";
+    legacy_data.properties.push_back(
+            {"rigid_link_path", gobot::NodePath("../legacy_press/head")});
+    legacy->GetState()->AddNode(legacy_data);
+    gobot::Node* legacy_node = legacy->Instantiate();
+    auto* legacy_coupling =
+            gobot::Object::PointerCastTo<gobot::PhysicsCoupling>(legacy_node);
+    ASSERT_NE(legacy_coupling, nullptr);
+    EXPECT_EQ(legacy_coupling->GetTargetBodyPath(),
+              gobot::NodePath("../legacy_press/head"));
+    gobot::Object::Delete(legacy_coupling);
+}
+
+TEST(TestPackedScene, preserves_standalone_rigid_body_properties) {
+    auto* body = gobot::Object::New<gobot::RigidBody3D>();
+    body->SetName("fixture");
+    body->SetPosition({1.0, 2.0, 3.0});
+    body->SetHasInertial(true);
+    body->SetMass(0.5);
+    body->SetCenterOfMass({0.01, 0.02, 0.03});
+    body->SetInertiaDiagonal({0.1, 0.2, 0.3});
+
+    const gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(body));
+    gobot::Node* restored_node = packed->Instantiate();
+    auto* restored = gobot::Object::PointerCastTo<gobot::RigidBody3D>(restored_node);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_TRUE(restored->HasInertial());
+    EXPECT_DOUBLE_EQ(restored->GetMass(), 0.5);
+    EXPECT_TRUE(restored->GetPosition().isApprox(gobot::Vector3(1.0, 2.0, 3.0)));
+    EXPECT_TRUE(restored->GetCenterOfMass().isApprox(
+            gobot::Vector3(0.01, 0.02, 0.03)));
+    EXPECT_TRUE(restored->GetInertiaDiagonal().isApprox(
+            gobot::Vector3(0.1, 0.2, 0.3)));
+
+    gobot::Object::Delete(body);
     gobot::Object::Delete(restored);
 }
 

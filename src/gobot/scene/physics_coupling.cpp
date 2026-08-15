@@ -19,11 +19,19 @@ bool PhysicsCoupling::IsEnabled() const {
 }
 
 void PhysicsCoupling::SetRigidLinkPath(const NodePath& path) {
-    rigid_link_path_ = path;
+    SetTargetBodyPath(path);
 }
 
 const NodePath& PhysicsCoupling::GetRigidLinkPath() const {
-    return rigid_link_path_;
+    return GetTargetBodyPath();
+}
+
+void PhysicsCoupling::SetTargetBodyPath(const NodePath& path) {
+    target_body_path_ = path;
+}
+
+const NodePath& PhysicsCoupling::GetTargetBodyPath() const {
+    return target_body_path_;
 }
 
 void PhysicsCoupling::SetMode(PhysicsCouplingMode mode) {
@@ -53,6 +61,8 @@ RealType PhysicsCoupling::GetTorqueScale() const {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+    USING_ENUM_BITWISE_OPERATORS;
+
     QuickEnumeration_<gobot::PhysicsCouplingMode>("PhysicsCouplingMode");
 
     Class_<gobot::PhysicsCoupling>("PhysicsCoupling")
@@ -60,7 +70,18 @@ GOBOT_REGISTRATION {
             .property("enabled", &gobot::PhysicsCoupling::IsEnabled,
                       &gobot::PhysicsCoupling::SetEnabled)
             .property("rigid_link_path", &gobot::PhysicsCoupling::GetRigidLinkPath,
-                      &gobot::PhysicsCoupling::SetRigidLinkPath)
+                      &gobot::PhysicsCoupling::SetRigidLinkPath)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo().SetUsageFlags(PropertyUsageFlags::None)))
+            .property("target_body_path", &gobot::PhysicsCoupling::GetTargetBodyPath,
+                      &gobot::PhysicsCoupling::SetTargetBodyPath)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                    .SetUsageFlags(
+                                            PropertyUsageFlags::Storage |
+                                            PropertyUsageFlags::Editor)
+                                    .SetToolTip(
+                                            "RigidBody3D or articulated Link3D synchronized with the IPC proxy.")))
             .property("mode", &gobot::PhysicsCoupling::GetMode,
                       &gobot::PhysicsCoupling::SetMode)
             .property("force_scale", &gobot::PhysicsCoupling::GetForceScale,

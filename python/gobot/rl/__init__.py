@@ -38,7 +38,6 @@ from .providers import (
     MuJoCoWarpRobotLayout,
     MuJoCoIpcBodyMapping,
     MuJoCoIpcConfig,
-    MuJoCoIpcCoupler,
     MuJoCoIpcProvider,
     NewtonModelConfig,
     NewtonProvider,
@@ -53,6 +52,7 @@ from .providers import (
     SensorBatchState,
     SensorBatchView,
     SimulationCapacityError,
+    SolverCoupledProxy,
 )
 from .rsl_rl import (
     RslRlBaseRunnerCfg,
@@ -87,7 +87,6 @@ __all__ = [
     "MuJoCoWarpRobotLayout",
     "MuJoCoIpcBodyMapping",
     "MuJoCoIpcConfig",
-    "MuJoCoIpcCoupler",
     "MuJoCoIpcProvider",
     "NativeLocomotionBatchBackend",
     "NewtonModelConfig",
@@ -120,6 +119,7 @@ __all__ = [
     "read_policy_manifest_sidecar",
     "scene_bundle_digest",
     "SimulationCapacityError",
+    "SolverCoupledProxy",
     "TaskRuntimeMetadata",
     "validate_spec_metadata",
     "write_policy_manifest_sidecar",

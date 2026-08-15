@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import dataclass
 import math
 import os
 from pathlib import Path
@@ -27,8 +28,7 @@ from gobot.rl import (
 
 SCENE_ROOT_NAME = "dual_arm_rope_twist"
 ROBOT_NAMES = ("left_fr3", "right_fr3")
-FIXTURE_ROBOT_NAMES = ("left_rope_fixture", "right_rope_fixture")
-FIXTURE_LINK_NAME = "rope_fixture"
+FIXTURE_BODY_NAMES = ("left_rope_fixture", "right_rope_fixture")
 TOOL_LINK_NAME = "fr3_link7"
 JOINT_NAMES = tuple(f"fr3_joint{index}" for index in range(1, 8)) + (
     "fr3_finger_joint1",
@@ -43,16 +43,56 @@ NUM_ENVS = 1
 ENVIRONMENTS_PER_SHARD = 1
 SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 DRIVE_MODE_ENVIRONMENT_VARIABLE = "GOBOT_ROPE_TWIST_DRIVE_MODE"
-INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE = (
-    "GOBOT_ROPE_TWIST_INTEGRATION_SCHEME"
+COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE = (
+    "GOBOT_ROPE_TWIST_COUPLING_ITERATIONS"
 )
-INTEGRATION_SCHEMES = ("newton_proxy", "sequential_split")
-DEFAULT_INTEGRATION_SCHEME = "newton_proxy"
-COUPLING_ITERATIONS = 2
+QUALITY_ENVIRONMENT_VARIABLE = "GOBOT_ROPE_TWIST_QUALITY"
+QUALITY_NAMES = ("interactive", "accurate")
+DEFAULT_QUALITY = "interactive"
 CONTACT_FORCE_ARROW_MIN_NEWTONS = 1.0e-3
 IPC_CONTACT_FORCE_ARROW_MIN_LENGTH = 0.015
 IPC_CONTACT_FORCE_ARROW_COLOR = (1.0, 0.12, 0.78, 1.0)
 GRIP_CONTACT_FORCE_ARROW_COLOR = (0.16, 0.92, 0.34, 1.0)
+
+
+@dataclass(frozen=True)
+class RopeTwistQualityProfile:
+    name: str
+    coupling_iterations: int
+    relaxation_mode: str
+    scene_sync_interval: int
+    contact_refresh_interval: int
+    newton_max_iterations: int
+    line_search_max_iterations: int
+    linear_system_tolerance_rate: float
+    export_deformable_contact_forces: bool
+
+
+QUALITY_PROFILES = {
+    "interactive": RopeTwistQualityProfile(
+        name="interactive",
+        coupling_iterations=1,
+        relaxation_mode="fixed",
+        scene_sync_interval=2,
+        contact_refresh_interval=4,
+        newton_max_iterations=16,
+        line_search_max_iterations=8,
+        linear_system_tolerance_rate=1.0e-3,
+        export_deformable_contact_forces=False,
+    ),
+    "accurate": RopeTwistQualityProfile(
+        name="accurate",
+        coupling_iterations=2,
+        relaxation_mode="aitken",
+        scene_sync_interval=1,
+        contact_refresh_interval=1,
+        newton_max_iterations=16,
+        line_search_max_iterations=8,
+        linear_system_tolerance_rate=1.0e-3,
+        export_deformable_contact_forces=True,
+    ),
+}
+COUPLING_ITERATIONS = QUALITY_PROFILES[DEFAULT_QUALITY].coupling_iterations
 
 
 def _nodes_by_name(root: Any) -> dict[str, Any]:
@@ -129,7 +169,11 @@ def _load_project_module(
     return module
 
 
-def _batch_config(context: Any) -> LibuipcBatchConfig:
+def _batch_config(
+    context: Any,
+    profile: RopeTwistQualityProfile | None = None,
+) -> LibuipcBatchConfig:
+    profile = profile or _quality_profile()
     return LibuipcBatchConfig(
         solver=LibuipcConfig(
             fixed_time_step=FIXED_DT,
@@ -144,6 +188,12 @@ def _batch_config(context: Any) -> LibuipcBatchConfig:
             ),
         ),
         environments_per_shard=ENVIRONMENTS_PER_SHARD,
+        newton_max_iterations=profile.newton_max_iterations,
+        line_search_max_iterations=profile.line_search_max_iterations,
+        linear_system_tolerance_rate=profile.linear_system_tolerance_rate,
+        export_deformable_contact_forces=(
+            profile.export_deformable_contact_forces
+        ),
     )
 
 
@@ -159,17 +209,37 @@ def _drive_mode(controllers: Any) -> tuple[str, float, bool]:
     )
 
 
-def _integration_scheme() -> str:
-    scheme = os.environ.get(
-        INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE,
-        DEFAULT_INTEGRATION_SCHEME,
+def _quality_profile() -> RopeTwistQualityProfile:
+    quality = os.environ.get(
+        QUALITY_ENVIRONMENT_VARIABLE, DEFAULT_QUALITY
     ).strip().lower()
-    if scheme not in INTEGRATION_SCHEMES:
+    if quality not in QUALITY_PROFILES:
         raise ValueError(
-            f"{INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE} must be one of "
-            + ", ".join(repr(value) for value in INTEGRATION_SCHEMES)
+            f"{QUALITY_ENVIRONMENT_VARIABLE} must be one of "
+            + ", ".join(repr(value) for value in QUALITY_NAMES)
         )
-    return scheme
+    return QUALITY_PROFILES[quality]
+
+
+def _coupling_iterations(
+    profile: RopeTwistQualityProfile | None = None,
+) -> int:
+    profile = profile or _quality_profile()
+    value = os.environ.get(
+        COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE,
+        str(profile.coupling_iterations),
+    ).strip()
+    try:
+        iterations = int(value)
+    except ValueError as error:
+        raise ValueError(
+            f"{COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE} must be an integer"
+        ) from error
+    if iterations < 1:
+        raise ValueError(
+            f"{COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE} must be at least 1"
+        )
+    return iterations
 
 
 def _pad_geom_names(robot_name: str) -> tuple[str, str]:
@@ -198,7 +268,7 @@ def _grip_sensor_specs() -> tuple[MuJoCoWarpContactSensorSpec, ...]:
         for side, robot_name, fixture_name in zip(
             ("left", "right"),
             ROBOT_NAMES,
-            FIXTURE_ROBOT_NAMES,
+            FIXTURE_BODY_NAMES,
             strict=True,
         )
     )
@@ -337,7 +407,7 @@ class Script(gobot.NodeScript):
         self.robot_views = ()
         self.robot_links = ()
         self.fixture_views = ()
-        self.fixture_links = ()
+        self.fixture_bodies = ()
         self.deformable_bodies = ()
         self.deformable_counts = ()
         self.deformable_buffer = None
@@ -345,9 +415,14 @@ class Script(gobot.NodeScript):
         self.reset_mask = None
         self.tool_body_ids = ()
         self.fixture_body_ids = ()
+        self.fixture_proxy_indices = ()
         self.wrist_actuator_ids = ()
         self.grip_contact_sensors = ()
-        self.last_sensed_frame = -1
+        self.last_scene_sync_frame = -1
+        self.last_contact_refresh_frame = -1
+        self.contact_arrows_enabled = False
+        self.cached_torque_arrows = []
+        self.cached_contact_arrows = []
         self.endpoint_indices = ()
         self.initial_qpos = None
         self.attachment_reference = None
@@ -357,7 +432,8 @@ class Script(gobot.NodeScript):
         self.maximum_attachment_error = 0.0
         self.gravity_compensator = None
         self.drive_mode = "showcase"
-        self.integration_scheme = DEFAULT_INTEGRATION_SCHEME
+        self.quality_profile = QUALITY_PROFILES[DEFAULT_QUALITY]
+        self.coupling_iterations = self.quality_profile.coupling_iterations
         self.wrist_torque_limit = 0.0
         try:
             import numpy as np
@@ -372,15 +448,12 @@ class Script(gobot.NodeScript):
                 tuple(_nodes_by_name(robot)[name] for name in ROBOT_LINK_NAMES)
                 for robot in robot_roots
             )
-            fixture_roots = tuple(
-                root.find(name) for name in FIXTURE_ROBOT_NAMES
+            fixture_bodies = tuple(
+                root.find(name) for name in FIXTURE_BODY_NAMES
             )
-            if any(fixture is None for fixture in fixture_roots):
+            if any(fixture is None for fixture in fixture_bodies):
                 raise RuntimeError("dual-arm rope scene is missing a fixture")
-            self.fixture_links = tuple(
-                _nodes_by_name(fixture)[FIXTURE_LINK_NAME]
-                for fixture in fixture_roots
-            )
+            self.fixture_bodies = fixture_bodies
 
             controllers = _load_project_module(
                 self.context.project_path,
@@ -394,9 +467,10 @@ class Script(gobot.NodeScript):
                 self.wrist_torque_limit,
                 stall_detection_enabled,
             ) = _drive_mode(controllers)
-            self.integration_scheme = _integration_scheme()
+            self.quality_profile = _quality_profile()
+            self.coupling_iterations = _coupling_iterations(self.quality_profile)
 
-            solver_config = _batch_config(self.context)
+            solver_config = _batch_config(self.context, self.quality_profile)
             rigid_availability = MuJoCoWarpProvider.availability()
             if not rigid_availability.available:
                 raise RuntimeError(rigid_availability.reason)
@@ -419,9 +493,11 @@ class Script(gobot.NodeScript):
                     num_envs=NUM_ENVS,
                     device="cuda:0",
                     environments_per_shard=ENVIRONMENTS_PER_SHARD,
-                    integration_scheme=self.integration_scheme,
-                    coupling_iterations=COUPLING_ITERATIONS,
+                    coupling_iterations=self.coupling_iterations,
+                    relaxation_mode=self.quality_profile.relaxation_mode,
+                    relaxation_factor=1.0,
                     capture_mujoco_graphs=True,
+                    capture_coupler_graphs=True,
                 ),
                 libuipc_config=solver_config,
                 mujoco_options={
@@ -444,20 +520,20 @@ class Script(gobot.NodeScript):
             self.fixture_views = tuple(
                 self.provider.create_robot_view(
                     robot_name=fixture_name,
-                    base_link=FIXTURE_LINK_NAME,
+                    base_link=fixture_name,
                     joint_names=(),
-                    link_names=(FIXTURE_LINK_NAME,),
+                    link_names=(fixture_name,),
                 )
-                for fixture_name in FIXTURE_ROBOT_NAMES
+                for fixture_name in FIXTURE_BODY_NAMES
             )
             mappings = tuple(
                 next(
                     mapping
                     for mapping in artifact.coupled_bodies
                     if mapping.robot_name == fixture_name
-                    and mapping.link_name == FIXTURE_LINK_NAME
+                    and mapping.link_name == fixture_name
                 )
-                for fixture_name in FIXTURE_ROBOT_NAMES
+                for fixture_name in FIXTURE_BODY_NAMES
             )
             self.tool_body_ids = tuple(
                 self.provider.rigid_solver.resolve_object_ids(
@@ -470,6 +546,9 @@ class Script(gobot.NodeScript):
                     "body", (mapping.mujoco_body_name,)
                 )[0]
                 for mapping in mappings
+            )
+            self.fixture_proxy_indices = tuple(
+                mapping.ipc_body_index for mapping in mappings
             )
             self.wrist_actuator_ids = tuple(
                 self.provider.rigid_solver.resolve_robot_layout(
@@ -514,11 +593,11 @@ class Script(gobot.NodeScript):
             )
             self.initial_qpos = self.provider.arrays["qpos"].clone()
             self.attachment_reference = (
-                controllers.rope_endpoints_in_body_frames(
+                controllers.rope_endpoints_in_affine_frames(
                     self.provider.arrays["ipc_positions"],
                     self.endpoint_indices,
-                    self.provider.arrays,
-                    self.fixture_body_ids,
+                    self.provider.arrays["ipc_affine_targets"],
+                    self.fixture_proxy_indices,
                 ).clone()
             )
             self.reset_mask = torch.ones(
@@ -560,8 +639,9 @@ class Script(gobot.NodeScript):
             print(
                 "Dual FR3 rope twisting started: MuJoCo friction grasps two "
                 "free fixtures; libuipc advances the attached rope on cuda:0; "
+                f"quality={self.quality_profile.name}; "
                 f"drive={self.drive_mode} ({self.wrist_torque_limit:g} N m); "
-                f"coupling={self.integration_scheme} x{COUPLING_ITERATIONS}"
+                f"coupling=SolverCoupledProxy x{self.coupling_iterations}"
             )
         except Exception:
             self._close_play_session()
@@ -644,22 +724,56 @@ class Script(gobot.NodeScript):
         self.grip_rotation_reference = None
         self.maximum_grip_slip = 0.0
         self.maximum_attachment_error = 0.0
-        self.last_sensed_frame = -1
+        self.last_scene_sync_frame = -1
+        self.last_contact_refresh_frame = -1
+        self.cached_contact_arrows = []
 
     def _sync_scene(self) -> None:
         if self.provider is None:
             return
-        self.provider.synchronize()
         settings = self.context.get_physics_debug_settings()
         draw_contact_forces = bool(settings["draw_contact_forces"])
-        frame = int(self.provider.diagnostics["frame"])
-        if draw_contact_forces and frame != self.last_sensed_frame:
+        frame = self.provider.frame
+        if draw_contact_forces != self.contact_arrows_enabled:
+            self.contact_arrows_enabled = draw_contact_forces
+            self.last_contact_refresh_frame = -1
+            if not draw_contact_forces:
+                self.cached_contact_arrows = []
+                set_debug_arrows(self.cached_torque_arrows)
+
+        scene_due = (
+            self.last_scene_sync_frame < 0
+            or frame - self.last_scene_sync_frame
+            >= self.quality_profile.scene_sync_interval
+        )
+        contact_due = draw_contact_forces and (
+            self.last_contact_refresh_frame < 0
+            or frame - self.last_contact_refresh_frame
+            >= self.quality_profile.contact_refresh_interval
+        )
+        if not scene_due and not contact_due:
+            return
+
+        if contact_due:
+            if not self.quality_profile.export_deformable_contact_forces:
+                self.provider.refresh_deformable_contact_forces()
             self.provider.sense()
-            self.last_sensed_frame = frame
+        self.provider.synchronize()
+
         positions = self.provider.arrays["ipc_positions"].detach().cpu().numpy()
-        for body_index, entry in enumerate(
-            self.provider.ipc_solver.deformable_bodies
-        ):
+        if scene_due:
+            self._sync_render_state(positions)
+            self.last_scene_sync_frame = frame
+        if contact_due:
+            self._refresh_contact_arrows(settings, positions)
+            self.last_contact_refresh_frame = frame
+        set_debug_arrows(
+            self.cached_torque_arrows
+            + (self.cached_contact_arrows if draw_contact_forces else [])
+        )
+
+    def _sync_render_state(self, positions: Any) -> None:
+        for body_index, entry in enumerate(self.provider.ipc_solver.deformable_bodies):
             count = int(entry["element_count"])
             offset = int(entry["element_offset"])
             self.deformable_buffer[body_index, :count] = positions[
@@ -681,7 +795,7 @@ class Script(gobot.NodeScript):
                 fixture_view.read_state().link_pose[0, 0].detach().cpu().numpy()
             )
             self.context.apply_link_poses(
-                (self.fixture_links[fixture_index],),
+                (self.fixture_bodies[fixture_index],),
                 fixture_pose.reshape(1, 7),
             )
 
@@ -701,101 +815,109 @@ class Script(gobot.NodeScript):
         world_wrenches[:, 3:] = (
             tool_rotations @ local_wrenches[:, 3:, None]
         )[..., 0]
-        arrows = _torque_arrows(
+        self.cached_torque_arrows = _torque_arrows(
             tool_poses, world_wrenches.detach().cpu().numpy()
         )
-        if draw_contact_forces:
-            force_scale = float(settings["contact_force_scale"])
-            max_force_length = float(settings["contact_force_max_length"])
-            arrows.extend(
-                _contact_force_arrows(
-                    positions[0],
-                    self.provider.arrays["ipc_contact_forces"][0]
-                    .detach()
-                    .cpu()
-                    .numpy(),
-                    color=IPC_CONTACT_FORCE_ARROW_COLOR,
-                    label="rope contact",
-                    force_scale=force_scale,
-                    max_force_length=max_force_length,
-                    min_force_length=IPC_CONTACT_FORCE_ARROW_MIN_LENGTH,
-                )
-            )
-            grip_positions = torch.cat(
-                tuple(sensor["pos"] for sensor in self.grip_contact_sensors),
-                dim=1,
-            )[0]
-            grip_forces = torch.cat(
-                tuple(sensor["force"] for sensor in self.grip_contact_sensors),
-                dim=1,
-            )[0]
-            grip_normals = torch.cat(
-                tuple(sensor["normal"] for sensor in self.grip_contact_sensors),
-                dim=1,
-            )[0]
-            grip_tangents = torch.cat(
-                tuple(sensor["tangent"] for sensor in self.grip_contact_sensors),
-                dim=1,
-            )[0]
-            grip_forces = _contact_frame_forces_to_world(
-                grip_forces,
-                grip_normals,
-                grip_tangents,
-            )
-            grip_found = torch.cat(
-                tuple(sensor["found"] for sensor in self.grip_contact_sensors),
-                dim=1,
-            )[0]
-            arrows.extend(
-                _contact_force_arrows(
-                    grip_positions.detach().cpu().numpy(),
-                    grip_forces.detach().cpu().numpy(),
-                    found=grip_found.detach().cpu().numpy(),
-                    color=GRIP_CONTACT_FORCE_ARROW_COLOR,
-                    label="grip contact",
-                    force_scale=force_scale,
-                    max_force_length=max_force_length,
-                    max_count=4,
-                )
-            )
-        set_debug_arrows(arrows)
+        self._update_physical_debug_metrics()
 
-        if self.controller.tick >= self.controllers_module.TWIST_START_TICK:
-            local_endpoints = self.controllers_module.rope_endpoints_in_body_frames(
-                self.provider.arrays["ipc_positions"],
-                self.endpoint_indices,
+    def _refresh_contact_arrows(self, settings: Any, positions: Any) -> None:
+        import torch
+
+        arrows = []
+        force_scale = float(settings["contact_force_scale"])
+        max_force_length = float(settings["contact_force_max_length"])
+        arrows.extend(
+            _contact_force_arrows(
+                positions[0],
+                self.provider.arrays["ipc_contact_forces"][0]
+                .detach()
+                .cpu()
+                .numpy(),
+                color=IPC_CONTACT_FORCE_ARROW_COLOR,
+                label="rope contact",
+                force_scale=force_scale,
+                max_force_length=max_force_length,
+                min_force_length=IPC_CONTACT_FORCE_ARROW_MIN_LENGTH,
+            )
+        )
+        grip_positions = torch.cat(
+            tuple(sensor["pos"] for sensor in self.grip_contact_sensors),
+            dim=1,
+        )[0]
+        grip_forces = torch.cat(
+            tuple(sensor["force"] for sensor in self.grip_contact_sensors),
+            dim=1,
+        )[0]
+        grip_normals = torch.cat(
+            tuple(sensor["normal"] for sensor in self.grip_contact_sensors),
+            dim=1,
+        )[0]
+        grip_tangents = torch.cat(
+            tuple(sensor["tangent"] for sensor in self.grip_contact_sensors),
+            dim=1,
+        )[0]
+        grip_forces = _contact_frame_forces_to_world(
+            grip_forces,
+            grip_normals,
+            grip_tangents,
+        )
+        grip_found = torch.cat(
+            tuple(sensor["found"] for sensor in self.grip_contact_sensors),
+            dim=1,
+        )[0]
+        arrows.extend(
+            _contact_force_arrows(
+                grip_positions.detach().cpu().numpy(),
+                grip_forces.detach().cpu().numpy(),
+                found=grip_found.detach().cpu().numpy(),
+                color=GRIP_CONTACT_FORCE_ARROW_COLOR,
+                label="grip contact",
+                force_scale=force_scale,
+                max_force_length=max_force_length,
+                max_count=4,
+            )
+        )
+        self.cached_contact_arrows = arrows
+
+    def _update_physical_debug_metrics(self) -> None:
+        if self.controller.tick < self.controllers_module.TWIST_START_TICK:
+            return
+
+        local_endpoints = self.controllers_module.rope_endpoints_in_affine_frames(
+            self.provider.arrays["ipc_positions"],
+            self.endpoint_indices,
+            self.provider.arrays["ipc_affine_targets"],
+            self.fixture_proxy_indices,
+        )
+        attachment_error = float(
+            (local_endpoints - self.attachment_reference)
+            .norm(dim=3)
+            .amax()
+            .item()
+        )
+        self.maximum_attachment_error = max(
+            self.maximum_attachment_error, attachment_error
+        )
+        grip_position, grip_rotation = (
+            self.controllers_module.body_transforms_in_reference_frames(
                 self.provider.arrays,
                 self.fixture_body_ids,
+                self.tool_body_ids,
             )
-            attachment_error = float(
-                (local_endpoints - self.attachment_reference)
-                .norm(dim=3)
-                .amax()
-                .item()
-            )
-            self.maximum_attachment_error = max(
-                self.maximum_attachment_error, attachment_error
-            )
-            grip_position, grip_rotation = (
-                self.controllers_module.body_transforms_in_reference_frames(
-                    self.provider.arrays,
-                    self.fixture_body_ids,
-                    self.tool_body_ids,
-                )
-            )
-            if self.grip_position_reference is None:
-                self.grip_position_reference = grip_position.clone()
-                self.grip_rotation_reference = grip_rotation.clone()
-            else:
-                slip, _ = self.controllers_module.relative_transform_errors(
-                    grip_position,
-                    grip_rotation,
-                    self.grip_position_reference,
-                    self.grip_rotation_reference,
-                )
-                self.maximum_grip_slip = max(
-                    self.maximum_grip_slip, float(slip.amax().item())
-                )
+        )
+        if self.grip_position_reference is None:
+            self.grip_position_reference = grip_position.clone()
+            self.grip_rotation_reference = grip_rotation.clone()
+            return
+        slip, _ = self.controllers_module.relative_transform_errors(
+            grip_position,
+            grip_rotation,
+            self.grip_position_reference,
+            self.grip_rotation_reference,
+        )
+        self.maximum_grip_slip = max(
+            self.maximum_grip_slip, float(slip.amax().item())
+        )
 
     def _update_status(self) -> None:
         if self.play_session is None:
@@ -817,6 +939,8 @@ class Script(gobot.NodeScript):
             "Dual FR3 rope twist | "
             + self.controller.phase
             + f" | {self.drive_mode} {self.wrist_torque_limit:g} N m"
+            + f" | {self.quality_profile.name}"
+            + f" | SolverCoupledProxy x{self.coupling_iterations}"
             + f" | relative {relative_turns:.2f} turns | rope winding "
             + f"{turns:.2f} | wrist speed {float(wrist_speed[0]):.2f}/"
             + f"{float(wrist_speed[1]):.2f} rad/s | drive "

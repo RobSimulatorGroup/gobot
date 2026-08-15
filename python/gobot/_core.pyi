@@ -376,6 +376,7 @@ class PhysicsCouplingMode(Enum):
 
 class PhysicsCoupling(Node):
     enabled: bool
+    target_body_path: str
     rigid_link_path: str
     mode: PhysicsCouplingMode
     force_scale: float
@@ -419,6 +420,10 @@ class Link3D(Node3D):
         angular_velocity: VectorLike = (0.0, 0.0, 0.0),
     ) -> None: ...
     def get_runtime_state(self) -> dict[str, Any]: ...
+
+
+class RigidBody3D(Link3D):
+    pass
 
 
 class Joint3D(Node3D):

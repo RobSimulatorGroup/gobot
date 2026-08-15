@@ -61,12 +61,16 @@ def test_real_libuipc_batch_device_buffers() -> None:
                     workspace=str(project_root / "workspace"),
                 ),
                 environments_per_shard=2,
+                export_deformable_contact_forces=False,
             ),
         )
         try:
             assert solver.capabilities.device_native
             assert solver.shard_count == 1
             assert solver.diagnostics["valid"]
+            assert not solver.diagnostics[
+                "export_deformable_contact_forces"
+            ]
             positions = solver.arrays["positions"]
             transforms = solver.arrays["affine_transforms"]
             target_twists = solver.arrays["affine_target_twists"]
@@ -117,6 +121,20 @@ def test_real_libuipc_batch_device_buffers() -> None:
                 - transforms[0, press_index, 2, 3]
             ).item() > 0.005
             assert solver.diagnostics["frame"] == 1
+            assert solver.diagnostics[
+                "deformable_contact_force_frame"
+            ] == 0
+            contact_force_pointer = solver.arrays[
+                "contact_forces"
+            ].data_ptr()
+            solver.refresh_deformable_contact_forces()
+            assert solver.arrays["contact_forces"].data_ptr() == contact_force_pointer
+            assert solver.diagnostics[
+                "deformable_contact_force_frame"
+            ] == 1
+            first_step_contact_forces = solver.arrays[
+                "contact_forces"
+            ].clone()
             first_step_positions = positions.clone()
             first_step_transforms = transforms.clone()
             first_step_wrenches = solver.arrays[
@@ -130,11 +148,19 @@ def test_real_libuipc_batch_device_buffers() -> None:
             torch.testing.assert_close(transforms, initial_transforms)
 
             solver.step()
+            assert solver.diagnostics[
+                "deformable_contact_force_frame"
+            ] == 0
+            solver.refresh_deformable_contact_forces()
             torch.testing.assert_close(positions, first_step_positions)
             torch.testing.assert_close(transforms, first_step_transforms)
             torch.testing.assert_close(
                 solver.arrays["affine_contact_wrenches"],
                 first_step_wrenches,
+            )
+            torch.testing.assert_close(
+                solver.arrays["contact_forces"],
+                first_step_contact_forces,
             )
             solver.commit_checkpoint()
             assert not solver.diagnostics["checkpoint_active"]
@@ -190,6 +216,58 @@ def test_real_libuipc_loose_static_box_collision() -> None:
             positions = solver.arrays["positions"]
             assert torch.isfinite(positions).all().item()
             assert positions[..., 2].amin().item() > -0.015
+        finally:
+            solver.close()
+            del context
+
+
+def test_real_libuipc_affine_output_excludes_static_colliders() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="gobot-libuipc-affine-static-gpu-"
+    ) as temporary_directory:
+        project_root = Path(temporary_directory)
+        scene_path = build_libuipc_test_scene(
+            project_root, "soft_cube_press_static_box.jscn"
+        )
+        context = gobot.app.create_context()
+        context.set_project_path(str(project_root))
+        context.load_scene("res://" + scene_path.name)
+        artifact = context.compile_ipc_scene_artifact()
+        solver = LibuipcBatchSolver(
+            artifact,
+            num_envs=1,
+            device="cuda:0",
+            config=LibuipcBatchConfig(
+                solver=LibuipcConfig(
+                    fixed_time_step=0.005,
+                    module_path=MODULE_PATH,
+                    workspace=str(project_root / "workspace"),
+                ),
+                environments_per_shard=1,
+            ),
+        )
+        try:
+            assert solver.capacities["affine_bodies_per_env"] == 2
+            assert solver.capacities["static_colliders_per_env"] == 1
+            positions = solver.arrays["positions"]
+            transforms = solver.arrays["affine_transforms"]
+            assert transforms.shape == (1, 2, 4, 4)
+            torch.testing.assert_close(
+                positions[0, 0],
+                torch.tensor(
+                    (-0.11, -0.11, 0.02),
+                    dtype=positions.dtype,
+                    device=positions.device,
+                ),
+            )
+            torch.testing.assert_close(
+                positions[0, -1],
+                torch.tensor(
+                    (0.11, 0.11, 0.18),
+                    dtype=positions.dtype,
+                    device=positions.device,
+                ),
+            )
         finally:
             solver.close()
             del context
@@ -257,7 +335,7 @@ def test_real_mujoco_libuipc_composite_step() -> None:
             del context
 
 
-def test_real_mujoco_libuipc_newton_proxy_step() -> None:
+def test_real_mujoco_libuipc_solver_coupled_proxy_step() -> None:
     with tempfile.TemporaryDirectory(
         prefix="gobot-mujoco-libuipc-newton-gpu-"
     ) as temporary_directory:
@@ -269,47 +347,126 @@ def test_real_mujoco_libuipc_newton_proxy_step() -> None:
         context.set_project_path(str(project_root))
         context.load_scene("res://" + scene_path.name)
         artifact = CompiledMuJoCoIpcArtifact.from_context(context)
-        provider = MuJoCoIpcProvider(
-            artifact,
-            config=MuJoCoIpcConfig(
-                num_envs=1,
-                device="cuda:0",
-                environments_per_shard=1,
-                integration_scheme="newton_proxy",
-                coupling_iterations=2,
-                capture_mujoco_graphs=True,
-            ),
-            libuipc_config=LibuipcBatchConfig(
-                solver=LibuipcConfig(
-                    fixed_time_step=0.002,
-                    module_path=MODULE_PATH,
-                    workspace=str(project_root / "workspace"),
+        def make_provider(
+            *,
+            capture_coupler_graphs: bool,
+            export_deformable_contact_forces: bool = True,
+        ):
+            mode = "captured" if capture_coupler_graphs else "eager"
+            output = (
+                "immediate" if export_deformable_contact_forces else "lazy"
+            )
+            return MuJoCoIpcProvider(
+                artifact,
+                config=MuJoCoIpcConfig(
+                    num_envs=1,
+                    device="cuda:0",
+                    environments_per_shard=1,
+                    coupling_iterations=2,
+                    capture_mujoco_graphs=True,
+                    capture_coupler_graphs=capture_coupler_graphs,
                 ),
-                environments_per_shard=1,
-            ),
-        )
+                libuipc_config=LibuipcBatchConfig(
+                    solver=LibuipcConfig(
+                        fixed_time_step=0.002,
+                        module_path=MODULE_PATH,
+                        workspace=str(
+                            project_root / f"workspace_{mode}_{output}"
+                        ),
+                    ),
+                    environments_per_shard=1,
+                    export_deformable_contact_forces=(
+                        export_deformable_contact_forces
+                    ),
+                ),
+            )
+
+        provider = make_provider(capture_coupler_graphs=True)
         try:
+            comparison_steps = 8
             initial_time = provider.arrays["time"].clone()
-            provider.step()
+            provider.step(nsteps=comparison_steps)
             provider.synchronize()
 
             diagnostics = provider.diagnostics
-            assert diagnostics["frame"] == 1
-            assert diagnostics["libuipc"]["frame"] == 1
+            assert diagnostics["frame"] == comparison_steps
+            assert diagnostics["libuipc"]["frame"] == comparison_steps
             assert diagnostics["actual_coupling_iterations"] == 2
             assert diagnostics["coupler_phase"] == "Idle"
             assert diagnostics["libuipc"]["checkpoint_active"] is False
+            assert diagnostics["coupler_graph_captured"], diagnostics[
+                "coupler_graph_capture_reason"
+            ]
+            assert diagnostics["phase_latency_ms"]
             assert torch.allclose(
                 provider.arrays["time"],
-                initial_time + provider.fixed_time_step,
+                initial_time + comparison_steps * provider.fixed_time_step,
             )
             assert torch.isfinite(
                 provider.arrays["ipc_affine_target_twists"]
             ).all().item()
             assert torch.isfinite(provider.arrays["xfrc_applied"]).all().item()
+            captured_state = {
+                name: provider.arrays[name].clone()
+                for name in (
+                    "qpos",
+                    "qvel",
+                    "xfrc_applied",
+                    "ipc_positions",
+                    "ipc_affine_transforms",
+                    "ipc_affine_contact_wrenches",
+                )
+            }
         finally:
             provider.close()
-            assert not tuple((project_root / "workspace").glob("batch_session_*"))
+            assert not tuple(
+                (project_root / "workspace_captured_immediate").glob(
+                    "batch_session_*"
+                )
+            )
+
+        eager_provider = make_provider(capture_coupler_graphs=False)
+        try:
+            eager_provider.step(nsteps=comparison_steps)
+            eager_provider.synchronize()
+            eager_diagnostics = eager_provider.diagnostics
+            assert not eager_diagnostics["coupler_graph_captured"]
+            assert "disabled" in eager_diagnostics[
+                "coupler_graph_capture_reason"
+            ]
+            for name, captured in captured_state.items():
+                torch.testing.assert_close(
+                    eager_provider.arrays[name], captured, rtol=0.0, atol=0.0
+                )
+        finally:
+            eager_provider.close()
+            assert not tuple(
+                (project_root / "workspace_eager_immediate").glob(
+                    "batch_session_*"
+                )
+            )
+
+        lazy_provider = make_provider(
+            capture_coupler_graphs=True,
+            export_deformable_contact_forces=False,
+        )
+        try:
+            lazy_provider.step(nsteps=comparison_steps)
+            lazy_provider.synchronize()
+            assert not lazy_provider.diagnostics["libuipc"][
+                "export_deformable_contact_forces"
+            ]
+            for name, captured in captured_state.items():
+                torch.testing.assert_close(
+                    lazy_provider.arrays[name], captured, rtol=0.0, atol=0.0
+                )
+        finally:
+            lazy_provider.close()
+            assert not tuple(
+                (project_root / "workspace_captured_lazy").glob(
+                    "batch_session_*"
+                )
+            )
             del context
 
 
@@ -392,8 +549,9 @@ def main() -> int:
     assert availability.available, availability.reason
     test_real_libuipc_batch_device_buffers()
     test_real_libuipc_loose_static_box_collision()
+    test_real_libuipc_affine_output_excludes_static_colliders()
     test_real_mujoco_libuipc_composite_step()
-    test_real_mujoco_libuipc_newton_proxy_step()
+    test_real_mujoco_libuipc_solver_coupled_proxy_step()
     test_mujoco_libuipc_editor_play_session()
     return 0
 

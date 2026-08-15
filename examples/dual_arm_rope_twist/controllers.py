@@ -754,6 +754,29 @@ def rope_endpoints_in_body_frames(
     return torch.einsum("ebji,ebsj->ebsi", rotations, delta)
 
 
+def rope_endpoints_in_affine_frames(
+    positions: Any,
+    endpoint_index_sets: Any,
+    affine_targets: Any,
+    body_indices: Sequence[int],
+) -> Any:
+    """Measure all six rope-end centroids in their IPC proxy frames."""
+
+    torch = __import__("torch")
+    if tuple(endpoint_index_sets.shape[:2]) != (2, 3) or len(body_indices) != 2:
+        raise ValueError("rope endpoint metric expects two proxies and three strands")
+    if affine_targets.ndim != 4 or tuple(affine_targets.shape[-2:]) != (4, 4):
+        raise ValueError("affine target transforms must have shape [N, B, 4, 4]")
+    world_endpoints = positions[:, endpoint_index_sets].mean(dim=3)
+    transforms = affine_targets[:, list(int(value) for value in body_indices)].to(
+        dtype=positions.dtype
+    )
+    body_positions = transforms[..., :3, 3]
+    rotations = transforms[..., :3, :3]
+    delta = world_endpoints - body_positions[:, :, None, :]
+    return torch.einsum("ebji,ebsj->ebsi", rotations, delta)
+
+
 def body_transforms_in_reference_frames(
     rigid_arrays: Mapping[str, Any],
     body_ids: Sequence[int],
@@ -839,6 +862,40 @@ def maximum_shape_deformation(initial_positions: Any, positions: Any) -> Any:
     return displacement.norm(dim=2).amax(dim=1)
 
 
+def maximum_box_vertex_penetration(
+    positions: Any,
+    box_transforms: Any,
+    box_sizes: Any,
+) -> Any:
+    """Return each environment's deepest vertex inside any oriented box."""
+
+    torch = __import__("torch")
+    if positions.ndim != 3 or positions.shape[-1] != 3:
+        raise ValueError("positions must have shape [N, V, 3]")
+    if box_transforms.ndim != 4 or tuple(box_transforms.shape[-2:]) != (4, 4):
+        raise ValueError("box transforms must have shape [N, B, 4, 4]")
+    if box_sizes.ndim != 2 or box_sizes.shape[-1] != 3:
+        raise ValueError("box sizes must have shape [B, 3]")
+    if box_transforms.shape[0] != positions.shape[0]:
+        raise ValueError("position and box environment counts must match")
+    if box_transforms.shape[1] != box_sizes.shape[0]:
+        raise ValueError("box transform and size counts must match")
+    if box_sizes.shape[0] == 0:
+        return torch.zeros(
+            positions.shape[0],
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+
+    rotations = box_transforms[..., :3, :3]
+    translations = box_transforms[..., :3, 3]
+    delta = positions[:, None, :, :] - translations[:, :, None, :]
+    local = torch.einsum("nbji,nbvj->nbvi", rotations, delta)
+    margins = box_sizes[None, :, None, :] * 0.5 - local.abs()
+    inside_depth = margins.amin(dim=-1).clamp_min_(0.0)
+    return inside_depth.amax(dim=(1, 2))
+
+
 __all__ = [
     "BatchedGravityCompensator",
     "BatchedTwistController",
@@ -874,6 +931,7 @@ __all__ = [
     "fixture_wrenches_in_tool_frames",
     "gravity_compensation_schedule",
     "make_trial_layout",
+    "maximum_box_vertex_penetration",
     "maximum_shape_deformation",
     "nominal_arm_targets",
     "nominal_finger_target",
@@ -882,6 +940,7 @@ __all__ = [
     "nominal_wrist_target",
     "phase_for_tick",
     "rope_endpoint_index_sets",
+    "rope_endpoints_in_affine_frames",
     "rope_endpoints_in_body_frames",
     "relative_transform_errors",
     "rope_winding_turns",
