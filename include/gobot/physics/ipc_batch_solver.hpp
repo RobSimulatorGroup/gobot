@@ -22,6 +22,12 @@ struct IpcBatchSolverConfig {
     std::uint32_t environment_count{0};
     std::uint32_t environments_per_shard{0};
     bool external_affine_proxies{true};
+    std::string contact_constitution{"ipc"};
+    double al_ipc_mu_scale_fem{5.0e7};
+    double al_ipc_mu_scale_abd{1.0e5};
+    double al_ipc_toi_threshold{0.1};
+    double al_ipc_alpha_lower_bound{1.0e-6};
+    double al_ipc_decay_factor{0.3};
 };
 
 struct IpcBatchSolverDiagnostics {
@@ -32,7 +38,11 @@ struct IpcBatchSolverDiagnostics {
     std::size_t deformable_body_count_per_environment{0};
     std::size_t deformable_vertex_count_per_environment{0};
     std::size_t affine_body_count_per_environment{0};
+    std::size_t static_collider_count_per_environment{0};
     double last_step_latency_ms{0.0};
+    std::string contact_constitution{"ipc"};
+    bool exact_contact_wrench{true};
+    bool checkpoint_active{false};
     bool valid{false};
 };
 
@@ -55,6 +65,9 @@ public:
     bool BindDeviceBuffers(const IpcBatchSolverModuleBuffers& buffers);
     bool Step(std::uint32_t steps = 1);
     bool ResetFull();
+    bool CaptureCheckpoint();
+    bool RewindCheckpoint();
+    bool CommitCheckpoint();
     bool Synchronize();
 
     const std::vector<IpcSolverBodyInfo>& GetDeformableBodies() const;

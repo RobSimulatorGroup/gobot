@@ -66,11 +66,17 @@ class _FakeRigidSolver:
         xmat[..., 2, 2] = 1.0
         self._arrays = MappingProxyType(
             {
+                "time": torch.zeros((num_envs,), dtype=torch.float32),
                 "qpos": torch.zeros((num_envs, 1), dtype=torch.float32),
                 "qvel": torch.zeros((num_envs, 1), dtype=torch.float32),
                 "ctrl": torch.zeros((num_envs, 1), dtype=torch.float32),
                 "xpos": torch.zeros((num_envs, count, 3), dtype=torch.float32),
+                "xipos": torch.zeros((num_envs, count, 3), dtype=torch.float32),
+                "subtree_com": torch.zeros(
+                    (num_envs, count, 3), dtype=torch.float32
+                ),
                 "xmat": xmat,
+                "cvel": torch.zeros((num_envs, count, 6), dtype=torch.float32),
                 "xfrc_applied": torch.zeros(
                     (num_envs, count, 6), dtype=torch.float32
                 ),
@@ -110,12 +116,16 @@ class _FakeRigidSolver:
         assert object_type == "body"
         return tuple(self._body_ids[name] for name in names)
 
+    def resolve_body_root_ids(self, body_ids):
+        return tuple(body_ids)
+
     def step(self, actions=None, *, nsteps=1):
         if self.fail_next_step:
             self.fail_next_step = False
             raise RuntimeError("injected rigid step failure")
         self.step_count += nsteps
         self.step_nsteps.append(nsteps)
+        self._arrays["time"].add_(self.fixed_time_step * nsteps)
         if actions is not None:
             self.last_actions = actions.clone()
         return self._arrays
@@ -124,7 +134,11 @@ class _FakeRigidSolver:
         self.reset_count += 1
         self._arrays["qpos"].zero_()
         self._arrays["qvel"].zero_()
+        self._arrays["time"].zero_()
         self._arrays["xfrc_applied"].zero_()
+        return self._arrays
+
+    def forward(self):
         return self._arrays
 
     def close(self):
@@ -162,6 +176,9 @@ class _FakeIpcSolver:
                 "affine_targets": torch.zeros(
                     (num_envs, count, 4, 4), dtype=torch.float64
                 ),
+                "affine_target_twists": torch.zeros(
+                    (num_envs, count, 6), dtype=torch.float64
+                ),
                 "affine_transforms": torch.zeros(
                     (num_envs, count, 4, 4), dtype=torch.float64
                 ),
@@ -176,6 +193,8 @@ class _FakeIpcSolver:
         self.closed = False
         self.target_set_calls = 0
         self.fail_next_reset = False
+        self.fail_next_rewind = False
+        self._checkpoint = None
         self.runtime_fingerprint = "fake-ipc"
         self.capabilities = gobot.sim.ProviderCapabilities(
             "fake-libuipc",
@@ -184,6 +203,7 @@ class _FakeIpcSolver:
             False,
             False,
             True,
+            runtime_checkpoint=True,
             exact_contact_wrench=True,
             solver_substeps=True,
             graph_capture_reason="fake staged exchange",
@@ -216,8 +236,40 @@ class _FakeIpcSolver:
             self.fail_next_reset = False
             raise RuntimeError("injected IPC reset failure")
         self.reset_count += 1
+        self.step_count = 0
+        self._checkpoint = None
         self._arrays["affine_contact_wrenches"].zero_()
         return self._arrays
+
+    def capture_checkpoint(self):
+        if self._checkpoint is not None:
+            raise RuntimeError("fake IPC checkpoint already active")
+        self._checkpoint = {
+            "step_count": self.step_count,
+            "positions": self._arrays["positions"].clone(),
+            "velocities": self._arrays["velocities"].clone(),
+            "contact_forces": self._arrays["contact_forces"].clone(),
+            "affine_transforms": self._arrays["affine_transforms"].clone(),
+            "affine_contact_wrenches": self._arrays[
+                "affine_contact_wrenches"
+            ].clone(),
+        }
+
+    def rewind_checkpoint(self):
+        if self.fail_next_rewind:
+            self.fail_next_rewind = False
+            raise RuntimeError("injected IPC checkpoint rewind failure")
+        if self._checkpoint is None:
+            raise RuntimeError("fake IPC checkpoint is not active")
+        self.step_count = self._checkpoint["step_count"]
+        for name, value in self._checkpoint.items():
+            if name != "step_count":
+                self._arrays[name].copy_(value)
+
+    def commit_checkpoint(self):
+        if self._checkpoint is None:
+            raise RuntimeError("fake IPC checkpoint is not active")
+        self._checkpoint = None
 
     def close(self):
         self.closed = True
@@ -253,11 +305,76 @@ class _FakePoseErrorIpcSolver(_FakeIpcSolver):
         return self._arrays
 
 
+class _FakeNewtonRigidSolver(_FakeRigidSolver):
+    def _update_derived_state(self) -> None:
+        position = self._arrays["qpos"][:, 0]
+        self._arrays["xpos"][..., 0].copy_(position[:, None])
+        self._arrays["xipos"].copy_(self._arrays["xpos"])
+        self._arrays["subtree_com"].copy_(self._arrays["xpos"])
+        self._arrays["subtree_com"][..., 1].add_(1.0)
+        self._arrays["cvel"].zero_()
+        self._arrays["cvel"][..., 2] = 2.0
+        self._arrays["cvel"][..., 3] = 1.0
+
+    def step(self, actions=None, *, nsteps=1):
+        super().step(actions, nsteps=nsteps)
+        force = self._arrays["xfrc_applied"][:, 1, 0]
+        self._arrays["qpos"][:, 0].add_(force * self.fixed_time_step)
+        self._arrays["qvel"][:, 0].copy_(force)
+        self._update_derived_state()
+        return self._arrays
+
+    def forward(self):
+        self._update_derived_state()
+        return self._arrays
+
+
+class _FakeNewtonIpcSolver(_FakeIpcSolver):
+    def step(self, *, nsteps=1):
+        self.step_count += nsteps
+        self.step_nsteps.append(nsteps)
+        self._arrays["affine_transforms"].copy_(
+            self._arrays["affine_targets"]
+        )
+        self._arrays["affine_contact_wrenches"].zero_()
+        reaction = 1.0 - 50.0 * self._arrays["affine_targets"][..., 0, 3]
+        self._arrays["affine_contact_wrenches"][..., 0].copy_(reaction)
+        return self._arrays
+
+
+class _FakeImpulseRigidSolver(_FakeNewtonRigidSolver):
+    def step(self, actions=None, *, nsteps=1):
+        _FakeRigidSolver.step(self, actions, nsteps=nsteps)
+        force = self._arrays["xfrc_applied"][:, 1, 0]
+        self._arrays["qvel"][:, 0].add_(
+            force * self.fixed_time_step * nsteps
+        )
+        self._arrays["qpos"][:, 0].add_(
+            self._arrays["qvel"][:, 0] * self.fixed_time_step * nsteps
+        )
+        self._update_derived_state()
+        return self._arrays
+
+
+class _FakeImpulseIpcSolver(_FakeNewtonIpcSolver):
+    gravity = (0.0, 0.0, 0.0)
+
+    def step(self, *, nsteps=1):
+        super().step(nsteps=nsteps)
+        self._arrays["velocities"].zero_()
+        reaction = self._arrays["affine_contact_wrenches"][:, 1, 0]
+        self._arrays["velocities"][:, 0, 0].copy_(reaction).mul_(
+            -self.fixed_time_step * nsteps
+        )
+        return self._arrays
+
+
 class _FakeNativeBatchSession:
     def __init__(self) -> None:
         self.buffers = None
         self.frame = 0
         self.closed = False
+        self.checkpoint = None
 
     def bind_device_buffers(self, buffers):
         self.buffers = buffers
@@ -276,7 +393,18 @@ class _FakeNativeBatchSession:
 
     def reset(self):
         self.frame = 0
+        self.checkpoint = None
         self.buffers["positions"].zero_()
+
+    def capture_checkpoint(self):
+        self.checkpoint = (self.frame, self.buffers["positions"].clone())
+
+    def rewind_checkpoint(self):
+        self.frame = self.checkpoint[0]
+        self.buffers["positions"].copy_(self.checkpoint[1])
+
+    def commit_checkpoint(self):
+        self.checkpoint = None
 
     def close(self):
         self.closed = True
@@ -284,7 +412,7 @@ class _FakeNativeBatchSession:
 
 def test_composite_artifact_has_explicit_mapping_and_ownership() -> None:
     artifact = _artifact()
-    assert artifact.schema_version == 3
+    assert artifact.schema_version == 4
     assert artifact.coupled_bodies
     assert tuple(mapping.mode for mapping in artifact.coupled_bodies) == (
         "OneWay",
@@ -305,7 +433,8 @@ def test_composite_artifact_has_explicit_mapping_and_ownership() -> None:
         "rigid_terrain": "mujoco",
         "deformable_deformable": "libuipc",
         "deformable_rigid": "libuipc",
-        "deformable_terrain": "libuipc",
+        "deformable_static": "libuipc",
+        "deformable_terrain": "unsupported",
     }
     restored = CompiledMuJoCoIpcArtifact.from_mapping(artifact.to_mapping())
     assert restored.digest == artifact.digest
@@ -344,6 +473,27 @@ def test_composite_rejects_v1_and_missing_physics_coupling() -> None:
     assert "PhysicsCoupling" in str(error)
 
 
+def test_ipc_schema_v3_normalizes_missing_static_colliders() -> None:
+    artifact = _artifact().ipc
+    mapping = dict(artifact.to_mapping())
+    manifest = json.loads(mapping["manifest"])
+    manifest["schema_version"] = 3
+    manifest.pop("static_colliders", None)
+    manifest_text = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    mapping["schema_version"] = 3
+    mapping["manifest"] = manifest_text
+    mapping["manifest_sha256"] = "sha256:" + hashlib.sha256(
+        manifest_text.encode("utf-8")
+    ).hexdigest()
+
+    restored = CompiledIpcSceneArtifact.from_mapping(mapping)
+
+    assert restored.schema_version == 3
+    assert restored.static_colliders == ()
+    assert restored.manifest_data["static_colliders"] == ()
+
 def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
     artifact = _artifact()
     session = _FakeNativeBatchSession()
@@ -367,6 +517,11 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
         4,
         4,
     )
+    assert solver.arrays["affine_target_twists"].shape == (
+        4,
+        len(artifact.coupled_bodies),
+        6,
+    )
     storage = solver.arrays["positions"]
     affine_paths = tuple(body["path"] for body in solver.affine_bodies)
     assert affine_paths == tuple(
@@ -375,6 +530,14 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
     solver.step(nsteps=2)
     assert solver.arrays["positions"].data_ptr() == storage.data_ptr()
     assert torch.allclose(storage, torch.full_like(storage, 0.02))
+    solver.capture_checkpoint()
+    checkpoint_positions = storage.clone()
+    solver.step()
+    solver.rewind_checkpoint()
+    assert torch.equal(storage, checkpoint_positions)
+    solver.step()
+    solver.commit_checkpoint()
+    assert solver.diagnostics["checkpoint_active"] is False
     _raises(
         NotImplementedError,
         lambda: solver.reset(torch.tensor([True, False, True, True])),
@@ -383,6 +546,44 @@ def test_libuipc_batch_solver_owns_stable_tensor_storage() -> None:
     assert torch.count_nonzero(storage) == 0
     solver.close()
     assert session.closed
+
+
+def test_libuipc_al_ipc_config_reports_approximate_proxy_feedback() -> None:
+    artifact = _artifact()
+    config = LibuipcBatchConfig(
+        solver=LibuipcConfig(fixed_time_step=0.01),
+        environments_per_shard=2,
+        contact_constitution="al-ipc",
+        al_ipc_mu_scale_fem=4.0e7,
+        al_ipc_mu_scale_abd=2.0e5,
+        al_ipc_toi_threshold=0.2,
+        al_ipc_alpha_lower_bound=2.0e-6,
+        al_ipc_decay_factor=0.4,
+    )
+    mapping = config.solver_mapping(2)
+    assert mapping["contact_constitution"] == "al-ipc"
+    assert mapping["al_ipc_mu_scale_fem"] == 4.0e7
+    solver = LibuipcBatchSolver(
+        artifact.ipc,
+        num_envs=2,
+        config=config,
+        device="cpu",
+        _session=_FakeNativeBatchSession(),
+        _torch=torch,
+    )
+    assert solver.wrench_source == "pose_error"
+    assert solver.capabilities.exact_contact_wrench is False
+    assert solver.diagnostics["contact_constitution"] == "al-ipc"
+    assert solver.diagnostics["feedback_source"] == "proxy_constraint"
+    solver.close()
+    _raises(
+        ValueError,
+        lambda: LibuipcBatchConfig(contact_constitution="unknown"),
+    )
+    _raises(
+        ValueError,
+        lambda: LibuipcBatchConfig(al_ipc_decay_factor=0.0),
+    )
 
 
 def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
@@ -573,6 +774,227 @@ def test_mujoco_ipc_config_validates_solver_substeps() -> None:
     _raises(TypeError, lambda: MuJoCoIpcConfig(require_full_reset=False))
 
 
+def test_newton_proxy_config_defaults_and_requires_matching_microsteps() -> None:
+    config = MuJoCoIpcConfig(integration_scheme="newton_proxy")
+    assert config.coupling_iterations == 2
+    assert config.relaxation_mode == "aitken"
+    assert config.relaxation_factor == 1.0
+    assert config.relaxation_min == 0.1
+    assert config.relaxation_max == 1.0
+    assert MuJoCoIpcConfig().relaxation_mode == "fixed"
+    _raises(
+        ValueError,
+        lambda: MuJoCoIpcConfig(
+            integration_scheme="newton_proxy",
+            rigid_substeps=2,
+            ipc_substeps=1,
+        ),
+    )
+    _raises(
+        ValueError,
+        lambda: MuJoCoIpcConfig(relaxation_factor=0.05),
+    )
+    _raises(
+        ValueError,
+        lambda: MuJoCoIpcConfig(relaxation_mode="unknown"),
+    )
+
+
+def test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeNewtonIpcSolver(artifact, 2)
+    actions = torch.full((2, 1), 0.25)
+    provider = MuJoCoIpcProvider(
+        artifact,
+        config=MuJoCoIpcConfig(
+            num_envs=2,
+            device="cpu",
+            environments_per_shard=2,
+            integration_scheme="newton_proxy",
+            coupling_iterations=3,
+            relaxation_mode="aitken",
+            capture_mujoco_graphs=False,
+        ),
+        rigid_solver=rigid,
+        ipc_solver=ipc,
+    )
+    rigid.arrays["xfrc_applied"][:, 1, 1] = 7.0
+
+    provider.step(actions)
+
+    assert rigid.step_nsteps == [1, 1, 1]
+    assert ipc.step_nsteps == [1, 1, 1]
+    assert rigid.step_count == 1
+    assert ipc.step_count == 1
+    assert torch.equal(rigid.last_actions, actions)
+    expected_twist = torch.tensor(
+        [3.0, 0.0, 0.0, 0.0, 0.0, 2.0], dtype=torch.float64
+    )
+    assert torch.allclose(
+        ipc.arrays["affine_target_twists"],
+        expected_twist.expand_as(ipc.arrays["affine_target_twists"]),
+    )
+    assert torch.count_nonzero(rigid.arrays["xfrc_applied"][:, 0]) == 0
+    assert torch.allclose(
+        rigid.arrays["xfrc_applied"][:, 1, 0],
+        torch.full((2,), 2.0 / 3.0),
+        atol=1.0e-5,
+        rtol=0.0,
+    )
+    assert torch.allclose(
+        rigid.arrays["xfrc_applied"][:, 1, 1],
+        torch.full((2,), 7.0),
+    )
+    assert provider.diagnostics["actual_coupling_iterations"] == 3
+    assert provider.diagnostics["interface_residual"] < 1.0e-5
+    assert abs(provider.diagnostics["aitken_coefficient"] - 2.0 / 3.0) < 1.0e-5
+    assert provider.diagnostics["proxy_count"] == 2
+    provider.close()
+
+
+def test_newton_proxy_residual_does_not_increase_with_more_iterations() -> None:
+    artifact = _artifact()
+    residuals = []
+    for coupling_iterations in (1, 2, 4):
+        rigid = _FakeNewtonRigidSolver(artifact, 2)
+        ipc = _FakeNewtonIpcSolver(artifact, 2)
+        provider = MuJoCoIpcProvider(
+            artifact,
+            config=MuJoCoIpcConfig(
+                num_envs=2,
+                device="cpu",
+                environments_per_shard=2,
+                integration_scheme="newton_proxy",
+                coupling_iterations=coupling_iterations,
+                relaxation_mode="aitken",
+                capture_mujoco_graphs=False,
+            ),
+            rigid_solver=rigid,
+            ipc_solver=ipc,
+        )
+        provider.step()
+        residuals.append(provider.diagnostics["interface_residual"])
+        assert rigid.step_count == 1
+        assert ipc.step_count == 1
+        provider.close()
+
+    assert residuals[1] <= residuals[0]
+    assert residuals[2] <= residuals[1]
+
+
+def test_newton_proxy_no_gravity_impulse_balance_is_below_one_percent() -> None:
+    artifact = _artifact()
+    rigid = _FakeImpulseRigidSolver(artifact, 2)
+    ipc = _FakeImpulseIpcSolver(artifact, 2)
+    provider = MuJoCoIpcProvider(
+        artifact,
+        config=MuJoCoIpcConfig(
+            num_envs=2,
+            device="cpu",
+            environments_per_shard=2,
+            integration_scheme="newton_proxy",
+            coupling_iterations=4,
+            relaxation_mode="aitken",
+            capture_mujoco_graphs=False,
+        ),
+        rigid_solver=rigid,
+        ipc_solver=ipc,
+    )
+
+    provider.step()
+
+    rigid_impulse = rigid.arrays["qvel"][:, 0]
+    deformable_impulse = ipc.arrays["velocities"][..., 0].sum(dim=1)
+    imbalance = (rigid_impulse + deformable_impulse).abs() / torch.maximum(
+        rigid_impulse.abs(), deformable_impulse.abs()
+    ).clamp_min(torch.finfo(rigid_impulse.dtype).eps)
+    assert imbalance.max().item() < 0.01
+    assert rigid.step_count == 1
+    assert ipc.step_count == 1
+    provider.close()
+
+
+def test_aitken_relaxation_is_per_body_bounded_and_masks_one_way() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeNewtonIpcSolver(artifact, 2)
+    coupler = MuJoCoIpcCoupler(
+        rigid,
+        ipc,
+        artifact.coupled_bodies,
+        integration_scheme="newton_proxy",
+        coupling_iterations=2,
+        relaxation_mode="aitken",
+        relaxation_factor=0.5,
+        relaxation_min=0.1,
+        relaxation_max=0.8,
+    )
+    coupler._previous_residual.zero_()
+    coupler._previous_residual[..., 0] = 1.0
+    coupler._aitken_factors.fill_(0.5)
+    coupler._iteration_guess.zero_()
+    coupler._iteration_feedback.zero_()
+    coupler._iteration_feedback[..., 0] = 0.9
+    coupler._update_relaxed_wrench(1)
+    assert torch.allclose(
+        coupler._aitken_factors,
+        torch.full_like(coupler._aitken_factors, 0.8),
+    )
+    assert torch.count_nonzero(coupler._next_wrenches[:, 0]) == 0
+
+    coupler._previous_residual.zero_()
+    coupler._previous_residual[..., 0] = 1.0
+    coupler._aitken_factors.fill_(0.5)
+    coupler._iteration_feedback.zero_()
+    coupler._iteration_feedback[..., 0] = -100.0
+    coupler._update_relaxed_wrench(1)
+    assert torch.allclose(
+        coupler._aitken_factors,
+        torch.full_like(coupler._aitken_factors, 0.1),
+    )
+
+    coupler._relaxation_mode = "fixed"
+    coupler._relaxation_factor = 0.25
+    coupler._iteration_guess.zero_()
+    coupler._iteration_feedback.zero_()
+    coupler._iteration_feedback[..., 0] = 4.0
+    coupler._update_relaxed_wrench(3)
+    assert torch.allclose(
+        coupler._next_wrenches[:, 1, 0],
+        torch.ones_like(coupler._next_wrenches[:, 1, 0]),
+    )
+    assert torch.count_nonzero(coupler._next_wrenches[:, 0]) == 0
+
+
+def test_newton_checkpoint_failure_faults_until_full_reset() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeNewtonIpcSolver(artifact, 2)
+    provider = MuJoCoIpcProvider(
+        artifact,
+        config=MuJoCoIpcConfig(
+            num_envs=2,
+            device="cpu",
+            environments_per_shard=2,
+            integration_scheme="newton_proxy",
+            coupling_iterations=2,
+            capture_mujoco_graphs=False,
+        ),
+        rigid_solver=rigid,
+        ipc_solver=ipc,
+    )
+    ipc.fail_next_rewind = True
+    _raises(RuntimeError, lambda: provider.step())
+    assert provider.diagnostics["faulted"] is True
+    assert provider.diagnostics["coupler_phase"] == "Faulted"
+    _raises(RuntimeError, lambda: provider.step())
+    provider.reset(torch.ones(2, dtype=torch.bool))
+    assert provider.diagnostics["faulted"] is False
+    provider.step()
+    provider.close()
+
+
 def test_composite_supports_explicit_solver_subcycling() -> None:
     artifact = _artifact()
     rigid = _FakeRigidSolver(artifact, 4)
@@ -643,12 +1065,20 @@ def main() -> int:
         return 77
     test_composite_artifact_has_explicit_mapping_and_ownership()
     test_composite_rejects_v1_and_missing_physics_coupling()
+    test_ipc_schema_v3_normalizes_missing_static_colliders()
     test_libuipc_batch_solver_owns_stable_tensor_storage()
+    test_libuipc_al_ipc_config_reports_approximate_proxy_feedback()
     test_mujoco_ipc_step_order_wrench_ownership_and_full_reset()
     test_coupler_five_phase_protocol_binding_scales_and_storage()
     test_step_failure_releases_owned_wrench_and_full_reset_recovers()
     test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement()
     test_mujoco_ipc_config_validates_solver_substeps()
+    test_newton_proxy_config_defaults_and_requires_matching_microsteps()
+    test_newton_proxy_rewinds_each_iteration_and_transfers_origin_twist()
+    test_newton_proxy_residual_does_not_increase_with_more_iterations()
+    test_newton_proxy_no_gravity_impulse_balance_is_below_one_percent()
+    test_aitken_relaxation_is_per_body_bounded_and_masks_one_way()
+    test_newton_checkpoint_failure_faults_until_full_reset()
     test_composite_supports_explicit_solver_subcycling()
     test_composite_rejects_time_step_and_layout_mismatch()
     return 0

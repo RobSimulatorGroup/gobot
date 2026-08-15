@@ -28,6 +28,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
+    parser.add_argument(
+        "--integration-scheme",
+        choices=("sequential_split", "newton_proxy"),
+        default="sequential_split",
+    )
+    parser.add_argument(
+        "--coupling-iterations", type=int, nargs="+", default=(2,)
+    )
+    parser.add_argument(
+        "--relaxation-mode", choices=("fixed", "aitken"), default=None
+    )
+    parser.add_argument(
+        "--contact-constitutions",
+        choices=("ipc", "al-ipc"),
+        nargs="+",
+        default=("ipc",),
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--module-path", default="")
     parser.add_argument("--baseline-json", type=Path)
@@ -47,28 +64,105 @@ def _baseline_throughput(path: Path, environment_count: int) -> float:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     counts = tuple(int(value) for value in args.environment_counts)
+    coupling_iterations = tuple(
+        int(value) for value in args.coupling_iterations
+    )
+    contact_constitutions = tuple(dict.fromkeys(args.contact_constitutions))
     if not counts or any(value <= 0 for value in counts):
         raise ValueError("environment counts must be positive")
+    if not coupling_iterations or any(
+        value <= 0 for value in coupling_iterations
+    ):
+        raise ValueError("coupling iterations must be positive")
     if not 0.0 <= args.maximum_regression < 1.0:
         raise ValueError("--maximum-regression must be in [0, 1)")
 
     results = []
     for environment_count in counts:
-        example_args = batch_example._parser().parse_args([])
-        example_args.num_envs = environment_count
-        example_args.environments_per_shard = min(64, environment_count)
-        example_args.steps = args.steps
-        example_args.warmup_steps = args.warmup_steps
-        example_args.repeats = args.repeats
-        example_args.fixed_dt = args.fixed_dt
-        example_args.rigid_substeps = args.rigid_substeps
-        example_args.ipc_substeps = args.ipc_substeps
-        example_args.device = args.device
-        example_args.module_path = args.module_path
-        results.append(batch_example.run(example_args))
+        for contact_constitution in contact_constitutions:
+            for iteration_count in coupling_iterations:
+                example_args = batch_example._parser().parse_args([])
+                example_args.num_envs = environment_count
+                example_args.environments_per_shard = min(64, environment_count)
+                example_args.steps = args.steps
+                example_args.warmup_steps = args.warmup_steps
+                example_args.repeats = args.repeats
+                example_args.fixed_dt = args.fixed_dt
+                example_args.rigid_substeps = args.rigid_substeps
+                example_args.ipc_substeps = args.ipc_substeps
+                example_args.integration_scheme = args.integration_scheme
+                example_args.coupling_iterations = iteration_count
+                example_args.relaxation_mode = args.relaxation_mode
+                example_args.contact_constitution = contact_constitution
+                example_args.device = args.device
+                example_args.module_path = args.module_path
+                results.append(batch_example.run(example_args))
+
+    al_ipc_evaluation = []
+    result_index = {
+        (
+            int(result["environments"]),
+            int(result["coupling_iterations"]),
+            str(result["contact_constitution"]),
+        ): result
+        for result in results
+    }
+    for environment_count in counts:
+        for iteration_count in coupling_iterations:
+            ipc = result_index.get((environment_count, iteration_count, "ipc"))
+            al_ipc = result_index.get(
+                (environment_count, iteration_count, "al-ipc")
+            )
+            if ipc is None or al_ipc is None:
+                continue
+            ipc_latency = float(
+                ipc["contact_dense_ipc_shard_latency_median_ms"]
+            )
+            al_latency = float(
+                al_ipc["contact_dense_ipc_shard_latency_median_ms"]
+            )
+            speedup = (
+                ipc_latency / al_latency - 1.0
+                if al_latency > 0.0
+                else 0.0
+            )
+            penetration_ok = float(
+                al_ipc["ground_penetration_max_meters"]
+            ) <= float(ipc["ground_penetration_max_meters"]) + 1.0e-3
+            residual_ok = float(
+                al_ipc["contact_dense_interface_residual"]
+            ) <= max(
+                float(ipc["contact_dense_interface_residual"]) * 1.1,
+                1.0e-6,
+            )
+            ipc_force = max(
+                float(value)
+                for value in ipc["reaction_force_range_newtons"]
+            )
+            al_force = max(
+                float(value) for value in al_ipc["reaction_force_range_newtons"]
+            )
+            wrench_ok = abs(al_force - ipc_force) <= max(0.1 * ipc_force, 1.0)
+            al_ipc_evaluation.append(
+                {
+                    "environments": environment_count,
+                    "coupling_iterations": iteration_count,
+                    "median_ipc_step_speedup": speedup,
+                    "penetration_within_bound": penetration_ok,
+                    "interface_residual_within_bound": residual_ok,
+                    "wrench_within_bound": wrench_ok,
+                    "recommendation_eligible": (
+                        speedup >= 0.15
+                        and penetration_ok
+                        and residual_ok
+                        and wrench_ok
+                    ),
+                }
+            )
 
     output: dict[str, Any] = {
-        "benchmark_schema_version": 2,
+        "benchmark_schema_version": 3,
+        "al_ipc_evaluation": al_ipc_evaluation,
         "results": results,
     }
     if args.baseline_json is not None:

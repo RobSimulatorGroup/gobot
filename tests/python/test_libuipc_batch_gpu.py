@@ -69,8 +69,12 @@ def test_real_libuipc_batch_device_buffers() -> None:
             assert solver.diagnostics["valid"]
             positions = solver.arrays["positions"]
             transforms = solver.arrays["affine_transforms"]
+            target_twists = solver.arrays["affine_target_twists"]
             assert positions.is_cuda and transforms.is_cuda
+            assert target_twists.is_cuda
             assert positions.dtype == torch.float64
+            assert target_twists.shape == (2, len(solver.affine_bodies), 6)
+            assert torch.count_nonzero(target_twists) == 0
             assert torch.isfinite(positions).all().item()
             assert torch.isfinite(transforms).all().item()
             torch.testing.assert_close(
@@ -92,13 +96,20 @@ def test_real_libuipc_batch_device_buffers() -> None:
                 if str(body["path"]).endswith("/press_head")
             )
             target_storage[0, press_index, 2, 3] -= 0.01
+            target_twists[0, press_index, 2] = -1.0
+            target_twists[0, press_index, 5] = 25.0
             position_pointer = positions.data_ptr()
             transform_pointer = transforms.data_ptr()
+            twist_pointer = target_twists.data_ptr()
+
+            solver.capture_checkpoint()
+            assert solver.diagnostics["checkpoint_active"]
 
             solver.step()
 
             assert positions.data_ptr() == position_pointer
             assert transforms.data_ptr() == transform_pointer
+            assert target_twists.data_ptr() == twist_pointer
             assert torch.isfinite(positions).all().item()
             assert torch.isfinite(transforms).all().item()
             assert (
@@ -108,6 +119,26 @@ def test_real_libuipc_batch_device_buffers() -> None:
             assert solver.diagnostics["frame"] == 1
             first_step_positions = positions.clone()
             first_step_transforms = transforms.clone()
+            first_step_wrenches = solver.arrays[
+                "affine_contact_wrenches"
+            ].clone()
+
+            solver.rewind_checkpoint()
+            assert solver.diagnostics["frame"] == 0
+            assert solver.diagnostics["checkpoint_active"]
+            torch.testing.assert_close(positions, initial_positions)
+            torch.testing.assert_close(transforms, initial_transforms)
+
+            solver.step()
+            torch.testing.assert_close(positions, first_step_positions)
+            torch.testing.assert_close(transforms, first_step_transforms)
+            torch.testing.assert_close(
+                solver.arrays["affine_contact_wrenches"],
+                first_step_wrenches,
+            )
+            solver.commit_checkpoint()
+            assert not solver.diagnostics["checkpoint_active"]
+            assert solver.diagnostics["frame"] == 1
 
             solver.reset(torch.ones(2, dtype=torch.bool, device="cuda:0"))
             assert solver.diagnostics["frame"] == 0
@@ -121,6 +152,46 @@ def test_real_libuipc_batch_device_buffers() -> None:
         finally:
             solver.close()
             assert not tuple((project_root / "workspace").glob("batch_session_*"))
+            del context
+
+
+def test_real_libuipc_loose_static_box_collision() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="gobot-libuipc-static-gpu-"
+    ) as temporary_directory:
+        project_root = Path(temporary_directory)
+        scene_path = build_libuipc_test_scene(
+            project_root, "soft_cube_static_box.jscn"
+        )
+        context = gobot.app.create_context()
+        context.set_project_path(str(project_root))
+        context.load_scene("res://" + scene_path.name)
+        artifact = context.compile_ipc_scene_artifact()
+        solver = LibuipcBatchSolver(
+            artifact,
+            num_envs=1,
+            device="cuda:0",
+            config=LibuipcBatchConfig(
+                solver=LibuipcConfig(
+                    fixed_time_step=0.005,
+                    module_path=MODULE_PATH,
+                    workspace=str(project_root / "workspace"),
+                ),
+                environments_per_shard=1,
+            ),
+        )
+        try:
+            assert solver.capacities["affine_bodies_per_env"] == 0
+            assert solver.capacities["static_colliders_per_env"] == 1
+            assert solver.diagnostics["static_collider_count"] == 1
+            for _ in range(80):
+                solver.step()
+            solver.synchronize()
+            positions = solver.arrays["positions"]
+            assert torch.isfinite(positions).all().item()
+            assert positions[..., 2].amin().item() > -0.015
+        finally:
+            solver.close()
             del context
 
 
@@ -180,6 +251,62 @@ def test_real_mujoco_libuipc_composite_step() -> None:
             )
             assert provider.diagnostics["frame"] == 0
             assert provider.arrays["qpos"].data_ptr() == qpos_pointer
+        finally:
+            provider.close()
+            assert not tuple((project_root / "workspace").glob("batch_session_*"))
+            del context
+
+
+def test_real_mujoco_libuipc_newton_proxy_step() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="gobot-mujoco-libuipc-newton-gpu-"
+    ) as temporary_directory:
+        project_root = Path(temporary_directory)
+        scene_path = build_libuipc_test_scene(
+            project_root, "soft_cube_press.jscn"
+        )
+        context = gobot.app.create_context()
+        context.set_project_path(str(project_root))
+        context.load_scene("res://" + scene_path.name)
+        artifact = CompiledMuJoCoIpcArtifact.from_context(context)
+        provider = MuJoCoIpcProvider(
+            artifact,
+            config=MuJoCoIpcConfig(
+                num_envs=1,
+                device="cuda:0",
+                environments_per_shard=1,
+                integration_scheme="newton_proxy",
+                coupling_iterations=2,
+                capture_mujoco_graphs=True,
+            ),
+            libuipc_config=LibuipcBatchConfig(
+                solver=LibuipcConfig(
+                    fixed_time_step=0.002,
+                    module_path=MODULE_PATH,
+                    workspace=str(project_root / "workspace"),
+                ),
+                environments_per_shard=1,
+            ),
+        )
+        try:
+            initial_time = provider.arrays["time"].clone()
+            provider.step()
+            provider.synchronize()
+
+            diagnostics = provider.diagnostics
+            assert diagnostics["frame"] == 1
+            assert diagnostics["libuipc"]["frame"] == 1
+            assert diagnostics["actual_coupling_iterations"] == 2
+            assert diagnostics["coupler_phase"] == "Idle"
+            assert diagnostics["libuipc"]["checkpoint_active"] is False
+            assert torch.allclose(
+                provider.arrays["time"],
+                initial_time + provider.fixed_time_step,
+            )
+            assert torch.isfinite(
+                provider.arrays["ipc_affine_target_twists"]
+            ).all().item()
+            assert torch.isfinite(provider.arrays["xfrc_applied"]).all().item()
         finally:
             provider.close()
             assert not tuple((project_root / "workspace").glob("batch_session_*"))
@@ -264,7 +391,9 @@ def main() -> int:
     )
     assert availability.available, availability.reason
     test_real_libuipc_batch_device_buffers()
+    test_real_libuipc_loose_static_box_collision()
     test_real_mujoco_libuipc_composite_step()
+    test_real_mujoco_libuipc_newton_proxy_step()
     test_mujoco_libuipc_editor_play_session()
     return 0
 

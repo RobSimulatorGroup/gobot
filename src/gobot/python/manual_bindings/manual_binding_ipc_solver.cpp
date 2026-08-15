@@ -83,6 +83,19 @@ IpcBatchSolverConfig BatchConfigFromPython(const py::dict& value) {
             value, "environments_per_shard");
     config.external_affine_proxies = ConfigValue(
             value, "external_affine_proxies", true);
+    config.contact_constitution = ConfigValue(
+            value, "contact_constitution", config.contact_constitution);
+    config.al_ipc_mu_scale_fem = ConfigValue(
+            value, "al_ipc_mu_scale_fem", config.al_ipc_mu_scale_fem);
+    config.al_ipc_mu_scale_abd = ConfigValue(
+            value, "al_ipc_mu_scale_abd", config.al_ipc_mu_scale_abd);
+    config.al_ipc_toi_threshold = ConfigValue(
+            value, "al_ipc_toi_threshold", config.al_ipc_toi_threshold);
+    config.al_ipc_alpha_lower_bound = ConfigValue(
+            value, "al_ipc_alpha_lower_bound",
+            config.al_ipc_alpha_lower_bound);
+    config.al_ipc_decay_factor = ConfigValue(
+            value, "al_ipc_decay_factor", config.al_ipc_decay_factor);
     return config;
 }
 
@@ -122,7 +135,12 @@ py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
             diagnostics.deformable_vertex_count_per_environment;
     result["affine_body_count_per_environment"] =
             diagnostics.affine_body_count_per_environment;
+    result["static_collider_count_per_environment"] =
+            diagnostics.static_collider_count_per_environment;
     result["last_step_latency_ms"] = diagnostics.last_step_latency_ms;
+    result["contact_constitution"] = diagnostics.contact_constitution;
+    result["exact_contact_wrench"] = diagnostics.exact_contact_wrench;
+    result["checkpoint_active"] = diagnostics.checkpoint_active;
     result["valid"] = diagnostics.valid;
     return result;
 }
@@ -340,6 +358,8 @@ public:
                 values["contact_forces"], "contact_forces");
         buffers.affine_targets = DeviceBufferFromPython(
                 values["affine_targets"], "affine_targets");
+        buffers.affine_target_twists = DeviceBufferFromPython(
+                values["affine_target_twists"], "affine_target_twists");
         buffers.affine_transforms = DeviceBufferFromPython(
                 values["affine_transforms"], "affine_transforms");
         buffers.affine_contact_wrenches = DeviceBufferFromPython(
@@ -366,6 +386,39 @@ public:
         {
             py::gil_scoped_release release;
             success = RequireSession().ResetFull();
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void CaptureCheckpoint() {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().CaptureCheckpoint();
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void RewindCheckpoint() {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().RewindCheckpoint();
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void CommitCheckpoint() {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().CommitCheckpoint();
         }
         if (!success) {
             throw std::runtime_error(RequireSession().GetLastError());
@@ -468,6 +521,12 @@ void RegisterManualIpcSolverBindings(py::module_& module) {
             .def("step", &PyIpcBatchSolverSession::Step,
                  py::arg("steps") = 1)
             .def("reset", &PyIpcBatchSolverSession::Reset)
+            .def("capture_checkpoint",
+                 &PyIpcBatchSolverSession::CaptureCheckpoint)
+            .def("rewind_checkpoint",
+                 &PyIpcBatchSolverSession::RewindCheckpoint)
+            .def("commit_checkpoint",
+                 &PyIpcBatchSolverSession::CommitCheckpoint)
             .def("synchronize", &PyIpcBatchSolverSession::Synchronize)
             .def_property_readonly("deformable_bodies",
                                    &PyIpcBatchSolverSession::DeformableBodies)

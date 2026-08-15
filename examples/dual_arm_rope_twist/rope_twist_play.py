@@ -20,6 +20,7 @@ from gobot.rl import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
     MuJoCoIpcProvider,
+    MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
 )
 
@@ -42,6 +43,16 @@ NUM_ENVS = 1
 ENVIRONMENTS_PER_SHARD = 1
 SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 DRIVE_MODE_ENVIRONMENT_VARIABLE = "GOBOT_ROPE_TWIST_DRIVE_MODE"
+INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE = (
+    "GOBOT_ROPE_TWIST_INTEGRATION_SCHEME"
+)
+INTEGRATION_SCHEMES = ("newton_proxy", "sequential_split")
+DEFAULT_INTEGRATION_SCHEME = "newton_proxy"
+COUPLING_ITERATIONS = 2
+CONTACT_FORCE_ARROW_MIN_NEWTONS = 1.0e-3
+IPC_CONTACT_FORCE_ARROW_MIN_LENGTH = 0.015
+IPC_CONTACT_FORCE_ARROW_COLOR = (1.0, 0.12, 0.78, 1.0)
+GRIP_CONTACT_FORCE_ARROW_COLOR = (0.16, 0.92, 0.34, 1.0)
 
 
 def _nodes_by_name(root: Any) -> dict[str, Any]:
@@ -148,6 +159,154 @@ def _drive_mode(controllers: Any) -> tuple[str, float, bool]:
     )
 
 
+def _integration_scheme() -> str:
+    scheme = os.environ.get(
+        INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE,
+        DEFAULT_INTEGRATION_SCHEME,
+    ).strip().lower()
+    if scheme not in INTEGRATION_SCHEMES:
+        raise ValueError(
+            f"{INTEGRATION_SCHEME_ENVIRONMENT_VARIABLE} must be one of "
+            + ", ".join(repr(value) for value in INTEGRATION_SCHEMES)
+        )
+    return scheme
+
+
+def _pad_geom_names(robot_name: str) -> tuple[str, str]:
+    return tuple(
+        f"{robot_name}_{robot_name}_{side}_rubber_pad_collision"
+        for side in ("left", "right")
+    )
+
+
+def _fixture_geom_name(fixture_name: str) -> str:
+    return f"{fixture_name}_fixture_body_collision"
+
+
+def _grip_sensor_specs() -> tuple[MuJoCoWarpContactSensorSpec, ...]:
+    return tuple(
+        MuJoCoWarpContactSensorSpec(
+            name=f"{side}_fixture_grip",
+            primary_type="geom",
+            primary_names=_pad_geom_names(robot_name),
+            secondary_type="geom",
+            secondary_name=_fixture_geom_name(fixture_name),
+            fields=("found", "force", "pos", "normal", "tangent"),
+            reduce="maxforce",
+            num_slots=1,
+        )
+        for side, robot_name, fixture_name in zip(
+            ("left", "right"),
+            ROBOT_NAMES,
+            FIXTURE_ROBOT_NAMES,
+            strict=True,
+        )
+    )
+
+
+def _contact_force_arrows(
+    positions: Any,
+    forces: Any,
+    *,
+    found: Any | None = None,
+    color: tuple[float, float, float, float],
+    label: str,
+    force_scale: float,
+    max_force_length: float,
+    min_force_length: float = 0.0,
+    max_count: int | None = None,
+) -> list[DebugArrow]:
+    import numpy as np
+
+    points = np.asarray(positions, dtype=np.float64)
+    values = np.asarray(forces, dtype=np.float64)
+    if (
+        points.ndim != 2
+        or points.shape[1:] != (3,)
+        or values.shape != points.shape
+    ):
+        raise RuntimeError("contact-force arrays must have shape [count,3]")
+    if not np.isfinite(points).all() or not np.isfinite(values).all():
+        raise RuntimeError("contact-force arrays contain non-finite values")
+    if not math.isfinite(force_scale) or force_scale < 0.0:
+        raise ValueError("contact-force arrow scale must be finite and non-negative")
+    if not math.isfinite(max_force_length) or max_force_length < 0.0:
+        raise ValueError(
+            "contact-force arrow maximum length must be finite and non-negative"
+        )
+    if not math.isfinite(min_force_length) or min_force_length < 0.0:
+        raise ValueError(
+            "contact-force arrow minimum length must be finite and non-negative"
+        )
+    if max_count is not None and (
+        isinstance(max_count, bool) or int(max_count) <= 0
+    ):
+        raise ValueError("contact-force arrow maximum count must be positive")
+
+    visible = np.ones(points.shape[0], dtype=bool)
+    if found is not None:
+        matches = np.asarray(found)
+        if matches.shape != (points.shape[0],):
+            raise RuntimeError("contact-found array must have shape [count]")
+        visible &= matches.astype(bool)
+
+    magnitudes = np.linalg.norm(values, axis=1)
+    indices = np.flatnonzero(
+        visible & (magnitudes >= CONTACT_FORCE_ARROW_MIN_NEWTONS)
+    )
+    if max_count is not None and len(indices) > int(max_count):
+        selected = np.argpartition(
+            magnitudes[indices], -int(max_count)
+        )[-int(max_count) :]
+        indices = indices[selected]
+    indices = indices[
+        np.argsort(-magnitudes[indices], kind="stable")
+    ]
+
+    arrows = []
+    for index in indices:
+        magnitude = float(magnitudes[index])
+        length = min(
+            max_force_length,
+            max(min_force_length, force_scale * math.log1p(magnitude)),
+        )
+        if length <= 0.0:
+            continue
+        arrows.append(
+            DebugArrow(
+                start=points[index],
+                vector=values[index] / magnitude,
+                color=color,
+                scale=length,
+                label=f"{label} {magnitude:.3g} N",
+            )
+        )
+    return arrows
+
+
+def _contact_frame_forces_to_world(
+    forces: Any,
+    normals: Any,
+    tangents: Any,
+) -> Any:
+    """Transform MuJoCo contact-frame force components into world vectors."""
+
+    torch_module = __import__("torch")
+    if (
+        forces.shape != normals.shape
+        or forces.shape != tangents.shape
+        or forces.ndim != 2
+        or forces.shape[1] != 3
+    ):
+        raise RuntimeError("contact force/frame tensors must have shape [count,3]")
+    bitangents = torch_module.cross(normals, tangents, dim=1)
+    return (
+        forces[:, 0, None] * normals
+        + forces[:, 1, None] * tangents
+        + forces[:, 2, None] * bitangents
+    )
+
+
 def _torque_arrows(tool_poses: Any, wrenches: Any) -> list[DebugArrow]:
     arrows = []
     colors = ((0.98, 0.72, 0.12, 1.0), (0.12, 0.82, 0.88, 1.0))
@@ -187,6 +346,8 @@ class Script(gobot.NodeScript):
         self.tool_body_ids = ()
         self.fixture_body_ids = ()
         self.wrist_actuator_ids = ()
+        self.grip_contact_sensors = ()
+        self.last_sensed_frame = -1
         self.endpoint_indices = ()
         self.initial_qpos = None
         self.attachment_reference = None
@@ -196,6 +357,7 @@ class Script(gobot.NodeScript):
         self.maximum_attachment_error = 0.0
         self.gravity_compensator = None
         self.drive_mode = "showcase"
+        self.integration_scheme = DEFAULT_INTEGRATION_SCHEME
         self.wrist_torque_limit = 0.0
         try:
             import numpy as np
@@ -232,6 +394,7 @@ class Script(gobot.NodeScript):
                 self.wrist_torque_limit,
                 stall_detection_enabled,
             ) = _drive_mode(controllers)
+            self.integration_scheme = _integration_scheme()
 
             solver_config = _batch_config(self.context)
             rigid_availability = MuJoCoWarpProvider.availability()
@@ -256,12 +419,16 @@ class Script(gobot.NodeScript):
                     num_envs=NUM_ENVS,
                     device="cuda:0",
                     environments_per_shard=ENVIRONMENTS_PER_SHARD,
+                    integration_scheme=self.integration_scheme,
+                    coupling_iterations=COUPLING_ITERATIONS,
                     capture_mujoco_graphs=True,
                 ),
                 libuipc_config=solver_config,
                 mujoco_options={
                     "nconmax": 512,
                     "njmax": 2048,
+                    "contact_sensor_maxmatch": 32,
+                    "contact_sensors": _grip_sensor_specs(),
                     "overflow_check_interval": 0,
                 },
             )
@@ -311,6 +478,12 @@ class Script(gobot.NodeScript):
                     joint_names=JOINT_NAMES,
                 ).actuator_ids[controllers.WRIST_INDEX]
                 for robot_name in ROBOT_NAMES
+            )
+            self.grip_contact_sensors = tuple(
+                self.provider.rigid_solver.contact_sensor(
+                    f"{side}_fixture_grip"
+                )
+                for side in ("left", "right")
             )
             controllers.configure_wrist_torque_limit(
                 self.provider.rigid_solver,
@@ -387,7 +560,8 @@ class Script(gobot.NodeScript):
             print(
                 "Dual FR3 rope twisting started: MuJoCo friction grasps two "
                 "free fixtures; libuipc advances the attached rope on cuda:0; "
-                f"drive={self.drive_mode} ({self.wrist_torque_limit:g} N m)"
+                f"drive={self.drive_mode} ({self.wrist_torque_limit:g} N m); "
+                f"coupling={self.integration_scheme} x{COUPLING_ITERATIONS}"
             )
         except Exception:
             self._close_play_session()
@@ -470,11 +644,18 @@ class Script(gobot.NodeScript):
         self.grip_rotation_reference = None
         self.maximum_grip_slip = 0.0
         self.maximum_attachment_error = 0.0
+        self.last_sensed_frame = -1
 
     def _sync_scene(self) -> None:
         if self.provider is None:
             return
         self.provider.synchronize()
+        settings = self.context.get_physics_debug_settings()
+        draw_contact_forces = bool(settings["draw_contact_forces"])
+        frame = int(self.provider.diagnostics["frame"])
+        if draw_contact_forces and frame != self.last_sensed_frame:
+            self.provider.sense()
+            self.last_sensed_frame = frame
         positions = self.provider.arrays["ipc_positions"].detach().cpu().numpy()
         for body_index, entry in enumerate(
             self.provider.ipc_solver.deformable_bodies
@@ -520,11 +701,64 @@ class Script(gobot.NodeScript):
         world_wrenches[:, 3:] = (
             tool_rotations @ local_wrenches[:, 3:, None]
         )[..., 0]
-        set_debug_arrows(
-            _torque_arrows(
-                tool_poses, world_wrenches.detach().cpu().numpy()
-            )
+        arrows = _torque_arrows(
+            tool_poses, world_wrenches.detach().cpu().numpy()
         )
+        if draw_contact_forces:
+            force_scale = float(settings["contact_force_scale"])
+            max_force_length = float(settings["contact_force_max_length"])
+            arrows.extend(
+                _contact_force_arrows(
+                    positions[0],
+                    self.provider.arrays["ipc_contact_forces"][0]
+                    .detach()
+                    .cpu()
+                    .numpy(),
+                    color=IPC_CONTACT_FORCE_ARROW_COLOR,
+                    label="rope contact",
+                    force_scale=force_scale,
+                    max_force_length=max_force_length,
+                    min_force_length=IPC_CONTACT_FORCE_ARROW_MIN_LENGTH,
+                )
+            )
+            grip_positions = torch.cat(
+                tuple(sensor["pos"] for sensor in self.grip_contact_sensors),
+                dim=1,
+            )[0]
+            grip_forces = torch.cat(
+                tuple(sensor["force"] for sensor in self.grip_contact_sensors),
+                dim=1,
+            )[0]
+            grip_normals = torch.cat(
+                tuple(sensor["normal"] for sensor in self.grip_contact_sensors),
+                dim=1,
+            )[0]
+            grip_tangents = torch.cat(
+                tuple(sensor["tangent"] for sensor in self.grip_contact_sensors),
+                dim=1,
+            )[0]
+            grip_forces = _contact_frame_forces_to_world(
+                grip_forces,
+                grip_normals,
+                grip_tangents,
+            )
+            grip_found = torch.cat(
+                tuple(sensor["found"] for sensor in self.grip_contact_sensors),
+                dim=1,
+            )[0]
+            arrows.extend(
+                _contact_force_arrows(
+                    grip_positions.detach().cpu().numpy(),
+                    grip_forces.detach().cpu().numpy(),
+                    found=grip_found.detach().cpu().numpy(),
+                    color=GRIP_CONTACT_FORCE_ARROW_COLOR,
+                    label="grip contact",
+                    force_scale=force_scale,
+                    max_force_length=max_force_length,
+                    max_count=4,
+                )
+            )
+        set_debug_arrows(arrows)
 
         if self.controller.tick >= self.controllers_module.TWIST_START_TICK:
             local_endpoints = self.controllers_module.rope_endpoints_in_body_frames(

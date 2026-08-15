@@ -11,7 +11,8 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
+_MIN_READABLE_SCHEMA_VERSION = 3
 _PRODUCER = "gobot"
 _FORMAT = "gobot-ipc"
 _MESH_ENCODING = "gobot.tetrahedral-mesh.le.v1"
@@ -178,6 +179,87 @@ def _validate_unique_paths(values: Sequence[Any], description: str) -> None:
         paths.append(path)
     if len(set(paths)) != len(paths):
         raise ValueError(f"IPC manifest contains duplicate {description} paths")
+
+
+def _validate_collision_shape(
+    value: Any,
+    description: str,
+    decoded_surface_meshes: Mapping[str, Mapping[str, Any]],
+    *,
+    require_link_transform: bool,
+) -> Mapping[str, Any]:
+    collision = _require_mapping(value, description)
+    _validate_transform(collision.get("transform"), f"{description} transform")
+    if require_link_transform:
+        _validate_transform(
+            collision.get("link_transform"), f"{description} link transform"
+        )
+    _require_bool(collision.get("disabled"), f"{description} disabled flag")
+    for field in ("collision_layer", "collision_mask"):
+        _require_int(
+            collision.get(field),
+            f"{description} {field.replace('_', ' ')}",
+            minimum=0,
+            maximum=(1 << 32) - 1,
+        )
+    contact_offset = _require_number(
+        collision.get("contact_offset"), f"{description} contact offset"
+    )
+    rest_offset = _require_number(
+        collision.get("rest_offset"), f"{description} rest offset"
+    )
+    if contact_offset < 0.0 or rest_offset > contact_offset:
+        raise ValueError(
+            f"{description} offsets require contact_offset >= 0 and "
+            "rest_offset <= contact_offset"
+        )
+    material = _require_mapping(
+        collision.get("material"), f"{description} material"
+    )
+    for field in (
+        "sliding_friction",
+        "torsional_friction",
+        "rolling_friction",
+        "contact_compliance",
+        "contact_damping",
+    ):
+        if _require_number(material.get(field), f"physics material {field}") < 0.0:
+            raise ValueError(f"physics material {field} must be non-negative")
+    restitution = _require_number(
+        material.get("restitution"), "physics material restitution"
+    )
+    if not 0.0 <= restitution <= 1.0:
+        raise ValueError("physics material restitution must be in [0, 1]")
+
+    shape_type = collision.get("shape_type")
+    if shape_type == "box":
+        size = _require_vector(collision.get("size"), 3, f"{description} size")
+        if any(component <= 0.0 for component in size):
+            raise ValueError(f"{description} size must be positive")
+    elif shape_type == "sphere":
+        if _require_number(collision.get("radius"), f"{description} radius") <= 0.0:
+            raise ValueError(f"{description} radius must be positive")
+    elif shape_type in ("capsule", "cylinder"):
+        for field in ("radius", "height"):
+            if _require_number(
+                collision.get(field), f"{description} {field}"
+            ) <= 0.0:
+                raise ValueError(f"{description} {field} must be positive")
+    elif shape_type == "triangle_mesh":
+        mesh_blob = str(collision.get("mesh_blob", ""))
+        if mesh_blob not in decoded_surface_meshes:
+            raise ValueError(f"{description} references an unknown mesh blob")
+        decoded_surface = decoded_surface_meshes[mesh_blob]
+        for field in ("vertex_count", "triangle_count"):
+            if _require_int(
+                collision.get(field), f"{description} {field}", minimum=1
+            ) != int(decoded_surface[field]):
+                raise ValueError(
+                    f"{description} {field} does not match its mesh blob"
+                )
+    else:
+        raise ValueError(f"unsupported {description} type {shape_type!r}")
+    return collision
 
 
 def _decode_mesh_blob(data: bytes) -> Mapping[str, Any]:
@@ -408,7 +490,7 @@ def _decode_surface_mesh_blob(data: bytes) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class CompiledIpcSceneArtifact:
-    """Schema-v3 IPC scene manifest and its content-addressed binary blobs."""
+    """Schema-v4 IPC scene manifest and its content-addressed binary blobs."""
 
     schema_version: int
     producer: str
@@ -422,8 +504,8 @@ class CompiledIpcSceneArtifact:
         schema_version = _require_int(
             self.schema_version, "compiled IPC artifact schema version", minimum=1
         )
-        if schema_version != _SCHEMA_VERSION:
-            if schema_version < _SCHEMA_VERSION:
+        if not _MIN_READABLE_SCHEMA_VERSION <= schema_version <= _SCHEMA_VERSION:
+            if schema_version < _MIN_READABLE_SCHEMA_VERSION:
                 raise ValueError(
                     f"unsupported compiled IPC artifact schema {schema_version}; schema 3 "
                     "requires backend-neutral contact materials and explicit PhysicsCoupling entries"
@@ -473,6 +555,14 @@ class CompiledIpcSceneArtifact:
             "scene_name"
         ]:
             raise ValueError("compiled IPC artifact manifest has no scene name")
+        if schema_version == 3:
+            legacy_static_colliders = manifest_data.get("static_colliders", [])
+            if legacy_static_colliders != []:
+                raise ValueError(
+                    "IPC schema v3 artifacts cannot contain static_colliders"
+                )
+            manifest_data = dict(manifest_data)
+            manifest_data["static_colliders"] = []
 
         blob_table = manifest_data.get("blobs", [])
         if not isinstance(blob_table, list):
@@ -559,12 +649,15 @@ class CompiledIpcSceneArtifact:
         deformables = manifest_data.get("deformable_bodies", [])
         tactile = manifest_data.get("tactile_sensors", [])
         robots = manifest_data.get("robots", [])
+        static_colliders = manifest_data.get("static_colliders")
         couplings = manifest_data.get("couplings")
         deformable_attachments = manifest_data.get(
             "deformable_attachments", []
         )
         if not isinstance(couplings, list):
             raise ValueError("IPC manifest coupling table must be a list")
+        if not isinstance(static_colliders, list):
+            raise ValueError("IPC manifest static collider table must be a list")
         if not isinstance(deformable_attachments, list):
             raise ValueError(
                 "IPC manifest deformable attachment table must be a list"
@@ -577,6 +670,17 @@ class CompiledIpcSceneArtifact:
             if not isinstance(values, list):
                 raise ValueError(f"IPC manifest {name} table must be a list")
             _validate_unique_paths(values, name)
+        _validate_unique_paths(static_colliders, "static collider")
+        static_paths = tuple(str(value["path"]) for value in static_colliders)
+        if static_paths != tuple(sorted(static_paths)):
+            raise ValueError("IPC static collider table must be sorted by path")
+        for raw_collider in static_colliders:
+            _validate_collision_shape(
+                raw_collider,
+                "static collision shape",
+                decoded_surface_meshes,
+                require_link_transform=False,
+            )
         for raw_body in deformables:
             body = _require_mapping(raw_body, "deformable body")
             mesh_blob = str(body.get("mesh_blob", ""))
@@ -1258,6 +1362,10 @@ class CompiledIpcSceneArtifact:
     @property
     def robots(self) -> tuple[Mapping[str, Any], ...]:
         return tuple(self._manifest_data["robots"])
+
+    @property
+    def static_colliders(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self._manifest_data.get("static_colliders", ()))
 
     @property
     def couplings(self) -> tuple[Mapping[str, Any], ...]:

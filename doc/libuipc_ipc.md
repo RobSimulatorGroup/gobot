@@ -54,8 +54,8 @@ leaving the backend-neutral artifact compiler and module loader available.
 The engine-facing API owns copied, stable state storage and exposes no libuipc
 `World`, `Scene`, geometry, CUDA buffer, or solver handles. A solver session:
 
-- consumes only `IpcSceneArtifact` schema v3; older artifacts are rejected
-  because they lack the complete neutral material and stable-path contract;
+- consumes `IpcSceneArtifact` schema v4 and continues to read schema v3,
+  normalizing its missing static-collider table to empty;
 - maps tetrahedral deformables to `StableNeoHookean` FEM;
 - maps supported robot collision links to affine bodies, with soft transform
   targets for kinematic robots and fixed-root articulated dynamics for robots
@@ -67,13 +67,15 @@ The engine-facing API owns copied, stable state storage and exposes no libuipc
   feature interfaces;
 - rejects an incompatible module ABI before creating a world.
 
-The adapter supports tetrahedral deformables, box/sphere/triangle-mesh robot
-collision geometry, and driven revolute/prismatic articulation. Additional collision
-shapes, joint types and limits, tactile image products, and articulated force
-feedback remain Gobot adapter work; they do not change the public scene
-ownership boundary.
+The adapter supports tetrahedral deformables, box/sphere/capsule/cylinder/
+triangle-mesh collision geometry, and driven revolute/prismatic articulation.
+Loose `CollisionShape3D` nodes outside `Link3D` hierarchies compile as fixed IPC
+colliders and never enter affine target or wrench arrays. `Terrain3D` remains
+explicitly unsupported by the IPC compiler. Additional joint types and limits,
+tactile image products, and articulated force feedback remain Gobot adapter
+work; they do not change the public scene ownership boundary.
 
-Schema v3 includes a canonical `couplings` table. Entries are sorted by coupling
+Schema v4 includes canonical `couplings` and `static_colliders` tables. Entries are sorted by coupling
 node path and carry the coupling path, canonical `Link3D` path, robot/link
 names, mode, per-binding force and torque scales, and a contiguous
 `proxy_index`. In normal libuipc mode the solver still compiles the complete
@@ -149,9 +151,11 @@ Collision ownership is fixed so a contact pair is never solved twice:
 | rigid-terrain | MuJoCo |
 | deformable-deformable | libuipc |
 | deformable-rigid | libuipc |
-| deformable-terrain | libuipc |
+| deformable-static | libuipc |
+| deformable-terrain | unsupported |
 
-One composite tick is a fixed five-stage protocol:
+The default `integration_scheme="sequential_split"` preserves the original
+five-stage protocol:
 
 1. `PushRigidPose`: gather every mapped MuJoCo body pose directly into the
    stable libuipc affine-target tensor;
@@ -170,6 +174,20 @@ reports `proxy_constraint`. A failed stage releases the Coupler-owned
 wrench and faults the provider; another step is rejected until a successful
 full reset, while `close()` remains available. Construction failure, reset,
 and close also clear Coupler state.
+
+`integration_scheme="newton_proxy"` is the opt-in correctness mode. It
+requires equal rigid/IPC microstep counts and equal microstep `dt`. At each
+shared microstep the Coupler captures preallocated MuJoCo state and one native
+libuipc `World::dump()` checkpoint, advances both solvers, relaxes each
+environment/body 6D interface wrench independently, then rewinds and repeats
+from the same starting state. The final iterate is committed, so `1`, `2`, or
+`4` coupling iterations still advance physical time by exactly one microstep.
+Rigid `cvel` is converted from subtree-COM velocity to a body-origin,
+world-frame `[linear_xyz, angular_xyz]` twist before upload. Fixed relaxation
+and bounded Aitken relaxation are available; Newton mode defaults to Aitken.
+`OneWay` proxies receive both pose and twist but their feedback is always zero.
+A failed capture, rewind, solve, or commit faults the composite provider until
+a successful full reset.
 
 The default capacity is 256 environments split into four fixed shards of 64.
 Each shard owns one libuipc world and one subscene per environment. Cross-env
@@ -197,15 +215,24 @@ provider.step(actions)
 provider.reset(full_batch_mask)
 ```
 
-The native batch C ABI stays at v1, but its input scene artifact is schema v3.
-The first composite revision intentionally supports full-batch reset only. Each
+The native batch C ABI is v2 and includes target twists plus single-slot
+capture/rewind/commit operations. A v1 module is rejected with an explicit
+version mismatch. The composite provider intentionally supports full-batch
+reset only. Each
 shard restores its frame-zero libuipc snapshot, including solver history and
 contact caches, and each batch session uses an exclusive workspace that is
 removed when the session closes. A partial mask raises an explicit unsupported
 shard-recovery error. Solver microstep counts are explicit, positive integers;
 `rigid_dt * rigid_substeps` must equal `ipc_dt * ipc_substeps`. The split remains
-sequential (`PushRigidPose -> StepIpc -> ApplyFeedback -> StepRigid`) rather
-than pretending to be a monolithic integrator.
+sequential by default; Newton proxy iteration must be requested explicitly.
+
+`LibuipcBatchConfig(contact_constitution="al-ipc")` selects the experimental
+AL-IPC contact pipeline and exposes its five native tuning parameters. The
+pinned libuipc revision does not export AL contact gradients, so this mode
+reports `exact_contact_wrench=false` and uses the existing affine
+proxy-constraint reaction. It never silently falls back to standard IPC.
+Standard IPC remains the default and retains direct contact/attachment wrench
+feedback.
 
 The composite provider reports `graph_capture=false` because native libuipc
 shards execute outside graph capture, although its MuJoCo Warp subsolver may
@@ -216,8 +243,8 @@ the exported exact affine contact wrenches. Both paths are named in diagnostics
 and benchmark output. No Python Coupler hot stage calls `.cpu()` or `.item()`,
 and tensor storage remains fixed.
 
-The opt-in two-environment regression covers both the native batch solver and
-the complete MuJoCo Warp + libuipc Coupler path:
+The opt-in GPU regression covers native checkpoint replay, loose static
+collision, the sequential composite path, and a Newton rollback step:
 
 ```bash
 GOBOT_RUN_LIBUIPC_BATCH_GPU_TEST=1 \
@@ -229,13 +256,27 @@ display-only runtime scene copies. Four environments are shown in a 2x2 grid
 with different commands. The viewport callback performs one batched rigid pose
 readback and one batched soft-vertex readback; headless training does neither.
 Use `benchmark/mujoco_libuipc_batch_benchmark.py` to record warmup/repeated
-median results for 4, 64, and 256 environments and optionally enforce the
-10-percent 256-environment regression gate against a saved report.
+median results. The following correctness matrix records 1- and 64-environment
+curves for 1/2/4 Newton iterations and compares standard IPC with AL-IPC from
+the same authored scene and controls:
 
-Shard-masked reset, native composite checkpoints, device-only affine exchange,
-composite CUDA Graph capture, and coupled sensor/randomization pipelines remain
-future work. None of those extensions require changing `.jscn` as the authored
-source of truth.
+```bash
+uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
+  --environment-counts 1 64 \
+  --integration-scheme newton_proxy \
+  --coupling-iterations 1 2 4 \
+  --contact-constitutions ipc al-ipc
+```
+
+Results include median step time, interface residual, Aitken coefficient,
+ground-penetration proxy, and press wrench. The report marks AL-IPC eligible
+only when median IPC step latency improves by at least 15 percent and the
+configured physical bounds pass. This report does not change either default or
+label AL-IPC as recommended in project documentation.
+
+Shard-masked reset, device-only affine exchange, composite CUDA Graph capture,
+and coupled sensor/randomization pipelines remain future work. None of those
+extensions require changing `.jscn` as the authored source of truth.
 
 ## Examples
 

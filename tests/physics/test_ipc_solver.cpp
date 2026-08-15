@@ -167,6 +167,8 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
             GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH, &error));
     EXPECT_NE(error.find("ABI"), std::string::npos);
+    EXPECT_NE(error.find("v1"), std::string::npos);
+    EXPECT_NE(error.find("v2"), std::string::npos);
 
     error.clear();
     ASSERT_TRUE(gobot::IpcBatchSolverSession::IsModuleAvailable(
@@ -190,6 +192,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     std::vector<double> velocities(4 * 2 * 3);
     std::vector<double> contact_forces(4 * 2 * 3);
     std::vector<double> targets(4 * 1 * 4 * 4);
+    std::vector<double> target_twists(4 * 1 * 6);
     std::vector<double> transforms(4 * 1 * 4 * 4);
     std::vector<double> wrenches(4 * 1 * 6);
     for (std::size_t environment = 0; environment < 4; ++environment) {
@@ -201,6 +204,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
             MakeDeviceBuffer(velocities.data(), {4, 2, 3}),
             MakeDeviceBuffer(contact_forces.data(), {4, 2, 3}),
             MakeDeviceBuffer(targets.data(), {4, 1, 4, 4}),
+            MakeDeviceBuffer(target_twists.data(), {4, 1, 6}),
             MakeDeviceBuffer(transforms.data(), {4, 1, 4, 4}),
             MakeDeviceBuffer(wrenches.data(), {4, 1, 6})};
     ASSERT_TRUE(session->BindDeviceBuffers(buffers))
@@ -216,6 +220,23 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_EQ(positions.data(), position_storage);
     EXPECT_EQ(wrenches.data(), wrench_storage);
     ASSERT_TRUE(session->Synchronize()) << session->GetLastError();
+
+    ASSERT_TRUE(session->CaptureCheckpoint()) << session->GetLastError();
+    EXPECT_TRUE(session->GetDiagnostics().checkpoint_active);
+    const std::vector<double> checkpoint_positions = positions;
+    const std::vector<double> checkpoint_wrenches = wrenches;
+    ASSERT_TRUE(session->Step()) << session->GetLastError();
+    const std::vector<double> replay_positions = positions;
+    const std::vector<double> replay_wrenches = wrenches;
+    ASSERT_TRUE(session->RewindCheckpoint()) << session->GetLastError();
+    EXPECT_EQ(positions, checkpoint_positions);
+    EXPECT_EQ(wrenches, checkpoint_wrenches);
+    EXPECT_EQ(session->GetDiagnostics().frame, 2);
+    ASSERT_TRUE(session->Step()) << session->GetLastError();
+    EXPECT_EQ(positions, replay_positions);
+    EXPECT_EQ(wrenches, replay_wrenches);
+    ASSERT_TRUE(session->CommitCheckpoint()) << session->GetLastError();
+    EXPECT_FALSE(session->GetDiagnostics().checkpoint_active);
 
     targets[3] = 0.75;
     ASSERT_TRUE(session->Step()) << session->GetLastError();

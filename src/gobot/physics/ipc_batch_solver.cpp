@@ -58,11 +58,18 @@ bool ValidateApi(const IpcBatchSolverModuleApi* api, std::string* error) {
     if (api->abi_version != GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION) {
         return SetError(
                 error,
-                "IPC batch solver module ABI does not match this Gobot build");
+                "IPC batch solver module ABI v" +
+                        std::to_string(api->abi_version) +
+                        " does not match required ABI v" +
+                        std::to_string(
+                                GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION));
     }
     if (api->provider_name == nullptr || api->create == nullptr ||
         api->destroy == nullptr || api->bind_device_buffers == nullptr ||
         api->step == nullptr || api->reset_full == nullptr ||
+        api->capture_checkpoint == nullptr ||
+        api->rewind_checkpoint == nullptr ||
+        api->commit_checkpoint == nullptr ||
         api->synchronize == nullptr ||
         api->deformable_body_count == nullptr ||
         api->deformable_body_info == nullptr ||
@@ -227,7 +234,13 @@ public:
                 solver_config,
                 config.environment_count,
                 config.environments_per_shard,
-                config.external_affine_proxies};
+                config.external_affine_proxies,
+                config.contact_constitution.c_str(),
+                config.al_ipc_mu_scale_fem,
+                config.al_ipc_mu_scale_abd,
+                config.al_ipc_toi_threshold,
+                config.al_ipc_alpha_lower_bound,
+                config.al_ipc_decay_factor};
 
         std::array<char, kErrorCapacity> module_error{};
         session_ = api_->create(&artifact_view, &module_config,
@@ -311,6 +324,8 @@ public:
                               "deformable_contact_forces", &last_error_) &&
                ValidateBuffer(buffers.affine_targets, affine_shape, device,
                               "affine_targets", &last_error_) &&
+               ValidateBuffer(buffers.affine_target_twists, wrench_shape, device,
+                              "affine_target_twists", &last_error_) &&
                ValidateBuffer(buffers.affine_transforms, affine_shape, device,
                               "affine_transforms", &last_error_) &&
                ValidateBuffer(buffers.affine_contact_wrenches, wrench_shape,
@@ -360,6 +375,21 @@ public:
         return RefreshDiagnostics();
     }
 
+    bool CaptureCheckpoint() {
+        return CheckpointOperation(api_->capture_checkpoint,
+                                   "IPC batch checkpoint capture failed");
+    }
+
+    bool RewindCheckpoint() {
+        return CheckpointOperation(api_->rewind_checkpoint,
+                                   "IPC batch checkpoint rewind failed");
+    }
+
+    bool CommitCheckpoint() {
+        return CheckpointOperation(api_->commit_checkpoint,
+                                   "IPC batch checkpoint commit failed");
+    }
+
     bool Synchronize() {
         if (!buffers_bound_) {
             return Fail(nullptr,
@@ -391,7 +421,15 @@ public:
                 diagnostics.deformable_vertex_count_per_environment;
         diagnostics_.affine_body_count_per_environment =
                 diagnostics.affine_body_count_per_environment;
+        diagnostics_.static_collider_count_per_environment =
+                diagnostics.static_collider_count_per_environment;
         diagnostics_.last_step_latency_ms = diagnostics.last_step_latency_ms;
+        diagnostics_.contact_constitution =
+                diagnostics.contact_constitution != nullptr
+                        ? diagnostics.contact_constitution
+                        : "";
+        diagnostics_.exact_contact_wrench = diagnostics.exact_contact_wrench;
+        diagnostics_.checkpoint_active = diagnostics.checkpoint_active;
         diagnostics_.valid = diagnostics.valid;
         last_error_.clear();
         return true;
@@ -403,6 +441,21 @@ public:
                               : fallback;
         diagnostics_.valid = false;
         return false;
+    }
+
+    using CheckpointFunction = bool (*)(void*, char*, std::size_t);
+
+    bool CheckpointOperation(CheckpointFunction operation,
+                             const char* fallback) {
+        if (!buffers_bound_) {
+            return Fail(nullptr,
+                        "IPC batch solver device buffers are not bound");
+        }
+        std::array<char, kErrorCapacity> error{};
+        if (!operation(session_, error.data(), error.size())) {
+            return Fail(error.data(), fallback);
+        }
+        return RefreshDiagnostics();
     }
 
     void* module_{nullptr};
@@ -475,6 +528,18 @@ bool IpcBatchSolverSession::Step(std::uint32_t steps) {
 
 bool IpcBatchSolverSession::ResetFull() {
     return impl_->ResetFull();
+}
+
+bool IpcBatchSolverSession::CaptureCheckpoint() {
+    return impl_->CaptureCheckpoint();
+}
+
+bool IpcBatchSolverSession::RewindCheckpoint() {
+    return impl_->RewindCheckpoint();
+}
+
+bool IpcBatchSolverSession::CommitCheckpoint() {
+    return impl_->CommitCheckpoint();
 }
 
 bool IpcBatchSolverSession::Synchronize() {

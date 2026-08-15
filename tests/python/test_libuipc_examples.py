@@ -117,7 +117,7 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
             ("static_colliders", "ground", "OneWay"),
             ("press", "press_head", "TwoWay"),
         ]
-        assert artifact.ipc.schema_version == 3
+        assert artifact.ipc.schema_version == 4
         assert tuple(
             mapping.ipc_body_index for mapping in artifact.coupled_bodies
         ) == (0, 1)
@@ -390,6 +390,7 @@ def test_libuipc_contact_scenes_are_generated_test_fixtures() -> None:
     expected_counts = {
         "soft_cube_stack.jscn": (2, 1),
         "soft_cube_press.jscn": (1, 2),
+        "soft_cube_static_box.jscn": (1, 0),
     }
     with tempfile.TemporaryDirectory(prefix="gobot-libuipc-fixtures-") as directory:
         project_path = Path(directory)
@@ -424,6 +425,9 @@ def test_libuipc_contact_scenes_are_generated_test_fixtures() -> None:
                 for shape in link["collision_shapes"]
                 if not shape.get("disabled", False)
             )
+            if scene_name == "soft_cube_static_box.jscn":
+                assert len(artifact.static_colliders) == 1
+                assert artifact.static_colliders[0]["shape_type"] == "box"
 
 
 def test_fr3_asset_has_complete_licensed_urdf_and_meshes() -> None:

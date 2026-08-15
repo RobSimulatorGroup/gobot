@@ -40,6 +40,28 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
+    parser.add_argument(
+        "--integration-scheme",
+        choices=("sequential_split", "newton_proxy"),
+        default="sequential_split",
+    )
+    parser.add_argument("--coupling-iterations", type=int, default=2)
+    parser.add_argument(
+        "--relaxation-mode", choices=("fixed", "aitken"), default=None
+    )
+    parser.add_argument("--relaxation-factor", type=float, default=1.0)
+    parser.add_argument("--relaxation-min", type=float, default=0.1)
+    parser.add_argument("--relaxation-max", type=float, default=1.0)
+    parser.add_argument(
+        "--contact-constitution", choices=("ipc", "al-ipc"), default="ipc"
+    )
+    parser.add_argument("--al-ipc-mu-scale-fem", type=float, default=5.0e7)
+    parser.add_argument("--al-ipc-mu-scale-abd", type=float, default=1.0e5)
+    parser.add_argument("--al-ipc-toi-threshold", type=float, default=0.1)
+    parser.add_argument(
+        "--al-ipc-alpha-lower-bound", type=float, default=1.0e-6
+    )
+    parser.add_argument("--al-ipc-decay-factor", type=float, default=0.3)
     parser.add_argument("--press-depth", type=float, default=0.17)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--module-path", default="")
@@ -73,6 +95,15 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--rigid-substeps must be positive")
     if args.ipc_substeps <= 0:
         raise ValueError("--ipc-substeps must be positive")
+    if args.coupling_iterations <= 0:
+        raise ValueError("--coupling-iterations must be positive")
+    if (
+        args.integration_scheme == "newton_proxy"
+        and args.rigid_substeps != args.ipc_substeps
+    ):
+        raise ValueError(
+            "--integration-scheme=newton_proxy requires matching substeps"
+        )
     if not 0.0 < args.press_depth <= 0.17:
         raise ValueError("--press-depth must be in (0, 0.17]")
 
@@ -108,6 +139,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             workspace=str(args.workspace.expanduser().resolve()),
         ),
         environments_per_shard=args.environments_per_shard,
+        contact_constitution=args.contact_constitution,
+        al_ipc_mu_scale_fem=args.al_ipc_mu_scale_fem,
+        al_ipc_mu_scale_abd=args.al_ipc_mu_scale_abd,
+        al_ipc_toi_threshold=args.al_ipc_toi_threshold,
+        al_ipc_alpha_lower_bound=args.al_ipc_alpha_lower_bound,
+        al_ipc_decay_factor=args.al_ipc_decay_factor,
     )
     rigid_availability = MuJoCoWarpProvider.availability()
     if not rigid_availability.available:
@@ -125,6 +162,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             environments_per_shard=args.environments_per_shard,
             rigid_substeps=args.rigid_substeps,
             ipc_substeps=args.ipc_substeps,
+            integration_scheme=args.integration_scheme,
+            coupling_iterations=args.coupling_iterations,
+            relaxation_mode=args.relaxation_mode,
+            relaxation_factor=args.relaxation_factor,
+            relaxation_min=args.relaxation_min,
+            relaxation_max=args.relaxation_max,
             capture_mujoco_graphs=not args.no_mujoco_graph,
         ),
         libuipc_config=solver_config,
@@ -172,6 +215,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         elapsed_samples = []
         throughput_samples = []
         ipc_shard_latency_samples = []
+        contact_dense_ipc_shard_latency_samples = []
+        interface_residual_samples = []
+        contact_dense_interface_residual_samples = []
+        relaxation_coefficient_samples = []
+        actual_coupling_iteration_samples = []
+        contact_dense_start = 3 * args.steps // 4
         for _ in range(args.repeats):
             provider.reset(all_envs)
             provider.synchronize()
@@ -184,18 +233,30 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 press_view.set_position_targets(command)
                 provider.step()
+                diagnostics = provider.diagnostics
+                ipc_latency = float(
+                    provider.ipc_solver.diagnostics.get(
+                        "last_step_latency_ms", 0.0
+                    )
+                ) / provider.ipc_solver.shard_count
+                residual = float(diagnostics["interface_residual"])
+                ipc_shard_latency_samples.append(ipc_latency)
+                interface_residual_samples.append(residual)
+                relaxation_coefficient_samples.append(
+                    float(diagnostics["aitken_coefficient"])
+                )
+                actual_coupling_iteration_samples.append(
+                    int(diagnostics["actual_coupling_iterations"])
+                )
+                if step >= contact_dense_start:
+                    contact_dense_ipc_shard_latency_samples.append(
+                        ipc_latency
+                    )
+                    contact_dense_interface_residual_samples.append(residual)
             provider.synchronize()
             elapsed = time.perf_counter() - started
             elapsed_samples.append(elapsed)
             throughput_samples.append(args.num_envs * args.steps / elapsed)
-            ipc_shard_latency_samples.append(
-                float(
-                    provider.ipc_solver.diagnostics.get(
-                        "last_step_latency_ms", 0.0
-                    )
-                )
-                / provider.ipc_solver.shard_count
-            )
 
         elapsed = statistics.median(elapsed_samples)
         median_throughput = statistics.median(throughput_samples)
@@ -216,6 +277,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         reaction_force = torch.linalg.vector_norm(
             provider.arrays["xfrc_applied"][:, press_body_id, :3], dim=1
         )
+        minimum_deformable_z = float(positions[..., 2].amin().item())
         provider.rigid_solver.assert_no_overflow()
         for name in ("qpos", "xfrc_applied", "ipc_positions"):
             if not bool(torch.isfinite(provider.arrays[name]).all().item()):
@@ -247,9 +309,34 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "ipc_shard_latency_median_ms": statistics.median(
                 ipc_shard_latency_samples
             ),
+            "contact_dense_ipc_shard_latency_median_ms": statistics.median(
+                contact_dense_ipc_shard_latency_samples
+            ),
             "feedback_source": provider.diagnostics["feedback_source"],
             "exact_contact_wrench": provider.capabilities.exact_contact_wrench,
             "integration_scheme": provider.diagnostics["integration_scheme"],
+            "contact_constitution": provider.diagnostics["contact_pipeline"],
+            "coupling_iterations": provider.diagnostics[
+                "coupling_iterations"
+            ],
+            "actual_coupling_iterations": max(
+                actual_coupling_iteration_samples
+            ),
+            "actual_coupling_iteration_samples": (
+                actual_coupling_iteration_samples
+            ),
+            "interface_residual": statistics.median(
+                interface_residual_samples
+            ),
+            "interface_residual_samples": interface_residual_samples,
+            "contact_dense_interface_residual": statistics.median(
+                contact_dense_interface_residual_samples
+            ),
+            "relaxation_mode": provider.diagnostics["relaxation_mode"],
+            "aitken_coefficient": statistics.median(
+                relaxation_coefficient_samples
+            ),
+            "aitken_coefficient_samples": relaxation_coefficient_samples,
             "macro_fixed_time_step": provider.fixed_time_step,
             "rigid_fixed_time_step": provider.diagnostics[
                 "rigid_fixed_time_step"
@@ -264,6 +351,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "press_target_range": _range(command[:, 0]),
             "qpos_storage_stable": qpos.data_ptr() == qpos_pointer,
             "reaction_force_range_newtons": _range(reaction_force),
+            "minimum_deformable_z_meters": minimum_deformable_z,
+            "ground_penetration_max_meters": max(
+                0.0, -minimum_deformable_z
+            ),
+            "proxy_count": provider.diagnostics["proxy_count"],
+            "static_collider_count": provider.diagnostics[
+                "static_collider_count"
+            ],
             "reset_max_position_error": reset_error,
             "reset_scope": provider.diagnostics["reset_scope"],
             "scene": str(scene_path),

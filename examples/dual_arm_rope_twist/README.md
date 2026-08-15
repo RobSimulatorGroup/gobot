@@ -19,8 +19,10 @@ one scene:
    strand to the corresponding proxy.
 3. libuipc advances elasticity, large deformation, self/inter-strand contact,
    friction, and CCD, then exports the exact force and torque on each fixture.
-4. Those wrenches are applied to the MuJoCo free bodies on the next fixed tick.
-   They pass through the friction grasps and oppose both robot wrists.
+4. The default Newton proxy coupling rolls both solvers back to the same
+   microstep start, performs two Aitken-relaxed interface iterations, and
+   commits one physical microstep. The resulting wrench passes through the
+   friction grasps and opposes both robot wrists.
 
 The robots use the same positive local `fr3_joint7` velocity command. Because
 their bases face each other, this counter-rotates the fixtures about the common
@@ -55,6 +57,22 @@ measured strand winding, wrist speeds, actuator efforts, fixture slip, mount
 error, rope reaction torque, and the active drive mode. Press `P` to restart the
 physical cycle.
 
+Editor Play defaults to `newton_proxy` with two Aitken-relaxed coupling
+iterations. The compatibility/performance baseline remains available with
+`GOBOT_ROPE_TWIST_INTEGRATION_SCHEME=sequential_split`.
+
+The Physics panel's `Contact force arrows` toggle also controls the runtime
+force overlay. Magenta arrows show libuipc contact forces on rope vertices, green
+arrows show MuJoCo pad/fixture contact forces, and the existing amber/cyan
+arrows show the two wrist reaction torques. The panel's force scale and maximum
+length settings apply to both contact-force sources. MuJoCo's contact-frame
+force components are transformed through the reported normal and tangent basis
+before the green arrows are drawn in world coordinates. Nonzero rope-contact
+arrows use a 15 mm minimum display length so weak IPC forces remain visible;
+their directions and labels still use the unscaled world-space force in newtons.
+Every rope vertex above the 0.001 N display threshold is drawn without a
+strongest-contact count limit.
+
 The default `showcase` mode still computes and applies MuJoCo/libuipc reaction
 forces; it only raises the wrist torque cap to the stock FR3 joint limit. To run
 the slower, torque-limited stall experiment in the editor instead:
@@ -82,7 +100,9 @@ uv run python examples/dual_arm_rope_twist/rope_twist_batch.py \
 
 Use `--drive-mode showcase` for the same `12 N m` constant-speed mode used by
 Editor Play. The default remains `finite-torque` so automated runs still measure
-a physical stall.
+a physical stall. Batch runs also default to `newton_proxy` with two coupling
+iterations; use `--integration-scheme sequential_split` for the legacy
+single-pass baseline.
 
 The default upper bound is a 40,000-step twist followed by a hold, but the run
 exits early after every environment has physically stalled. The JSON result

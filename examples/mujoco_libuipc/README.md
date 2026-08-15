@@ -74,11 +74,24 @@ uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
   --module-path "$PWD/build/libuipc-novcpkg/python/gobot/libgobot_libuipc_solver.so"
 ```
 
-The benchmark covers 4, 64, and 256 environments. Pass a prior JSON report as
-`--baseline-json`; the 256-environment run then fails if throughput regresses
-by more than 10 percent. Results include median environment-steps/s, per-shard
-IPC latency, storage stability, feedback source, reset scope, graph state, and
-the remaining affine-target staging mode.
+The default benchmark preserves the sequential IPC baseline at 4, 64, and 256
+environments. Pass a prior JSON report as `--baseline-json`; the
+256-environment run then fails if throughput regresses by more than 10 percent.
+To record the Newton/AL-IPC correctness matrix, run:
+
+```bash
+uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
+  --environment-counts 1 64 \
+  --integration-scheme newton_proxy \
+  --coupling-iterations 1 2 4 \
+  --contact-constitutions ipc al-ipc
+```
+
+Results include median environment-steps/s, per-shard IPC latency, interface
+residual, Aitken coefficient, penetration and wrench proxies, storage
+stability, feedback source, reset scope, and graph state. The A/B report only
+marks AL-IPC eligible after a 15-percent median IPC step speedup and all listed
+physical bounds pass; standard IPC remains the default.
 
 For a non-installed solver module, provide its exact path:
 
@@ -96,15 +109,23 @@ Useful options:
 - `--repeats`: number of timed runs used for the median.
 - `--press-depth`: final prismatic target in meters, limited to `0.17`.
 - `--fixed-dt`: shared MuJoCo/libuipc timestep.
+- `--integration-scheme`: `sequential_split` (default) or rollback-based
+  `newton_proxy`.
+- `--coupling-iterations`: interface iterations per Newton microstep.
+- `--relaxation-mode`: fixed or bounded Aitken interface relaxation.
+- `--contact-constitution`: standard `ipc` or experimental `al-ipc`.
 - `--no-mujoco-graph`: disable MuJoCo Warp CUDA graph capture for debugging.
 - `--rebuild-scene`: regenerate the `.jscn` before running.
 
-The native batch C ABI remains v1, while the compiled scene artifact is schema
-v2. The composite provider requires fixed topology, a shared fixed timestep,
-one IPC and one rigid step per tick, and full-batch reset. A partial reset is
-rejected because shard-local history cannot yet be restored selectively. The
-composite provider reports `graph_capture=false` because libuipc shards are
-stepped outside capture; its MuJoCo Warp subsolver can still replay a captured
-graph. libuipc currently stages the small affine-target table D2H/H2D once per
-shard and step. The Play display adds batched CPU readback only in its viewport
-callback; the headless batch path does not perform that display synchronization.
+The native batch C ABI is v2, while the compiled IPC/composite artifact is
+schema v4 with schema-v3 read compatibility. The composite provider requires
+fixed topology and full-batch reset. Newton mode additionally requires equal
+rigid/IPC microsteps and uses a single-slot native checkpoint for rollback; any
+number of interface iterations still commits one physical microstep. A partial
+reset is rejected because shard-local history cannot yet be restored
+selectively. The composite provider reports `graph_capture=false` because
+libuipc shards are stepped outside capture; its MuJoCo Warp subsolver can still
+replay a captured graph. libuipc currently stages the small affine pose/twist
+table D2H/H2D once per shard and step. The Play display adds batched CPU
+readback only in its viewport callback; the headless batch path does not
+perform that display synchronization.

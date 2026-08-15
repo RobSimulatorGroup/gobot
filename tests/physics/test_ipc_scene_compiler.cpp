@@ -25,6 +25,7 @@
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/tactile_sensor_3d.hpp>
+#include <gobot/scene/terrain_3d.hpp>
 #include <gobot/scene/window.hpp>
 
 namespace {
@@ -92,7 +93,7 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &first, &error)) << error;
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &second, &error)) << error;
 
-    EXPECT_EQ(first.schema_version, 3);
+    EXPECT_EQ(first.schema_version, 4);
     EXPECT_EQ(first.producer, "gobot");
     EXPECT_EQ(first.format, "gobot-ipc");
     EXPECT_EQ(first.manifest, second.manifest);
@@ -105,7 +106,8 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
 
     const nlohmann::json manifest = nlohmann::json::parse(first.manifest);
     EXPECT_EQ(manifest.at("scene_name"), "ipc_world");
-    EXPECT_EQ(manifest.at("schema_version"), 3);
+    EXPECT_EQ(manifest.at("schema_version"), 4);
+    EXPECT_TRUE(manifest.at("static_colliders").empty());
     EXPECT_TRUE(manifest.at("couplings").empty());
     EXPECT_TRUE(manifest.at("deformable_attachments").empty());
     ASSERT_EQ(manifest.at("deformable_bodies").size(), 1);
@@ -118,6 +120,67 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     EXPECT_EQ(manifest.at("tactile_sensors").at(0).at("coat_vertex_indices"),
               nlohmann::json::array({0, 1, 2}));
 
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, compiles_loose_static_box_and_mesh_colliders) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("static_world");
+    tree.GetRoot()->AddChild(root);
+
+    auto box = gobot::MakeRef<gobot::BoxShape3D>();
+    box->SetSize({1.0, 2.0, 0.25});
+    auto* box_collision = gobot::Object::New<gobot::CollisionShape3D>();
+    box_collision->SetName("z_box");
+    box_collision->SetPosition({0.0, 0.0, -0.125});
+    box_collision->SetShape(
+            gobot::dynamic_pointer_cast<gobot::Shape3D>(box));
+    root->AddChild(box_collision);
+
+    auto triangle_mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    triangle_mesh->SetSurface(
+            {{-1.0, -1.0, 0.0}, {1.0, -1.0, 0.0}, {0.0, 1.0, 0.0}},
+            {0, 1, 2});
+    auto convex = gobot::MakeRef<gobot::ConvexMeshShape3D>();
+    convex->SetMesh(gobot::dynamic_pointer_cast<gobot::Mesh>(triangle_mesh));
+    auto* mesh_collision = gobot::Object::New<gobot::CollisionShape3D>();
+    mesh_collision->SetName("a_mesh");
+    mesh_collision->SetShape(
+            gobot::dynamic_pointer_cast<gobot::Shape3D>(convex));
+    root->AddChild(mesh_collision);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error))
+            << error;
+    const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
+    const nlohmann::json& colliders = manifest.at("static_colliders");
+    ASSERT_EQ(colliders.size(), 2);
+    EXPECT_EQ(colliders.at(0).at("name"), "a_mesh");
+    EXPECT_EQ(colliders.at(0).at("shape_type"), "triangle_mesh");
+    EXPECT_EQ(colliders.at(0).at("vertex_count"), 3);
+    EXPECT_EQ(colliders.at(0).at("triangle_count"), 1);
+    EXPECT_EQ(colliders.at(1).at("name"), "z_box");
+    EXPECT_EQ(colliders.at(1).at("shape_type"), "box");
+    EXPECT_FALSE(colliders.at(1).contains("link_transform"));
+    ASSERT_EQ(artifact.blobs.size(), 1);
+
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, reports_terrain_as_unsupported) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    tree.GetRoot()->AddChild(terrain);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(terrain, &artifact, &error));
+    EXPECT_NE(error.find("Terrain3D is not supported"), std::string::npos);
     tree.Finalize();
 }
 

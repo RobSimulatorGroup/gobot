@@ -37,6 +37,7 @@
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/tactile_sensor_3d.hpp"
+#include "gobot/scene/terrain_3d.hpp"
 
 namespace gobot {
 namespace {
@@ -357,6 +358,12 @@ bool ValidateDeformableTransform(
 class CompilerState {
 public:
     bool Visit(const Node* node, std::string* error) {
+        if (Object::PointerCastTo<Terrain3D>(node) != nullptr) {
+            return SetCompileError(
+                    error,
+                    "Terrain3D is not supported by the IPC scene compiler; "
+                    "use loose static CollisionShape3D nodes instead");
+        }
         if (const auto* body = Object::PointerCastTo<DeformableBody3D>(node)) {
             if (!AddDeformable(*body, error)) {
                 return false;
@@ -378,6 +385,19 @@ public:
         if (const auto* attachment =
                     Object::PointerCastTo<DeformableAttachment3D>(node)) {
             attachment_nodes_.push_back(attachment);
+        }
+        if (const auto* collision = Object::PointerCastTo<CollisionShape3D>(node)) {
+            const Node* ancestor = collision->GetParent();
+            while (ancestor != nullptr &&
+                   Object::PointerCastTo<Link3D>(ancestor) == nullptr) {
+                ancestor = ancestor->GetParent();
+            }
+            if (ancestor == nullptr &&
+                !AddCollisionShape(
+                        *collision, nullptr, &static_colliders_,
+                        &static_collider_paths_, error)) {
+                return false;
+            }
         }
         for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
             if (!Visit(node->GetChild(static_cast<int>(index)), error)) {
@@ -655,6 +675,18 @@ public:
                     {"id", id},
                     {"sha256", blob.sha256}});
         }
+        std::vector<Json> sorted_static_colliders;
+        sorted_static_colliders.reserve(static_colliders_.size());
+        for (const Json& collider : static_colliders_) {
+            sorted_static_colliders.push_back(collider);
+        }
+        std::ranges::sort(sorted_static_colliders, {}, [](const Json& collider) {
+            return collider.at("path").get<std::string>();
+        });
+        Json static_colliders = Json::array();
+        for (Json& collider : sorted_static_colliders) {
+            static_colliders.push_back(std::move(collider));
+        }
         return Json{
                 {"blobs", std::move(blob_table)},
                 {"couplings", couplings_},
@@ -665,7 +697,8 @@ public:
                 {"producer_version", ProducerVersion()},
                 {"robots", robots_},
                 {"scene_name", scene_root.GetName()},
-                {"schema_version", 3},
+                {"schema_version", 4},
+                {"static_colliders", std::move(static_colliders)},
                 {"tactile_sensors", tactile_sensors_}};
     }
 
@@ -832,23 +865,25 @@ private:
     }
 
     bool AddCollisionShape(const CollisionShape3D& collision,
-                           const Link3D& link,
+                           const Link3D* link,
                            Json* collision_shapes,
                            std::unordered_set<std::string>* collision_paths,
                            std::string* error) {
         const std::string path = NodePathString(collision);
+        const std::string kind = link != nullptr ? "robot" : "static";
         if (collision.GetName().empty() || !collision_paths->insert(path).second) {
             return SetCompileError(
-                    error, "robot collision shape paths and names must be non-empty and unique");
+                    error, kind +
+                                   " collision shape paths and names must be non-empty and unique");
         }
         if (!ValidateDeformableTransform(
-                    collision, "robot collision shape '" + path + "'", error)) {
+                    collision, kind + " collision shape '" + path + "'", error)) {
             return false;
         }
         const Ref<Shape3D>& shape = collision.GetShape();
         if (!shape.IsValid()) {
             return SetCompileError(
-                    error, "robot collision shape '" + path + "' has no shape resource");
+                    error, kind + " collision shape '" + path + "' has no shape resource");
         }
         PhysicsMaterialSnapshot material;
         if (const Ref<PhysicsMaterial3D>& authored = collision.GetPhysicsMaterial(); authored.IsValid()) {
@@ -873,7 +908,8 @@ private:
             !std::isfinite(collision.GetRestOffset()) ||
             collision.GetRestOffset() > collision.GetContactOffset()) {
             return SetCompileError(
-                    error, "robot collision shape '" + path + "' has invalid contact parameters");
+                    error, kind + " collision shape '" + path +
+                                   "' has invalid contact parameters");
         }
 
         Json compiled = {
@@ -881,9 +917,6 @@ private:
                 {"collision_mask", collision.GetCollisionMask()},
                 {"contact_offset", collision.GetContactOffset()},
                 {"disabled", collision.IsDisabled()},
-                {"link_transform", TransformJson(
-                        link.GetGlobalTransform().inverse() *
-                        collision.GetGlobalTransform())},
                 {"material", {
                         {"contact_compliance", material.contact_compliance},
                         {"contact_damping", material.contact_damping},
@@ -895,12 +928,17 @@ private:
                 {"path", path},
                 {"rest_offset", collision.GetRestOffset()},
                 {"transform", GlobalTransformJson(collision)}};
+        if (link != nullptr) {
+            compiled["link_transform"] = TransformJson(
+                    link->GetGlobalTransform().inverse() *
+                    collision.GetGlobalTransform());
+        }
 
         if (const auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
             const Vector3 size = box->GetSize();
             if (!size.allFinite() || (size.array() <= 0.0).any()) {
                 return SetCompileError(
-                        error, "robot box collision shape '" + path + "' has invalid size");
+                        error, kind + " box collision shape '" + path + "' has invalid size");
             }
             compiled["shape_type"] = "box";
             compiled["size"] = Vector3Json(size);
@@ -908,7 +946,7 @@ private:
             const double radius = sphere->GetRadius();
             if (!std::isfinite(radius) || radius <= 0.0) {
                 return SetCompileError(
-                        error, "robot sphere collision shape '" + path + "' has invalid radius");
+                        error, kind + " sphere collision shape '" + path + "' has invalid radius");
             }
             compiled["radius"] = radius;
             compiled["shape_type"] = "sphere";
@@ -918,7 +956,7 @@ private:
             if (!std::isfinite(radius) || radius <= 0.0 ||
                 !std::isfinite(height) || height <= 0.0) {
                 return SetCompileError(
-                        error, "robot capsule collision shape '" + path +
+                        error, kind + " capsule collision shape '" + path +
                                        "' has invalid dimensions");
             }
             compiled["height"] = height;
@@ -930,7 +968,7 @@ private:
             if (!std::isfinite(radius) || radius <= 0.0 ||
                 !std::isfinite(height) || height <= 0.0) {
                 return SetCompileError(
-                        error, "robot cylinder collision shape '" + path +
+                        error, kind + " cylinder collision shape '" + path +
                                        "' has invalid dimensions");
             }
             compiled["height"] = height;
@@ -940,7 +978,7 @@ private:
             const Ref<Mesh>& mesh = convex_mesh->GetMesh();
             if (!mesh.IsValid()) {
                 return SetCompileError(
-                        error, "robot triangle collision shape '" + path + "' has no mesh");
+                        error, kind + " triangle collision shape '" + path + "' has no mesh");
             }
             std::string blob_id;
             std::size_t vertex_count = 0;
@@ -949,7 +987,7 @@ private:
             if (!AddSurfaceMesh(
                         *mesh.Get(), &blob_id, &vertex_count, &triangle_count, &mesh_error)) {
                 return SetCompileError(
-                        error, "robot triangle collision shape '" + path +
+                        error, kind + " triangle collision shape '" + path +
                                        "' is invalid: " + mesh_error);
             }
             compiled["mesh_blob"] = blob_id;
@@ -958,7 +996,7 @@ private:
             compiled["vertex_count"] = vertex_count;
         } else {
             return SetCompileError(
-                    error, "robot collision shape '" + path + "' uses an unsupported shape type");
+                    error, kind + " collision shape '" + path + "' uses an unsupported shape type");
         }
 
         collision_shapes->push_back(std::move(compiled));
@@ -978,7 +1016,7 @@ private:
         }
         if (const auto* collision = Object::PointerCastTo<CollisionShape3D>(node)) {
             if (!AddCollisionShape(
-                        *collision, *owner, collision_shapes, collision_paths, error)) {
+                        *collision, owner, collision_shapes, collision_paths, error)) {
                 return false;
             }
         }
@@ -1229,6 +1267,8 @@ private:
     Json robots_ = Json::array();
     Json couplings_ = Json::array();
     Json deformable_attachments_ = Json::array();
+    Json static_colliders_ = Json::array();
+    std::unordered_set<std::string> static_collider_paths_;
     std::vector<const PhysicsCoupling*> coupling_nodes_;
     std::vector<const DeformableAttachment3D*> attachment_nodes_;
     std::vector<ExternalFloatingBase> external_floating_bases_;
@@ -1264,7 +1304,7 @@ bool IpcSceneCompiler::Compile(
     }
     const Json manifest_json = compiler.BuildManifest(*scene_root);
     IpcSceneArtifact result;
-    result.schema_version = 3;
+    result.schema_version = 4;
     result.producer = "gobot";
     result.producer_version = ProducerVersion();
     result.format = "gobot-ipc";

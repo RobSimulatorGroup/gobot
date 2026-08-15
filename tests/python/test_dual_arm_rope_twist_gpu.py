@@ -68,6 +68,10 @@ def test_dual_arm_twist_stalls_without_losing_the_friction_grasps() -> None:
     assert result["attachment_count"] == 6
     assert result["fixture_coupling_count"] == 2
     assert result["grip_mode"] == "mujoco_fixture_friction_contact"
+    assert result["integration_scheme"] == "newton_proxy"
+    assert result["coupling_iterations"] == 2
+    assert result["actual_coupling_iterations"] == 2
+    assert result["relaxation_mode"] == "aitken"
     assert result["exact_contact_wrench"]
     assert result["feedback_source"] == "native_contact_wrench"
     assert result["ipc_position_storage_stable"]
@@ -135,6 +139,8 @@ def test_showcase_drive_tracks_requested_speed_under_rope_load() -> None:
 
     trial = result["trials"][0]
     assert result["drive_mode"] == controllers.SHOWCASE_DRIVE_MODE
+    assert result["integration_scheme"] == "newton_proxy"
+    assert result["actual_coupling_iterations"] == 2
     assert result["steps"] == steps
     assert result["stalled_count"] == 0
     assert math.isclose(

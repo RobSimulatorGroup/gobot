@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import importlib
 import json
+import math
 import operator
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -33,6 +34,12 @@ class LibuipcBatchConfig:
 
     solver: LibuipcConfig = field(default_factory=LibuipcConfig)
     environments_per_shard: int = 64
+    contact_constitution: str = "ipc"
+    al_ipc_mu_scale_fem: float = 5.0e7
+    al_ipc_mu_scale_abd: float = 1.0e5
+    al_ipc_toi_threshold: float = 0.1
+    al_ipc_alpha_lower_bound: float = 1.0e-6
+    al_ipc_decay_factor: float = 0.3
 
     def __post_init__(self) -> None:
         if not isinstance(self.solver, LibuipcConfig):
@@ -44,6 +51,24 @@ class LibuipcBatchConfig:
         if isinstance(self.environments_per_shard, bool) or shard_size <= 0:
             raise ValueError("environments_per_shard must be positive")
         object.__setattr__(self, "environments_per_shard", shard_size)
+        constitution = str(self.contact_constitution).lower()
+        if constitution not in ("ipc", "al-ipc"):
+            raise ValueError("contact_constitution must be 'ipc' or 'al-ipc'")
+        object.__setattr__(self, "contact_constitution", constitution)
+        for name in ("al_ipc_mu_scale_fem", "al_ipc_mu_scale_abd"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive")
+            object.__setattr__(self, name, value)
+        for name in (
+            "al_ipc_toi_threshold",
+            "al_ipc_alpha_lower_bound",
+            "al_ipc_decay_factor",
+        ):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or not 0.0 < value <= 1.0:
+                raise ValueError(f"{name} must be finite and in (0, 1]")
+            object.__setattr__(self, name, value)
 
     def solver_mapping(self, num_envs: int) -> Mapping[str, Any]:
         values = dict(self.solver.solver_mapping())
@@ -52,6 +77,12 @@ class LibuipcBatchConfig:
                 "environment_count": int(num_envs),
                 "environments_per_shard": self.environments_per_shard,
                 "external_affine_proxies": True,
+                "contact_constitution": self.contact_constitution,
+                "al_ipc_mu_scale_fem": self.al_ipc_mu_scale_fem,
+                "al_ipc_mu_scale_abd": self.al_ipc_mu_scale_abd,
+                "al_ipc_toi_threshold": self.al_ipc_toi_threshold,
+                "al_ipc_alpha_lower_bound": self.al_ipc_alpha_lower_bound,
+                "al_ipc_decay_factor": self.al_ipc_decay_factor,
             }
         )
         return values
@@ -105,11 +136,6 @@ class LibuipcBatchSolver:
             raise ValueError(
                 "the libuipc batch solver does not yet render tactile images"
             )
-        if not self.artifact.couplings:
-            raise ValueError(
-                "external affine proxy mode requires at least one enabled PhysicsCoupling"
-            )
-
         self._num_envs = environment_count
         self._device_name = str(
             device
@@ -121,6 +147,12 @@ class LibuipcBatchSolver:
         self._closed = False
         self._generation = 1
         self._frame = 0
+        self._checkpoint_frame: int | None = None
+        self.wrench_source = (
+            "pose_error"
+            if self.config.contact_constitution == "al-ipc"
+            else "direct"
+        )
 
         self._deformable_bodies = self._build_deformable_layout()
         self._affine_bodies = self._build_affine_layout()
@@ -146,6 +178,11 @@ class LibuipcBatchSolver:
             ),
             "affine_targets": self._torch.zeros(
                 (self._num_envs, affine_count, 4, 4),
+                dtype=dtype,
+                device=self._device,
+            ),
+            "affine_target_twists": self._torch.zeros(
+                (self._num_envs, affine_count, 6),
                 dtype=dtype,
                 device=self._device,
             ),
@@ -184,11 +221,17 @@ class LibuipcBatchSolver:
             "config": {
                 "solver": asdict(self.config.solver),
                 "environments_per_shard": self.config.environments_per_shard,
+                "contact_constitution": self.config.contact_constitution,
+                "al_ipc_mu_scale_fem": self.config.al_ipc_mu_scale_fem,
+                "al_ipc_mu_scale_abd": self.config.al_ipc_mu_scale_abd,
+                "al_ipc_toi_threshold": self.config.al_ipc_toi_threshold,
+                "al_ipc_alpha_lower_bound": self.config.al_ipc_alpha_lower_bound,
+                "al_ipc_decay_factor": self.config.al_ipc_decay_factor,
             },
             "device": self._device_name,
             "num_envs": self._num_envs,
             "provider": "libuipc-batch",
-            "schema_version": 3,
+            "schema_version": 4,
         }
         self._runtime_fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -340,8 +383,8 @@ class LibuipcBatchSolver:
             graph_capture=False,
             masked_reset=False,
             fixed_capacity=True,
-            runtime_checkpoint=False,
-            exact_contact_wrench=True,
+            runtime_checkpoint=True,
+            exact_contact_wrench=self.config.contact_constitution == "ipc",
             sensor_batch=False,
             solver_substeps=True,
             graph_capture_reason=(
@@ -394,6 +437,10 @@ class LibuipcBatchSolver:
 
     @property
     def capacities(self) -> Mapping[str, int]:
+        static_collider_count = sum(
+            not bool(collider["disabled"])
+            for collider in self.artifact.static_colliders
+        )
         return MappingProxyType(
             {
                 "environments": self._num_envs,
@@ -402,6 +449,7 @@ class LibuipcBatchSolver:
                 "deformable_bodies_per_env": len(self._deformable_bodies),
                 "deformable_vertices_per_env": self._arrays["positions"].shape[1],
                 "affine_bodies_per_env": len(self._affine_bodies),
+                "static_colliders_per_env": static_collider_count,
             }
         )
 
@@ -421,7 +469,18 @@ class LibuipcBatchSolver:
                 "graph_capture_reason": self.capabilities.graph_capture_reason,
                 "affine_target_staging": "per_shard_device_host_device",
                 "contact_wrench_staging": "per_shard_device_host_device",
-                "feedback_source": "native_contact_wrench",
+                "contact_constitution": self.config.contact_constitution,
+                "feedback_source": (
+                    "proxy_constraint"
+                    if self.wrench_source == "pose_error"
+                    else "native_contact_wrench"
+                ),
+                "exact_contact_wrench": self.capabilities.exact_contact_wrench,
+                "checkpoint_active": self._checkpoint_frame is not None,
+                "static_collider_count": sum(
+                    not bool(collider["disabled"])
+                    for collider in self.artifact.static_colliders
+                ),
                 "reset_scope": "full_batch_only",
                 "stable_storage": True,
             }
@@ -445,6 +504,23 @@ class LibuipcBatchSolver:
         if target is not storage:
             storage.copy_(target)
 
+    def set_affine_target_twists(self, twists: Any) -> None:
+        self._require_open()
+        target = self._torch.as_tensor(
+            twists,
+            dtype=self._arrays["affine_target_twists"].dtype,
+            device=self._device,
+        )
+        expected = tuple(self._arrays["affine_target_twists"].shape)
+        if tuple(target.shape) != expected:
+            raise ValueError(
+                f"libuipc affine target twists must have shape {expected}, "
+                f"got {tuple(target.shape)}"
+            )
+        storage = self._arrays["affine_target_twists"]
+        if target is not storage:
+            storage.copy_(target)
+
     def step(self, *, nsteps: int = 1) -> Mapping[str, Any]:
         self._require_open()
         try:
@@ -456,6 +532,37 @@ class LibuipcBatchSolver:
         self._session.step(count)
         self._frame += count
         return self._arrays
+
+    def capture_checkpoint(self) -> None:
+        self._require_open()
+        if self._checkpoint_frame is not None:
+            raise RuntimeError("libuipc batch checkpoint slot is already active")
+        capture = getattr(self._session, "capture_checkpoint", None)
+        if not callable(capture):
+            raise RuntimeError("native libuipc batch session has no checkpoint API")
+        capture()
+        self._checkpoint_frame = self._frame
+
+    def rewind_checkpoint(self) -> Mapping[str, Any]:
+        self._require_open()
+        if self._checkpoint_frame is None:
+            raise RuntimeError("libuipc batch checkpoint slot is not active")
+        rewind = getattr(self._session, "rewind_checkpoint", None)
+        if not callable(rewind):
+            raise RuntimeError("native libuipc batch session has no checkpoint API")
+        rewind()
+        self._frame = self._checkpoint_frame
+        return self._arrays
+
+    def commit_checkpoint(self) -> None:
+        self._require_open()
+        if self._checkpoint_frame is None:
+            raise RuntimeError("libuipc batch checkpoint slot is not active")
+        commit = getattr(self._session, "commit_checkpoint", None)
+        if not callable(commit):
+            raise RuntimeError("native libuipc batch session has no checkpoint API")
+        commit()
+        self._checkpoint_frame = None
 
     def reset(self, reset_mask: Any | None = None) -> Mapping[str, Any]:
         self._require_open()
@@ -475,6 +582,8 @@ class LibuipcBatchSolver:
                 )
         self._session.reset()
         self._frame = 0
+        self._checkpoint_frame = None
+        self._arrays["affine_target_twists"].zero_()
         self._arrays["affine_contact_wrenches"].zero_()
         return self._arrays
 

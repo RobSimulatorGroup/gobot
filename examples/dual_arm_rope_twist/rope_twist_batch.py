@@ -57,6 +57,11 @@ from controllers import (
 )
 
 
+INTEGRATION_SCHEMES = ("newton_proxy", "sequential_split")
+DEFAULT_INTEGRATION_SCHEME = "newton_proxy"
+DEFAULT_COUPLING_ITERATIONS = 2
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -72,6 +77,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--rigid-substeps", type=int, default=1)
     parser.add_argument("--ipc-substeps", type=int, default=1)
+    parser.add_argument(
+        "--integration-scheme",
+        choices=INTEGRATION_SCHEMES,
+        default=DEFAULT_INTEGRATION_SCHEME,
+    )
+    parser.add_argument(
+        "--coupling-iterations",
+        type=int,
+        default=DEFAULT_COUPLING_ITERATIONS,
+    )
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
@@ -114,6 +129,16 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--fixed-dt must be positive")
     if args.rigid_substeps <= 0 or args.ipc_substeps <= 0:
         raise ValueError("solver substep counts must be positive")
+    if args.coupling_iterations <= 0:
+        raise ValueError("--coupling-iterations must be positive")
+    if (
+        args.integration_scheme == "newton_proxy"
+        and args.rigid_substeps != args.ipc_substeps
+    ):
+        raise ValueError(
+            "--integration-scheme newton_proxy requires equal rigid and IPC "
+            "substep counts"
+        )
     if args.friction < 0.0:
         raise ValueError("--friction must be non-negative")
     if args.contact_resistance <= 0.0:
@@ -227,6 +252,8 @@ def run(
             torque_scale=args.coupling_feedback_scale,
             rigid_substeps=args.rigid_substeps,
             ipc_substeps=args.ipc_substeps,
+            integration_scheme=args.integration_scheme,
+            coupling_iterations=args.coupling_iterations,
             capture_mujoco_graphs=not args.no_mujoco_graph,
         ),
         libuipc_config=solver_config,
@@ -844,6 +871,20 @@ def run(
                 args.num_envs * executed_steps / elapsed
             ),
             "coupling_feedback_scale": args.coupling_feedback_scale,
+            "integration_scheme": provider.diagnostics["integration_scheme"],
+            "coupling_iterations": provider.diagnostics[
+                "coupling_iterations"
+            ],
+            "actual_coupling_iterations": provider.diagnostics[
+                "actual_coupling_iterations"
+            ],
+            "relaxation_mode": provider.diagnostics["relaxation_mode"],
+            "interface_residual": provider.diagnostics[
+                "interface_residual"
+            ],
+            "aitken_coefficient": provider.diagnostics[
+                "aitken_coefficient"
+            ],
             "feedback_source": provider.diagnostics["feedback_source"],
             "exact_contact_wrench": provider.capabilities.exact_contact_wrench,
             "collision_ownership": dict(artifact.collision_ownership),

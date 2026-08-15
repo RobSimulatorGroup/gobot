@@ -11,6 +11,7 @@ import gobot
 TEST_SCENE_NAMES = (
     "soft_cube_stack.jscn",
     "soft_cube_press.jscn",
+    "soft_cube_static_box.jscn",
 )
 
 
@@ -170,9 +171,26 @@ def _press_scene():
     return root
 
 
+def _static_box_scene():
+    root = gobot.create_node("Node3D", "libuipc_static_box_test")
+    root.add_child(
+        _soft_box(
+            "falling_cube",
+            (0.16, 0.16, 0.16),
+            (0.0, 0.0, 0.16),
+            young_modulus=2.5e4,
+        )
+    )
+    ground = gobot.create_box_collision("loose_ground", (0.8, 0.65, 0.05))
+    ground.position = (0.0, 0.0, -0.025)
+    root.add_child(ground)
+    return root
+
+
 _SCENE_BUILDERS: dict[str, Callable[[], object]] = {
     "soft_cube_stack.jscn": _stack_scene,
     "soft_cube_press.jscn": _press_scene,
+    "soft_cube_static_box.jscn": _static_box_scene,
 }
 
 

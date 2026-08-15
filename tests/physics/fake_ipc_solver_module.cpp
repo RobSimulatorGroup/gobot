@@ -86,7 +86,8 @@ void* Create(const IpcSolverArtifactView* artifact,
              char* error,
              std::size_t error_size) {
     if (artifact == nullptr || config == nullptr || artifact->manifest == nullptr ||
-        artifact->schema_version != 3 || artifact->format == nullptr ||
+        (artifact->schema_version != 3 && artifact->schema_version != 4) ||
+        artifact->format == nullptr ||
         std::string_view(artifact->format) != "gobot-ipc") {
         WriteError(error, error_size, "fake IPC module rejected the artifact");
         return nullptr;
@@ -276,7 +277,14 @@ struct BatchSession {
     std::uint32_t environments_per_shard{0};
     IpcBatchSolverModuleBuffers buffers{};
     std::uint64_t frame{0};
+    std::uint64_t checkpoint_frame{0};
+    std::vector<double> checkpoint_positions;
+    std::vector<double> checkpoint_velocities;
+    std::vector<double> checkpoint_contact_forces;
+    std::vector<double> checkpoint_transforms;
+    std::vector<double> checkpoint_wrenches;
     bool bound{false};
+    bool checkpoint_active{false};
 };
 
 double* Data(const gobot::IpcSolverDeviceBufferView& view) {
@@ -333,7 +341,8 @@ bool BatchBind(void* opaque,
     auto* session = static_cast<BatchSession*>(opaque);
     if (session == nullptr || buffers == nullptr ||
         buffers->deformable_positions.data == nullptr ||
-        buffers->affine_targets.data == nullptr) {
+        buffers->affine_targets.data == nullptr ||
+        buffers->affine_target_twists.data == nullptr) {
         WriteError(error, error_size, "fake IPC batch buffers are invalid");
         return false;
     }
@@ -384,7 +393,73 @@ bool BatchReset(void* opaque, char* error, std::size_t error_size) {
         return false;
     }
     session->frame = 0;
+    session->checkpoint_active = false;
     InitializeBatchBuffers(session);
+    return true;
+}
+
+bool BatchCaptureCheckpoint(void* opaque, char* error, std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound || session->checkpoint_active) {
+        WriteError(error, error_size,
+                   "fake IPC batch checkpoint capture is invalid");
+        return false;
+    }
+    const std::size_t environments = session->environment_count;
+    session->checkpoint_frame = session->frame;
+    session->checkpoint_positions.assign(
+            Data(session->buffers.deformable_positions),
+            Data(session->buffers.deformable_positions) + environments * 6);
+    session->checkpoint_velocities.assign(
+            Data(session->buffers.deformable_velocities),
+            Data(session->buffers.deformable_velocities) + environments * 6);
+    session->checkpoint_contact_forces.assign(
+            Data(session->buffers.deformable_contact_forces),
+            Data(session->buffers.deformable_contact_forces) + environments * 6);
+    session->checkpoint_transforms.assign(
+            Data(session->buffers.affine_transforms),
+            Data(session->buffers.affine_transforms) + environments * 16);
+    session->checkpoint_wrenches.assign(
+            Data(session->buffers.affine_contact_wrenches),
+            Data(session->buffers.affine_contact_wrenches) + environments * 6);
+    session->checkpoint_active = true;
+    return true;
+}
+
+bool BatchRewindCheckpoint(void* opaque, char* error, std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound || !session->checkpoint_active) {
+        WriteError(error, error_size,
+                   "fake IPC batch checkpoint rewind is invalid");
+        return false;
+    }
+    std::ranges::copy(session->checkpoint_positions,
+                      Data(session->buffers.deformable_positions));
+    std::ranges::copy(session->checkpoint_velocities,
+                      Data(session->buffers.deformable_velocities));
+    std::ranges::copy(session->checkpoint_contact_forces,
+                      Data(session->buffers.deformable_contact_forces));
+    std::ranges::copy(session->checkpoint_transforms,
+                      Data(session->buffers.affine_transforms));
+    std::ranges::copy(session->checkpoint_wrenches,
+                      Data(session->buffers.affine_contact_wrenches));
+    session->frame = session->checkpoint_frame;
+    return true;
+}
+
+bool BatchCommitCheckpoint(void* opaque, char* error, std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound || !session->checkpoint_active) {
+        WriteError(error, error_size,
+                   "fake IPC batch checkpoint commit is invalid");
+        return false;
+    }
+    session->checkpoint_active = false;
+    session->checkpoint_positions.clear();
+    session->checkpoint_velocities.clear();
+    session->checkpoint_contact_forces.clear();
+    session->checkpoint_transforms.clear();
+    session->checkpoint_wrenches.clear();
     return true;
 }
 
@@ -446,7 +521,11 @@ bool BatchDiagnostics(void* opaque,
             1,
             2,
             1,
+            0,
             0.25,
+            "ipc",
+            true,
+            session->checkpoint_active,
             true};
     return true;
 }
@@ -459,6 +538,9 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchBind,
         &BatchStep,
         &BatchReset,
+        &BatchCaptureCheckpoint,
+        &BatchRewindCheckpoint,
+        &BatchCommitCheckpoint,
         &BatchSynchronize,
         &BatchDeformableBodyCount,
         &BatchDeformableBodyInfo,

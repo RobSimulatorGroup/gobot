@@ -45,6 +45,25 @@ def _controllers():
 
 
 @lru_cache(maxsize=1)
+def _play():
+    return _load_module(
+        "gobot_rope_twist_test_play", EXAMPLE / "rope_twist_play.py"
+    )
+
+
+@lru_cache(maxsize=1)
+def _batch():
+    example_path = str(EXAMPLE)
+    sys.path.insert(0, example_path)
+    try:
+        return _load_module(
+            "gobot_rope_twist_test_batch", EXAMPLE / "rope_twist_batch.py"
+        )
+    finally:
+        sys.path.remove(example_path)
+
+
+@lru_cache(maxsize=1)
 def _artifact() -> CompiledMuJoCoIpcArtifact:
     context = gobot.app.create_context()
     try:
@@ -400,6 +419,126 @@ def test_wrist_drive_modes_apply_distinct_runtime_torque_limits() -> None:
     assert solver.recompute_count == 1
 
 
+def test_play_builds_bounded_soft_and_grip_contact_force_arrows() -> None:
+    play = _play()
+    positions = np.zeros((30, 3), dtype=np.float64)
+    positions[:, 0] = np.arange(30, dtype=np.float64)
+    forces = np.zeros_like(positions)
+    forces[:, 2] = np.arange(1, 31, dtype=np.float64)
+
+    arrows = play._contact_force_arrows(
+        positions,
+        forces,
+        color=play.IPC_CONTACT_FORCE_ARROW_COLOR,
+        label="rope contact",
+        force_scale=0.08,
+        max_force_length=0.8,
+        max_count=5,
+    )
+    assert len(arrows) == 5
+    assert tuple(arrows[0].start) == (29.0, 0.0, 0.0)
+    assert tuple(arrows[0].vector) == (0.0, 0.0, 1.0)
+    assert arrows[0].label == "rope contact 30 N"
+    assert math.isclose(arrows[0].scale, 0.08 * math.log1p(30.0))
+
+    uncapped_arrows = play._contact_force_arrows(
+        positions,
+        forces,
+        color=play.IPC_CONTACT_FORCE_ARROW_COLOR,
+        label="rope contact",
+        force_scale=0.08,
+        max_force_length=0.8,
+    )
+    assert len(uncapped_arrows) == len(positions)
+
+    weak_force = np.zeros((1, 3), dtype=np.float64)
+    weak_force[0, 0] = 0.01
+    weak_arrow = play._contact_force_arrows(
+        np.zeros_like(weak_force),
+        weak_force,
+        color=play.IPC_CONTACT_FORCE_ARROW_COLOR,
+        label="rope contact",
+        force_scale=0.08,
+        max_force_length=0.8,
+        min_force_length=play.IPC_CONTACT_FORCE_ARROW_MIN_LENGTH,
+    )
+    assert len(weak_arrow) == 1
+    assert weak_arrow[0].scale == play.IPC_CONTACT_FORCE_ARROW_MIN_LENGTH
+
+    found = np.zeros(30, dtype=bool)
+    found[3] = True
+    grip_arrows = play._contact_force_arrows(
+        positions,
+        forces,
+        found=found,
+        color=play.GRIP_CONTACT_FORCE_ARROW_COLOR,
+        label="grip contact",
+        force_scale=1.0,
+        max_force_length=0.25,
+    )
+    assert len(grip_arrows) == 1
+    assert grip_arrows[0].label == "grip contact 4 N"
+    assert grip_arrows[0].scale == 0.25
+
+    specs = play._grip_sensor_specs()
+    assert [spec.name for spec in specs] == [
+        "left_fixture_grip",
+        "right_fixture_grip",
+    ]
+    assert all(
+        spec.fields
+        == ("found", "force", "pos", "normal", "tangent")
+        for spec in specs
+    )
+
+    local_forces = torch.tensor(
+        [[10.0, 2.0, 3.0], [10.0, 2.0, -3.0]]
+    )
+    normals = torch.tensor([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]])
+    tangents = torch.tensor([[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]])
+    world_forces = play._contact_frame_forces_to_world(
+        local_forces, normals, tangents
+    )
+    assert torch.allclose(
+        world_forces,
+        torch.tensor([[3.0, 10.0, 2.0], [-3.0, -10.0, -2.0]]),
+    )
+
+
+def test_rope_twist_defaults_to_newton_proxy_with_sequential_fallback() -> None:
+    batch = _batch()
+    defaults = batch._parser().parse_args([])
+    assert defaults.integration_scheme == "newton_proxy"
+    assert defaults.coupling_iterations == 2
+    batch._validate_args(defaults)
+
+    sequential = batch._parser().parse_args(
+        [
+            "--integration-scheme",
+            "sequential_split",
+            "--rigid-substeps",
+            "2",
+            "--ipc-substeps",
+            "1",
+        ]
+    )
+    batch._validate_args(sequential)
+
+    unequal_newton = batch._parser().parse_args(
+        ["--rigid-substeps", "2", "--ipc-substeps", "1"]
+    )
+    try:
+        batch._validate_args(unequal_newton)
+    except ValueError as error:
+        assert "requires equal rigid and IPC substep counts" in str(error)
+    else:
+        raise AssertionError("unequal Newton substeps were accepted")
+
+    play = _play()
+    assert play.DEFAULT_INTEGRATION_SCHEME == "newton_proxy"
+    assert play.COUPLING_ITERATIONS == 2
+
+
 def test_authored_task_is_visible_and_runtime_driven() -> None:
     builder = _builder()
     scene = json.loads(SCENE.read_text(encoding="utf-8"))
@@ -450,7 +589,11 @@ def test_authored_task_is_visible_and_runtime_driven() -> None:
     assert "apply_link_poses" in play_source
     assert "apply_deformable_vertices" in play_source
     assert "DebugArrow" in play_source
+    assert 'provider.arrays["ipc_contact_forces"]' in play_source
+    assert "get_physics_debug_settings" in play_source
+    assert "MuJoCoWarpContactSensorSpec" in play_source
     assert "GOBOT_ROPE_TWIST_DRIVE_MODE" in play_source
+    assert "GOBOT_ROPE_TWIST_INTEGRATION_SCHEME" in play_source
     assert 'model_array("actuator_forcerange")' in controller_source
     assert "WRIST_SHOWCASE_TORQUE_LIMIT" in controller_source
     assert "examples.mujoco_libuipc" not in combined
@@ -463,6 +606,8 @@ def main() -> int:
     test_gravity_compensation_does_not_hide_rope_reaction()
     test_finite_torque_controller_stalls_on_effort_and_speed()
     test_wrist_drive_modes_apply_distinct_runtime_torque_limits()
+    test_play_builds_bounded_soft_and_grip_contact_force_arrows()
+    test_rope_twist_defaults_to_newton_proxy_with_sequential_fallback()
     test_authored_task_is_visible_and_runtime_driven()
     return 0
 

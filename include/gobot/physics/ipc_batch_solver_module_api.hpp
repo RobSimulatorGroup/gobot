@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 1;
+inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 2;
 
 enum class IpcSolverDeviceScalarType : std::uint32_t {
     Float64 = 1,
@@ -33,6 +33,8 @@ struct IpcBatchSolverModuleBuffers {
     IpcSolverDeviceBufferView deformable_velocities;
     IpcSolverDeviceBufferView deformable_contact_forces;
     IpcSolverDeviceBufferView affine_targets;
+    // World-frame body-origin twists in [linear_xyz, angular_xyz] order.
+    IpcSolverDeviceBufferView affine_target_twists;
     IpcSolverDeviceBufferView affine_transforms;
     IpcSolverDeviceBufferView affine_contact_wrenches;
 };
@@ -42,6 +44,12 @@ struct IpcBatchSolverModuleConfig {
     std::uint32_t environment_count{0};
     std::uint32_t environments_per_shard{0};
     bool external_affine_proxies{true};
+    const char* contact_constitution{"ipc"};
+    double al_ipc_mu_scale_fem{5.0e7};
+    double al_ipc_mu_scale_abd{1.0e5};
+    double al_ipc_toi_threshold{0.1};
+    double al_ipc_alpha_lower_bound{1.0e-6};
+    double al_ipc_decay_factor{0.3};
 };
 
 struct IpcBatchSolverModuleDiagnostics {
@@ -51,7 +59,11 @@ struct IpcBatchSolverModuleDiagnostics {
     std::size_t deformable_body_count_per_environment{0};
     std::size_t deformable_vertex_count_per_environment{0};
     std::size_t affine_body_count_per_environment{0};
+    std::size_t static_collider_count_per_environment{0};
     double last_step_latency_ms{0.0};
+    const char* contact_constitution{nullptr};
+    bool exact_contact_wrench{false};
+    bool checkpoint_active{false};
     bool valid{false};
 };
 
@@ -75,6 +87,15 @@ struct IpcBatchSolverModuleApi {
     bool (*reset_full)(void* session,
                        char* error,
                        std::size_t error_size){nullptr};
+    bool (*capture_checkpoint)(void* session,
+                               char* error,
+                               std::size_t error_size){nullptr};
+    bool (*rewind_checkpoint)(void* session,
+                              char* error,
+                              std::size_t error_size){nullptr};
+    bool (*commit_checkpoint)(void* session,
+                              char* error,
+                              std::size_t error_size){nullptr};
     bool (*synchronize)(void* session,
                         char* error,
                         std::size_t error_size){nullptr};

@@ -14,8 +14,8 @@ const gobot::IpcSolverModuleApi kApi{
         "bad-abi"};
 
 const gobot::IpcBatchSolverModuleApi kBatchApi{
-        gobot::GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION + 1,
-        "bad-batch-abi"};
+        gobot::GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION - 1,
+        "legacy-batch-abi-v1"};
 
 } // namespace
 
