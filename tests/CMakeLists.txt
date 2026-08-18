@@ -428,6 +428,7 @@ add_test(
 set_tests_properties(test_python_dual_arm_rope_twist_example
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(

@@ -10,9 +10,26 @@ import sys
 import tempfile
 from types import SimpleNamespace
 
-import mujoco
+
+OPTIONAL_DEPENDENCY_SKIP_CODE = 77
+
+try:
+    import mujoco
+except ModuleNotFoundError as error:
+    if error.name != "mujoco":
+        raise
+    print("Dual-arm rope twist example skipped: mujoco is unavailable")
+    raise SystemExit(OPTIONAL_DEPENDENCY_SKIP_CODE) from error
+
 import numpy as np
-import torch
+
+try:
+    import torch
+except ModuleNotFoundError as error:
+    if error.name != "torch":
+        raise
+    print("Dual-arm rope twist example skipped: torch is unavailable")
+    raise SystemExit(OPTIONAL_DEPENDENCY_SKIP_CODE) from error
 
 import gobot
 from gobot.rl import CompiledMuJoCoIpcArtifact
