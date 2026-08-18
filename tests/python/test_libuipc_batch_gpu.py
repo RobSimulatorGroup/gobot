@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import tempfile
 
+import pytest
+
 
 if os.environ.get("GOBOT_RUN_LIBUIPC_BATCH_GPU_TEST") != "1":
     raise SystemExit(77)
@@ -68,6 +70,28 @@ def test_real_libuipc_batch_device_buffers() -> None:
             assert solver.capabilities.device_native
             assert solver.shard_count == 1
             assert solver.diagnostics["valid"]
+            device_native_coupling = os.environ.get(
+                "GOBOT_LIBUIPC_DEVICE_NATIVE_COUPLING", "1"
+            ).strip().lower() not in ("0", "false", "off")
+            assert solver.diagnostics["device_native_coupling"] == (
+                device_native_coupling
+            )
+            assert solver.diagnostics["cuda_stream_interop"]
+            if device_native_coupling:
+                assert (
+                    solver.diagnostics["device_workspace_allocation_count"]
+                    >= 1
+                )
+            else:
+                assert (
+                    solver.diagnostics["device_workspace_allocation_count"]
+                    == 0
+                )
+            assert solver.diagnostics["affine_target_staging"] == (
+                "per_shard_device_to_device"
+                if device_native_coupling
+                else "per_shard_device_host_device"
+            )
             assert not solver.diagnostics[
                 "export_deformable_contact_forces"
             ]
@@ -91,7 +115,6 @@ def test_real_libuipc_batch_device_buffers() -> None:
             )
 
             target_storage = solver.arrays["affine_targets"]
-            target_storage.copy_(transforms)
             initial_positions = positions.clone()
             initial_transforms = transforms.clone()
             press_index = next(
@@ -99,14 +122,17 @@ def test_real_libuipc_batch_device_buffers() -> None:
                 for index, body in enumerate(solver.affine_bodies)
                 if str(body["path"]).endswith("/press_head")
             )
-            target_storage[0, press_index, 2, 3] -= 0.01
-            target_twists[0, press_index, 2] = -1.0
-            target_twists[0, press_index, 5] = 25.0
             position_pointer = positions.data_ptr()
             transform_pointer = transforms.data_ptr()
             twist_pointer = target_twists.data_ptr()
 
-            solver.capture_checkpoint()
+            caller_stream = torch.cuda.Stream(device="cuda:0")
+            with torch.cuda.stream(caller_stream):
+                target_storage.copy_(transforms)
+                target_storage[0, press_index, 2, 3] -= 0.01
+                target_twists[0, press_index, 2] = -1.0
+                target_twists[0, press_index, 5] = 25.0
+                solver.capture_checkpoint()
             assert solver.diagnostics["checkpoint_active"]
 
             solver.step()
@@ -175,6 +201,28 @@ def test_real_libuipc_batch_device_buffers() -> None:
             solver.step()
             torch.testing.assert_close(positions, first_step_positions)
             torch.testing.assert_close(transforms, first_step_transforms)
+
+            # Runtime flags are independent: requesting only deformable contact
+            # forces must not modify the affine-wrench output buffer.
+            affine_wrenches = solver.arrays["affine_contact_wrenches"]
+            affine_wrenches.fill_(123.0)
+            solver._session.set_output_flags(1 << 2)
+            solver.step()
+            solver.synchronize()
+            assert torch.all(affine_wrenches == 123.0).item()
+
+            solver._session.set_output_flags(0)
+            solver.step()
+            assert solver.diagnostics["frame"] == 3
+
+            # A non-finite external target must invalidate the native world
+            # and cross the C ABI as an exception, never abort this process.
+            target_storage[0, press_index, 0, 3] = torch.nan
+            with pytest.raises(
+                RuntimeError, match="libuipc batch world became invalid"
+            ):
+                solver.step()
+            assert not solver.diagnostics["valid"]
         finally:
             solver.close()
             assert not tuple((project_root / "workspace").glob("batch_session_*"))
@@ -351,6 +399,7 @@ def test_real_mujoco_libuipc_solver_coupled_proxy_step() -> None:
             *,
             capture_coupler_graphs: bool,
             export_deformable_contact_forces: bool = True,
+            export_state: bool = True,
         ):
             mode = "captured" if capture_coupler_graphs else "eager"
             output = (
@@ -375,6 +424,8 @@ def test_real_mujoco_libuipc_solver_coupled_proxy_step() -> None:
                         ),
                     ),
                     environments_per_shard=1,
+                    export_deformable_state=export_state,
+                    export_affine_state=export_state,
                     export_deformable_contact_forces=(
                         export_deformable_contact_forces
                     ),
@@ -449,13 +500,17 @@ def test_real_mujoco_libuipc_solver_coupled_proxy_step() -> None:
         lazy_provider = make_provider(
             capture_coupler_graphs=True,
             export_deformable_contact_forces=False,
+            export_state=False,
         )
         try:
             lazy_provider.step(nsteps=comparison_steps)
+            lazy_provider.refresh_state()
             lazy_provider.synchronize()
             assert not lazy_provider.diagnostics["libuipc"][
                 "export_deformable_contact_forces"
             ]
+            assert not lazy_provider.diagnostics["libuipc"]["export_deformable_state"]
+            assert not lazy_provider.diagnostics["libuipc"]["export_affine_state"]
             for name, captured in captured_state.items():
                 torch.testing.assert_close(
                     lazy_provider.arrays[name], captured, rtol=0.0, atol=0.0

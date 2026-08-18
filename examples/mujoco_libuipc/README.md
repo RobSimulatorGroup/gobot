@@ -115,7 +115,7 @@ Useful options:
 - `--no-mujoco-graph`: disable MuJoCo Warp CUDA graph capture for debugging.
 - `--rebuild-scene`: regenerate the `.jscn` before running.
 
-The native batch C ABI is v3. The IPC artifact is schema v5 with schema-v3/v4
+The native batch C ABI is v4. The IPC artifact is schema v5 with schema-v3/v4
 read compatibility; v5 distinguishes articulated robots from standalone rigid
 bodies. The composite artifact remains schema v4 with schema-v3 read
 compatibility. The composite provider requires
@@ -127,7 +127,8 @@ selectively. The composite provider reports `graph_capture=false` because
 libuipc shards are stepped outside capture. Its MuJoCo Warp subsolver and the
 graph-safe checkpoint, kinematics, relaxation, and wrench-application segments
 can still replay captured graphs; libuipc `World::advance()` / `World::sync()`
-remain host boundaries. libuipc currently stages the small affine pose/twist
-table D2H/H2D once per shard and step. The Play display adds batched CPU readback
-only in its viewport callback; the headless batch path does not perform that
-display synchronization.
+remain host boundaries. Affine pose/twist targets and exact IPC reaction
+wrenches stay on the CUDA device; deterministic reduction writes directly into
+the coupler buffers. The Play display adds batched CPU readback only in its
+viewport callback; the headless batch path does not perform that display
+synchronization.

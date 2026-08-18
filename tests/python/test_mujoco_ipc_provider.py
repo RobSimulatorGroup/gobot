@@ -400,7 +400,8 @@ class _FakeNativeBatchSession:
 
     def refresh_outputs(self, output_flags):
         self.refresh_output_flags.append(output_flags)
-        self.buffers["contact_forces"].fill_(float(self.frame))
+        if output_flags & (1 << 2):
+            self.buffers["contact_forces"].fill_(float(self.frame))
 
     def reset(self):
         self.frame = 0
@@ -591,12 +592,16 @@ def test_libuipc_batch_lazy_contact_force_refresh() -> None:
         newton_max_iterations=12,
         line_search_max_iterations=6,
         linear_system_tolerance_rate=2.0e-3,
+        export_deformable_state=False,
+        export_affine_state=False,
         export_deformable_contact_forces=False,
     )
     mapping = config.solver_mapping(2)
     assert mapping["newton_max_iterations"] == 12
     assert mapping["line_search_max_iterations"] == 6
     assert mapping["linear_system_tolerance_rate"] == 2.0e-3
+    assert mapping["output_flags"] & (1 << 0) == 0
+    assert mapping["output_flags"] & (1 << 1) == 0
     assert mapping["output_flags"] & (1 << 2) == 0
     solver = LibuipcBatchSolver(
         artifact.ipc,
@@ -608,10 +613,18 @@ def test_libuipc_batch_lazy_contact_force_refresh() -> None:
     )
     solver.step(nsteps=3)
     assert torch.count_nonzero(solver.arrays["contact_forces"]) == 0
+    assert solver.diagnostics["affine_target_staging"] == (
+        "per_shard_device_host_device"
+    )
+    assert solver.diagnostics["contact_wrench_staging"] == (
+        "per_shard_device_host_device"
+    )
+    state = solver.refresh_state()
+    assert state["positions"] is solver.arrays["positions"]
     refreshed = solver.refresh_deformable_contact_forces()
     assert torch.all(refreshed == 3.0)
     assert solver.diagnostics["deformable_contact_force_frame"] == 3
-    assert session.refresh_output_flags == [1 << 2]
+    assert session.refresh_output_flags == [(1 << 0) | (1 << 1), 1 << 2]
     solver.close()
 
 
@@ -658,6 +671,10 @@ def test_libuipc_al_ipc_config_reports_approximate_proxy_feedback() -> None:
     _raises(
         TypeError,
         lambda: LibuipcBatchConfig(export_deformable_contact_forces=1),
+    )
+    _raises(
+        TypeError,
+        lambda: LibuipcBatchConfig(export_deformable_state=1),
     )
 
 

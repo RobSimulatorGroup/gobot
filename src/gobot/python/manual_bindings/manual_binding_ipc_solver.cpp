@@ -164,6 +164,10 @@ py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
     result["contact_constitution"] = diagnostics.contact_constitution;
     result["exact_contact_wrench"] = diagnostics.exact_contact_wrench;
     result["checkpoint_active"] = diagnostics.checkpoint_active;
+    result["device_native_coupling"] = diagnostics.device_native_coupling;
+    result["cuda_stream_interop"] = diagnostics.cuda_stream_interop;
+    result["device_workspace_allocation_count"] =
+        diagnostics.device_workspace_allocation_count;
     result["valid"] = diagnostics.valid;
     return result;
 }
@@ -404,6 +408,12 @@ public:
         }
     }
 
+    void SetCudaStream(std::uintptr_t cuda_stream) {
+        if (!RequireSession().SetExecutionContext(cuda_stream)) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
     void Reset() {
         bool success = false;
         {
@@ -558,6 +568,8 @@ void RegisterManualIpcSolverBindings(py::module_& module) {
             .def("bind_device_buffers",
                  &PyIpcBatchSolverSession::BindDeviceBuffers,
                  py::arg("buffers"))
+            .def("set_cuda_stream", &PyIpcBatchSolverSession::SetCudaStream,
+                 py::arg("cuda_stream"))
             .def("step", &PyIpcBatchSolverSession::Step,
                  py::arg("steps") = 1)
             .def("reset", &PyIpcBatchSolverSession::Reset)

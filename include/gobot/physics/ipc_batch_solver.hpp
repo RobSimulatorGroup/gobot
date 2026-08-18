@@ -54,6 +54,9 @@ struct IpcBatchSolverDiagnostics {
     std::string contact_constitution{"ipc"};
     bool exact_contact_wrench{true};
     bool checkpoint_active{false};
+    bool device_native_coupling{false};
+    bool cuda_stream_interop{false};
+    std::size_t device_workspace_allocation_count{0};
     bool valid{false};
 };
 
@@ -74,6 +77,7 @@ public:
     IpcBatchSolverSession& operator=(const IpcBatchSolverSession&) = delete;
 
     bool BindDeviceBuffers(const IpcBatchSolverModuleBuffers& buffers);
+    bool SetExecutionContext(std::uintptr_t cuda_stream);
     bool Step(std::uint32_t steps = 1);
     bool ResetFull();
     bool CaptureCheckpoint();

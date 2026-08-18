@@ -43,4 +43,4 @@
 	shallow = true
 [submodule "3rdparty/libuipc"]
 	path = 3rdparty/libuipc
-	url = https://github.com/spiriMirror/libuipc.git
+	url = https://github.com/Wuqiqi123/libuipc.git

@@ -67,6 +67,7 @@ bool ValidateApi(const IpcBatchSolverModuleApi* api, std::string* error) {
     }
     if (api->provider_name == nullptr || api->create == nullptr ||
         api->destroy == nullptr || api->bind_device_buffers == nullptr ||
+        api->set_execution_context == nullptr ||
         api->step == nullptr || api->reset_full == nullptr ||
         api->capture_checkpoint == nullptr ||
         api->rewind_checkpoint == nullptr ||
@@ -368,6 +369,18 @@ public:
         return RefreshDiagnostics();
     }
 
+    bool SetExecutionContext(std::uintptr_t cuda_stream) {
+        const IpcBatchSolverExecutionContext context{cuda_stream};
+        std::array<char, kErrorCapacity> error{};
+        if (!api_->set_execution_context(session_, &context, error.data(),
+                                         error.size())) {
+            return Fail(error.data(),
+                        "IPC batch solver rejected its execution context");
+        }
+        last_error_.clear();
+        return true;
+    }
+
     bool Step(std::uint32_t steps) {
         if (!buffers_bound_) {
             return Fail(nullptr,
@@ -500,6 +513,11 @@ public:
                         : "";
         diagnostics_.exact_contact_wrench = diagnostics.exact_contact_wrench;
         diagnostics_.checkpoint_active = diagnostics.checkpoint_active;
+        diagnostics_.device_native_coupling =
+            diagnostics.device_native_coupling;
+        diagnostics_.cuda_stream_interop = diagnostics.cuda_stream_interop;
+        diagnostics_.device_workspace_allocation_count =
+            diagnostics.device_workspace_allocation_count;
         diagnostics_.valid = diagnostics.valid;
         last_error_.clear();
         return true;
@@ -590,6 +608,10 @@ bool IpcBatchSolverSession::IsModuleAvailable(
 bool IpcBatchSolverSession::BindDeviceBuffers(
         const IpcBatchSolverModuleBuffers& buffers) {
     return impl_->BindDeviceBuffers(buffers);
+}
+
+bool IpcBatchSolverSession::SetExecutionContext(std::uintptr_t cuda_stream) {
+    return impl_->SetExecutionContext(cuda_stream);
 }
 
 bool IpcBatchSolverSession::Step(std::uint32_t steps) {

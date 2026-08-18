@@ -55,6 +55,8 @@ class LibuipcBatchConfig:
     newton_max_iterations: int = 16
     line_search_max_iterations: int = 8
     linear_system_tolerance_rate: float = 1.0e-3
+    export_deformable_state: bool = True
+    export_affine_state: bool = True
     export_deformable_contact_forces: bool = True
 
     def __post_init__(self) -> None:
@@ -85,8 +87,13 @@ class LibuipcBatchConfig:
                 "linear_system_tolerance_rate must be finite and positive"
             )
         object.__setattr__(self, "linear_system_tolerance_rate", tolerance)
-        if not isinstance(self.export_deformable_contact_forces, bool):
-            raise TypeError("export_deformable_contact_forces must be a bool")
+        for name in (
+            "export_deformable_state",
+            "export_affine_state",
+            "export_deformable_contact_forces",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} must be a bool")
         constitution = str(self.contact_constitution).lower()
         if constitution not in ("ipc", "al-ipc"):
             raise ValueError("contact_constitution must be 'ipc' or 'al-ipc'")
@@ -109,6 +116,10 @@ class LibuipcBatchConfig:
     def solver_mapping(self, num_envs: int) -> Mapping[str, Any]:
         values = dict(self.solver.solver_mapping())
         output_flags = _OUTPUT_ALL
+        if not self.export_deformable_state:
+            output_flags &= ~_OUTPUT_DEFORMABLE_STATE
+        if not self.export_affine_state:
+            output_flags &= ~_OUTPUT_AFFINE_STATE
         if not self.export_deformable_contact_forces:
             output_flags &= ~_OUTPUT_DEFORMABLE_CONTACT_FORCES
         values.update(
@@ -251,6 +262,7 @@ class LibuipcBatchSolver:
 
         self._session = _session if _session is not None else self._create_session()
         try:
+            self._set_execution_context()
             bind = getattr(self._session, "bind_device_buffers", None)
             if not callable(bind):
                 raise RuntimeError(
@@ -280,6 +292,8 @@ class LibuipcBatchSolver:
                 "linear_system_tolerance_rate": (
                     self.config.linear_system_tolerance_rate
                 ),
+                "export_deformable_state": self.config.export_deformable_state,
+                "export_affine_state": self.config.export_affine_state,
                 "export_deformable_contact_forces": (
                     self.config.export_deformable_contact_forces
                 ),
@@ -340,6 +354,13 @@ class LibuipcBatchSolver:
             dict(self.config.solver_mapping(self._num_envs)),
             self.config.solver.module_path,
         )
+
+    def _set_execution_context(self) -> None:
+        setter = getattr(self._session, "set_cuda_stream", None)
+        if not callable(setter):
+            return
+        stream = self._torch.cuda.current_stream(self._device)
+        setter(int(stream.cuda_stream))
 
     def _build_deformable_layout(self) -> tuple[Mapping[str, Any], ...]:
         offset = 0
@@ -444,8 +465,7 @@ class LibuipcBatchSolver:
             sensor_batch=False,
             solver_substeps=True,
             graph_capture_reason=(
-                "libuipc shards stage affine targets and exact contact wrenches "
-                "through host memory"
+                "libuipc World::advance remains an external CUDA graph boundary"
             ),
             reset_scope="full_batch_only",
         )
@@ -519,6 +539,9 @@ class LibuipcBatchSolver:
         self._require_open()
         native = getattr(self._session, "diagnostics", {})
         values = dict(native() if callable(native) else native)
+        device_native_coupling = bool(
+            values.get("device_native_coupling", False)
+        )
         values.update(
             {
                 "provider": "libuipc-batch",
@@ -528,8 +551,16 @@ class LibuipcBatchSolver:
                 "frame": int(values.get("frame", self._frame)),
                 "graph_captured": False,
                 "graph_capture_reason": self.capabilities.graph_capture_reason,
-                "affine_target_staging": "per_shard_device_host_device",
-                "contact_wrench_staging": "per_shard_device_host_device",
+                "affine_target_staging": (
+                    "per_shard_device_to_device"
+                    if device_native_coupling
+                    else "per_shard_device_host_device"
+                ),
+                "contact_wrench_staging": (
+                    "per_shard_device_reduction"
+                    if device_native_coupling
+                    else "per_shard_device_host_device"
+                ),
                 "contact_constitution": self.config.contact_constitution,
                 "feedback_source": (
                     "proxy_constraint"
@@ -538,6 +569,8 @@ class LibuipcBatchSolver:
                 ),
                 "exact_contact_wrench": self.capabilities.exact_contact_wrench,
                 "checkpoint_active": self._checkpoint_frame is not None,
+                "export_deformable_state": self.config.export_deformable_state,
+                "export_affine_state": self.config.export_affine_state,
                 "export_deformable_contact_forces": (
                     self.config.export_deformable_contact_forces
                 ),
@@ -599,6 +632,7 @@ class LibuipcBatchSolver:
             raise TypeError("libuipc batch step count must be an integer") from error
         if isinstance(nsteps, bool) or count <= 0:
             raise ValueError("libuipc batch step count must be positive")
+        self._set_execution_context()
         self._session.step(count)
         self._frame += count
         if self.config.export_deformable_contact_forces:
@@ -611,6 +645,7 @@ class LibuipcBatchSolver:
         self._require_open()
         refresh = getattr(self._session, "refresh_outputs", None)
         if callable(refresh):
+            self._set_execution_context()
             refresh(_OUTPUT_DEFORMABLE_CONTACT_FORCES)
         elif not self.config.export_deformable_contact_forces:
             raise RuntimeError(
@@ -619,6 +654,29 @@ class LibuipcBatchSolver:
         self._deformable_contact_force_frame = self._frame
         return self._arrays["contact_forces"]
 
+    def refresh_state(self) -> Mapping[str, Any]:
+        """Refresh deformable and affine state without advancing physics."""
+
+        self._require_open()
+        refresh = getattr(self._session, "refresh_outputs", None)
+        state_is_immediate = (
+            self.config.export_deformable_state and self.config.export_affine_state
+        )
+        if callable(refresh) and not state_is_immediate:
+            self._set_execution_context()
+            refresh(_OUTPUT_DEFORMABLE_STATE | _OUTPUT_AFFINE_STATE)
+        elif not callable(refresh) and not state_is_immediate:
+            raise RuntimeError(
+                "native libuipc batch session has no lazy state refresh API"
+            )
+        return MappingProxyType(
+            {
+                "positions": self._arrays["positions"],
+                "velocities": self._arrays["velocities"],
+                "affine_transforms": self._arrays["affine_transforms"],
+            }
+        )
+
     def capture_checkpoint(self) -> None:
         self._require_open()
         if self._checkpoint_frame is not None:
@@ -626,6 +684,7 @@ class LibuipcBatchSolver:
         capture = getattr(self._session, "capture_checkpoint", None)
         if not callable(capture):
             raise RuntimeError("native libuipc batch session has no checkpoint API")
+        self._set_execution_context()
         capture()
         self._checkpoint_frame = self._frame
 
@@ -636,6 +695,7 @@ class LibuipcBatchSolver:
         rewind = getattr(self._session, "rewind_checkpoint", None)
         if not callable(rewind):
             raise RuntimeError("native libuipc batch session has no checkpoint API")
+        self._set_execution_context()
         rewind()
         self._frame = self._checkpoint_frame
         return self._arrays
@@ -647,6 +707,7 @@ class LibuipcBatchSolver:
         commit = getattr(self._session, "commit_checkpoint", None)
         if not callable(commit):
             raise RuntimeError("native libuipc batch session has no checkpoint API")
+        self._set_execution_context()
         commit()
         self._checkpoint_frame = None
 
@@ -666,6 +727,7 @@ class LibuipcBatchSolver:
                     "partial reset is unsupported because libuipc cannot restore "
                     "individual environments within a shard"
                 )
+        self._set_execution_context()
         self._session.reset()
         self._frame = 0
         self._checkpoint_frame = None
@@ -679,6 +741,7 @@ class LibuipcBatchSolver:
         self._require_open()
         synchronize = getattr(self._session, "synchronize", None)
         if callable(synchronize):
+            self._set_execution_context()
             synchronize()
 
     def close(self) -> None:

@@ -357,6 +357,19 @@ bool BatchBind(void* opaque,
     return true;
 }
 
+bool BatchSetExecutionContext(
+        void* opaque,
+        const gobot::IpcBatchSolverExecutionContext* context,
+        char* error,
+        std::size_t error_size) {
+    if (opaque == nullptr || context == nullptr) {
+        WriteError(error, error_size,
+                   "fake IPC batch execution context is invalid");
+        return false;
+    }
+    return true;
+}
+
 bool BatchStep(void* opaque,
                std::uint32_t steps,
                char* error,
@@ -589,6 +602,9 @@ bool BatchDiagnostics(void* opaque,
             "ipc",
             true,
             session->checkpoint_active,
+            true,
+            true,
+            3,
             true};
     return true;
 }
@@ -599,6 +615,7 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchCreate,
         &BatchDestroy,
         &BatchBind,
+        &BatchSetExecutionContext,
         &BatchStep,
         &BatchReset,
         &BatchCaptureCheckpoint,

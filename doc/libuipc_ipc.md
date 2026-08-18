@@ -212,10 +212,12 @@ provider.step(actions)
 provider.reset(full_batch_mask)
 ```
 
-The native batch C ABI is v3. In addition to target twists and single-slot
+The native batch C ABI is v4. In addition to target twists and single-slot
 capture/rewind/commit operations, it exposes runtime output flags, explicit
 output refresh, libuipc Newton/line-search/linear-tolerance settings, and
-checkpoint/target/advance/reaction/state-sync phase timings. A v2 module is
+checkpoint/target/advance/reaction/state-sync phase timings. ABI v4 also
+accepts the caller CUDA stream and reports device-native coupling/workspace
+diagnostics. A v3 module is
 rejected with an explicit version mismatch. The composite provider
 intentionally supports full-batch reset only. Each
 shard restores its frame-zero libuipc snapshot, including solver history and
@@ -244,13 +246,13 @@ independently. libuipc `World::advance()` and `World::sync()` remain required
 host boundaries; this is not presented as one composite CUDA Graph.
 
 FEM positions/velocities and affine proxy transforms are written into
-pre-bound CUDA tensors. The pinned libuipc interfaces still require per-shard
-device-to-host-to-device staging for affine targets and for the exported exact
-affine contact wrenches. Reused pinned host buffers remove staging allocation
-from `step()`. Both staging paths and their phase timings are named in
-diagnostics and benchmark output. Interface residual and Aitken coefficient
-stay in device scalars during stepping; `.item()` occurs only when diagnostics
-are requested.
+pre-bound CUDA tensors. Affine target/twist staging and exact IPC contact-force
+reduction now run device-to-device in persistent per-shard workspaces. ABI v4
+accepts the caller CUDA stream, establishes the ordering needed by libuipc's
+default-stream boundary, and reports workspace growth in diagnostics. Both
+exchange paths and their phase timings are named in diagnostics and benchmark
+output. Interface residual and Aitken coefficient stay in device scalars
+during stepping; `.item()` occurs only when diagnostics are requested.
 
 `LibuipcBatchConfig(export_deformable_contact_forces=False)` leaves the stable
 device force buffer allocated but does not upload per-vertex contact forces on
@@ -258,6 +260,15 @@ each step. Exact affine contact wrenches are still exported every step. Call
 `refresh_deformable_contact_forces()` to update the vertex buffer on demand;
 diagnostics report the frame represented by that buffer. The default remains
 `True` for compatibility and batch metrics.
+
+Non-finite PCG residuals now invalidate the libuipc world and return a C ABI
+error to the caller. They no longer abort the editor or training process, so
+diagnostics remain available for identifying the failed frame and solve phase.
+
+`export_deformable_state` and `export_affine_state` similarly control automatic
+state export. `refresh_state()` updates both buffers without advancing physics.
+The interactive editor profile uses lazy state export, while accurate and batch
+profiles retain immediate output by default.
 
 The opt-in GPU regression covers native checkpoint replay, loose static
 collision, checkpoint-free SolverCoupledProxy x1, x2 rollback/replay, eager and
@@ -319,8 +330,8 @@ It checks stable storage, graph capture, residual, grasp/attachment drift,
 OneWay box/static-table rope-vertex penetration, exact wrench transfer, and a
 five-second single-step runaway guard.
 
-Shard-masked reset, device-only affine exchange, full composite CUDA Graph capture,
-and coupled sensor/randomization pipelines remain future work. None of those
+Shard-masked reset, full composite CUDA Graph capture, and coupled
+sensor/randomization pipelines remain future work. None of those
 extensions require changing `.jscn` as the authored source of truth.
 
 ## Examples

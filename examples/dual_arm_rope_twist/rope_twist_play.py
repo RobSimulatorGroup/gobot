@@ -188,6 +188,9 @@ def _batch_config(
         newton_max_iterations=profile.newton_max_iterations,
         line_search_max_iterations=profile.line_search_max_iterations,
         linear_system_tolerance_rate=profile.linear_system_tolerance_rate,
+        # Interactive rendering reads these buffers only at its display cadence.
+        export_deformable_state=profile.scene_sync_interval == 1,
+        export_affine_state=profile.scene_sync_interval == 1,
         # Contact-force visualization is a debug output. Both editor profiles
         # refresh it on demand when the Physics-panel flag is enabled.
         export_deformable_contact_forces=False,
@@ -751,6 +754,7 @@ class Script(gobot.NodeScript):
         if not scene_due and not contact_due:
             return
 
+        self.provider.refresh_state()
         if contact_due:
             self.provider.refresh_deformable_contact_forces()
             self.provider.sense()

@@ -1809,7 +1809,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
             graph_capture_reason=(
                 "the composite step spans MuJoCo Warp and libuipc; native "
                 "affine-target and exact-contact-wrench exchange uses "
-                "per-shard device-host-device staging"
+                "device-to-device kernels around the libuipc advance boundary"
             ),
             reset_scope="full_batch_only",
         )
@@ -1923,8 +1923,12 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "coupler_phase": self.coupler.phase,
                 "stable_storage": True,
                 "reset_scope": "full_batch_only",
-                "affine_target_staging": "per_shard_device_host_device",
-                "contact_wrench_staging": "per_shard_device_host_device",
+                "affine_target_staging": ipc_diagnostics.get(
+                    "affine_target_staging", "unknown"
+                ),
+                "contact_wrench_staging": ipc_diagnostics.get(
+                    "contact_wrench_staging", "unknown"
+                ),
                 "coupling_solver": "SolverCoupledProxy",
                 "rollback_enabled": self.config.coupling_iterations > 1,
                 "coupling_iterations": self.config.coupling_iterations,
@@ -2051,6 +2055,14 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "IPC solver does not support lazy contact-force refresh"
             )
         return refresh()
+
+    def refresh_state(self) -> Mapping[str, Any]:
+        self._require_operational()
+        refresh = getattr(self.ipc_solver, "refresh_state", None)
+        if not callable(refresh):
+            raise NotImplementedError("IPC solver does not support lazy state refresh")
+        refresh()
+        return self._arrays
 
     def synchronize(self) -> None:
         self._require_operational()

@@ -625,6 +625,7 @@ def test_interactive_scene_and_contact_refresh_cadence() -> None:
         synchronize_count = 0
         sense_count = 0
         refresh_count = 0
+        state_refresh_count = 0
 
         def synchronize(self) -> None:
             self.synchronize_count += 1
@@ -634,6 +635,9 @@ def test_interactive_scene_and_contact_refresh_cadence() -> None:
 
         def refresh_deformable_contact_forces(self) -> None:
             self.refresh_count += 1
+
+        def refresh_state(self) -> None:
+            self.state_refresh_count += 1
 
     class Context:
         draw_contact_forces = False
@@ -678,6 +682,7 @@ def test_interactive_scene_and_contact_refresh_cadence() -> None:
             play.Script._sync_scene(script)
         assert render_frames == [0, 2]
         assert provider.synchronize_count == 2
+        assert provider.state_refresh_count == 2
 
         context.draw_contact_forces = True
         for frame in range(3, 8):
@@ -694,6 +699,7 @@ def test_interactive_scene_and_contact_refresh_cadence() -> None:
         assert script.cached_contact_arrows == []
         assert shown_arrows[-1] == ["torque"]
         assert provider.refresh_count == 2
+        assert provider.state_refresh_count == 7
     finally:
         play.set_debug_arrows = original_set_debug_arrows
 
@@ -773,6 +779,8 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
             assert solver.line_search_max_iterations == values[5]
             assert solver.linear_system_tolerance_rate == values[6]
             assert not solver.export_deformable_contact_forces
+            assert solver.export_deformable_state == (quality == "accurate")
+            assert solver.export_affine_state == (quality == "accurate")
 
         os.environ[play.QUALITY_ENVIRONMENT_VARIABLE] = "invalid"
         try:

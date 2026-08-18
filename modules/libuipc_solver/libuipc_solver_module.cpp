@@ -9,6 +9,7 @@
 
 #include "gobot/physics/ipc_solver_module_api.hpp"
 #include "gobot/physics/ipc_batch_solver_module_api.hpp"
+#include "device_coupling_workspace.hpp"
 
 #include <uipc/uipc.h>
 #include <uipc/builtin/attribute_name.h>
@@ -24,6 +25,8 @@
 #include <uipc/core/affine_body_state_accessor_feature.h>
 #include <uipc/core/contact_system_feature.h>
 #include <uipc/core/finite_element_state_accessor_feature.h>
+#include <uipc/core/soft_position_constraint_accessor_feature.h>
+#include <uipc/core/soft_transform_constraint_accessor_feature.h>
 #include <uipc/geometry/utils/affine_body/affine_body_from_rigid_body.h>
 #include <uipc/geometry/utils/factory.h>
 #include <uipc/geometry/utils/label_surface.h>
@@ -39,6 +42,7 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -84,6 +88,8 @@ using uipc::core::ContactElement;
 using uipc::core::Engine;
 using uipc::core::FiniteElementStateAccessorFeature;
 using uipc::core::Scene;
+using uipc::core::SoftPositionConstraintAccessorFeature;
+using uipc::core::SoftTransformConstraintAccessorFeature;
 using uipc::core::SubsceneElement;
 using uipc::core::World;
 using uipc::geometry::SimplicialComplex;
@@ -94,6 +100,10 @@ using uipc::geometry::label_triangle_orient;
 using uipc::geometry::tetmesh;
 using uipc::geometry::trimesh;
 using uipc::geometry::view;
+
+static_assert(sizeof(IndexT) == sizeof(std::int32_t));
+static_assert(sizeof(Vector3) == 3 * sizeof(double));
+static_assert(sizeof(Matrix4x4) == 16 * sizeof(double));
 
 constexpr std::string_view kTetEncoding = "gobot.tetrahedral-mesh.le.v1";
 constexpr std::string_view kTetMagic = "GOBTIPC1";
@@ -110,6 +120,15 @@ double ElapsedMilliseconds(SteadyClock::time_point start) {
 bool HasOutputFlag(std::uint32_t flags,
                    IpcBatchSolverOutputFlag flag) {
     return (flags & static_cast<std::uint32_t>(flag)) != 0;
+}
+
+bool DeviceNativeCouplingEnabled() {
+    const char* value = std::getenv("GOBOT_LIBUIPC_DEVICE_NATIVE_COUPLING");
+    if (value == nullptr) {
+        return true;
+    }
+    const std::string_view text{value};
+    return text != "0" && text != "false" && text != "off";
 }
 
 void ValidateOutputFlags(std::uint32_t flags) {
@@ -662,6 +681,7 @@ public:
           external_affine_proxies_(external_affine_proxies),
           contact_constitution_(std::move(contact_constitution)),
           exact_contact_wrench_(contact_constitution_ == "ipc"),
+          device_native_coupling_enabled_(DeviceNativeCouplingEnabled()),
           output_flags_(output_flags) {
         ValidateConfig(config);
         ValidateOutputFlags(output_flags_);
@@ -812,6 +832,25 @@ public:
         }
     }
 
+    ~Session() {
+        if (device_workspace_ == nullptr) {
+            return;
+        }
+        try {
+            world_->sync();
+            if (soft_position_accessor_ != nullptr &&
+                soft_position_accessor_->has_bound_aim_positions()) {
+                soft_position_accessor_->unbind_aim_positions();
+            }
+            if (soft_transform_accessor_ != nullptr &&
+                soft_transform_accessor_->has_bound_aim_transforms()) {
+                soft_transform_accessor_->unbind_aim_transforms();
+            }
+        } catch (...) {
+            // Destruction must not propagate through the C ABI.
+        }
+    }
+
     void Step(std::uint32_t steps) {
         if (steps == 0) {
             throw std::runtime_error("libuipc step count must be positive");
@@ -921,8 +960,31 @@ public:
         }
         ActivateDevice();
         device_buffers_ = buffers;
-        target_row_major_.resize(initial_affine_transforms_.size() * 16);
-        target_twists_.resize(initial_affine_transforms_.size() * 6);
+        if (device_native_coupling_enabled_) {
+            InitializeDeviceCouplingWorkspace();
+            UploadAffineTargetsAndTwists();
+            if (!initial_affine_transforms_.empty()) {
+                if (soft_transform_accessor_ == nullptr) {
+                    throw std::runtime_error(
+                            "libuipc CUDA backend has no soft-transform device accessor");
+                }
+                soft_transform_accessor_->bind_aim_transforms(DeviceView(
+                        device_workspace_->target_transforms(),
+                        initial_affine_transforms_.size(), sizeof(Matrix4x4)));
+            }
+            if (!deformable_attachment_vertices_.empty()) {
+                if (soft_position_accessor_ == nullptr) {
+                    throw std::runtime_error(
+                            "libuipc CUDA backend has no soft-position device accessor");
+                }
+                soft_position_accessor_->bind_aim_positions(
+                        DeviceView(device_workspace_->attachment_aim_positions(),
+                                   initial_fem_positions_.size(),
+                                   sizeof(Vector3)));
+            }
+        } else {
+            UploadAffineTargetsAndTwistsHost();
+        }
         device_buffers_bound_ = true;
         WriteDeviceState(IpcBatchSolverOutputAll);
     }
@@ -1084,6 +1146,12 @@ public:
     double LastStateSyncLatencyMs() const {
         return last_state_sync_latency_ms_;
     }
+    bool DeviceNativeCoupling() const { return device_workspace_ != nullptr; }
+    std::size_t DeviceWorkspaceAllocationCount() const {
+        return device_workspace_ != nullptr
+                       ? device_workspace_->allocation_count()
+                       : 0;
+    }
 
 private:
     static void RequireCuda(cudaError_t result, std::string_view operation) {
@@ -1103,9 +1171,15 @@ private:
             const IpcSolverDeviceBufferView& buffer,
             std::size_t element_count,
             std::size_t element_size) {
+        return DeviceView(buffer.data, element_count, element_size);
+    }
+
+    static uipc::backend::BufferView DeviceView(void* data,
+                                                std::size_t element_count,
+                                                std::size_t element_size) {
         return uipc::backend::BufferView{
                 static_cast<uipc::backend::HandleT>(
-                        reinterpret_cast<std::uintptr_t>(buffer.data)),
+                        reinterpret_cast<std::uintptr_t>(data)),
                 0,
                 element_count,
                 element_size,
@@ -1114,6 +1188,30 @@ private:
     }
 
     void UploadAffineTargetsAndTwists() {
+        if (!device_native_coupling_enabled_) {
+            UploadAffineTargetsAndTwistsHost();
+            return;
+        }
+        const std::size_t body_count = initial_affine_transforms_.size();
+        if (body_count == 0) {
+            return;
+        }
+        if (external_affine_targets_.size() != body_count ||
+            device_workspace_ == nullptr) {
+            throw std::runtime_error(
+                    "libuipc external affine target layout changed after initialization");
+        }
+        device_workspace_->StageTargets(
+                static_cast<const double*>(device_buffers_.affine_targets.data),
+                static_cast<const double*>(
+                        device_buffers_.affine_target_twists.data));
+        affine_accessor_->copy_velocity_from(
+                DeviceView(device_workspace_->target_velocities(), body_count,
+                           sizeof(Matrix4x4)),
+                0, body_count);
+    }
+
+    void UploadAffineTargetsAndTwistsHost() {
         const std::size_t body_count = initial_affine_transforms_.size();
         if (body_count == 0) {
             return;
@@ -1189,8 +1287,8 @@ private:
                 output_flags, IpcBatchSolverOutputDeformableState);
         const bool export_affine_state = HasOutputFlag(
                 output_flags, IpcBatchSolverOutputAffineState);
+        bool outputs_synchronized = false;
         if (export_deformable_state || export_affine_state) {
-            const auto state_start = SteadyClock::now();
             if (export_deformable_state) {
                 fem_accessor_->copy_position_to(
                         DeviceView(device_buffers_.deformable_positions,
@@ -1207,9 +1305,6 @@ private:
                                    affine_count, sizeof(Matrix4x4)),
                         0, affine_count);
             }
-            world_->sync();
-            last_state_sync_latency_ms_ +=
-                    ElapsedMilliseconds(state_start);
         }
 
         const std::size_t deformable_force_scalars = vertex_count * 3;
@@ -1223,38 +1318,99 @@ private:
         if (export_deformable_contact || export_affine_wrench) {
             const auto reaction_start = SteadyClock::now();
             if (frame_ != 0 && exact_contact_wrench_) {
-                if (!contact_forces_current_ ||
-                    contact_force_host_frame_ != frame_) {
-                    if (!deformable_attachment_vertices_.empty()) {
-                        fem_accessor_->copy_to(*fem_state_);
+                if (device_workspace_ != nullptr) {
+                    if (export_affine_wrench && affine_count != 0) {
+                        affine_accessor_->copy_transform_to(
+                                DeviceView(
+                                        device_workspace_->current_affine_transforms(),
+                                        affine_count, sizeof(Matrix4x4)),
+                                0, affine_count);
                     }
-                    if (affine_count != 0) {
-                        affine_accessor_->copy_to(*affine_state_);
+                    if (export_affine_wrench &&
+                        !deformable_attachment_vertices_.empty()) {
+                        fem_accessor_->copy_position_to(
+                                DeviceView(
+                                        device_workspace_->current_deformable_positions(),
+                                        vertex_count, sizeof(Vector3)),
+                                0, vertex_count);
                     }
-                    world_->sync();
-                    RefreshContactForces();
-                    contact_force_host_frame_ = frame_;
-                    contact_forces_current_ = true;
+                    device_contact_gradient_views_.clear();
+                    for (const ContactGradientBuffer& buffer :
+                         contact_gradient_buffers_) {
+                        const auto view =
+                                contact_system_->contact_gradient_device_view(
+                                        buffer.primitive_type);
+                        if (!view.supported ||
+                            view.vertex_indices.size() != view.gradients.size() ||
+                            view.vertex_indices.element_size() != sizeof(IndexT) ||
+                            view.vertex_indices.element_stride() != sizeof(IndexT) ||
+                            view.gradients.element_size() != sizeof(Vector3) ||
+                            view.gradients.element_stride() != sizeof(Vector3)) {
+                            throw std::runtime_error(
+                                    "libuipc contact-gradient device view has an invalid layout");
+                        }
+                        const auto* indices =
+                                reinterpret_cast<const IndexT*>(
+                                        view.vertex_indices.handle()) +
+                                view.vertex_indices.offset();
+                        const auto* gradients =
+                                reinterpret_cast<const Vector3*>(
+                                        view.gradients.handle()) +
+                                view.gradients.offset();
+                        device_contact_gradient_views_.push_back(
+                                DeviceContactGradientView{
+                                        indices, gradients,
+                                        view.gradients.size()});
+                    }
+                    device_workspace_->ExportReactions(
+                            device_contact_gradient_views_,
+                            inverse_time_step_squared_,
+                            static_cast<double*>(
+                                    device_buffers_.deformable_contact_forces.data),
+                            static_cast<double*>(
+                                    device_buffers_.affine_contact_wrenches.data),
+                            export_deformable_contact,
+                            export_affine_wrench);
+                } else {
+                    if (!contact_forces_current_ ||
+                        contact_force_host_frame_ != frame_) {
+                        if (!deformable_attachment_vertices_.empty()) {
+                            fem_accessor_->copy_to(*fem_state_);
+                        }
+                        if (affine_count != 0) {
+                            affine_accessor_->copy_to(*affine_state_);
+                        }
+                        const auto sync_start = SteadyClock::now();
+                        world_->sync();
+                        last_state_sync_latency_ms_ +=
+                                ElapsedMilliseconds(sync_start);
+                        outputs_synchronized = true;
+                        RefreshContactForces();
+                        contact_force_host_frame_ = frame_;
+                        contact_forces_current_ = true;
+                    }
+                    if (export_deformable_contact &&
+                        deformable_force_scalars != 0) {
+                        RequireCuda(
+                                cudaMemcpy(
+                                        device_buffers_.deformable_contact_forces.data,
+                                        contact_forces_.data(),
+                                        deformable_force_scalars * sizeof(double),
+                                        cudaMemcpyHostToDevice),
+                                "uploading batched deformable contact forces");
+                    }
+                    if (export_affine_wrench && affine_wrench_scalars != 0) {
+                        RequireCuda(
+                                cudaMemcpy(
+                                        device_buffers_.affine_contact_wrenches.data,
+                                        affine_contact_wrenches_.data(),
+                                        affine_wrench_scalars * sizeof(double),
+                                        cudaMemcpyHostToDevice),
+                                "uploading batched affine contact wrenches");
+                    }
                 }
-                if (export_deformable_contact &&
-                    deformable_force_scalars != 0) {
-                    RequireCuda(
-                            cudaMemcpy(
-                                    device_buffers_.deformable_contact_forces.data,
-                                    contact_forces_.data(),
-                                    deformable_force_scalars * sizeof(double),
-                                    cudaMemcpyHostToDevice),
-                            "uploading batched deformable contact forces");
+                if (export_deformable_contact) {
                     deformable_contact_force_frame_ = frame_;
-                }
-                if (export_affine_wrench && affine_wrench_scalars != 0) {
-                    RequireCuda(
-                            cudaMemcpy(
-                                    device_buffers_.affine_contact_wrenches.data,
-                                    affine_contact_wrenches_.data(),
-                                    affine_wrench_scalars * sizeof(double),
-                                    cudaMemcpyHostToDevice),
-                            "uploading batched affine contact wrenches");
                 }
             } else {
                 if (export_deformable_contact &&
@@ -1280,6 +1436,11 @@ private:
             }
             last_reaction_export_latency_ms_ +=
                     ElapsedMilliseconds(reaction_start);
+        }
+        if (!outputs_synchronized) {
+            const auto sync_start = SteadyClock::now();
+            world_->sync();
+            last_state_sync_latency_ms_ += ElapsedMilliseconds(sync_start);
         }
     }
 
@@ -2277,7 +2438,86 @@ private:
                             0, initial_affine_transforms_.size()));
             affine_state_->instances().create<Matrix4x4>(uipc::builtin::transform);
             affine_state_->instances().create<Matrix4x4>(uipc::builtin::velocity);
+            if (external_affine_proxies_) {
+                soft_transform_accessor_ =
+                        world_->features()
+                                .find<SoftTransformConstraintAccessorFeature>();
+                if (soft_transform_accessor_ == nullptr) {
+                    throw std::runtime_error(
+                            "libuipc CUDA backend has no soft-transform device accessor");
+                }
+            }
         }
+        if (!deformable_attachment_vertices_.empty()) {
+            soft_position_accessor_ =
+                    world_->features()
+                            .find<SoftPositionConstraintAccessorFeature>();
+        }
+    }
+
+    void InitializeDeviceCouplingWorkspace() {
+        std::vector<DeviceDeformableContactRange> deformable_ranges;
+        if (exact_contact_wrench_) {
+            deformable_ranges.reserve(deformable_contact_ranges_.size());
+            for (const DeformableContactRange& range :
+                 deformable_contact_ranges_) {
+                deformable_ranges.push_back(DeviceDeformableContactRange{
+                        range.output_offset, range.vertex_count,
+                        static_cast<std::int32_t>(range.global_vertex_offset)});
+            }
+        }
+
+        std::vector<DeviceAffineContactRange> affine_ranges;
+        if (exact_contact_wrench_) {
+            affine_ranges.reserve(affine_contact_ranges_.size());
+            for (const AffineContactRange& range : affine_contact_ranges_) {
+                DeviceAffineContactRange value;
+                value.output_offset = range.output_offset;
+                value.global_vertex_offset =
+                        static_cast<std::int32_t>(range.global_vertex_offset);
+                value.local_vertices.reserve(range.local_vertices.size() * 3);
+                for (const Vector3& vertex : range.local_vertices) {
+                    value.local_vertices.push_back(vertex.x());
+                    value.local_vertices.push_back(vertex.y());
+                    value.local_vertices.push_back(vertex.z());
+                }
+                value.local_center_of_mass[0] =
+                        range.local_center_of_mass.x();
+                value.local_center_of_mass[1] =
+                        range.local_center_of_mass.y();
+                value.local_center_of_mass[2] =
+                        range.local_center_of_mass.z();
+                affine_ranges.push_back(std::move(value));
+            }
+        }
+
+        std::vector<DeviceAttachmentVertex> attachment_vertices;
+        attachment_vertices.reserve(deformable_attachment_vertices_.size());
+        for (const DeformableAttachmentVertex& attachment :
+             deformable_attachment_vertices_) {
+            DeviceAttachmentVertex value;
+            value.deformable_output_offset =
+                    attachment.deformable_output_offset;
+            value.affine_output_offset = attachment.affine_output_offset;
+            value.link_local_position[0] = attachment.link_local_position.x();
+            value.link_local_position[1] = attachment.link_local_position.y();
+            value.link_local_position[2] = attachment.link_local_position.z();
+            value.link_local_center_of_mass[0] =
+                    attachment.link_local_center_of_mass.x();
+            value.link_local_center_of_mass[1] =
+                    attachment.link_local_center_of_mass.y();
+            value.link_local_center_of_mass[2] =
+                    attachment.link_local_center_of_mass.z();
+            value.vertex_mass = attachment.vertex_mass;
+            value.strength_rate = attachment.strength_rate;
+            attachment_vertices.push_back(value);
+        }
+
+        device_workspace_ = std::make_unique<DeviceCouplingWorkspace>(
+                device_index_, initial_fem_positions_.size(),
+                initial_affine_transforms_.size(),
+                std::move(deformable_ranges), std::move(affine_ranges),
+                std::move(attachment_vertices));
     }
 
     void InitializeContactForceExport(double fixed_time_step) {
@@ -2345,6 +2585,8 @@ private:
             throw std::runtime_error(
                     "libuipc CUDA backend has no simplex contact-gradient exporters");
         }
+        device_contact_gradient_views_.reserve(
+            contact_gradient_buffers_.size());
     }
 
     std::optional<std::size_t> FindDeformableVertex(
@@ -2554,6 +2796,10 @@ private:
     std::shared_ptr<FiniteElementStateAccessorFeature> fem_accessor_;
     std::shared_ptr<AffineBodyStateAccessorFeature> affine_accessor_;
     std::shared_ptr<ContactSystemFeature> contact_system_;
+    std::shared_ptr<SoftPositionConstraintAccessorFeature>
+        soft_position_accessor_;
+    std::shared_ptr<SoftTransformConstraintAccessorFeature>
+        soft_transform_accessor_;
     std::unique_ptr<SimplicialComplex> fem_state_;
     std::unique_ptr<SimplicialComplex> affine_state_;
     std::vector<BodyRecord> deformable_bodies_;
@@ -2565,6 +2811,7 @@ private:
     std::vector<std::vector<ContactElementRecord>>
             proxy_contact_elements_by_environment_;
     std::vector<ContactGradientBuffer> contact_gradient_buffers_;
+    std::vector<DeviceContactGradientView> device_contact_gradient_views_;
     std::unordered_map<std::string, std::shared_ptr<AffineTarget>> affine_targets_;
     std::vector<std::shared_ptr<AffineTarget>> external_affine_targets_;
     std::unordered_map<std::string, std::shared_ptr<JointTarget>> joint_targets_;
@@ -2579,6 +2826,7 @@ private:
     std::vector<double> affine_transforms_;
     PinnedDoubleBuffer target_row_major_;
     PinnedDoubleBuffer target_twists_;
+    std::unique_ptr<DeviceCouplingWorkspace> device_workspace_;
     std::optional<std::uint64_t> checkpoint_frame_;
     std::vector<Matrix4x4> checkpoint_affine_targets_;
     std::vector<Matrix4x4> checkpoint_attachment_targets_;
@@ -2598,6 +2846,7 @@ private:
     bool external_affine_proxies_{false};
     std::string contact_constitution_{"ipc"};
     bool exact_contact_wrench_{true};
+    bool device_native_coupling_enabled_{true};
     std::uint32_t output_flags_{IpcBatchSolverOutputAll};
     bool contact_forces_current_{true};
     bool device_buffers_bound_{false};
@@ -2623,6 +2872,7 @@ public:
                  const IpcBatchSolverModuleConfig& config)
         : environment_count_(config.environment_count),
           environments_per_shard_(config.environments_per_shard),
+          device_index_(config.solver.device_index),
           contact_constitution_(
                   config.contact_constitution != nullptr
                           ? config.contact_constitution
@@ -2637,7 +2887,7 @@ public:
         }
         if (!config.external_affine_proxies) {
             throw std::runtime_error(
-                    "libuipc batch v3 requires external affine proxies");
+                    "libuipc batch v4 requires external affine proxies");
         }
         ValidateOutputFlags(output_flags_);
         const std::filesystem::path workspace_root =
@@ -2702,6 +2952,32 @@ public:
         for (const BodyRecord& body : deformable_bodies_) {
             deformable_vertex_count_per_environment_ += body.count;
         }
+    }
+
+    ~BatchSession() {
+        if (external_input_event_ != nullptr) {
+            cudaSetDevice(static_cast<int>(device_index_));
+            cudaEventDestroy(external_input_event_);
+        }
+    }
+
+    void SetExecutionContext(const IpcBatchSolverExecutionContext& context) {
+        RequireCuda(cudaSetDevice(static_cast<int>(device_index_)),
+                    "selecting the libuipc batch CUDA device");
+        if (context.cuda_stream != 0) {
+            if (external_input_event_ == nullptr) {
+                RequireCuda(cudaEventCreateWithFlags(
+                                    &external_input_event_,
+                                    cudaEventDisableTiming),
+                            "creating the libuipc input-ready event");
+            }
+            auto stream = reinterpret_cast<cudaStream_t>(context.cuda_stream);
+            RequireCuda(cudaEventRecord(external_input_event_, stream),
+                        "recording the libuipc input-ready event");
+            RequireCuda(cudaStreamWaitEvent(nullptr, external_input_event_, 0),
+                        "waiting for libuipc device inputs");
+        }
+        cuda_stream_interop_ = true;
     }
 
     void BindDeviceBuffers(const IpcBatchSolverModuleBuffers& buffers) {
@@ -2899,6 +3175,19 @@ public:
                     return shard->DeformableContactForceFrame();
                 }));
     }
+    bool DeviceNativeCoupling() const {
+        return std::ranges::all_of(shards_, [](const auto& shard) {
+            return shard->DeviceNativeCoupling();
+        });
+    }
+    bool CudaStreamInterop() const { return cuda_stream_interop_; }
+    std::size_t DeviceWorkspaceAllocationCount() const {
+        std::size_t result = 0;
+        for (const auto& shard : shards_) {
+            result += shard->DeviceWorkspaceAllocationCount();
+        }
+        return result;
+    }
     const std::string& ContactConstitution() const {
         return contact_constitution_;
     }
@@ -2922,6 +3211,7 @@ private:
 
     std::size_t environment_count_{0};
     std::size_t environments_per_shard_{0};
+    std::uint32_t device_index_{0};
     std::size_t deformable_vertex_count_per_environment_{0};
     std::size_t static_collider_count_per_environment_{0};
     std::string contact_constitution_;
@@ -2940,6 +3230,8 @@ private:
     double last_state_sync_latency_ms_{0.0};
     std::optional<std::uint64_t> checkpoint_frame_;
     bool buffers_bound_{false};
+    bool cuda_stream_interop_{false};
+    cudaEvent_t external_input_event_{nullptr};
 };
 
 Session* Cast(void* session) {
@@ -3190,6 +3482,20 @@ bool BatchBindDeviceBuffers(void* session,
     });
 }
 
+bool BatchSetExecutionContext(
+        void* session,
+        const IpcBatchSolverExecutionContext* context,
+        char* error,
+        std::size_t error_size) {
+    return Guard(error, error_size, [&] {
+        if (context == nullptr) {
+            throw std::runtime_error(
+                    "libuipc batch execution context is null");
+        }
+        CastBatch(session)->SetExecutionContext(*context);
+    });
+}
+
 bool BatchStep(void* session,
                std::uint32_t steps,
                char* error,
@@ -3320,6 +3626,9 @@ bool BatchDiagnostics(void* session,
                 value->ContactConstitution().c_str(),
                 value->ExactContactWrench(),
                 value->CheckpointActive(),
+                value->DeviceNativeCoupling(),
+                value->CudaStreamInterop(),
+                value->DeviceWorkspaceAllocationCount(),
                 value->IsValid()};
     });
 }
@@ -3349,6 +3658,7 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchCreate,
         &BatchDestroy,
         &BatchBindDeviceBuffers,
+        &BatchSetExecutionContext,
         &BatchStep,
         &BatchResetFull,
         &BatchCaptureCheckpoint,

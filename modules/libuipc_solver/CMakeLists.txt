@@ -1,18 +1,22 @@
+enable_language(CUDA)
 find_package(CUDAToolkit REQUIRED)
 
 add_library(gobot_libuipc_solver MODULE
-        libuipc_solver_module.cpp)
+        libuipc_solver_module.cpp
+        device_coupling_workspace.cu)
 target_compile_features(gobot_libuipc_solver PRIVATE cxx_std_20)
 target_include_directories(gobot_libuipc_solver PRIVATE
         ${PROJECT_SOURCE_DIR}/include)
 target_compile_definitions(gobot_libuipc_solver PRIVATE
         GOBOT_LIBUIPC_BACKEND_BUILD_DIR="${CMAKE_BINARY_DIR}/$<CONFIG>/bin"
-        GOBOT_LIBUIPC_REVISION="619a5412cf958eb59cf3c9cebc9a8e8e9625ebd3")
+        GOBOT_LIBUIPC_REVISION="a21b4c6acd245a55c5b38c5ea7f754afee249f2d")
 target_link_libraries(gobot_libuipc_solver PRIVATE
         uipc::uipc
         CUDA::cudart)
 add_dependencies(gobot_libuipc_solver uipc_backends)
 set_target_properties(gobot_libuipc_solver PROPERTIES
+        CUDA_STANDARD 20
+        CUDA_STANDARD_REQUIRED YES
         OUTPUT_NAME "gobot_libuipc_solver"
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN YES

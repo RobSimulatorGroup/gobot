@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 3;
+inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 4;
 
 enum IpcBatchSolverOutputFlag : std::uint32_t {
     IpcBatchSolverOutputNone = 0,
@@ -52,6 +52,11 @@ struct IpcBatchSolverModuleBuffers {
     IpcSolverDeviceBufferView affine_contact_wrenches;
 };
 
+struct IpcBatchSolverExecutionContext {
+    // CUDA stream owned by the caller. Zero selects the legacy default stream.
+    std::uintptr_t cuda_stream{0};
+};
+
 struct IpcBatchSolverModuleConfig {
     IpcSolverModuleConfig solver;
     std::uint32_t environment_count{0};
@@ -88,6 +93,9 @@ struct IpcBatchSolverModuleDiagnostics {
     const char* contact_constitution{nullptr};
     bool exact_contact_wrench{false};
     bool checkpoint_active{false};
+    bool device_native_coupling{false};
+    bool cuda_stream_interop{false};
+    std::size_t device_workspace_allocation_count{0};
     bool valid{false};
 };
 
@@ -104,6 +112,10 @@ struct IpcBatchSolverModuleApi {
                                 const IpcBatchSolverModuleBuffers* buffers,
                                 char* error,
                                 std::size_t error_size){nullptr};
+    bool (*set_execution_context)(void* session,
+                                  const IpcBatchSolverExecutionContext* context,
+                                  char* error,
+                                  std::size_t error_size){nullptr};
     bool (*step)(void* session,
                  std::uint32_t steps,
                  char* error,

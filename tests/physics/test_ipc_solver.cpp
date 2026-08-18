@@ -167,8 +167,8 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
             GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH, &error));
     EXPECT_NE(error.find("ABI"), std::string::npos);
-    EXPECT_NE(error.find("v2"), std::string::npos);
     EXPECT_NE(error.find("v3"), std::string::npos);
+    EXPECT_NE(error.find("v4"), std::string::npos);
 
     error.clear();
     ASSERT_TRUE(gobot::IpcBatchSolverSession::IsModuleAvailable(
@@ -209,6 +209,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
             MakeDeviceBuffer(wrenches.data(), {4, 1, 6})};
     ASSERT_TRUE(session->BindDeviceBuffers(buffers))
             << session->GetLastError();
+    ASSERT_TRUE(session->SetExecutionContext(1234)) << session->GetLastError();
     const double* position_storage = positions.data();
     const double* wrench_storage = wrenches.data();
     ASSERT_TRUE(session->Step(2)) << session->GetLastError();
@@ -224,6 +225,9 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
               gobot::IpcBatchSolverOutputAll);
     EXPECT_GT(session->GetDiagnostics().last_target_staging_latency_ms,
               0.0);
+    EXPECT_TRUE(session->GetDiagnostics().device_native_coupling);
+    EXPECT_TRUE(session->GetDiagnostics().cuda_stream_interop);
+    EXPECT_EQ(session->GetDiagnostics().device_workspace_allocation_count, 3);
 
     const double previous_contact_force = contact_forces[2];
     const std::uint32_t lazy_outputs =
