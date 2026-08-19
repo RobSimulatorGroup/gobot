@@ -104,6 +104,8 @@ IpcBatchSolverConfig BatchConfigFromPython(const py::dict& value) {
     config.linear_system_tolerance_rate = ConfigValue(
             value, "linear_system_tolerance_rate",
             config.linear_system_tolerance_rate);
+    config.strict_convergence = ConfigValue(
+            value, "strict_convergence", config.strict_convergence);
     config.output_flags = ConfigValue(
             value, "output_flags", config.output_flags);
     return config;
@@ -168,6 +170,26 @@ py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
     result["cuda_stream_interop"] = diagnostics.cuda_stream_interop;
     result["device_workspace_allocation_count"] =
         diagnostics.device_workspace_allocation_count;
+    result["solver_stage"] = static_cast<std::uint32_t>(diagnostics.solver_stage);
+    result["solver_failure"] =
+            static_cast<std::uint32_t>(diagnostics.solver_failure);
+    result["newton_iterations"] = diagnostics.newton_iterations;
+    result["line_search_iterations_total"] =
+            diagnostics.line_search_iterations_total;
+    result["line_search_iterations_max"] =
+            diagnostics.line_search_iterations_max;
+    result["pcg_iterations_total"] = diagnostics.pcg_iterations_total;
+    result["pcg_iterations_max"] = diagnostics.pcg_iterations_max;
+    result["pcg_iterations_last"] = diagnostics.pcg_iterations_last;
+    result["pcg_relative_residual"] = diagnostics.pcg_relative_residual;
+    result["minimum_step_length"] = diagnostics.minimum_step_length;
+    result["solver_failure_message"] = diagnostics.solver_failure_message;
+    result["failing_shard_index"] = diagnostics.failing_shard_index;
+    result["newton_converged"] = diagnostics.newton_converged;
+    result["linear_system_converged"] =
+            diagnostics.linear_system_converged;
+    result["strict_convergence"] = diagnostics.strict_convergence;
+    result["recovered"] = diagnostics.recovered;
     result["valid"] = diagnostics.valid;
     return result;
 }
@@ -486,6 +508,20 @@ public:
         }
     }
 
+    void SetRuntimeOptions(std::uint32_t newton_max_iterations,
+                           std::uint32_t line_search_max_iterations,
+                           double linear_system_tolerance_rate,
+                           bool strict_convergence) {
+        const IpcBatchSolverRuntimeOptions options{
+                newton_max_iterations,
+                line_search_max_iterations,
+                linear_system_tolerance_rate,
+                strict_convergence};
+        if (!RequireSession().SetRuntimeSolverOptions(options)) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
     py::list DeformableBodies() const {
         return BodyInfoToPython(RequireSession().GetDeformableBodies());
     }
@@ -586,6 +622,12 @@ void RegisterManualIpcSolverBindings(py::module_& module) {
             .def("refresh_outputs",
                  &PyIpcBatchSolverSession::RefreshOutputs,
                  py::arg("output_flags"))
+            .def("set_runtime_options",
+                 &PyIpcBatchSolverSession::SetRuntimeOptions,
+                 py::arg("newton_max_iterations"),
+                 py::arg("line_search_max_iterations"),
+                 py::arg("linear_system_tolerance_rate"),
+                 py::arg("strict_convergence"))
             .def_property_readonly("deformable_bodies",
                                    &PyIpcBatchSolverSession::DeformableBodies)
             .def_property_readonly("affine_bodies",

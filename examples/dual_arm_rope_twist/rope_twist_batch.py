@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from statistics import median
 import tempfile
 import time
 from typing import Any
@@ -17,6 +18,7 @@ from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
 from gobot.rl import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
+    MuJoCoIpcConvergencePolicy,
     MuJoCoIpcProvider,
     MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
@@ -36,6 +38,7 @@ from controllers import (
     BatchedTwistController,
     CYCLE_TICKS,
     FINITE_TORQUE_DRIVE_MODE,
+    GRIP_IMPEDANCE_RATIO,
     SHOWCASE_DRIVE_MODE,
     TWIST_COMPLETE_TICK,
     TWIST_START_TICK,
@@ -95,6 +98,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--relaxation-mode", choices=("fixed", "aitken"), default=None
     )
+    parser.add_argument("--relaxation-factor", type=float, default=1.0)
+    parser.add_argument("--relaxation-min", type=float, default=0.1)
+    parser.add_argument("--relaxation-max", type=float, default=1.0)
     parser.add_argument("--newton-max-iterations", type=int, default=16)
     parser.add_argument("--line-search-max-iterations", type=int, default=8)
     parser.add_argument(
@@ -156,6 +162,20 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("solver substep counts must be positive")
     if args.coupling_iterations <= 0:
         raise ValueError("--coupling-iterations must be positive")
+    if min(
+        args.relaxation_factor,
+        args.relaxation_min,
+        args.relaxation_max,
+    ) <= 0.0:
+        raise ValueError("relaxation parameters must be positive")
+    if not (
+        args.relaxation_min
+        <= args.relaxation_factor
+        <= args.relaxation_max
+    ):
+        raise ValueError(
+            "--relaxation-factor must be within relaxation min/max"
+        )
     if args.newton_max_iterations <= 0:
         raise ValueError("--newton-max-iterations must be positive")
     if args.line_search_max_iterations <= 0:
@@ -185,7 +205,7 @@ def _load_artifact(
     settings = context.get_mujoco_solver_settings()
     settings["integrator"] = gobot.PhysicsIntegratorType.ImplicitFast
     settings["cone"] = gobot.PhysicsFrictionConeType.Elliptic
-    settings["impedance_ratio"] = 10.0
+    settings["impedance_ratio"] = GRIP_IMPEDANCE_RATIO
     context.set_mujoco_solver_settings(settings)
     return context, CompiledMuJoCoIpcArtifact.from_context(context)
 
@@ -370,6 +390,7 @@ def run(
         newton_max_iterations=args.newton_max_iterations,
         line_search_max_iterations=args.line_search_max_iterations,
         linear_system_tolerance_rate=args.linear_system_tolerance_rate,
+        strict_convergence=args.coupling_iterations > 1,
         export_deformable_contact_forces=(
             not args.defer_deformable_contact_forces
         ),
@@ -394,8 +415,14 @@ def run(
             ipc_substeps=args.ipc_substeps,
             coupling_iterations=args.coupling_iterations,
             relaxation_mode=args.relaxation_mode,
+            relaxation_factor=args.relaxation_factor,
+            relaxation_min=args.relaxation_min,
+            relaxation_max=args.relaxation_max,
             capture_mujoco_graphs=not args.no_mujoco_graph,
             capture_coupler_graphs=not args.no_coupler_graph,
+            convergence_policy=MuJoCoIpcConvergencePolicy(
+                enabled=args.coupling_iterations > 1
+            ),
         ),
         libuipc_config=solver_config,
         mujoco_options={
@@ -616,6 +643,12 @@ def run(
         )
         preload_force_samples = 0
         peak_grip_slip = torch.zeros_like(peak_raw_torque)
+        peak_grip_slip_tick = torch.full(
+            (args.num_envs,),
+            -1,
+            dtype=torch.int32,
+            device=positions.device,
+        )
         peak_grip_rotation_slip = torch.zeros_like(peak_raw_torque)
         peak_grip_slip_per_fixture = torch.zeros(
             (args.num_envs, 2),
@@ -654,6 +687,7 @@ def run(
         evaluation_joint_velocity = None
         evaluation_wrist_effort = None
         executed_steps = 0
+        step_latency_samples_seconds: list[float] = []
         maximum_step_latency_seconds = 0.0
         admission_aborted = False
         admission_abort_reason = ""
@@ -689,6 +723,7 @@ def run(
             provider.step()
             provider.sense()
             step_latency_seconds = time.perf_counter() - step_started
+            step_latency_samples_seconds.append(step_latency_seconds)
             maximum_step_latency_seconds = max(
                 maximum_step_latency_seconds, step_latency_seconds
             )
@@ -820,9 +855,14 @@ def run(
                     grip_position_reference,
                     grip_rotation_reference,
                 )
+                grip_slip_maximum = grip_slip.amax(dim=1)
+                peak_grip_slip_tick.masked_fill_(
+                    grip_slip_maximum > peak_grip_slip,
+                    controller.tick,
+                )
                 torch.maximum(
                     peak_grip_slip,
-                    grip_slip.amax(dim=1),
+                    grip_slip_maximum,
                     out=peak_grip_slip,
                 )
                 torch.maximum(
@@ -1041,6 +1081,9 @@ def run(
                     "maximum_grip_slip_meters": float(
                         peak_grip_slip[environment].item()
                     ),
+                    "maximum_grip_slip_tick": int(
+                        peak_grip_slip_tick[environment].item()
+                    ),
                     "maximum_grip_slip_per_fixture_meters": [
                         float(value)
                         for value in peak_grip_slip_per_fixture[
@@ -1125,6 +1168,11 @@ def run(
             "admission_aborted": admission_aborted,
             "admission_abort_reason": admission_abort_reason,
             "maximum_step_latency_seconds": maximum_step_latency_seconds,
+            "median_physics_step_latency_seconds": (
+                median(step_latency_samples_seconds)
+                if step_latency_samples_seconds
+                else 0.0
+            ),
             "step_latency_limit_seconds": (
                 args.maximum_step_latency_seconds
             ),
@@ -1143,6 +1191,7 @@ def run(
             ],
             "relaxation_mode": diagnostics["relaxation_mode"],
             "interface_residual": diagnostics["interface_residual"],
+            "interface_residual_l2": diagnostics["interface_residual_l2"],
             "aitken_coefficient": diagnostics["aitken_coefficient"],
             "coupler_graph_captured": diagnostics[
                 "coupler_graph_captured"
@@ -1158,6 +1207,8 @@ def run(
             "linear_system_tolerance_rate": (
                 solver_config.linear_system_tolerance_rate
             ),
+            "strict_convergence": solver_config.strict_convergence,
+            "convergence_guard": dict(diagnostics["convergence_guard"]),
             "deformable_contact_forces_exported": (
                 solver_config.export_deformable_contact_forces
             ),
@@ -1202,6 +1253,10 @@ def run(
             "maximum_grip_slip_range_meters": _range(
                 peak_grip_slip
             ),
+            "maximum_grip_slip_tick_range": [
+                int(peak_grip_slip_tick.min().item()),
+                int(peak_grip_slip_tick.max().item()),
+            ],
             "maximum_grip_rotation_slip_range_radians": _range(
                 peak_grip_rotation_slip
             ),

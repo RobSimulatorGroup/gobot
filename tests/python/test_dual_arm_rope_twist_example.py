@@ -127,7 +127,7 @@ def test_scene_compiles_to_friction_grasps_and_attached_soft_strands() -> None:
         "nu": 18,
         "nbody": 23,
         "njoint": 20,
-        "ngeom": 23,
+        "ngeom": 55,
         "nsensor": 0,
         "nhfield": 0,
     }
@@ -254,6 +254,23 @@ def test_scene_compiles_to_friction_grasps_and_attached_soft_strands() -> None:
             float(model.geom_friction[fixture_geom, 0]),
             builder.FIXTURE_FRICTION,
         )
+
+    for robot_name in builder.ROBOT_NAMES:
+        for side in ("left", "right"):
+            for end in ("inner", "outer", "bottom", "top"):
+                for segment in range(
+                    1, builder.GRIP_STOP_COLLISION_SEGMENTS + 1
+                ):
+                    stop_geom = _mujoco_id(
+                        model,
+                        mujoco.mjtObj.mjOBJ_GEOM,
+                        f"{robot_name}_{robot_name}_{side}_{end}_"
+                        f"grip_stop_collision_{segment}",
+                    )
+                    assert (
+                        model.geom_type[stop_geom]
+                        == mujoco.mjtGeom.mjGEOM_BOX
+                    )
 
 
 def test_both_facing_robots_stretch_outward_and_counterrotate() -> None:
@@ -795,6 +812,7 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
             assert solver.newton_max_iterations == values[4]
             assert solver.line_search_max_iterations == values[5]
             assert solver.linear_system_tolerance_rate == values[6]
+            assert solver.strict_convergence == (quality == "accurate")
             assert not solver.export_deformable_contact_forces
             assert solver.export_deformable_state == (quality == "accurate")
             assert solver.export_affine_state == (quality == "accurate")

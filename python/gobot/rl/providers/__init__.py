@@ -28,6 +28,7 @@ from .mujoco_ipc import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcBodyMapping,
     MuJoCoIpcConfig,
+    MuJoCoIpcConvergencePolicy,
     MuJoCoIpcProvider,
     SolverCoupledProxy,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "MuJoCoWarpRobotLayout",
     "MuJoCoIpcBodyMapping",
     "MuJoCoIpcConfig",
+    "MuJoCoIpcConvergencePolicy",
     "MuJoCoIpcProvider",
     "NewtonModelConfig",
     "NewtonProvider",

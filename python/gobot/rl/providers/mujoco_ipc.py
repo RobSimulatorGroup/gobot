@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import math
@@ -349,6 +349,55 @@ def validate_mujoco_ipc_artifact(
 
 
 @dataclass(frozen=True)
+class MuJoCoIpcConvergencePolicy:
+    """Adaptive protection for long-running proxy coupling."""
+
+    enabled: bool = False
+    guard_newton_iterations: int = 12
+    guard_line_search_iterations: int = 6
+    guard_minimum_step_length: float = 1.0e-4
+    clean_newton_iterations: int = 8
+    clean_line_search_iterations: int = 4
+    clean_minimum_step_length: float = 1.0e-3
+    clean_steps_to_exit: int = 32
+    fallback_newton_max_iterations: int = 64
+    fallback_line_search_max_iterations: int = 16
+    fallback_linear_system_tolerance_rate: float = 2.5e-4
+    max_retries: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError("enabled must be a bool")
+        for name in (
+            "guard_newton_iterations",
+            "guard_line_search_iterations",
+            "clean_newton_iterations",
+            "clean_line_search_iterations",
+            "clean_steps_to_exit",
+            "fallback_newton_max_iterations",
+            "fallback_line_search_max_iterations",
+        ):
+            raw = getattr(self, name)
+            value = operator.index(raw)
+            if isinstance(raw, bool) or value <= 0:
+                raise ValueError(f"{name} must be positive")
+            object.__setattr__(self, name, value)
+        retries = operator.index(self.max_retries)
+        if isinstance(self.max_retries, bool) or retries not in (0, 1):
+            raise ValueError("max_retries must be 0 or 1")
+        object.__setattr__(self, "max_retries", retries)
+        for name in (
+            "guard_minimum_step_length",
+            "clean_minimum_step_length",
+            "fallback_linear_system_tolerance_rate",
+        ):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive")
+            object.__setattr__(self, name, value)
+
+
+@dataclass(frozen=True)
 class MuJoCoIpcConfig:
     """Fixed topology and coupling parameters for MuJoCo+libuipc."""
 
@@ -366,6 +415,9 @@ class MuJoCoIpcConfig:
     relaxation_max: float = 1.0
     capture_mujoco_graphs: bool = True
     capture_coupler_graphs: bool = True
+    convergence_policy: MuJoCoIpcConvergencePolicy = field(
+        default_factory=MuJoCoIpcConvergencePolicy
+    )
 
     def __post_init__(self) -> None:
         for name in (
@@ -427,6 +479,12 @@ class MuJoCoIpcConfig:
         object.__setattr__(
             self, "capture_coupler_graphs", bool(self.capture_coupler_graphs)
         )
+        if not isinstance(
+            self.convergence_policy, MuJoCoIpcConvergencePolicy
+        ):
+            raise TypeError(
+                "convergence_policy must be a MuJoCoIpcConvergencePolicy"
+            )
 
     @property
     def shard_count(self) -> int:
@@ -455,6 +513,7 @@ class SolverCoupledProxy:
         relaxation_min: float = 0.1,
         relaxation_max: float = 1.0,
         capture_graphs: bool = True,
+        convergence_policy: MuJoCoIpcConvergencePolicy | None = None,
     ) -> None:
         self.rigid_solver = rigid_solver
         self.ipc_solver = ipc_solver
@@ -584,7 +643,19 @@ class SolverCoupledProxy:
         self._force_scale = float(force_scale)
         self._torque_scale = float(torque_scale)
         self._coupling_iterations = int(coupling_iterations)
-        self._uses_rollback = self._coupling_iterations > 1
+        self._convergence_policy = (
+            convergence_policy or MuJoCoIpcConvergencePolicy()
+        )
+        if not isinstance(
+            self._convergence_policy, MuJoCoIpcConvergencePolicy
+        ):
+            raise TypeError(
+                "convergence_policy must be a MuJoCoIpcConvergencePolicy"
+            )
+        self._uses_rollback = (
+            self._coupling_iterations > 1
+            or self._convergence_policy.enabled
+        )
         self._relaxation_mode = relaxation_mode
         self._relaxation_factor = relaxation_values["relaxation_factor"]
         self._relaxation_min = relaxation_values["relaxation_min"]
@@ -607,7 +678,61 @@ class SolverCoupledProxy:
         self._phase = "Idle"
         self._completed_steps = 0
         self._last_coupling_iterations = 0
+        self._guarded = False
+        self._guard_clean_steps = 0
+        self._guarded_step_count = 0
+        self._solver_retry_count = 0
+        self._solver_restore_count = 0
+        self._strict_failure_count = 0
+        self._nonfinite_failure_count = 0
+        self._last_retry_reason = ""
+        ipc_config = getattr(ipc_solver, "config", None)
+        self._base_solver_options = {
+            "newton_max_iterations": int(
+                getattr(ipc_config, "newton_max_iterations", 16)
+            ),
+            "line_search_max_iterations": int(
+                getattr(ipc_config, "line_search_max_iterations", 8)
+            ),
+            "linear_system_tolerance_rate": float(
+                getattr(ipc_config, "linear_system_tolerance_rate", 1.0e-3)
+            ),
+            "strict_convergence": bool(
+                getattr(ipc_config, "strict_convergence", False)
+            ),
+        }
+        self._fallback_solver_options = {
+            "newton_max_iterations": (
+                self._convergence_policy.fallback_newton_max_iterations
+            ),
+            "line_search_max_iterations": (
+                self._convergence_policy.fallback_line_search_max_iterations
+            ),
+            "linear_system_tolerance_rate": (
+                self._convergence_policy.fallback_linear_system_tolerance_rate
+            ),
+            "strict_convergence": True,
+        }
+        if self._convergence_policy.enabled:
+            for name in (
+                "capture_checkpoint",
+                "rewind_checkpoint",
+                "commit_checkpoint",
+                "set_runtime_solver_options",
+            ):
+                if not callable(getattr(ipc_solver, name, None)):
+                    raise RuntimeError(
+                        "adaptive SolverCoupledProxy requires IPC method "
+                        f"{name}"
+                    )
+            self._base_solver_options["strict_convergence"] = True
+            ipc_solver.set_runtime_solver_options(
+                **self._base_solver_options
+            )
         self._last_interface_residual_device = self._torch.zeros(
+            (), dtype=self._xfrc.dtype, device=self._xfrc.device
+        )
+        self._last_interface_residual_l2_device = self._torch.zeros(
             (), dtype=self._xfrc.dtype, device=self._xfrc.device
         )
         self._last_relaxation_coefficient_device = self._torch.full(
@@ -645,6 +770,10 @@ class SolverCoupledProxy:
             ("force_scales", self._force_scales),
             ("torque_scales", self._torque_scales),
             ("last_interface_residual", self._last_interface_residual_device),
+            (
+                "last_interface_residual_l2",
+                self._last_interface_residual_l2_device,
+            ),
             (
                 "last_relaxation_coefficient",
                 self._last_relaxation_coefficient_device,
@@ -696,7 +825,15 @@ class SolverCoupledProxy:
                 ("aitken_updated", self._aitken_updated),
                 ("aitken_previous_factors", self._aitken_previous_factors),
                 ("aitken_valid", self._aitken_valid),
+                (
+                    "absolute_iteration_residual",
+                    self._absolute_iteration_residual,
+                ),
                 ("interface_residual_norms", self._interface_residual_norms),
+                (
+                    "interface_residual_l2_norms",
+                    self._interface_residual_l2_norms,
+                ),
                 ("two_way_body_ids", self._two_way_body_ids),
                 ("two_way_aitken_factors", self._two_way_aitken_factors),
             )
@@ -840,6 +977,12 @@ class SolverCoupledProxy:
             (self._num_envs, self._body_count),
             dtype=self._iteration_residual.dtype,
             device=self._iteration_residual.device,
+        )
+        self._interface_residual_l2_norms = self._torch.empty_like(
+            self._interface_residual_norms
+        )
+        self._absolute_iteration_residual = self._torch.empty_like(
+            self._iteration_residual
         )
         two_way_body_ids = tuple(
             index
@@ -1156,10 +1299,13 @@ class SolverCoupledProxy:
         self._xfrc.index_copy_(1, self._body_ids, self._selected_wrenches)
         self._applied_wrenches.copy_(wrenches)
 
-    def _update_relaxed_wrench(self, iteration: int) -> None:
+    def _update_relaxed_wrench(
+        self, iteration: int, relaxation_mode: str | None = None
+    ) -> None:
+        mode = self._relaxation_mode if relaxation_mode is None else relaxation_mode
         self._iteration_residual.copy_(self._iteration_feedback)
         self._iteration_residual.sub_(self._iteration_guess)
-        if self._relaxation_mode == "aitken" and iteration > 0:
+        if mode == "aitken" and iteration > 0:
             self._aitken_delta.copy_(self._iteration_residual)
             self._aitken_delta.sub_(self._previous_residual)
             self._torch.mul(
@@ -1216,20 +1362,35 @@ class SolverCoupledProxy:
         self._next_wrenches.mul_(self._feedback_mask)
         self._previous_residual.copy_(self._iteration_residual)
 
-    def _relax_iteration(self, iteration: int) -> None:
+    def _relax_iteration(
+        self, iteration: int, relaxation_mode: str | None = None
+    ) -> None:
         self._compute_scaled_feedback(self._iteration_feedback)
-        self._update_relaxed_wrench(iteration)
+        self._update_relaxed_wrench(iteration, relaxation_mode)
         self._iteration_guess.copy_(self._next_wrenches)
 
     def _update_proxy_metrics(self) -> None:
-        self._torch.linalg.vector_norm(
+        self._torch.abs(
             self._iteration_residual,
+            out=self._absolute_iteration_residual,
+        )
+        self._torch.amax(
+            self._absolute_iteration_residual,
             dim=-1,
             out=self._interface_residual_norms,
         )
         self._torch.amax(
             self._interface_residual_norms,
             out=self._last_interface_residual_device,
+        )
+        self._torch.linalg.vector_norm(
+            self._iteration_residual,
+            dim=-1,
+            out=self._interface_residual_l2_norms,
+        )
+        self._torch.amax(
+            self._interface_residual_l2_norms,
+            out=self._last_interface_residual_l2_device,
         )
         if self._two_way_body_ids.numel() != 0:
             self._torch.index_select(
@@ -1277,6 +1438,7 @@ class SolverCoupledProxy:
             "_next_wrenches",
             "_applied_wrenches",
             "_last_interface_residual_device",
+            "_last_interface_residual_l2_device",
             "_last_relaxation_coefficient_device",
             "_target_twists",
             "_com_positions",
@@ -1299,7 +1461,9 @@ class SolverCoupledProxy:
             "_aitken_updated",
             "_aitken_previous_factors",
             "_aitken_valid",
+            "_absolute_iteration_residual",
             "_interface_residual_norms",
+            "_interface_residual_l2_norms",
             "_two_way_aitken_factors",
             "_computed_wrenches",
             "_relative_rotation",
@@ -1364,14 +1528,16 @@ class SolverCoupledProxy:
             "apply_guess": lambda: self._replace_owned_wrenches_unchecked(
                 self._iteration_guess
             ),
-            "relax_first": lambda: self._relax_iteration(0),
-            "relax_next": lambda: self._relax_iteration(1),
+            "relax_first": lambda: self._relax_iteration(0, "fixed"),
+            "relax_next_fixed": lambda: self._relax_iteration(1, "fixed"),
+            "relax_next_aitken": lambda: self._relax_iteration(1, "aitken"),
             "metrics": self._update_proxy_metrics,
         }
         if not self._uses_rollback:
             del operations["checkpoint"]
             del operations["rewind"]
-            del operations["relax_next"]
+            del operations["relax_next_fixed"]
+            del operations["relax_next_aitken"]
 
         mutable = self._graph_mutable_tensors()
         snapshots = tuple(value.clone() for value in mutable)
@@ -1407,20 +1573,20 @@ class SolverCoupledProxy:
             return
         self._cuda_graph_capture_reason = ""
 
-    def step(self, actions: Any | None = None) -> None:
-        """Advance one shared MuJoCo/libuipc proxy-coupled microstep."""
-
-        self._require_phase("Idle")
-        self._phase_latency_ms = {}
-        if self._uses_rollback:
-            self._phase = "CaptureCheckpoint"
-            self._timed("rigid_checkpoint", self._capture_rigid_checkpoint)
-            self._timed("ipc_checkpoint", self.ipc_solver.capture_checkpoint)
+    def _prepare_coupling_attempt(self) -> None:
         self._iteration_guess.copy_(self._applied_wrenches)
         self._iteration_guess.mul_(self._feedback_mask)
         self._aitken_factors.fill_(self._relaxation_factor)
 
-        for iteration in range(self._coupling_iterations):
+    def _run_coupling_attempt(
+        self,
+        actions: Any | None,
+        *,
+        coupling_iterations: int,
+        relaxation_mode: str,
+    ) -> None:
+        self._prepare_coupling_attempt()
+        for iteration in range(coupling_iterations):
             if iteration > 0:
                 self._phase = "RewindCheckpoint"
                 self._timed("rigid_checkpoint", self._rewind_rigid_checkpoint)
@@ -1439,12 +1605,18 @@ class SolverCoupledProxy:
             self._phase = "StepIpc"
             self._timed("ipc_advance", self.ipc_solver.step, nsteps=1)
             self._phase = "RelaxFeedback"
-            graph_name = "relax_first" if iteration == 0 else "relax_next"
+            graph_name = (
+                "relax_first"
+                if iteration == 0
+                else f"relax_next_{relaxation_mode}"
+            )
             self._timed(
                 "reaction_exchange",
                 self._replay_or_call,
                 graph_name,
-                lambda value=iteration: self._relax_iteration(value),
+                lambda value=iteration, mode=relaxation_mode: (
+                    self._relax_iteration(value, mode)
+                ),
             )
 
         self._replay_or_call(
@@ -1453,12 +1625,141 @@ class SolverCoupledProxy:
                 self._iteration_guess
             ),
         )
+        self._last_coupling_iterations = coupling_iterations
+
+    def _rewind_transaction(self) -> None:
+        self._phase = "RewindCheckpoint"
+        self._timed("rigid_checkpoint", self._rewind_rigid_checkpoint)
+        self._timed("ipc_checkpoint", self.ipc_solver.rewind_checkpoint)
+        self._solver_restore_count += 1
+
+    def _set_runtime_solver_options(self, values: Mapping[str, Any]) -> None:
+        self.ipc_solver.set_runtime_solver_options(**values)
+
+    def _ipc_diagnostics(self) -> dict[str, Any]:
+        values = getattr(self.ipc_solver, "diagnostics", {})
+        return dict(values() if callable(values) else values)
+
+    def _update_convergence_guard(self) -> None:
+        if not self._convergence_policy.enabled:
+            return
+        diagnostics = self._ipc_diagnostics()
+        policy = self._convergence_policy
+        stressed = (
+            int(diagnostics.get("newton_iterations", 0))
+            >= policy.guard_newton_iterations
+            or int(diagnostics.get("line_search_iterations_max", 0))
+            >= policy.guard_line_search_iterations
+            or float(diagnostics.get("minimum_step_length", 1.0))
+            <= policy.guard_minimum_step_length
+            or not bool(diagnostics.get("linear_system_converged", True))
+        )
+        if stressed:
+            self._guarded = True
+            self._guard_clean_steps = 0
+            return
+        if not self._guarded:
+            return
+        clean = (
+            int(diagnostics.get("newton_iterations", 0))
+            <= policy.clean_newton_iterations
+            and int(diagnostics.get("line_search_iterations_max", 0))
+            <= policy.clean_line_search_iterations
+            and float(diagnostics.get("minimum_step_length", 1.0))
+            >= policy.clean_minimum_step_length
+            and bool(diagnostics.get("linear_system_converged", True))
+        )
+        self._guard_clean_steps = self._guard_clean_steps + 1 if clean else 0
+        if self._guard_clean_steps >= policy.clean_steps_to_exit:
+            self._guarded = False
+            self._guard_clean_steps = 0
+
+    def step(self, actions: Any | None = None) -> None:
+        """Advance one atomic MuJoCo/libuipc proxy-coupled microstep."""
+
+        self._require_phase("Idle")
+        self._phase_latency_ms = {}
+        if self._uses_rollback:
+            self._phase = "CaptureCheckpoint"
+            self._timed("rigid_checkpoint", self._capture_rigid_checkpoint)
+            self._timed("ipc_checkpoint", self.ipc_solver.capture_checkpoint)
+
+        policy = self._convergence_policy
+        guarded = policy.enabled and self._guarded
+        coupling_iterations = (
+            max(2, self._coupling_iterations)
+            if guarded
+            else self._coupling_iterations
+        )
+        relaxation_mode = "aitken" if guarded else self._relaxation_mode
+        if guarded:
+            self._guarded_step_count += 1
+
+        changed_runtime_options = False
+        try:
+            if guarded:
+                self._set_runtime_solver_options(
+                    self._fallback_solver_options
+                )
+                changed_runtime_options = True
+            self._run_coupling_attempt(
+                actions,
+                coupling_iterations=coupling_iterations,
+                relaxation_mode=relaxation_mode,
+            )
+        except Exception as first_error:
+            failure_phase = self._phase
+            diagnostics = self._ipc_diagnostics()
+            failure_kind = int(diagnostics.get("solver_failure", 0))
+            retryable = (
+                policy.enabled
+                and policy.max_retries == 1
+                and not guarded
+                and failure_phase == "StepIpc"
+                and failure_kind != 0
+            )
+            if not retryable:
+                if self._uses_rollback:
+                    try:
+                        self._rewind_transaction()
+                        self.ipc_solver.commit_checkpoint()
+                    finally:
+                        self._phase = "Idle"
+                raise
+
+            self._strict_failure_count += 1
+            if failure_kind == 5:
+                self._nonfinite_failure_count += 1
+            self._last_retry_reason = str(first_error)
+            self._rewind_transaction()
+            self._set_runtime_solver_options(self._fallback_solver_options)
+            changed_runtime_options = True
+            self._solver_retry_count += 1
+            try:
+                self._run_coupling_attempt(
+                    actions,
+                    coupling_iterations=max(2, self._coupling_iterations),
+                    relaxation_mode="aitken",
+                )
+            except Exception:
+                self._rewind_transaction()
+                self._set_runtime_solver_options(self._base_solver_options)
+                changed_runtime_options = False
+                self.ipc_solver.commit_checkpoint()
+                self._phase = "Idle"
+                raise
+            self._guarded = True
+            self._guard_clean_steps = 0
+        finally:
+            if changed_runtime_options:
+                self._set_runtime_solver_options(self._base_solver_options)
+
         if self._uses_rollback:
             self._phase = "CommitCheckpoint"
             self._timed("ipc_checkpoint", self.ipc_solver.commit_checkpoint)
-        self._last_coupling_iterations = self._coupling_iterations
         self._replay_or_call("metrics", self._update_proxy_metrics)
         self._completed_steps += 1
+        self._update_convergence_guard()
         self._phase = "Idle"
 
     def _require_phase(self, expected: str) -> None:
@@ -1490,6 +1791,7 @@ class SolverCoupledProxy:
         self.release_wrenches()
         self._last_coupling_iterations = 0
         self._last_interface_residual_device.zero_()
+        self._last_interface_residual_l2_device.zero_()
         self._last_relaxation_coefficient_device.fill_(
             self._relaxation_factor
         )
@@ -1516,6 +1818,10 @@ class SolverCoupledProxy:
         return float(self._last_interface_residual_device.item())
 
     @property
+    def last_interface_residual_l2(self) -> float:
+        return float(self._last_interface_residual_l2_device.item())
+
+    @property
     def last_relaxation_coefficient(self) -> float:
         return float(self._last_relaxation_coefficient_device.item())
 
@@ -1530,6 +1836,25 @@ class SolverCoupledProxy:
     @property
     def phase_latency_ms(self) -> Mapping[str, float]:
         return MappingProxyType(dict(self._phase_latency_ms))
+
+    @property
+    def rollback_enabled(self) -> bool:
+        return self._uses_rollback
+
+    @property
+    def convergence_guard_diagnostics(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                "guarded": self._guarded,
+                "guard_clean_steps": self._guard_clean_steps,
+                "guarded_step_count": self._guarded_step_count,
+                "solver_retry_count": self._solver_retry_count,
+                "solver_restore_count": self._solver_restore_count,
+                "strict_failure_count": self._strict_failure_count,
+                "nonfinite_failure_count": self._nonfinite_failure_count,
+                "last_retry_reason": self._last_retry_reason,
+            }
+        )
 
     @property
     def storage_signature(self) -> tuple[tuple[str, int], ...]:
@@ -1648,6 +1973,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 relaxation_min=self.config.relaxation_min,
                 relaxation_max=self.config.relaxation_max,
                 capture_graphs=self.config.capture_coupler_graphs,
+                convergence_policy=self.config.convergence_policy,
             )
             self.coupler.sync_rigid_pose()
             self.coupler.initialize_cuda_graphs()
@@ -1742,11 +2068,15 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
             raise ValueError(
                 "SolverCoupledProxy requires equal MuJoCo and libuipc microstep dt"
             )
-        if self.config.coupling_iterations > 1 and not bool(
+        rollback_required = (
+            self.config.coupling_iterations > 1
+            or self.config.convergence_policy.enabled
+        )
+        if rollback_required and not bool(
             getattr(self.ipc_solver.capabilities, "runtime_checkpoint", False)
         ):
             raise ValueError(
-                "SolverCoupledProxy x2+ requires libuipc runtime checkpoint support"
+                "SolverCoupledProxy rollback requires libuipc runtime checkpoint support"
             )
         ipc_shard_count = int(getattr(self.ipc_solver, "shard_count", -1))
         if ipc_shard_count != self.config.shard_count:
@@ -1930,12 +2260,18 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                     "contact_wrench_staging", "unknown"
                 ),
                 "coupling_solver": "SolverCoupledProxy",
-                "rollback_enabled": self.config.coupling_iterations > 1,
+                "rollback_enabled": self.coupler.rollback_enabled,
                 "coupling_iterations": self.config.coupling_iterations,
                 "actual_coupling_iterations": (
                     self.coupler.last_coupling_iterations
                 ),
+                "convergence_guard": dict(
+                    self.coupler.convergence_guard_diagnostics
+                ),
                 "interface_residual": self.coupler.last_interface_residual,
+                "interface_residual_l2": (
+                    self.coupler.last_interface_residual_l2
+                ),
                 "relaxation_mode": self.config.relaxation_mode,
                 "relaxation_factor": self.config.relaxation_factor,
                 "aitken_coefficient": (
@@ -2109,6 +2445,7 @@ __all__ = [
     "CompiledMuJoCoIpcArtifact",
     "MuJoCoIpcBodyMapping",
     "MuJoCoIpcConfig",
+    "MuJoCoIpcConvergencePolicy",
     "MuJoCoIpcProvider",
     "SolverCoupledProxy",
     "validate_mujoco_ipc_artifact",

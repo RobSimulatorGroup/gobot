@@ -59,6 +59,7 @@ def test_interactive_single_environment_40000_step_soak() -> None:
             "admission_abort_reason",
             "maximum_step_latency_seconds",
             "interface_residual",
+            "interface_residual_l2",
             "maximum_grip_slip_range_meters",
             "maximum_attachment_error_range_meters",
             "maximum_rope_vertex_penetration_range_meters",
@@ -73,6 +74,8 @@ def test_interactive_single_environment_40000_step_soak() -> None:
     assert not result["admission_aborted"]
     assert result["coupler_graph_captured"]
     assert result["exact_contact_wrench"]
+    assert not result["strict_convergence"]
+    assert not result["convergence_guard"]["guarded"]
     assert not result["deformable_contact_forces_exported"]
     assert result["ipc_position_storage_stable"]
     assert result["qpos_storage_stable"]

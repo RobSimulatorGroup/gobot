@@ -55,6 +55,7 @@ class LibuipcBatchConfig:
     newton_max_iterations: int = 16
     line_search_max_iterations: int = 8
     linear_system_tolerance_rate: float = 1.0e-3
+    strict_convergence: bool = False
     export_deformable_state: bool = True
     export_affine_state: bool = True
     export_deformable_contact_forces: bool = True
@@ -88,6 +89,7 @@ class LibuipcBatchConfig:
             )
         object.__setattr__(self, "linear_system_tolerance_rate", tolerance)
         for name in (
+            "strict_convergence",
             "export_deformable_state",
             "export_affine_state",
             "export_deformable_contact_forces",
@@ -138,6 +140,7 @@ class LibuipcBatchConfig:
                 "linear_system_tolerance_rate": (
                     self.linear_system_tolerance_rate
                 ),
+                "strict_convergence": self.strict_convergence,
                 "output_flags": output_flags,
             }
         )
@@ -292,6 +295,7 @@ class LibuipcBatchSolver:
                 "linear_system_tolerance_rate": (
                     self.config.linear_system_tolerance_rate
                 ),
+                "strict_convergence": self.config.strict_convergence,
                 "export_deformable_state": self.config.export_deformable_state,
                 "export_affine_state": self.config.export_affine_state,
                 "export_deformable_contact_forces": (
@@ -301,7 +305,7 @@ class LibuipcBatchSolver:
             "device": self._device_name,
             "num_envs": self._num_envs,
             "provider": "libuipc-batch",
-            "schema_version": 4,
+            "schema_version": 5,
         }
         self._runtime_fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -638,6 +642,38 @@ class LibuipcBatchSolver:
         if self.config.export_deformable_contact_forces:
             self._deformable_contact_force_frame = self._frame
         return self._arrays
+
+    def set_runtime_solver_options(
+        self,
+        *,
+        newton_max_iterations: int,
+        line_search_max_iterations: int,
+        linear_system_tolerance_rate: float,
+        strict_convergence: bool,
+    ) -> None:
+        """Update convergence limits between physics steps."""
+
+        self._require_open()
+        values = LibuipcBatchConfig(
+            solver=self.config.solver,
+            environments_per_shard=self.config.environments_per_shard,
+            contact_constitution=self.config.contact_constitution,
+            newton_max_iterations=newton_max_iterations,
+            line_search_max_iterations=line_search_max_iterations,
+            linear_system_tolerance_rate=linear_system_tolerance_rate,
+            strict_convergence=strict_convergence,
+        )
+        setter = getattr(self._session, "set_runtime_options", None)
+        if not callable(setter):
+            raise RuntimeError(
+                "native libuipc batch session has no runtime solver API"
+            )
+        setter(
+            values.newton_max_iterations,
+            values.line_search_max_iterations,
+            values.linear_system_tolerance_rate,
+            values.strict_convergence,
+        )
 
     def refresh_deformable_contact_forces(self) -> Any:
         """Refresh the per-vertex force buffer without advancing physics."""

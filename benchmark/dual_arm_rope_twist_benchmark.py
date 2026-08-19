@@ -54,6 +54,7 @@ PROFILES = {
     },
 }
 DEFAULT_PROFILES = ("interactive", "accurate")
+QUALITY_ADMISSION_MINIMUM_STEPS = 500
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -120,6 +121,10 @@ def _summarize(
     runs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     latencies = [
+        1000.0 * float(run["median_physics_step_latency_seconds"])
+        for run in runs
+    ]
+    end_to_end_latencies = [
         1000.0 * float(run["elapsed_seconds"]) / int(run["steps"])
         for run in runs
     ]
@@ -135,8 +140,12 @@ def _summarize(
         "warmup_steps": int(runs[0]["warmup_steps"]),
         "repeats": len(runs),
         "step_latency_ms_runs": latencies,
+        "end_to_end_step_latency_ms_runs": end_to_end_latencies,
         "interface_residual_runs": [
             float(run["interface_residual"]) for run in runs
+        ],
+        "interface_residual_l2_runs": [
+            float(run["interface_residual_l2"]) for run in runs
         ],
         "maximum_grip_slip_meters_runs": [
             float(run["maximum_grip_slip_range_meters"][1])
@@ -152,9 +161,15 @@ def _summarize(
             float(run["maximum_step_latency_seconds"]) for run in runs
         ),
         "median_step_latency_ms": median(latencies),
+        "median_end_to_end_step_latency_ms": median(
+            end_to_end_latencies
+        ),
         "median_environment_steps_per_second": median(throughputs),
         "interface_residual_max": max(
             float(run["interface_residual"]) for run in runs
+        ),
+        "interface_residual_l2_max": max(
+            float(run["interface_residual_l2"]) for run in runs
         ),
         "maximum_attachment_error_meters": max(
             float(run["maximum_attachment_error_range_meters"][1])
@@ -331,18 +346,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     accurate["exact_contact_wrench"]
                 ),
             }
-            comparison["quality_admission"] = {
-                "interactive": {
-                    "passes": all(interactive_gates.values()),
-                    "gates": interactive_gates,
-                    "peak_wrench_relative_error": wrench_error,
-                },
-                "accurate": {
-                    "passes": all(accurate_gates.values()),
-                    "gates": accurate_gates,
-                },
-            }
-        if accurate is not None and bool(accurate["admission_completed"]):
+            if min(
+                int(interactive["requested_steps"]),
+                int(accurate["requested_steps"]),
+            ) >= QUALITY_ADMISSION_MINIMUM_STEPS:
+                comparison["quality_admission"] = {
+                    "interactive": {
+                        "passes": all(interactive_gates.values()),
+                        "gates": interactive_gates,
+                        "peak_wrench_relative_error": wrench_error,
+                    },
+                    "accurate": {
+                        "passes": all(accurate_gates.values()),
+                        "gates": accurate_gates,
+                    },
+                }
+        if (
+            accurate is not None
+            and bool(accurate["admission_completed"])
+            and int(accurate["requested_steps"])
+            >= QUALITY_ADMISSION_MINIMUM_STEPS
+        ):
             reference_wrench = float(accurate["peak_wrench_newton_meters"])
             candidate_evaluations = []
             eligible_candidates = []

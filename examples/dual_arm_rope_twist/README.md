@@ -4,8 +4,8 @@ Two facing Franka Research 3 robots friction-grasp square fixtures connected by
 three elastic strands. Both wrists rotate while the arms repeatedly pull apart
 and relax. Editor Play defaults to a stiff `12 N m` speed-drive showcase, so the
 requested wrist rate does not gradually fall as rope reaction grows. The
-headless experiment keeps a hard `0.125 N m` limit; with the checked-in
-coarse-rope parameters, its expected physical stall window is 15 to 25 relative
+headless experiment keeps a hard `0.020 N m` limit; with the checked-in
+coarse-rope parameters, its expected physical stall window is 4 to 7 relative
 wrist turns.
 
 This is a two-way co-simulation task rather than two unrelated simulations in
@@ -13,9 +13,10 @@ one scene:
 
 1. The scene authors each fixture as a standalone `RigidBody3D`; MuJoCo Warp
    gives it an internal free joint and closes four finger joints onto the two
-   free 6-DoF bodies. There is
-   no weld between a gripper and fixture; the grasp is carried by box-on-pad
-   contact with Coulomb friction.
+   free 6-DoF bodies. There is no weld between a gripper and fixture; Coulomb
+   friction at the rubber pads carries the load, while visible segmented stop
+   rails form a keyed pocket that limits slip without introducing a kinematic
+   weld or constraint.
 2. The fixture poses drive two libuipc affine proxies. Six
    `DeformableAttachment3D` nodes attach one end section of each tetrahedral
    strand to the corresponding proxy.
@@ -33,7 +34,7 @@ one scene:
 
 The robots use the same positive local `fr3_joint7` velocity command. Because
 their bases face each other, this counter-rotates the fixtures about the common
-world rope axis. The first six joints move both tools about `8.3 mm` outward
+world rope axis. The first six joints move both tools about `7.5 mm` outward
 and back on every breathing cycle, so the view shows axial stretch, relaxation,
 bending, and torsion together.
 
@@ -71,8 +72,12 @@ defaults to `interactive`:
   every 2 steps, and contact-force refresh every 4 steps. The current checked-in
   solver limits are the accurate `16/8/1e-3` fallback because both evaluated
   interactive candidates missed the interface-residual admission bound.
+  Newton-limit telemetry remains available, but this latency-oriented profile
+  keeps libuipc's permissive non-strict frame commit behavior.
 - `accurate`: standard IPC, Newton x2 with Aitken relaxation, the established
   `16/8/1e-3` solver limits, and all display outputs refreshed every step.
+  A strict native failure is rewound and retried once with
+  `64/16/2.5e-4`; guarded steps retain conservative x2/Aitken settings.
 
 Select the accuracy profile explicitly with:
 
@@ -134,9 +139,10 @@ Use `--drive-mode showcase` for the same `12 N m` constant-speed mode used by
 Editor Play. The default remains `finite-torque` so automated runs still measure
 a physical stall. Batch runs default to `SolverCoupledProxy` with two coupling
 iterations; `--coupling-iterations 1` selects the checkpoint-free interactive
-fast path.
+path.
 
 The headless entry point also exposes `--relaxation-mode`,
+`--relaxation-factor`, `--relaxation-min`, `--relaxation-max`,
 `--newton-max-iterations`, `--line-search-max-iterations`,
 `--linear-system-tolerance-rate`, and `--no-coupler-graph` for controlled
 performance comparisons. `--warmup-steps` warms the fixed provider and then
@@ -159,6 +165,11 @@ comparisons. Override the guard with
 `--maximum-step-latency-seconds`; use `0` to disable it.
 Use `--environments-per-shard` to compare one libuipc world with an explicitly
 split batch while keeping the total environment count fixed.
+
+`interface_residual` is the maximum absolute component of the fixture-wrench
+fixed-point mismatch across the batch. `interface_residual_l2` retains the
+Euclidean norm for analysis; admission gates use the componentwise maximum so
+force and torque components are not silently aggregated into one threshold.
 
 The default upper bound is a 40,000-step twist followed by a hold, but the run
 exits early after every environment has physically stalled. The JSON result

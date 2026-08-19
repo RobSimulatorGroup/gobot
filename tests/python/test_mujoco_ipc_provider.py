@@ -22,6 +22,7 @@ from gobot.ipc import (
 )
 from gobot.rl import (
     CompiledMuJoCoIpcArtifact,
+    MuJoCoIpcConvergencePolicy,
     MuJoCoIpcConfig,
     MuJoCoIpcProvider,
     SolverCoupledProxy,
@@ -348,6 +349,66 @@ class _FakeNewtonIpcSolver(_FakeIpcSolver):
         return self._arrays
 
 
+class _FakeAdaptiveIpcSolver(_FakeNewtonIpcSolver):
+    def __init__(self, artifact, num_envs: int) -> None:
+        super().__init__(artifact, num_envs)
+        self.failures_remaining = 0
+        self.runtime_options_calls = []
+        self.report_stressed = False
+        self._solver_diagnostics = {
+            "solver_failure": 0,
+            "newton_iterations": 4,
+            "line_search_iterations_max": 1,
+            "minimum_step_length": 1.0,
+            "linear_system_converged": True,
+        }
+
+    @property
+    def diagnostics(self):
+        return {"frame": self.step_count, **self._solver_diagnostics}
+
+    def set_runtime_solver_options(
+        self,
+        *,
+        newton_max_iterations,
+        line_search_max_iterations,
+        linear_system_tolerance_rate,
+        strict_convergence,
+    ):
+        self.runtime_options_calls.append(
+            {
+                "newton_max_iterations": newton_max_iterations,
+                "line_search_max_iterations": line_search_max_iterations,
+                "linear_system_tolerance_rate": linear_system_tolerance_rate,
+                "strict_convergence": strict_convergence,
+            }
+        )
+
+    def step(self, *, nsteps=1):
+        result = super().step(nsteps=nsteps)
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            self._solver_diagnostics.update(
+                {
+                    "solver_failure": 2,
+                    "newton_iterations": 16,
+                    "line_search_iterations_max": 8,
+                    "minimum_step_length": 1.0e-5,
+                }
+            )
+            raise RuntimeError("injected strict Newton failure")
+        self._solver_diagnostics.update(
+            {
+                "solver_failure": 0,
+                "newton_iterations": 12 if self.report_stressed else 4,
+                "line_search_iterations_max": 6 if self.report_stressed else 1,
+                "minimum_step_length": 1.0e-5 if self.report_stressed else 1.0,
+                "linear_system_converged": True,
+            }
+        )
+        return result
+
+
 class _FakeImpulseRigidSolver(_FakeNewtonRigidSolver):
     def step(self, actions=None, *, nsteps=1):
         _FakeRigidSolver.step(self, actions, nsteps=nsteps)
@@ -382,6 +443,7 @@ class _FakeNativeBatchSession:
         self.closed = False
         self.checkpoint = None
         self.refresh_output_flags = []
+        self.runtime_options_calls = []
 
     def bind_device_buffers(self, buffers):
         self.buffers = buffers
@@ -402,6 +464,22 @@ class _FakeNativeBatchSession:
         self.refresh_output_flags.append(output_flags)
         if output_flags & (1 << 2):
             self.buffers["contact_forces"].fill_(float(self.frame))
+
+    def set_runtime_options(
+        self,
+        newton_max_iterations,
+        line_search_max_iterations,
+        linear_system_tolerance_rate,
+        strict_convergence,
+    ):
+        self.runtime_options_calls.append(
+            (
+                newton_max_iterations,
+                line_search_max_iterations,
+                linear_system_tolerance_rate,
+                strict_convergence,
+            )
+        )
 
     def reset(self):
         self.frame = 0
@@ -625,6 +703,22 @@ def test_libuipc_batch_lazy_contact_force_refresh() -> None:
     assert torch.all(refreshed == 3.0)
     assert solver.diagnostics["deformable_contact_force_frame"] == 3
     assert session.refresh_output_flags == [(1 << 0) | (1 << 1), 1 << 2]
+    solver.set_runtime_solver_options(
+        newton_max_iterations=32,
+        line_search_max_iterations=16,
+        linear_system_tolerance_rate=2.5e-4,
+        strict_convergence=True,
+    )
+    assert session.runtime_options_calls == [(32, 16, 2.5e-4, True)]
+    _raises(
+        ValueError,
+        lambda: solver.set_runtime_solver_options(
+            newton_max_iterations=0,
+            line_search_max_iterations=16,
+            linear_system_tolerance_rate=2.5e-4,
+            strict_convergence=True,
+        ),
+    )
     solver.close()
 
 
@@ -799,6 +893,109 @@ def test_solver_coupled_proxy_x1_scales_storage_and_skips_checkpoints() -> None:
     assert torch.count_nonzero(rigid.arrays["xfrc_applied"]) == 0
 
 
+def test_solver_coupled_proxy_stress_guard_promotes_x1_to_x2() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeAdaptiveIpcSolver(artifact, 2)
+    ipc.report_stressed = True
+    coupler = SolverCoupledProxy(
+        rigid,
+        ipc,
+        artifact.coupled_bodies,
+        coupling_iterations=1,
+        relaxation_mode="fixed",
+        capture_graphs=False,
+        convergence_policy=MuJoCoIpcConvergencePolicy(enabled=True),
+    )
+
+    coupler.step()
+    assert coupler.convergence_guard_diagnostics["guarded"] is True
+    assert coupler.rollback_enabled is True
+    assert coupler.last_coupling_iterations == 1
+
+    coupler.step()
+    guard = coupler.convergence_guard_diagnostics
+    assert guard["guarded_step_count"] == 1
+    assert coupler.last_coupling_iterations == 2
+    assert ipc.capture_count == 2
+    assert ipc.rewind_count == 1
+    assert ipc.commit_count == 2
+    assert ipc.runtime_options_calls[0]["strict_convergence"] is True
+    assert ipc.runtime_options_calls[-2] == {
+        "newton_max_iterations": 64,
+        "line_search_max_iterations": 16,
+        "linear_system_tolerance_rate": 2.5e-4,
+        "strict_convergence": True,
+    }
+    assert ipc.runtime_options_calls[-1] == ipc.runtime_options_calls[0]
+
+
+def test_solver_coupled_proxy_strict_failure_rewinds_and_retries_once() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeAdaptiveIpcSolver(artifact, 2)
+    policy = MuJoCoIpcConvergencePolicy(enabled=True)
+    coupler = SolverCoupledProxy(
+        rigid,
+        ipc,
+        artifact.coupled_bodies,
+        coupling_iterations=1,
+        relaxation_mode="fixed",
+        capture_graphs=False,
+        convergence_policy=policy,
+    )
+    ipc.failures_remaining = 1
+
+    coupler.step()
+
+    assert coupler.phase == "Idle"
+    assert rigid.step_count == 1
+    assert ipc.step_count == 1
+    assert ipc.capture_count == 1
+    assert ipc.rewind_count == 2
+    assert ipc.commit_count == 1
+    assert coupler.last_coupling_iterations == 2
+    guard = coupler.convergence_guard_diagnostics
+    assert guard["solver_retry_count"] == 1
+    assert guard["solver_restore_count"] == 1
+    assert guard["strict_failure_count"] == 1
+    assert "strict Newton failure" in guard["last_retry_reason"]
+    assert ipc.runtime_options_calls[-2] == {
+        "newton_max_iterations": policy.fallback_newton_max_iterations,
+        "line_search_max_iterations": policy.fallback_line_search_max_iterations,
+        "linear_system_tolerance_rate": (
+            policy.fallback_linear_system_tolerance_rate
+        ),
+        "strict_convergence": True,
+    }
+    assert ipc.runtime_options_calls[-1] == ipc.runtime_options_calls[0]
+
+
+def test_solver_coupled_proxy_x2_failure_rewinds_without_adaptive_policy() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeAdaptiveIpcSolver(artifact, 2)
+    coupler = SolverCoupledProxy(
+        rigid,
+        ipc,
+        artifact.coupled_bodies,
+        coupling_iterations=2,
+        relaxation_mode="aitken",
+        capture_graphs=False,
+    )
+    ipc.failures_remaining = 1
+
+    error = _raises(RuntimeError, coupler.step)
+
+    assert "strict Newton failure" in str(error)
+    assert coupler.phase == "Idle"
+    assert rigid.step_count == 0
+    assert ipc.step_count == 0
+    assert ipc.capture_count == 1
+    assert ipc.rewind_count == 1
+    assert ipc.commit_count == 1
+
+
 def test_step_failure_releases_owned_wrench_and_full_reset_recovers() -> None:
     artifact = _artifact()
     rigid = _FakeRigidSolver(artifact, 2)
@@ -951,6 +1148,10 @@ def test_solver_coupled_proxy_rewinds_each_iteration_and_transfers_origin_twist(
     )
     assert provider.diagnostics["actual_coupling_iterations"] == 3
     assert provider.diagnostics["interface_residual"] < 1.0e-5
+    assert (
+        provider.diagnostics["interface_residual_l2"]
+        >= provider.diagnostics["interface_residual"]
+    )
     assert abs(provider.diagnostics["aitken_coefficient"] - 2.0 / 3.0) < 1.0e-5
     assert provider.diagnostics["proxy_count"] == 2
     provider.close()

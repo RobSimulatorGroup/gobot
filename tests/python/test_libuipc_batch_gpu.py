@@ -229,6 +229,87 @@ def test_real_libuipc_batch_device_buffers() -> None:
             del context
 
 
+def test_real_libuipc_strict_failure_rewinds_memory_checkpoint() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="gobot-libuipc-strict-recovery-gpu-"
+    ) as temporary_directory:
+        project_root = Path(temporary_directory)
+        scene_path = build_libuipc_test_scene(
+            project_root, "soft_cube_press.jscn"
+        )
+        context = gobot.app.create_context()
+        context.set_project_path(str(project_root))
+        context.load_scene("res://" + scene_path.name)
+        artifact = context.compile_ipc_scene_artifact()
+        solver = LibuipcBatchSolver(
+            artifact,
+            num_envs=1,
+            device="cuda:0",
+            config=LibuipcBatchConfig(
+                solver=LibuipcConfig(
+                    fixed_time_step=0.01,
+                    module_path=MODULE_PATH,
+                    workspace=str(project_root / "workspace"),
+                ),
+                environments_per_shard=1,
+                export_deformable_contact_forces=False,
+            ),
+        )
+        try:
+            transforms = solver.arrays["affine_transforms"]
+            targets = solver.arrays["affine_targets"]
+            initial_positions = solver.arrays["positions"].clone()
+            initial_transforms = transforms.clone()
+            press_index = next(
+                index
+                for index, body in enumerate(solver.affine_bodies)
+                if str(body["path"]).endswith("/press_head")
+            )
+            targets.copy_(transforms)
+            targets[0, press_index, 2, 3] -= 0.03
+            solver.capture_checkpoint()
+            solver.set_runtime_solver_options(
+                newton_max_iterations=1,
+                line_search_max_iterations=1,
+                linear_system_tolerance_rate=1.0e-3,
+                strict_convergence=True,
+            )
+
+            with pytest.raises(
+                RuntimeError, match="libuipc batch world became invalid"
+            ):
+                solver.step()
+            failed = solver.diagnostics
+            assert not failed["valid"]
+            assert failed["strict_convergence"]
+            assert failed["solver_failure"] != 0
+            assert failed["solver_failure_message"]
+
+            solver.rewind_checkpoint()
+            recovered = solver.diagnostics
+            assert recovered["valid"]
+            assert recovered["recovered"]
+            assert recovered["frame"] == 0
+            torch.testing.assert_close(
+                solver.arrays["positions"], initial_positions
+            )
+            torch.testing.assert_close(transforms, initial_transforms)
+
+            solver.set_runtime_solver_options(
+                newton_max_iterations=32,
+                line_search_max_iterations=16,
+                linear_system_tolerance_rate=2.5e-4,
+                strict_convergence=True,
+            )
+            solver.step()
+            assert solver.diagnostics["valid"]
+            assert solver.diagnostics["frame"] == 1
+            solver.commit_checkpoint()
+        finally:
+            solver.close()
+            del context
+
+
 def test_real_libuipc_loose_static_box_collision() -> None:
     with tempfile.TemporaryDirectory(
         prefix="gobot-libuipc-static-gpu-"

@@ -172,10 +172,14 @@ full reset, while `close()` remains available. Construction failure, reset,
 and close also clear Coupler state.
 
 Proxy coupling requires equal rigid/IPC microstep counts and equal microstep
-`dt`. The x1 interactive path does not allocate or call rigid/IPC checkpoints.
-For x2 and above, the Coupler captures preallocated MuJoCo state and one native
-libuipc `World::dump()` checkpoint, then rewinds each additional iteration to
-the same starting state. The rigid checkpoint stores only authoritative state;
+`dt`. Plain x1 configurations remain checkpoint-free. When adaptive convergence
+protection is enabled, x1 captures preallocated MuJoCo state and one native
+libuipc in-memory checkpoint so a stressed step can run x2 or a strict failure
+can be retried once. Fixed x2+ configurations use the same checkpoint path and
+rewind each additional iteration to the same starting state. Runtime
+checkpoints retain one slot and avoid filesystem I/O; the frame-zero reset
+snapshot remains persistent on disk. The rigid checkpoint stores only
+authoritative state;
 MuJoCo `forward()` regenerates poses, transforms, subtree COM, and velocities
 instead of copying those derived arrays. The final iterate is committed, so
 `1`, `2`, or `4` coupling iterations still advance physical time by exactly one microstep.
@@ -212,12 +216,12 @@ provider.step(actions)
 provider.reset(full_batch_mask)
 ```
 
-The native batch C ABI is v4. In addition to target twists and single-slot
+The native batch C ABI is v5. In addition to target twists and single-slot
 capture/rewind/commit operations, it exposes runtime output flags, explicit
 output refresh, libuipc Newton/line-search/linear-tolerance settings, and
-checkpoint/target/advance/reaction/state-sync phase timings. ABI v4 also
+checkpoint/target/advance/reaction/state-sync phase timings. ABI v5 also
 accepts the caller CUDA stream and reports device-native coupling/workspace
-diagnostics. A v3 module is
+diagnostics plus strict convergence and staged solver telemetry. A v4 module is
 rejected with an explicit version mismatch. The composite provider
 intentionally supports full-batch reset only. Each
 shard restores its frame-zero libuipc snapshot, including solver history and
@@ -247,12 +251,14 @@ host boundaries; this is not presented as one composite CUDA Graph.
 
 FEM positions/velocities and affine proxy transforms are written into
 pre-bound CUDA tensors. Affine target/twist staging and exact IPC contact-force
-reduction now run device-to-device in persistent per-shard workspaces. ABI v4
+reduction now run device-to-device in persistent per-shard workspaces. ABI v5
 accepts the caller CUDA stream, establishes the ordering needed by libuipc's
-default-stream boundary, and reports workspace growth in diagnostics. Both
-exchange paths and their phase timings are named in diagnostics and benchmark
-output. Interface residual and Aitken coefficient stay in device scalars
-during stepping; `.item()` occurs only when diagnostics are requested.
+default-stream boundary, and reports workspace growth in diagnostics. It also
+adds runtime convergence controls and native Newton, line-search, PCG, failure,
+and recovery telemetry. Both exchange paths and their phase timings are named
+in diagnostics and benchmark output. Interface residual and Aitken coefficient
+stay in device scalars during stepping; `.item()` occurs only when diagnostics
+are requested.
 
 `LibuipcBatchConfig(export_deformable_contact_forces=False)` leaves the stable
 device force buffer allocated but does not upload per-vertex contact forces on
@@ -261,9 +267,12 @@ each step. Exact affine contact wrenches are still exported every step. Call
 diagnostics report the frame represented by that buffer. The default remains
 `True` for compatibility and batch metrics.
 
-Non-finite PCG residuals now invalidate the libuipc world and return a C ABI
-error to the caller. They no longer abort the editor or training process, so
-diagnostics remain available for identifying the failed frame and solve phase.
+In strict mode, Newton, line-search, and PCG failures reject the frame before
+velocity/history commit and return a C ABI error with native solve telemetry.
+An adaptive Coupler rewinds and retries once with conservative limits; a second
+failure faults the provider without aborting the editor or training process.
+The latency-oriented dual-arm interactive profile remains non-strict x1; the
+accurate profile enables strict convergence and adaptive recovery.
 
 `export_deformable_state` and `export_affine_state` similarly control automatic
 state export. `refresh_state()` updates both buffers without advancing physics.
@@ -300,6 +309,11 @@ ground-penetration proxy, and press wrench. The report marks AL-IPC eligible
 only when median IPC step latency improves by at least 15 percent and the
 configured physical bounds pass. This report does not change either default or
 label AL-IPC as recommended in project documentation.
+
+Coupler diagnostics define `interface_residual` as the maximum absolute
+component of the interface-wrench fixed-point mismatch across all environments.
+`interface_residual_l2` reports the corresponding Euclidean norm. Both remain
+device scalars during stepping and synchronize only when diagnostics are read.
 
 The dual-arm rope target has a separate same-process benchmark for the editor
 quality profiles and Coupler graph toggle:

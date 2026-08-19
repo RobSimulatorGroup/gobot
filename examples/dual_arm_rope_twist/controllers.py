@@ -26,8 +26,8 @@ TWIST_COMPLETE_TICK = TWIST_START_TICK + TWIST_TICKS
 TASK_TICKS = TWIST_COMPLETE_TICK
 CYCLE_TICKS = TWIST_COMPLETE_TICK + STALL_HOLD_TICKS
 
-WRIST_TARGET_SPEED = 1.60
-WRIST_DRIVE_TORQUE_LIMIT = 0.125
+WRIST_TARGET_SPEED = 1.35
+WRIST_DRIVE_TORQUE_LIMIT = 0.020
 WRIST_SHOWCASE_TORQUE_LIMIT = 12.0
 FINITE_TORQUE_DRIVE_MODE = "finite-torque"
 SHOWCASE_DRIVE_MODE = "showcase"
@@ -52,12 +52,13 @@ FR3_ROPE_POSE = np.asarray(
     dtype=np.float64,
 )
 FR3_FINGER_OPEN_POSITION = 0.0240
-FR3_FINGER_GRIP_POSITION = 0.0210
+FR3_FINGER_GRIP_POSITION = 0.0180
 FINGER_GRIP_OFFSET = FR3_FINGER_GRIP_POSITION - FR3_FINGER_OPEN_POSITION
+GRIP_IMPEDANCE_RATIO = 10.0
 
 # Applying this offline IK offset to both facing FR3s moves their link7 frames
-# about 8.3 mm outward in opposite world-X directions while preserving
-# orientation. The 16.6 mm total breathing stroke remains visible without
+# about 7.5 mm outward in opposite world-X directions while preserving
+# orientation. The 15.0 mm total breathing stroke remains visible without
 # asking the friction grasp to absorb the rope's full axial stiffness at peak
 # stretch.
 # Joint7 is excluded so axial breathing and continuous twist remain independent.
@@ -71,7 +72,7 @@ SYMMETRIC_PULL_JOINT_TARGET = np.asarray(
         0.00341121,
     ),
     dtype=np.float64,
-)
+) * 0.9
 
 
 def _smoothstep(value: float) -> float:
@@ -903,6 +904,7 @@ __all__ = [
     "FINITE_TORQUE_DRIVE_MODE",
     "FINGER_GRIP_OFFSET",
     "FR3_FINGER_GRIP_POSITION",
+    "GRIP_IMPEDANCE_RATIO",
     "FR3_FINGER_OPEN_POSITION",
     "GRIP_COMPLETE_TICK",
     "GRIP_HOLD_TICKS",

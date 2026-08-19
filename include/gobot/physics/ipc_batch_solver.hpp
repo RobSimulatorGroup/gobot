@@ -31,6 +31,7 @@ struct IpcBatchSolverConfig {
     std::uint32_t newton_max_iterations{16};
     std::uint32_t line_search_max_iterations{8};
     double linear_system_tolerance_rate{1.0e-3};
+    bool strict_convergence{false};
     std::uint32_t output_flags{IpcBatchSolverOutputAll};
 };
 
@@ -57,6 +58,22 @@ struct IpcBatchSolverDiagnostics {
     bool device_native_coupling{false};
     bool cuda_stream_interop{false};
     std::size_t device_workspace_allocation_count{0};
+    IpcSolverPipelineStage solver_stage{IpcSolverPipelineStage::None};
+    IpcSolverFailureKind solver_failure{IpcSolverFailureKind::None};
+    std::uint32_t newton_iterations{0};
+    std::uint32_t line_search_iterations_total{0};
+    std::uint32_t line_search_iterations_max{0};
+    std::uint32_t pcg_iterations_total{0};
+    std::uint32_t pcg_iterations_max{0};
+    std::uint32_t pcg_iterations_last{0};
+    double pcg_relative_residual{0.0};
+    double minimum_step_length{1.0};
+    std::string solver_failure_message;
+    std::size_t failing_shard_index{static_cast<std::size_t>(-1)};
+    bool newton_converged{false};
+    bool linear_system_converged{true};
+    bool strict_convergence{false};
+    bool recovered{false};
     bool valid{false};
 };
 
@@ -86,6 +103,8 @@ public:
     bool Synchronize();
     bool SetOutputFlags(std::uint32_t output_flags);
     bool RefreshOutputs(std::uint32_t output_flags);
+    bool SetRuntimeSolverOptions(
+            const IpcBatchSolverRuntimeOptions& options);
 
     const std::vector<IpcSolverBodyInfo>& GetDeformableBodies() const;
     const std::vector<IpcSolverBodyInfo>& GetAffineBodies() const;

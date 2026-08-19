@@ -27,6 +27,8 @@
 #include <uipc/core/finite_element_state_accessor_feature.h>
 #include <uipc/core/soft_position_constraint_accessor_feature.h>
 #include <uipc/core/soft_transform_constraint_accessor_feature.h>
+#include <uipc/core/solver_control_feature.h>
+#include <uipc/core/solver_diagnostics_feature.h>
 #include <uipc/geometry/utils/affine_body/affine_body_from_rigid_body.h>
 #include <uipc/geometry/utils/factory.h>
 #include <uipc/geometry/utils/label_surface.h>
@@ -90,6 +92,10 @@ using uipc::core::FiniteElementStateAccessorFeature;
 using uipc::core::Scene;
 using uipc::core::SoftPositionConstraintAccessorFeature;
 using uipc::core::SoftTransformConstraintAccessorFeature;
+using uipc::core::SolverControlFeature;
+using uipc::core::SolverDiagnostics;
+using uipc::core::SolverDiagnosticsFeature;
+using uipc::core::SolverRuntimeOptions;
 using uipc::core::SubsceneElement;
 using uipc::core::World;
 using uipc::geometry::SimplicialComplex;
@@ -675,6 +681,7 @@ public:
             std::uint32_t newton_max_iterations = 16,
             std::uint32_t line_search_max_iterations = 8,
             double linear_system_tolerance_rate = 1.0e-3,
+            bool strict_convergence = false,
             std::uint32_t output_flags = IpcBatchSolverOutputAll)
         : environment_count_(environment_count),
           device_index_(config.device_index),
@@ -776,6 +783,8 @@ public:
                 line_search_max_iterations;
         scene_config["linear_system"]["tol_rate"] =
                 linear_system_tolerance_rate;
+        scene_config["extras"]["strict_mode"]["enable"] =
+                strict_convergence;
         scene_ = std::make_unique<Scene>(scene_config);
         scene_->contact_tabular().default_model(
                 config.friction_coefficient, config.contact_resistance);
@@ -949,6 +958,16 @@ public:
         return contact_constitution_;
     }
     bool ExactContactWrench() const { return exact_contact_wrench_; }
+    SolverDiagnostics GetSolverDiagnostics() const {
+        return solver_diagnostics_->diagnostics();
+    }
+    void SetRuntimeOptions(const IpcBatchSolverRuntimeOptions& options) {
+        solver_control_->set_options(SolverRuntimeOptions{
+                options.newton_max_iterations,
+                options.line_search_max_iterations,
+                options.linear_system_tolerance_rate,
+                options.strict_convergence});
+    }
     std::size_t StaticColliderCountPerEnvironment() const {
         return static_collider_count_per_environment_;
     }
@@ -1054,9 +1073,9 @@ public:
         }
         ActivateDevice();
         world_->sync();
-        if (!world_->dump()) {
+        if (!world_->dump_memory()) {
             throw std::runtime_error(
-                    "libuipc batch solver could not capture a checkpoint");
+                    "libuipc batch solver could not capture an in-memory checkpoint");
         }
         checkpoint_frame_ = world_->frame();
         checkpoint_affine_targets_.clear();
@@ -1073,9 +1092,9 @@ public:
                     "libuipc batch checkpoint slot is not active");
         }
         ActivateDevice();
-        if (!world_->recover(*checkpoint_frame_)) {
+        if (!world_->recover_memory(*checkpoint_frame_)) {
             throw std::runtime_error(
-                    "libuipc batch solver could not rewind its checkpoint");
+                    "libuipc batch solver could not rewind its in-memory checkpoint");
         }
         if (checkpoint_affine_targets_.size() !=
             external_affine_targets_.size()) {
@@ -2420,6 +2439,13 @@ private:
     }
 
     void InitializeAccessors() {
+        solver_diagnostics_ =
+                world_->features().find<SolverDiagnosticsFeature>();
+        solver_control_ = world_->features().find<SolverControlFeature>();
+        if (solver_diagnostics_ == nullptr || solver_control_ == nullptr) {
+            throw std::runtime_error(
+                    "libuipc CUDA backend has no solver diagnostics/control feature");
+        }
         fem_accessor_ = world_->features().find<FiniteElementStateAccessorFeature>();
         if (fem_accessor_ == nullptr) {
             throw std::runtime_error("libuipc CUDA backend has no FEM state accessor");
@@ -2800,6 +2826,8 @@ private:
         soft_position_accessor_;
     std::shared_ptr<SoftTransformConstraintAccessorFeature>
         soft_transform_accessor_;
+    std::shared_ptr<SolverDiagnosticsFeature> solver_diagnostics_;
+    std::shared_ptr<SolverControlFeature> solver_control_;
     std::unique_ptr<SimplicialComplex> fem_state_;
     std::unique_ptr<SimplicialComplex> affine_state_;
     std::vector<BodyRecord> deformable_bodies_;
@@ -2887,7 +2915,7 @@ public:
         }
         if (!config.external_affine_proxies) {
             throw std::runtime_error(
-                    "libuipc batch v4 requires external affine proxies");
+                    "libuipc batch v5 requires external affine proxies");
         }
         ValidateOutputFlags(output_flags_);
         const std::filesystem::path workspace_root =
@@ -2931,6 +2959,7 @@ public:
                     config.newton_max_iterations,
                     config.line_search_max_iterations,
                     config.linear_system_tolerance_rate,
+                    config.strict_convergence,
                     output_flags_));
         }
         const auto& first_deformables = shards_.front()->DeformableBodies();
@@ -2952,6 +2981,7 @@ public:
         for (const BodyRecord& body : deformable_bodies_) {
             deformable_vertex_count_per_environment_ += body.count;
         }
+        UpdateSolverDiagnostics();
     }
 
     ~BatchSession() {
@@ -3031,8 +3061,16 @@ public:
         last_ipc_advance_latency_ms_ = 0.0;
         last_reaction_export_latency_ms_ = 0.0;
         last_state_sync_latency_ms_ = 0.0;
-        for (const auto& shard : shards_) {
-            shard->StepDevice(steps);
+        failing_shard_index_ = static_cast<std::size_t>(-1);
+        for (std::size_t index = 0; index < shards_.size(); ++index) {
+            const auto& shard = shards_[index];
+            try {
+                shard->StepDevice(steps);
+            } catch (...) {
+                failing_shard_index_ = index;
+                UpdateSolverDiagnostics();
+                throw;
+            }
             last_target_staging_latency_ms_ +=
                     shard->LastTargetStagingLatencyMs();
             last_ipc_advance_latency_ms_ +=
@@ -3044,6 +3082,7 @@ public:
         }
         frame_ += steps;
         last_step_latency_ms_ = ElapsedMilliseconds(start);
+        UpdateSolverDiagnostics();
     }
 
     void Reset() {
@@ -3056,6 +3095,8 @@ public:
         }
         frame_ = 0;
         checkpoint_frame_.reset();
+        failing_shard_index_ = static_cast<std::size_t>(-1);
+        UpdateSolverDiagnostics();
     }
 
     void CaptureCheckpoint() {
@@ -3086,6 +3127,7 @@ public:
         }
         frame_ = *checkpoint_frame_;
         last_checkpoint_latency_ms_ = ElapsedMilliseconds(start);
+        UpdateSolverDiagnostics();
     }
 
     void CommitCheckpoint() {
@@ -3133,6 +3175,25 @@ public:
                     shard->LastStateSyncLatencyMs();
         }
     }
+
+    void SetRuntimeOptions(const IpcBatchSolverRuntimeOptions& options) {
+        if (options.newton_max_iterations == 0 ||
+            options.line_search_max_iterations == 0 ||
+            !std::isfinite(options.linear_system_tolerance_rate) ||
+            options.linear_system_tolerance_rate <= 0.0) {
+            throw std::runtime_error(
+                    "libuipc runtime solver options are invalid");
+        }
+        for (const auto& shard : shards_) {
+            shard->SetRuntimeOptions(options);
+        }
+        UpdateSolverDiagnostics();
+    }
+
+    const SolverDiagnostics& LastSolverDiagnostics() const {
+        return solver_diagnostics_;
+    }
+    std::size_t FailingShardIndex() const { return failing_shard_index_; }
 
     const std::vector<BodyRecord>& DeformableBodies() const {
         return deformable_bodies_;
@@ -3201,6 +3262,67 @@ public:
     }
 
 private:
+    void UpdateSolverDiagnostics() {
+        if (shards_.empty()) {
+            solver_diagnostics_ = {};
+            return;
+        }
+        const std::size_t selected =
+                failing_shard_index_ < shards_.size()
+                        ? failing_shard_index_
+                        : 0;
+        solver_diagnostics_ = shards_[selected]->GetSolverDiagnostics();
+        if (failing_shard_index_ < shards_.size()) {
+            return;
+        }
+        for (std::size_t index = 1; index < shards_.size(); ++index) {
+            const SolverDiagnostics current =
+                    shards_[index]->GetSolverDiagnostics();
+            if (solver_diagnostics_.failure_kind ==
+                        uipc::core::SolverFailureKind::None &&
+                current.failure_kind !=
+                        uipc::core::SolverFailureKind::None) {
+                solver_diagnostics_.stage = current.stage;
+                solver_diagnostics_.failure_kind = current.failure_kind;
+                solver_diagnostics_.failure_message = current.failure_message;
+            }
+            solver_diagnostics_.newton_iterations = std::max(
+                    solver_diagnostics_.newton_iterations,
+                    current.newton_iterations);
+            solver_diagnostics_.line_search_iterations_total = std::max(
+                    solver_diagnostics_.line_search_iterations_total,
+                    current.line_search_iterations_total);
+            solver_diagnostics_.line_search_iterations_max = std::max(
+                    solver_diagnostics_.line_search_iterations_max,
+                    current.line_search_iterations_max);
+            solver_diagnostics_.pcg_iterations_total = std::max(
+                    solver_diagnostics_.pcg_iterations_total,
+                    current.pcg_iterations_total);
+            solver_diagnostics_.pcg_iterations_max = std::max(
+                    solver_diagnostics_.pcg_iterations_max,
+                    current.pcg_iterations_max);
+            solver_diagnostics_.pcg_iterations_last = std::max(
+                    solver_diagnostics_.pcg_iterations_last,
+                    current.pcg_iterations_last);
+            solver_diagnostics_.pcg_relative_residual = std::max(
+                    solver_diagnostics_.pcg_relative_residual,
+                    current.pcg_relative_residual);
+            solver_diagnostics_.minimum_step_length = std::min(
+                    solver_diagnostics_.minimum_step_length,
+                    current.minimum_step_length);
+            solver_diagnostics_.newton_converged =
+                    solver_diagnostics_.newton_converged &&
+                    current.newton_converged;
+            solver_diagnostics_.linear_system_converged =
+                    solver_diagnostics_.linear_system_converged &&
+                    current.linear_system_converged;
+            solver_diagnostics_.strict_mode =
+                    solver_diagnostics_.strict_mode && current.strict_mode;
+            solver_diagnostics_.recovered =
+                    solver_diagnostics_.recovered && current.recovered;
+        }
+    }
+
     static void RequireCuda(cudaError_t result, std::string_view operation) {
         if (result != cudaSuccess) {
             throw std::runtime_error(
@@ -3229,6 +3351,8 @@ private:
     double last_reaction_export_latency_ms_{0.0};
     double last_state_sync_latency_ms_{0.0};
     std::optional<std::uint64_t> checkpoint_frame_;
+    SolverDiagnostics solver_diagnostics_;
+    std::size_t failing_shard_index_{static_cast<std::size_t>(-1)};
     bool buffers_bound_{false};
     bool cuda_stream_interop_{false};
     cudaEvent_t external_input_event_{nullptr};
@@ -3553,6 +3677,20 @@ bool BatchRefreshOutputs(void* session,
     });
 }
 
+bool BatchSetRuntimeOptions(
+        void* session,
+        const IpcBatchSolverRuntimeOptions* options,
+        char* error,
+        std::size_t error_size) {
+    return Guard(error, error_size, [&] {
+        if (options == nullptr) {
+            throw std::runtime_error(
+                    "libuipc runtime solver options are null");
+        }
+        CastBatch(session)->SetRuntimeOptions(*options);
+    });
+}
+
 std::size_t BatchDeformableBodyCount(void* session) {
     try {
         return CastBatch(session)->DeformableBodies().size();
@@ -3607,29 +3745,63 @@ bool BatchDiagnostics(void* session,
                     "libuipc batch diagnostics output is null");
         }
         BatchSession* value = CastBatch(session);
-        *diagnostics = IpcBatchSolverModuleDiagnostics{
-                value->Frame(),
-                value->EnvironmentCount(),
-                value->ShardCount(),
-                value->DeformableBodies().size(),
-                value->DeformableVertexCountPerEnvironment(),
-                value->AffineBodies().size(),
-                value->StaticColliderCountPerEnvironment(),
-                value->LastStepLatencyMs(),
-                value->LastCheckpointLatencyMs(),
-                value->LastTargetStagingLatencyMs(),
-                value->LastIpcAdvanceLatencyMs(),
-                value->LastReactionExportLatencyMs(),
-                value->LastStateSyncLatencyMs(),
-                value->OutputFlags(),
-                value->DeformableContactForceFrame(),
-                value->ContactConstitution().c_str(),
-                value->ExactContactWrench(),
-                value->CheckpointActive(),
-                value->DeviceNativeCoupling(),
-                value->CudaStreamInterop(),
-                value->DeviceWorkspaceAllocationCount(),
-                value->IsValid()};
+        const SolverDiagnostics& solver = value->LastSolverDiagnostics();
+        IpcBatchSolverModuleDiagnostics result;
+        result.frame = value->Frame();
+        result.environment_count = value->EnvironmentCount();
+        result.shard_count = value->ShardCount();
+        result.deformable_body_count_per_environment =
+                value->DeformableBodies().size();
+        result.deformable_vertex_count_per_environment =
+                value->DeformableVertexCountPerEnvironment();
+        result.affine_body_count_per_environment =
+                value->AffineBodies().size();
+        result.static_collider_count_per_environment =
+                value->StaticColliderCountPerEnvironment();
+        result.last_step_latency_ms = value->LastStepLatencyMs();
+        result.last_checkpoint_latency_ms = value->LastCheckpointLatencyMs();
+        result.last_target_staging_latency_ms =
+                value->LastTargetStagingLatencyMs();
+        result.last_ipc_advance_latency_ms =
+                value->LastIpcAdvanceLatencyMs();
+        result.last_reaction_export_latency_ms =
+                value->LastReactionExportLatencyMs();
+        result.last_state_sync_latency_ms = value->LastStateSyncLatencyMs();
+        result.output_flags = value->OutputFlags();
+        result.deformable_contact_force_frame =
+                value->DeformableContactForceFrame();
+        result.contact_constitution = value->ContactConstitution().c_str();
+        result.exact_contact_wrench = value->ExactContactWrench();
+        result.checkpoint_active = value->CheckpointActive();
+        result.device_native_coupling = value->DeviceNativeCoupling();
+        result.cuda_stream_interop = value->CudaStreamInterop();
+        result.device_workspace_allocation_count =
+                value->DeviceWorkspaceAllocationCount();
+        result.solver_stage = static_cast<IpcSolverPipelineStage>(solver.stage);
+        result.solver_failure =
+                static_cast<IpcSolverFailureKind>(solver.failure_kind);
+        result.newton_iterations = static_cast<std::uint32_t>(
+                solver.newton_iterations);
+        result.line_search_iterations_total = static_cast<std::uint32_t>(
+                solver.line_search_iterations_total);
+        result.line_search_iterations_max = static_cast<std::uint32_t>(
+                solver.line_search_iterations_max);
+        result.pcg_iterations_total = static_cast<std::uint32_t>(
+                solver.pcg_iterations_total);
+        result.pcg_iterations_max = static_cast<std::uint32_t>(
+                solver.pcg_iterations_max);
+        result.pcg_iterations_last = static_cast<std::uint32_t>(
+                solver.pcg_iterations_last);
+        result.pcg_relative_residual = solver.pcg_relative_residual;
+        result.minimum_step_length = solver.minimum_step_length;
+        result.solver_failure_message = solver.failure_message.c_str();
+        result.failing_shard_index = value->FailingShardIndex();
+        result.newton_converged = solver.newton_converged;
+        result.linear_system_converged = solver.linear_system_converged;
+        result.strict_convergence = solver.strict_mode;
+        result.recovered = solver.recovered;
+        result.valid = value->IsValid();
+        *diagnostics = result;
     });
 }
 
@@ -3667,6 +3839,7 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchSynchronize,
         &BatchSetOutputFlags,
         &BatchRefreshOutputs,
+        &BatchSetRuntimeOptions,
         &BatchDeformableBodyCount,
         &BatchDeformableBodyInfo,
         &BatchAffineBodyCount,

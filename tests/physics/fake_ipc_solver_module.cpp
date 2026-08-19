@@ -285,6 +285,7 @@ struct BatchSession {
     std::vector<double> checkpoint_transforms;
     std::vector<double> checkpoint_wrenches;
     std::uint32_t output_flags{gobot::IpcBatchSolverOutputAll};
+    gobot::IpcBatchSolverRuntimeOptions runtime_options{};
     std::uint64_t deformable_contact_force_frame{0};
     bool bound{false};
     bool checkpoint_active{false};
@@ -332,6 +333,11 @@ void* BatchCreate(const IpcSolverArtifactView* artifact,
     session->environment_count = config->environment_count;
     session->environments_per_shard = config->environments_per_shard;
     session->output_flags = config->output_flags;
+    session->runtime_options = gobot::IpcBatchSolverRuntimeOptions{
+            config->newton_max_iterations,
+            config->line_search_max_iterations,
+            config->linear_system_tolerance_rate,
+            config->strict_convergence};
     return session.release();
 }
 
@@ -541,6 +547,25 @@ bool BatchRefreshOutputs(void* opaque,
     return true;
 }
 
+bool BatchSetRuntimeOptions(
+        void* opaque,
+        const gobot::IpcBatchSolverRuntimeOptions* options,
+        char* error,
+        std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || options == nullptr ||
+        options->newton_max_iterations == 0 ||
+        options->line_search_max_iterations == 0 ||
+        !std::isfinite(options->linear_system_tolerance_rate) ||
+        options->linear_system_tolerance_rate <= 0.0) {
+        WriteError(error, error_size,
+                   "fake IPC batch runtime options are invalid");
+        return false;
+    }
+    session->runtime_options = *options;
+    return true;
+}
+
 std::size_t BatchDeformableBodyCount(void*) { return 1; }
 
 bool BatchDeformableBodyInfo(void* opaque,
@@ -583,29 +608,42 @@ bool BatchDiagnostics(void* opaque,
                    "fake IPC batch diagnostics output is invalid");
         return false;
     }
-    *diagnostics = IpcBatchSolverModuleDiagnostics{
-            session->frame,
-            session->environment_count,
-            session->environment_count / session->environments_per_shard,
-            1,
-            2,
-            1,
-            0,
-            0.25,
-            0.05,
-            0.04,
-            0.10,
-            0.03,
-            0.08,
-            session->output_flags,
-            session->deformable_contact_force_frame,
-            "ipc",
-            true,
-            session->checkpoint_active,
-            true,
-            true,
-            3,
-            true};
+    IpcBatchSolverModuleDiagnostics result;
+    result.frame = session->frame;
+    result.environment_count = session->environment_count;
+    result.shard_count =
+            session->environment_count / session->environments_per_shard;
+    result.deformable_body_count_per_environment = 1;
+    result.deformable_vertex_count_per_environment = 2;
+    result.affine_body_count_per_environment = 1;
+    result.last_step_latency_ms = 0.25;
+    result.last_checkpoint_latency_ms = 0.05;
+    result.last_target_staging_latency_ms = 0.04;
+    result.last_ipc_advance_latency_ms = 0.10;
+    result.last_reaction_export_latency_ms = 0.03;
+    result.last_state_sync_latency_ms = 0.08;
+    result.output_flags = session->output_flags;
+    result.deformable_contact_force_frame =
+            session->deformable_contact_force_frame;
+    result.contact_constitution = "ipc";
+    result.exact_contact_wrench = true;
+    result.checkpoint_active = session->checkpoint_active;
+    result.device_native_coupling = true;
+    result.cuda_stream_interop = true;
+    result.device_workspace_allocation_count = 3;
+    result.newton_iterations = 4;
+    result.line_search_iterations_total = 2;
+    result.line_search_iterations_max = 1;
+    result.pcg_iterations_total = 12;
+    result.pcg_iterations_max = 3;
+    result.pcg_iterations_last = 3;
+    result.pcg_relative_residual = 5.0e-4;
+    result.minimum_step_length = 0.5;
+    result.newton_converged = true;
+    result.linear_system_converged = true;
+    result.strict_convergence = session->runtime_options.strict_convergence;
+    result.valid = true;
+    *diagnostics = result;
     return true;
 }
 
@@ -624,6 +662,7 @@ const IpcBatchSolverModuleApi kBatchApi{
         &BatchSynchronize,
         &BatchSetOutputFlags,
         &BatchRefreshOutputs,
+        &BatchSetRuntimeOptions,
         &BatchDeformableBodyCount,
         &BatchDeformableBodyInfo,
         &BatchAffineBodyCount,

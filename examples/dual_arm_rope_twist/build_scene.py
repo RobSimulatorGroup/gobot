@@ -61,29 +61,37 @@ FR3_ROPE_POSE = (
     -0.8808,
 )
 FR3_FINGER_OPEN_POSITION = 0.0240
-FR3_FINGER_GRIP_POSITION = 0.0210
+FR3_FINGER_GRIP_POSITION = 0.0180
 ARM_EFFORT_LIMITS = (87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0)
 ARM_VELOCITY_LIMITS = (2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26)
 ARM_STIFFNESS = (850.0, 850.0, 760.0, 680.0, 220.0, 170.0, 95.0)
 ARM_DAMPING = (52.0, 52.0, 46.0, 40.0, 18.0, 15.0, 10.0)
 WRIST_ROTATION_LIMIT = 200.0 * math.pi
-WRIST_TARGET_SPEED = 1.60
-WRIST_DRIVE_TORQUE_LIMIT = 0.125
+WRIST_TARGET_SPEED = 1.35
+WRIST_DRIVE_TORQUE_LIMIT = 0.020
 # A stiff velocity servo holds the requested rate until the explicit actuator
-# force limit is reached. The finite-torque batch keeps the authored 0.125 N m
+# force limit is reached. The finite-torque batch keeps the authored 0.020 N m
 # cap; editor Play can raise only that cap for its continuous showcase mode.
-WRIST_VELOCITY_GAIN = 40.0
+WRIST_VELOCITY_GAIN = 400.0
 WRIST_PASSIVE_DAMPING = 0.005
 GRIP_PAD_SIZE = (0.080, 0.004, 0.090)
 GRIP_PAD_VISUAL_SIZE = (0.080, 0.0020, 0.090)
 # At the authored finger opening, each pad just touches the fixture without
-# preload. The position drive deliberately over-closes each finger by 3.0 mm
-# during Play; MuJoCo contact supplies a still-modest preload. The visible pad
-# and fixture are each inset 1.0 mm from their physical faces, concealing the
-# solver's compliant contact depth instead of rendering interpenetration.
+# preload. The position drive deliberately over-closes each finger by 6.0 mm
+# during Play; the force-limited drive supplies a firm frictional preload. The
+# visible pad and fixture are each inset 1.0 mm from their physical faces,
+# concealing the solver's compliant contact depth instead of rendering
+# interpenetration.
 # MuJoCo Warp requires zero geom margin while MULTICCD is enabled.
 GRIP_PAD_POSITION = (0.0, -0.002, 0.085)
-GRIP_PAD_FRICTION = 2.00
+GRIP_PAD_FRICTION = 5.0
+GRIP_AXIAL_STOP_SIZE = (0.050, 0.018, 0.004)
+GRIP_VERTICAL_STOP_SIZE = (0.004, 0.018, 0.050)
+GRIP_STOP_PRELOAD = 5.0e-4
+GRIP_STOP_FRICTION = 0.25
+GRIP_STOP_POCKET_CENTER_Z = 0.0846
+GRIP_STOP_COLLISION_SEGMENTS = 2
+GRIP_STOP_COLLISION_GAP = 1.0e-3
 GRIP_CONTACT_OFFSET = 0.0
 GRIP_REST_OFFSET = 0.0
 GRIP_CONTACT_COMPLIANCE = 1.0e-6
@@ -95,10 +103,10 @@ HAND_COLLISION_PROXY_POSITION = (0.0, 0.0, 0.113)
 FIXTURE_SIZE = (0.050, 0.040, 0.040)
 FIXTURE_VISUAL_SIZE = (0.050, 0.0380, 0.0380)
 FIXTURE_MASS = 0.080
-FIXTURE_FRICTION = 2.00
+FIXTURE_FRICTION = 5.0
 FIXTURE_CENTER_X = 0.270
 FIXTURE_MOUNT_LENGTH = 0.010
-ATTACHMENT_STRENGTH_RATE = 400.0
+ATTACHMENT_STRENGTH_RATE = 5.0e3
 WORKCELL_FLOOR_SIZE = (2.20, 1.20, 0.05)
 WORKCELL_FLOOR_POSITION = (0.0, 0.0, -0.025)
 WORKCELL_FLOOR_FRICTION = 0.8
@@ -270,11 +278,11 @@ def _create_fr3_robot(
     for joint_name in FINGER_JOINT_NAMES:
         joint = nodes[joint_name]
         joint.drive_mode = gobot.JointDriveMode.Position
-        joint.drive_stiffness = 3000.0
-        joint.drive_damping = 60.0
-        joint.effort_limit = 25.0
-        joint.force_lower_limit = -25.0
-        joint.force_upper_limit = 25.0
+        joint.drive_stiffness = 1.2e4
+        joint.drive_damping = 100.0
+        joint.effort_limit = 75.0
+        joint.force_lower_limit = -75.0
+        joint.force_upper_limit = 75.0
         joint.lower_limit = -FR3_FINGER_OPEN_POSITION
         joint.upper_limit = 0.04 - FR3_FINGER_OPEN_POSITION
         joint.control_lower_limit = -FR3_FINGER_OPEN_POSITION
@@ -325,6 +333,76 @@ def _create_fr3_robot(
             pad_collision, _translation(GRIP_PAD_POSITION)
         )
         finger.add_child(pad_collision)
+
+        stop_z = 0.5 * FIXTURE_SIZE[0] + 0.5 * GRIP_AXIAL_STOP_SIZE[2]
+        stop_z -= GRIP_STOP_PRELOAD
+        stop_y = GRIP_PAD_POSITION[1] - 0.5 * GRIP_PAD_SIZE[1]
+        stop_y -= 0.5 * GRIP_AXIAL_STOP_SIZE[1]
+        stop_x = 0.5 * FIXTURE_SIZE[2] + 0.5 * GRIP_VERTICAL_STOP_SIZE[0]
+        stop_x -= GRIP_STOP_PRELOAD
+        stop_specs = [
+            (
+                end,
+                GRIP_AXIAL_STOP_SIZE,
+                (0.0, stop_y, GRIP_STOP_POCKET_CENTER_Z + sign * stop_z),
+            )
+            for end, sign in (("inner", -1.0), ("outer", 1.0))
+        ]
+        stop_specs.extend(
+            (
+                edge,
+                GRIP_VERTICAL_STOP_SIZE,
+                (sign * stop_x, stop_y, GRIP_STOP_POCKET_CENTER_Z),
+            )
+            for edge, sign in (("bottom", -1.0), ("top", 1.0))
+        )
+        for stop_name, stop_size, stop_position in stop_specs:
+            stop_visual = gobot.create_box_visual(
+                f"{name}_{side}_{stop_name}_grip_stop",
+                stop_size,
+                stop_position,
+            )
+            stop_visual.surface_color = (0.035, 0.045, 0.055, 1.0)
+            stop_visual.semantic_label = "keyed_grip_stop"
+            finger.add_child(stop_visual)
+
+            # MuJoCo emits only a small fixed contact set for one box pair.
+            # Split each long rail into disjoint collision boxes so the
+            # pocket remains stiff across its full face without changing its
+            # visible shape or the global contact solver settings.
+            long_axis = 0 if stop_name in ("inner", "outer") else 2
+            segment_size = list(stop_size)
+            segment_size[long_axis] = (
+                stop_size[long_axis]
+                - GRIP_STOP_COLLISION_GAP
+                * (GRIP_STOP_COLLISION_SEGMENTS - 1)
+            ) / GRIP_STOP_COLLISION_SEGMENTS
+            segment_pitch = (
+                segment_size[long_axis] + GRIP_STOP_COLLISION_GAP
+            )
+            segment_center = 0.5 * (GRIP_STOP_COLLISION_SEGMENTS - 1)
+            for segment_index in range(GRIP_STOP_COLLISION_SEGMENTS):
+                segment_position = list(stop_position)
+                segment_position[long_axis] += (
+                    segment_index - segment_center
+                ) * segment_pitch
+                stop_collision = gobot.create_box_collision(
+                    f"{name}_{side}_{stop_name}_grip_stop_collision_"
+                    f"{segment_index + 1}",
+                    tuple(segment_size),
+                    tuple(segment_position),
+                )
+                stop_collision.visible = False
+                stop_collision.physics_material = {
+                    "sliding_friction": GRIP_STOP_FRICTION,
+                    "torsional_friction": 0.0,
+                    "rolling_friction": 0.0,
+                    "contact_compliance": GRIP_CONTACT_COMPLIANCE,
+                    "contact_damping": 1.0,
+                }
+                stop_collision.contact_offset = GRIP_CONTACT_OFFSET
+                stop_collision.rest_offset = GRIP_REST_OFFSET
+                finger.add_child(stop_collision)
 
     for collision_name in ("fr3_link7_collision", "fr3_hand_collision"):
         nodes[collision_name].disabled = True

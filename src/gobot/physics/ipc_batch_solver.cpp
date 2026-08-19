@@ -74,6 +74,7 @@ bool ValidateApi(const IpcBatchSolverModuleApi* api, std::string* error) {
         api->commit_checkpoint == nullptr ||
         api->synchronize == nullptr || api->set_output_flags == nullptr ||
         api->refresh_outputs == nullptr ||
+        api->set_runtime_options == nullptr ||
         api->deformable_body_count == nullptr ||
         api->deformable_body_info == nullptr ||
         api->affine_body_count == nullptr ||
@@ -262,6 +263,7 @@ public:
                 config.newton_max_iterations,
                 config.line_search_max_iterations,
                 config.linear_system_tolerance_rate,
+                config.strict_convergence,
                 config.output_flags};
 
         std::array<char, kErrorCapacity> module_error{};
@@ -392,7 +394,11 @@ public:
         }
         std::array<char, kErrorCapacity> error{};
         if (!api_->step(session_, steps, error.data(), error.size())) {
-            return Fail(error.data(), "IPC batch solver step failed");
+            Fail(error.data(), "IPC batch solver step failed");
+            const std::string step_error = last_error_;
+            RefreshDiagnostics(false);
+            last_error_ = step_error;
+            return false;
         }
         return RefreshDiagnostics();
     }
@@ -474,7 +480,25 @@ public:
         return RefreshDiagnostics();
     }
 
-    bool RefreshDiagnostics() {
+    bool SetRuntimeSolverOptions(
+            const IpcBatchSolverRuntimeOptions& options) {
+        if (options.newton_max_iterations == 0 ||
+            options.line_search_max_iterations == 0 ||
+            !std::isfinite(options.linear_system_tolerance_rate) ||
+            options.linear_system_tolerance_rate <= 0.0) {
+            return Fail(nullptr,
+                        "IPC batch runtime solver options are invalid");
+        }
+        std::array<char, kErrorCapacity> error{};
+        if (!api_->set_runtime_options(session_, &options, error.data(),
+                                       error.size())) {
+            return Fail(error.data(),
+                        "IPC batch solver rejected runtime options");
+        }
+        return RefreshDiagnostics();
+    }
+
+    bool RefreshDiagnostics(bool clear_error = true) {
         IpcBatchSolverModuleDiagnostics diagnostics;
         std::array<char, kErrorCapacity> error{};
         if (!api_->diagnostics(session_, &diagnostics, error.data(),
@@ -518,8 +542,32 @@ public:
         diagnostics_.cuda_stream_interop = diagnostics.cuda_stream_interop;
         diagnostics_.device_workspace_allocation_count =
             diagnostics.device_workspace_allocation_count;
+        diagnostics_.solver_stage = diagnostics.solver_stage;
+        diagnostics_.solver_failure = diagnostics.solver_failure;
+        diagnostics_.newton_iterations = diagnostics.newton_iterations;
+        diagnostics_.line_search_iterations_total =
+                diagnostics.line_search_iterations_total;
+        diagnostics_.line_search_iterations_max =
+                diagnostics.line_search_iterations_max;
+        diagnostics_.pcg_iterations_total = diagnostics.pcg_iterations_total;
+        diagnostics_.pcg_iterations_max = diagnostics.pcg_iterations_max;
+        diagnostics_.pcg_iterations_last = diagnostics.pcg_iterations_last;
+        diagnostics_.pcg_relative_residual = diagnostics.pcg_relative_residual;
+        diagnostics_.minimum_step_length = diagnostics.minimum_step_length;
+        diagnostics_.solver_failure_message =
+                diagnostics.solver_failure_message != nullptr
+                        ? diagnostics.solver_failure_message
+                        : "";
+        diagnostics_.failing_shard_index = diagnostics.failing_shard_index;
+        diagnostics_.newton_converged = diagnostics.newton_converged;
+        diagnostics_.linear_system_converged =
+                diagnostics.linear_system_converged;
+        diagnostics_.strict_convergence = diagnostics.strict_convergence;
+        diagnostics_.recovered = diagnostics.recovered;
         diagnostics_.valid = diagnostics.valid;
-        last_error_.clear();
+        if (clear_error) {
+            last_error_.clear();
+        }
         return true;
     }
 
@@ -644,6 +692,11 @@ bool IpcBatchSolverSession::SetOutputFlags(std::uint32_t output_flags) {
 
 bool IpcBatchSolverSession::RefreshOutputs(std::uint32_t output_flags) {
     return impl_->RefreshOutputs(output_flags);
+}
+
+bool IpcBatchSolverSession::SetRuntimeSolverOptions(
+        const IpcBatchSolverRuntimeOptions& options) {
+    return impl_->SetRuntimeSolverOptions(options);
 }
 
 const std::vector<IpcSolverBodyInfo>&

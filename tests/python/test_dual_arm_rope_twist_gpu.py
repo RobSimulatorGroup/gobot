@@ -92,17 +92,26 @@ def test_dual_arm_twist_stalls_without_losing_the_friction_grasps() -> None:
     assert trial["stall_tick"] > (
         batch.TWIST_START_TICK + controllers.STALL_DETECTION_DELAY_TICKS
     )
-    assert 15.0 <= trial["stalled_relative_turns"] <= 25.0
+    assert 4.0 <= trial["stalled_relative_turns"] <= 7.0
     assert trial["peak_actual_relative_turns"] >= trial["stalled_relative_turns"]
-    assert trial["raw_peak_axial_torque_newton_meters"] > 0.112
+    assert trial["raw_peak_axial_torque_newton_meters"] > (
+        controllers.WRIST_DRIVE_TORQUE_LIMIT
+        * controllers.STALL_TORQUE_FRACTION
+    )
     assert min(
         abs(value)
         for value in trial["stall_wrist_efforts_newton_meters"]
-    ) >= 0.112
+    ) >= (
+        controllers.WRIST_DRIVE_TORQUE_LIMIT
+        * controllers.STALL_TORQUE_FRACTION
+    )
     assert min(
         abs(value)
         for value in trial["stall_axial_torques_newton_meters"]
-    ) >= 0.093
+    ) >= (
+        controllers.WRIST_DRIVE_TORQUE_LIMIT
+        * controllers.STALL_REACTION_TORQUE_FRACTION
+    )
     assert max(
         abs(value)
         for value in trial["stall_wrist_speeds_radians_per_second"]
@@ -114,7 +123,7 @@ def test_dual_arm_twist_stalls_without_losing_the_friction_grasps() -> None:
     assert trial["maximum_attachment_error_meters"] < 0.001
     assert (
         sum(abs(value) for value in trial["strand_winding_turns"]) / 3.0
-        > 14.0
+        > 4.0
     )
     assert abs(
         trial["joint7_positions_radians"][0]
@@ -122,7 +131,7 @@ def test_dual_arm_twist_stalls_without_losing_the_friction_grasps() -> None:
     ) < 0.75
     assert math.isclose(
         result["wrist_drive_torque_limit_newton_meters"],
-        0.125,
+        controllers.WRIST_DRIVE_TORQUE_LIMIT,
         abs_tol=1.0e-8,
     )
 

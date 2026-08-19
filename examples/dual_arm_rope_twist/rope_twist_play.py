@@ -20,6 +20,7 @@ from gobot.render import DebugArrow, clear_debug_arrows, set_debug_arrows
 from gobot.rl import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
+    MuJoCoIpcConvergencePolicy,
     MuJoCoIpcProvider,
     MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
@@ -188,6 +189,7 @@ def _batch_config(
         newton_max_iterations=profile.newton_max_iterations,
         line_search_max_iterations=profile.line_search_max_iterations,
         linear_system_tolerance_rate=profile.linear_system_tolerance_rate,
+        strict_convergence=profile.name == "accurate",
         # Interactive rendering reads these buffers only at its display cadence.
         export_deformable_state=profile.scene_sync_interval == 1,
         export_affine_state=profile.scene_sync_interval == 1,
@@ -484,7 +486,7 @@ class Script(gobot.NodeScript):
             settings = self.context.get_mujoco_solver_settings()
             settings["integrator"] = gobot.PhysicsIntegratorType.ImplicitFast
             settings["cone"] = gobot.PhysicsFrictionConeType.Elliptic
-            settings["impedance_ratio"] = 10.0
+            settings["impedance_ratio"] = controllers.GRIP_IMPEDANCE_RATIO
             self.context.set_mujoco_solver_settings(settings)
             artifact = CompiledMuJoCoIpcArtifact.from_context(self.context)
             self.provider = MuJoCoIpcProvider(
@@ -498,6 +500,9 @@ class Script(gobot.NodeScript):
                     relaxation_factor=1.0,
                     capture_mujoco_graphs=True,
                     capture_coupler_graphs=True,
+                    convergence_policy=MuJoCoIpcConvergencePolicy(
+                        enabled=self.quality_profile.name == "accurate"
+                    ),
                 ),
                 libuipc_config=solver_config,
                 mujoco_options={
