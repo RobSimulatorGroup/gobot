@@ -1710,8 +1710,18 @@ void RegisterManualAppContextBindings(py::module_& module) {
                         throw std::invalid_argument(
                                 "deformable vertex count exceeds the padded tensor width");
                     }
-                    const Ref<TetrahedralMesh>& mesh = body->GetMesh();
-                    if (!mesh.IsValid() || vertex_count != mesh->GetVertexCount()) {
+                    std::size_t authored_vertex_count = 0;
+                    bool has_mesh = false;
+                    if (body->GetModel() == DeformableBodyModel::ThinShell) {
+                        const Ref<SurfaceMesh>& mesh = body->GetSurfaceMesh();
+                        has_mesh = mesh.IsValid();
+                        authored_vertex_count = has_mesh ? mesh->GetVertexCount() : 0;
+                    } else {
+                        const Ref<TetrahedralMesh>& mesh = body->GetMesh();
+                        has_mesh = mesh.IsValid();
+                        authored_vertex_count = has_mesh ? mesh->GetVertexCount() : 0;
+                    }
+                    if (!has_mesh || vertex_count != authored_vertex_count) {
                         throw std::invalid_argument(
                                 "deformable vertex count does not match the authored mesh topology");
                     }

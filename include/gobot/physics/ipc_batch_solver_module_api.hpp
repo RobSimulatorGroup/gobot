@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 5;
+inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 6;
 
 enum IpcBatchSolverOutputFlag : std::uint32_t {
     IpcBatchSolverOutputNone = 0,
@@ -44,6 +44,8 @@ struct IpcSolverDeviceBufferView {
 struct IpcBatchSolverModuleBuffers {
     IpcSolverDeviceBufferView deformable_positions;
     IpcSolverDeviceBufferView deformable_velocities;
+    // Per-vertex world-space force input, accumulated with libuipc forces.
+    IpcSolverDeviceBufferView deformable_external_forces;
     IpcSolverDeviceBufferView deformable_contact_forces;
     IpcSolverDeviceBufferView affine_targets;
     // World-frame body-origin twists in [linear_xyz, angular_xyz] order.

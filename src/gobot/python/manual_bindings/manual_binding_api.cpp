@@ -41,6 +41,7 @@ void RegisterManualApis(py::module_& module) {
     auto tactile_sensor3d_class =
             py::class_<PyTactileSensor3DHandle, PySensor3DHandle>(module, "TactileSensor3D");
     auto tetrahedral_mesh_class = py::class_<PyTetrahedralMesh>(module, "TetrahedralMesh");
+    auto surface_mesh_class = py::class_<PySurfaceMesh>(module, "SurfaceMesh");
     auto tactile_sensor_config_class =
             py::class_<PyTactileSensorConfig>(module, "TactileSensorConfig");
 
@@ -79,6 +80,7 @@ void RegisterManualApis(py::module_& module) {
                                         height_scanner3d_class,
                                         mesh_instance_class);
     RegisterManualIpcSceneBindings(tetrahedral_mesh_class,
+                                   surface_mesh_class,
                                    tactile_sensor_config_class,
                                    physics_coupling_class,
                                    deformable_attachment_class,

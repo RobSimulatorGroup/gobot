@@ -352,6 +352,7 @@ bool BatchBind(void* opaque,
     auto* session = static_cast<BatchSession*>(opaque);
     if (session == nullptr || buffers == nullptr ||
         buffers->deformable_positions.data == nullptr ||
+        buffers->deformable_external_forces.data == nullptr ||
         buffers->affine_targets.data == nullptr ||
         buffers->affine_target_twists.data == nullptr) {
         WriteError(error, error_size, "fake IPC batch buffers are invalid");

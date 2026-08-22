@@ -146,6 +146,7 @@ def main() -> None:
             assert abs(float(arrays["qpos"][0, 0]) - 0.25) < 1.0e-5
             torch.testing.assert_close(arrays["qpos"][1:], before_reset[1:])
             assert provider.capabilities.graph_capture is True
+            assert provider.graph_captured is True
             assert provider.capabilities.device_native is True
             assert provider.capabilities.runtime_checkpoint is True
             assert provider.capabilities.sensor_batch is True

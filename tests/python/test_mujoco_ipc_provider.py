@@ -171,6 +171,9 @@ class _FakeIpcSolver:
                 "velocities": torch.zeros(
                     (num_envs, vertex_count, 3), dtype=torch.float64
                 ),
+                "external_forces": torch.zeros(
+                    (num_envs, vertex_count, 3), dtype=torch.float64
+                ),
                 "contact_forces": torch.zeros(
                     (num_envs, vertex_count, 3), dtype=torch.float64
                 ),
@@ -893,6 +896,76 @@ def test_solver_coupled_proxy_x1_scales_storage_and_skips_checkpoints() -> None:
     assert torch.count_nonzero(rigid.arrays["xfrc_applied"]) == 0
 
 
+def test_solver_coupled_proxy_overrides_one_proxy_target_twist() -> None:
+    artifact = _artifact()
+    rigid = _FakeNewtonRigidSolver(artifact, 2)
+    ipc = _FakeIpcSolver(artifact, 2)
+    coupler = SolverCoupledProxy(
+        rigid,
+        ipc,
+        artifact.coupled_bodies,
+        coupling_iterations=1,
+        relaxation_mode="fixed",
+        capture_graphs=False,
+    )
+    storage = coupler.storage_signature
+    override = torch.tensor(
+        [0.75, -0.25, 0.0, 0.0, 0.0, 0.5], dtype=torch.float64
+    )
+    transform_override = torch.eye(4, dtype=torch.float64).repeat(2, 1, 1)
+    transform_override[:, 0, 3] = torch.tensor(
+        [0.4, 0.8], dtype=torch.float64
+    )
+
+    coupler.set_proxy_transform_override(0, transform_override)
+    coupler.set_proxy_twist_override(0, override)
+    coupler.step()
+
+    assert torch.allclose(
+        ipc.arrays["affine_targets"][:, 0], transform_override
+    )
+    expected = override.expand(2, 6)
+    assert torch.allclose(
+        ipc.arrays["affine_target_twists"][:, 0], expected
+    )
+    assert torch.allclose(
+        ipc.arrays["affine_target_twists"][:, 1, 0],
+        torch.full((2,), 3.0, dtype=torch.float64),
+    )
+    assert torch.allclose(
+        ipc.arrays["affine_target_twists"][:, 1, 5],
+        torch.full((2,), 2.0, dtype=torch.float64),
+    )
+    assert coupler.storage_signature == storage
+
+    coupler.clear_proxy_transform_override(0)
+    coupler.clear_proxy_twist_override(0)
+    coupler.sync_rigid_pose()
+    assert torch.allclose(
+        ipc.arrays["affine_targets"][:, 0],
+        torch.eye(4, dtype=torch.float64).expand(2, 4, 4),
+    )
+    assert torch.allclose(
+        ipc.arrays["affine_target_twists"][:, 0],
+        ipc.arrays["affine_target_twists"][:, 1],
+    )
+    _raises(IndexError, lambda: coupler.set_proxy_twist_override(-1, override))
+    _raises(IndexError, lambda: coupler.clear_proxy_twist_override(99))
+    _raises(
+        IndexError,
+        lambda: coupler.set_proxy_transform_override(99, transform_override),
+    )
+    _raises(IndexError, lambda: coupler.clear_proxy_transform_override(-1))
+    _raises(
+        ValueError,
+        lambda: coupler.set_proxy_twist_override(0, torch.zeros(2, 5)),
+    )
+    _raises(
+        ValueError,
+        lambda: coupler.set_proxy_transform_override(0, torch.zeros(2, 3, 4)),
+    )
+
+
 def test_solver_coupled_proxy_stress_guard_promotes_x1_to_x2() -> None:
     artifact = _artifact()
     rigid = _FakeNewtonRigidSolver(artifact, 2)
@@ -1373,6 +1446,7 @@ def main() -> int:
     test_libuipc_al_ipc_config_reports_approximate_proxy_feedback()
     test_mujoco_ipc_step_order_wrench_ownership_and_full_reset()
     test_solver_coupled_proxy_x1_scales_storage_and_skips_checkpoints()
+    test_solver_coupled_proxy_overrides_one_proxy_target_twist()
     test_step_failure_releases_owned_wrench_and_full_reset_recovers()
     test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement()
     test_mujoco_ipc_config_requires_matching_solver_substeps()

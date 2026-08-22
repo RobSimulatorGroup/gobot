@@ -330,6 +330,18 @@ bool ValidateMaterial(const DeformableBody3D& body, std::string* error) {
     if (!std::isfinite(body.GetDamping()) || body.GetDamping() < 0.0) {
         return SetCompileError(error, "deformable body damping must be finite and non-negative");
     }
+    if (body.GetModel() == DeformableBodyModel::ThinShell) {
+        if (!std::isfinite(body.GetThickness()) || body.GetThickness() <= 0.0) {
+            return SetCompileError(
+                    error, "thin-shell deformable thickness must be finite and positive");
+        }
+        if (!std::isfinite(body.GetBendingStiffness()) ||
+            body.GetBendingStiffness() < 0.0) {
+            return SetCompileError(
+                    error,
+                    "thin-shell deformable bending stiffness must be finite and non-negative");
+        }
+    }
     return true;
 }
 
@@ -740,6 +752,19 @@ private:
         return digest;
     }
 
+    std::string AddSurfaceMesh(const SurfaceMesh& mesh) {
+        SurfaceMeshData surface_mesh;
+        surface_mesh.vertices = mesh.GetVertices();
+        surface_mesh.triangles = mesh.GetTriangles();
+        std::vector<std::uint8_t> data = EncodeSurfaceMesh(surface_mesh);
+        const std::string digest = Sha256Digest(std::span<const std::uint8_t>(data));
+        if (!blobs_.contains(digest)) {
+            blobs_.emplace(digest, IpcSceneArtifactBlob{
+                    digest, std::string(kSurfaceMeshEncoding), digest, std::move(data)});
+        }
+        return digest;
+    }
+
     bool AddSurfaceMesh(const Mesh& mesh,
                         std::string* blob_id,
                         std::size_t* vertex_count,
@@ -770,35 +795,67 @@ private:
                     body, "deformable body '" + path + "'", error)) {
             return false;
         }
-        const Ref<TetrahedralMesh>& mesh = body.GetMesh();
-        if (!mesh.IsValid()) {
-            return SetCompileError(error, "deformable body '" + path + "' has no tetrahedral mesh");
-        }
         std::string validation_error;
-        if (!mesh->Validate(&validation_error)) {
-            return SetCompileError(
-                    error, "deformable body '" + path + "' has invalid mesh: " + validation_error);
-        }
         if (!ValidateMaterial(body, &validation_error)) {
             return SetCompileError(
                     error, "deformable body '" + path + "' is invalid: " + validation_error);
         }
-        const std::string blob_id = AddMesh(*mesh.Get());
+
+        std::string blob_id;
+        std::size_t vertex_count = 0;
+        std::size_t tetrahedron_count = 0;
+        std::size_t surface_triangle_count = 0;
+        std::string model_name;
+        if (body.GetModel() == DeformableBodyModel::ThinShell) {
+            const Ref<SurfaceMesh>& mesh = body.GetSurfaceMesh();
+            if (!mesh.IsValid()) {
+                return SetCompileError(
+                        error, "thin-shell deformable body '" + path + "' has no surface mesh");
+            }
+            if (!mesh->Validate(&validation_error)) {
+                return SetCompileError(
+                        error, "thin-shell deformable body '" + path +
+                                       "' has invalid mesh: " + validation_error);
+            }
+            blob_id = AddSurfaceMesh(*mesh.Get());
+            vertex_count = mesh->GetVertexCount();
+            surface_triangle_count = mesh->GetTriangleCount();
+            model_name = "thin_shell";
+        } else {
+            const Ref<TetrahedralMesh>& mesh = body.GetMesh();
+            if (!mesh.IsValid()) {
+                return SetCompileError(
+                        error, "deformable body '" + path + "' has no tetrahedral mesh");
+            }
+            if (!mesh->Validate(&validation_error)) {
+                return SetCompileError(
+                        error, "deformable body '" + path +
+                                       "' has invalid mesh: " + validation_error);
+            }
+            blob_id = AddMesh(*mesh.Get());
+            vertex_count = mesh->GetVertexCount();
+            tetrahedron_count = mesh->GetTetrahedronCount();
+            surface_triangle_count = mesh->GetResolvedSurfaceTriangles().size() / 3;
+            model_name = "volumetric";
+        }
         deformable_bodies_.push_back({
+                {"bending_stiffness", body.GetBendingStiffness()},
                 {"collision_layer", body.GetCollisionLayer()},
                 {"collision_mask", body.GetCollisionMask()},
                 {"damping", body.GetDamping()},
                 {"density", body.GetDensity()},
                 {"kinematic", body.IsKinematic()},
                 {"mesh_blob", blob_id},
+                {"model", model_name},
                 {"name", body.GetName()},
                 {"path", path},
                 {"poisson_ratio", body.GetPoissonRatio()},
                 {"self_collision", body.IsSelfCollisionEnabled()},
-                {"surface_triangle_count", mesh->GetResolvedSurfaceTriangles().size() / 3},
-                {"tetrahedron_count", mesh->GetTetrahedronCount()},
+                {"surface_triangle_count", surface_triangle_count},
+                {"tetrahedron_count", tetrahedron_count},
+                {"thickness", body.GetThickness()},
                 {"transform", GlobalTransformJson(body)},
-                {"vertex_count", mesh->GetVertexCount()},
+                {"vertex_count", vertex_count},
                 {"young_modulus", body.GetYoungModulus()}});
         return true;
     }

@@ -233,6 +233,9 @@ class LibuipcBatchSolver:
             "velocities": self._torch.empty(
                 (self._num_envs, vertex_count, 3), dtype=dtype, device=self._device
             ),
+            "external_forces": self._torch.zeros(
+                (self._num_envs, vertex_count, 3), dtype=dtype, device=self._device
+            ),
             "contact_forces": self._torch.empty(
                 (self._num_envs, vertex_count, 3), dtype=dtype, device=self._device
             ),
@@ -769,6 +772,7 @@ class LibuipcBatchSolver:
         self._checkpoint_frame = None
         self._deformable_contact_force_frame = 0
         self._arrays["affine_target_twists"].zero_()
+        self._arrays["external_forces"].zero_()
         self._arrays["contact_forces"].zero_()
         self._arrays["affine_contact_wrenches"].zero_()
         return self._arrays

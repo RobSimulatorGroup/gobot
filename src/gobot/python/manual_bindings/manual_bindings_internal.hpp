@@ -57,6 +57,7 @@
 #include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/sensor_noise_model.hpp"
+#include "gobot/scene/resources/surface_mesh.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
@@ -278,6 +279,15 @@ struct PyTetrahedralMesh {
     }
 };
 
+struct PySurfaceMesh {
+    Ref<SurfaceMesh> resource{MakeRef<SurfaceMesh>()};
+
+    PySurfaceMesh() = default;
+    explicit PySurfaceMesh(Ref<SurfaceMesh> value)
+        : resource(std::move(value)) {
+    }
+};
+
 struct PyTactileSensorConfig {
     Ref<TactileSensorConfig> resource{MakeRef<TactileSensorConfig>()};
 
@@ -365,6 +375,7 @@ using PyVelocityCommandDebug3DClass = py::class_<PyVelocityCommandDebug3DHandle,
 using PyDeformableBody3DClass = py::class_<PyDeformableBody3DHandle, PyNode3DHandle>;
 using PyTactileSensor3DClass = py::class_<PyTactileSensor3DHandle, PySensor3DHandle>;
 using PyTetrahedralMeshClass = py::class_<PyTetrahedralMesh>;
+using PySurfaceMeshClass = py::class_<PySurfaceMesh>;
 using PyTactileSensorConfigClass = py::class_<PyTactileSensorConfig>;
 
 EngineContext& EnsureRuntimeContext();
@@ -512,6 +523,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                          PyMeshInstance3DClass& mesh_instance_class);
 void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
+        PySurfaceMeshClass& surface_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
         PyPhysicsCouplingClass& physics_coupling_class,
         PyDeformableAttachment3DClass& deformable_attachment_class,

@@ -13,6 +13,7 @@
 #include <gobot/scene/resources/resource_creation_registry.hpp>
 #include <gobot/scene/resources/shape_3d.hpp>
 #include <gobot/scene/resources/sphere_shape_3d.hpp>
+#include <gobot/scene/resources/surface_mesh.hpp>
 #include <gobot/scene/resources/tetrahedral_mesh.hpp>
 #include <gobot/scene/resources/terrain_generator_config.hpp>
 #include <gobot/scene/tactile_sensor_3d.hpp>
@@ -64,6 +65,12 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
                     gobot::Type::get<gobot::Ref<gobot::TetrahedralMesh>>());
     EXPECT_TRUE(ContainsResourceType(tetrahedral_mesh_types, "TetrahedralMesh"));
     EXPECT_FALSE(ContainsResourceType(tetrahedral_mesh_types, "ArrayMesh"));
+
+    const auto surface_mesh_types =
+            gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
+                    gobot::Type::get<gobot::Ref<gobot::SurfaceMesh>>());
+    EXPECT_TRUE(ContainsResourceType(surface_mesh_types, "SurfaceMesh"));
+    EXPECT_FALSE(ContainsResourceType(surface_mesh_types, "TetrahedralMesh"));
 
     const auto tactile_config_types =
             gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
@@ -137,6 +144,14 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
     ASSERT_TRUE(tetrahedral_mesh.is_valid());
     EXPECT_EQ(tetrahedral_mesh.get_type(),
               gobot::Type::get<gobot::Ref<gobot::TetrahedralMesh>>());
+
+    gobot::Variant surface_mesh =
+            gobot::ResourceCreationRegistry::CreateResourceVariant(
+                    "SurfaceMesh",
+                    gobot::Type::get<gobot::Ref<gobot::SurfaceMesh>>());
+    ASSERT_TRUE(surface_mesh.is_valid());
+    EXPECT_EQ(surface_mesh.get_type(),
+              gobot::Type::get<gobot::Ref<gobot::SurfaceMesh>>());
 
     gobot::Variant tactile_config =
             gobot::ResourceCreationRegistry::CreateResourceVariant(

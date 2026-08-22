@@ -19,6 +19,27 @@ const Ref<TetrahedralMesh>& DeformableBody3D::GetMesh() const {
     return mesh_;
 }
 
+void DeformableBody3D::SetSurfaceMesh(const Ref<SurfaceMesh>& mesh) {
+    surface_mesh_ = mesh;
+    runtime_vertices_.clear();
+}
+
+const Ref<SurfaceMesh>& DeformableBody3D::GetSurfaceMesh() const {
+    return surface_mesh_;
+}
+
+void DeformableBody3D::SetModel(DeformableBodyModel model) {
+    if (model_ == model) {
+        return;
+    }
+    model_ = model;
+    runtime_vertices_.clear();
+}
+
+DeformableBodyModel DeformableBody3D::GetModel() const {
+    return model_;
+}
+
 void DeformableBody3D::SetDensity(RealType density) {
     density_ = density;
 }
@@ -49,6 +70,22 @@ void DeformableBody3D::SetDamping(RealType damping) {
 
 RealType DeformableBody3D::GetDamping() const {
     return damping_;
+}
+
+void DeformableBody3D::SetThickness(RealType thickness) {
+    thickness_ = thickness;
+}
+
+RealType DeformableBody3D::GetThickness() const {
+    return thickness_;
+}
+
+void DeformableBody3D::SetBendingStiffness(RealType stiffness) {
+    bending_stiffness_ = stiffness;
+}
+
+RealType DeformableBody3D::GetBendingStiffness() const {
+    return bending_stiffness_;
 }
 
 void DeformableBody3D::SetKinematic(bool kinematic) {
@@ -114,10 +151,16 @@ void DeformableBody3D::ClearRuntimeVertices() {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+    QuickEnumeration_<gobot::DeformableBodyModel>("DeformableBodyModel");
+
     Class_<gobot::DeformableBody3D>("DeformableBody3D")
             .constructor()(CtorAsRawPtr)
             .property("mesh", &gobot::DeformableBody3D::GetMesh,
                       &gobot::DeformableBody3D::SetMesh)
+            .property("surface_mesh", &gobot::DeformableBody3D::GetSurfaceMesh,
+                      &gobot::DeformableBody3D::SetSurfaceMesh)
+            .property("model", &gobot::DeformableBody3D::GetModel,
+                      &gobot::DeformableBody3D::SetModel)
             .property("density", &gobot::DeformableBody3D::GetDensity,
                       &gobot::DeformableBody3D::SetDensity)
             .property("young_modulus", &gobot::DeformableBody3D::GetYoungModulus,
@@ -126,6 +169,11 @@ GOBOT_REGISTRATION {
                       &gobot::DeformableBody3D::SetPoissonRatio)
             .property("damping", &gobot::DeformableBody3D::GetDamping,
                       &gobot::DeformableBody3D::SetDamping)
+            .property("thickness", &gobot::DeformableBody3D::GetThickness,
+                      &gobot::DeformableBody3D::SetThickness)
+            .property("bending_stiffness",
+                      &gobot::DeformableBody3D::GetBendingStiffness,
+                      &gobot::DeformableBody3D::SetBendingStiffness)
             .property("kinematic", &gobot::DeformableBody3D::IsKinematic,
                       &gobot::DeformableBody3D::SetKinematic)
             .property("collision_layer", &gobot::DeformableBody3D::GetCollisionLayer,

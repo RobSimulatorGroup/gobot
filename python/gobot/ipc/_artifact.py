@@ -684,13 +684,36 @@ class CompiledIpcSceneArtifact:
         for raw_body in deformables:
             body = _require_mapping(raw_body, "deformable body")
             mesh_blob = str(body.get("mesh_blob", ""))
-            if mesh_blob not in decoded_meshes:
-                raise ValueError("deformable body references an unknown mesh blob")
-            decoded = decoded_meshes[mesh_blob]
-            for field in ("vertex_count", "tetrahedron_count", "surface_triangle_count"):
+            model = str(body.get("model", "volumetric"))
+            if model == "thin_shell":
+                if mesh_blob not in decoded_surface_meshes:
+                    raise ValueError(
+                        "thin-shell deformable body references an unknown surface mesh blob"
+                    )
+                decoded = decoded_surface_meshes[mesh_blob]
+                expected_counts = {
+                    "vertex_count": int(decoded["vertex_count"]),
+                    "tetrahedron_count": 0,
+                    "surface_triangle_count": int(decoded["triangle_count"]),
+                }
+            elif model == "volumetric":
+                if mesh_blob not in decoded_meshes:
+                    raise ValueError("deformable body references an unknown mesh blob")
+                decoded = decoded_meshes[mesh_blob]
+                expected_counts = {
+                    field: int(decoded[field])
+                    for field in (
+                        "vertex_count",
+                        "tetrahedron_count",
+                        "surface_triangle_count",
+                    )
+                }
+            else:
+                raise ValueError(f"unsupported deformable body model {model!r}")
+            for field, expected in expected_counts.items():
                 if _require_int(
                     body.get(field), f"deformable body {field}", minimum=0
-                ) != int(decoded[field]):
+                ) != expected:
                     raise ValueError(
                         f"deformable body {field} does not match its mesh blob"
                     )
@@ -709,6 +732,18 @@ class CompiledIpcSceneArtifact:
                 or damping < 0.0
             ):
                 raise ValueError("deformable body has invalid material parameters")
+            if model == "thin_shell":
+                thickness = _require_number(
+                    body.get("thickness"), "thin-shell deformable thickness"
+                )
+                bending_stiffness = _require_number(
+                    body.get("bending_stiffness"),
+                    "thin-shell deformable bending stiffness",
+                )
+                if thickness <= 0.0 or bending_stiffness < 0.0:
+                    raise ValueError(
+                        "thin-shell deformable has invalid thickness or bending stiffness"
+                    )
             _require_bool(body.get("kinematic"), "deformable body kinematic flag")
             _require_bool(
                 body.get("self_collision"), "deformable body self-collision flag"

@@ -11,9 +11,15 @@
 
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/surface_mesh.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 
 namespace gobot {
+
+enum class DeformableBodyModel {
+    Volumetric,
+    ThinShell,
+};
 
 class GOBOT_EXPORT DeformableBody3D : public Node3D {
     GOBCLASS(DeformableBody3D, Node3D)
@@ -23,6 +29,12 @@ public:
 
     void SetMesh(const Ref<TetrahedralMesh>& mesh);
     const Ref<TetrahedralMesh>& GetMesh() const;
+
+    void SetSurfaceMesh(const Ref<SurfaceMesh>& mesh);
+    const Ref<SurfaceMesh>& GetSurfaceMesh() const;
+
+    void SetModel(DeformableBodyModel model);
+    DeformableBodyModel GetModel() const;
 
     void SetDensity(RealType density);
     RealType GetDensity() const;
@@ -35,6 +47,12 @@ public:
 
     void SetDamping(RealType damping);
     RealType GetDamping() const;
+
+    void SetThickness(RealType thickness);
+    RealType GetThickness() const;
+
+    void SetBendingStiffness(RealType stiffness);
+    RealType GetBendingStiffness() const;
 
     void SetKinematic(bool kinematic);
     bool IsKinematic() const;
@@ -60,10 +78,14 @@ public:
 
 private:
     Ref<TetrahedralMesh> mesh_;
+    Ref<SurfaceMesh> surface_mesh_;
+    DeformableBodyModel model_{DeformableBodyModel::Volumetric};
     RealType density_{1000.0};
     RealType young_modulus_{100000.0};
     RealType poisson_ratio_{0.45};
     RealType damping_{0.0};
+    RealType thickness_{0.001};
+    RealType bending_stiffness_{0.001};
     bool kinematic_{false};
     std::uint32_t collision_layer_{1};
     std::uint32_t collision_mask_{0xffffffffU};

@@ -159,18 +159,29 @@ void CollectDeformableGeometry(const Node* node,
     const bool visible = IsDebugNodeVisible(node_3d, parent_visible);
     if (visible) {
         if (const auto* body = Object::PointerCastTo<DeformableBody3D>(node)) {
-            const Ref<TetrahedralMesh>& mesh = body->GetMesh();
-            if (mesh.IsValid()) {
+            const std::vector<Vector3>* authored_vertices = nullptr;
+            std::vector<std::uint32_t> surface;
+            if (body->GetModel() == DeformableBodyModel::ThinShell) {
+                const Ref<SurfaceMesh>& mesh = body->GetSurfaceMesh();
+                if (mesh.IsValid()) {
+                    authored_vertices = &mesh->GetVertices();
+                    surface = mesh->GetTriangles();
+                }
+            } else {
+                const Ref<TetrahedralMesh>& mesh = body->GetMesh();
+                if (mesh.IsValid()) {
+                    authored_vertices = &mesh->GetVertices();
+                    surface = mesh->GetResolvedSurfaceTriangles();
+                }
+            }
+            if (authored_vertices != nullptr) {
                 DeformableDebugGeometry geometry;
                 geometry.surface_color = body->GetDebugSurfaceColor();
-                const std::vector<Vector3>& authored_vertices = mesh->GetVertices();
                 const std::vector<Vector3>& runtime_vertices = body->GetRuntimeVertices();
                 const std::vector<Vector3>& vertices =
-                        runtime_vertices.size() == authored_vertices.size()
+                        runtime_vertices.size() == authored_vertices->size()
                                 ? runtime_vertices
-                                : authored_vertices;
-                const std::vector<std::uint32_t> surface =
-                        mesh->GetResolvedSurfaceTriangles();
+                                : *authored_vertices;
                 for (std::size_t index = 0; index + 2 < surface.size(); index += 3) {
                     const std::uint32_t ia = surface[index];
                     const std::uint32_t ib = surface[index + 1];

@@ -529,6 +529,16 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             reset_scope="masked",
         )
 
+    @property
+    def graph_captured(self) -> bool:
+        """Whether every runtime CUDA graph was captured successfully."""
+
+        self._require_open()
+        required = ("step", "forward", "reset", "sense")
+        return self._capture_enabled and all(
+            name in self._graphs for name in required
+        )
+
     def _checkpoint_array_names(self) -> tuple[str, ...]:
         candidates = (
             "time",

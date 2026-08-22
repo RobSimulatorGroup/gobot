@@ -98,6 +98,7 @@ void SetNodeValue(PyNodeHandle& handle, const char* property, T value) {
 
 void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
+        PySurfaceMeshClass& surface_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
         PyPhysicsCouplingClass& physics_coupling_class,
         PyDeformableAttachment3DClass& deformable_attachment_class,
@@ -243,6 +244,38 @@ void RegisterManualIpcSceneBindings(
                 return mesh.resource->GetTetrahedronCount();
             })
             .def("validate", [](const PyTetrahedralMesh& mesh) {
+                std::string error;
+                if (!mesh.resource->Validate(&error)) {
+                    throw py::value_error(error);
+                }
+            });
+
+    surface_mesh_class
+            .def(py::init<>())
+            .def_property(
+                    "vertices",
+                    [](const PySurfaceMesh& mesh) {
+                        return Vector3ListToPython(mesh.resource->GetVertices());
+                    },
+                    [](PySurfaceMesh& mesh, const py::handle& value) {
+                        mesh.resource->SetVertices(PythonToVector3List(value));
+                    })
+            .def_property(
+                    "triangles",
+                    [](const PySurfaceMesh& mesh) {
+                        return IndexTableToPython(mesh.resource->GetTriangles(), 3);
+                    },
+                    [](PySurfaceMesh& mesh, const py::handle& value) {
+                        mesh.resource->SetTriangles(
+                                PythonToIndexTable(value, 3, "surface triangle"));
+                    })
+            .def_property_readonly("vertex_count", [](const PySurfaceMesh& mesh) {
+                return mesh.resource->GetVertexCount();
+            })
+            .def_property_readonly("triangle_count", [](const PySurfaceMesh& mesh) {
+                return mesh.resource->GetTriangleCount();
+            })
+            .def("validate", [](const PySurfaceMesh& mesh) {
                 std::string error;
                 if (!mesh.resource->Validate(&error)) {
                     throw py::value_error(error);
@@ -395,6 +428,24 @@ void RegisterManualIpcSceneBindings(
                         SetNodeValue(handle, "mesh", mesh.resource);
                     })
             .def_property(
+                    "surface_mesh",
+                    [](const PyDeformableBody3DHandle& handle) -> py::object {
+                        const Ref<SurfaceMesh>& mesh =
+                                handle.ResolveAs<DeformableBody3D>()->GetSurfaceMesh();
+                        return mesh.IsValid() ? py::cast(PySurfaceMesh(mesh)) : py::none();
+                    },
+                    [](PyDeformableBody3DHandle& handle, const PySurfaceMesh& mesh) {
+                        SetNodeValue(handle, "surface_mesh", mesh.resource);
+                    })
+            .def_property(
+                    "model",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return handle.ResolveAs<DeformableBody3D>()->GetModel();
+                    },
+                    [](PyDeformableBody3DHandle& handle, DeformableBodyModel value) {
+                        SetNodeValue(handle, "model", value);
+                    })
+            .def_property(
                     "density",
                     [](const PyDeformableBody3DHandle& handle) {
                         return handle.ResolveAs<DeformableBody3D>()->GetDensity();
@@ -425,6 +476,23 @@ void RegisterManualIpcSceneBindings(
                     },
                     [](PyDeformableBody3DHandle& handle, RealType value) {
                         SetNodeValue(handle, "damping", value);
+                    })
+            .def_property(
+                    "thickness",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return handle.ResolveAs<DeformableBody3D>()->GetThickness();
+                    },
+                    [](PyDeformableBody3DHandle& handle, RealType value) {
+                        SetNodeValue(handle, "thickness", value);
+                    })
+            .def_property(
+                    "bending_stiffness",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return handle.ResolveAs<DeformableBody3D>()
+                                ->GetBendingStiffness();
+                    },
+                    [](PyDeformableBody3DHandle& handle, RealType value) {
+                        SetNodeValue(handle, "bending_stiffness", value);
                     })
             .def_property(
                     "kinematic",

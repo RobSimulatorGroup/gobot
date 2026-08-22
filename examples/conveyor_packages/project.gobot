@@ -1,0 +1,11 @@
+{
+    "editor_scene_views": {
+        "res://conveyor_packages.jscn": {
+            "at": [0.16, -0.10, 0.74],
+            "eye": [0.42, 1.35, 1.12],
+            "fov_y": 42.0,
+            "up": [0.0, 0.24, 0.97]
+        }
+    },
+    "main_scene": "res://conveyor_packages.jscn"
+}

@@ -167,8 +167,8 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
             GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH, &error));
     EXPECT_NE(error.find("ABI"), std::string::npos);
-    EXPECT_NE(error.find("v4"), std::string::npos);
     EXPECT_NE(error.find("v5"), std::string::npos);
+    EXPECT_NE(error.find("v6"), std::string::npos);
 
     error.clear();
     ASSERT_TRUE(gobot::IpcBatchSolverSession::IsModuleAvailable(
@@ -190,6 +190,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
 
     std::vector<double> positions(4 * 2 * 3);
     std::vector<double> velocities(4 * 2 * 3);
+    std::vector<double> external_forces(4 * 2 * 3);
     std::vector<double> contact_forces(4 * 2 * 3);
     std::vector<double> targets(4 * 1 * 4 * 4);
     std::vector<double> target_twists(4 * 1 * 6);
@@ -202,6 +203,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     gobot::IpcBatchSolverModuleBuffers buffers{
             MakeDeviceBuffer(positions.data(), {4, 2, 3}),
             MakeDeviceBuffer(velocities.data(), {4, 2, 3}),
+            MakeDeviceBuffer(external_forces.data(), {4, 2, 3}),
             MakeDeviceBuffer(contact_forces.data(), {4, 2, 3}),
             MakeDeviceBuffer(targets.data(), {4, 1, 4, 4}),
             MakeDeviceBuffer(target_twists.data(), {4, 1, 6}),

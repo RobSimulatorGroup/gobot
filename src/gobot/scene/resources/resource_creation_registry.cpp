@@ -22,6 +22,7 @@
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/resources/sensor_noise_model.hpp"
+#include "gobot/scene/resources/surface_mesh.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/resources/terrain_generator_config.hpp"
 #include "gobot/scene/tactile_sensor_3d.hpp"
@@ -137,6 +138,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<TetrahedralMesh>()) {
         return resource.DynamicPointerCast<TetrahedralMesh>();
+    }
+    if (expected_type == Type::get<SurfaceMesh>()) {
+        return resource.DynamicPointerCast<SurfaceMesh>();
     }
     if (expected_type == Type::get<TactileSensorConfig>()) {
         return resource.DynamicPointerCast<TactileSensorConfig>();
@@ -373,6 +377,15 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Volumetric tetrahedral mesh for deformable simulation.",
         Type::get<TetrahedralMesh>(),
         []() -> Ref<Resource> { return CreateResourceRef<TetrahedralMesh>(); }
+    });
+
+    RegisterResourceType({
+        "SurfaceMesh",
+        "SurfaceMesh",
+        "Resource",
+        "Triangle surface mesh for thin-shell deformable simulation.",
+        Type::get<SurfaceMesh>(),
+        []() -> Ref<Resource> { return CreateResourceRef<SurfaceMesh>(); }
     });
 
     RegisterResourceType({

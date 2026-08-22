@@ -19,12 +19,16 @@
 #include <uipc/constitution/affine_body_prismatic_joint.h>
 #include <uipc/constitution/affine_body_revolute_joint.h>
 #include <uipc/constitution/elastic_moduli.h>
+#include <uipc/constitution/discrete_shell_bending.h>
+#include <uipc/constitution/finite_element_external_force.h>
+#include <uipc/constitution/strain_limiting_baraff_witkin.h>
 #include <uipc/constitution/soft_position_constraint.h>
 #include <uipc/constitution/soft_transform_constraint.h>
 #include <uipc/constitution/stable_neo_hookean.h>
 #include <uipc/core/affine_body_state_accessor_feature.h>
 #include <uipc/core/contact_system_feature.h>
 #include <uipc/core/finite_element_state_accessor_feature.h>
+#include <uipc/core/finite_element_external_force_accessor_feature.h>
 #include <uipc/core/soft_position_constraint_accessor_feature.h>
 #include <uipc/core/soft_transform_constraint_accessor_feature.h>
 #include <uipc/core/solver_control_feature.h>
@@ -81,14 +85,19 @@ using uipc::constitution::AffineBodyDrivingRevoluteJoint;
 using uipc::constitution::AffineBodyPrismaticJoint;
 using uipc::constitution::AffineBodyRevoluteJoint;
 using uipc::constitution::ElasticModuli;
+using uipc::constitution::ElasticModuli2D;
+using uipc::constitution::DiscreteShellBending;
+using uipc::constitution::FiniteElementExternalForce;
 using uipc::constitution::SoftPositionConstraint;
 using uipc::constitution::SoftTransformConstraint;
 using uipc::constitution::StableNeoHookean;
+using uipc::constitution::StrainLimitingBaraffWitkinShell;
 using uipc::core::AffineBodyStateAccessorFeature;
 using uipc::core::ContactSystemFeature;
 using uipc::core::ContactElement;
 using uipc::core::Engine;
 using uipc::core::FiniteElementStateAccessorFeature;
+using uipc::core::FiniteElementExternalForceAccessorFeature;
 using uipc::core::Scene;
 using uipc::core::SoftPositionConstraintAccessorFeature;
 using uipc::core::SoftTransformConstraintAccessorFeature;
@@ -842,11 +851,12 @@ public:
     }
 
     ~Session() {
-        if (device_workspace_ == nullptr) {
-            return;
-        }
         try {
             world_->sync();
+            if (external_force_accessor_ != nullptr &&
+                external_force_accessor_->has_bound_external_forces()) {
+                external_force_accessor_->unbind_external_forces();
+            }
             if (soft_position_accessor_ != nullptr &&
                 soft_position_accessor_->has_bound_aim_positions()) {
                 soft_position_accessor_->unbind_aim_positions();
@@ -1004,6 +1014,13 @@ public:
         } else {
             UploadAffineTargetsAndTwistsHost();
         }
+        if (external_force_accessor_ == nullptr) {
+            throw std::runtime_error(
+                    "libuipc CUDA backend has no FEM external-force accessor");
+        }
+        external_force_accessor_->bind_external_forces(DeviceView(
+                buffers.deformable_external_forces,
+                initial_fem_positions_.size(), sizeof(Vector3)));
         device_buffers_bound_ = true;
         WriteDeviceState(IpcBatchSolverOutputAll);
     }
@@ -1784,6 +1801,28 @@ private:
         return masses;
     }
 
+    static std::vector<double> ComputeVertexMasses(
+            const TriangleMeshData& mesh,
+            double density,
+            double thickness) {
+        std::vector<double> masses(mesh.vertices.size(), 0.0);
+        for (const Vector3i& triangle : mesh.triangles) {
+            const Vector3& p0 = mesh.vertices[static_cast<std::size_t>(triangle[0])];
+            const Vector3& p1 = mesh.vertices[static_cast<std::size_t>(triangle[1])];
+            const Vector3& p2 = mesh.vertices[static_cast<std::size_t>(triangle[2])];
+            const double area = 0.5 * (p1 - p0).cross(p2 - p0).norm();
+            if (!std::isfinite(area) || area <= 0.0) {
+                throw std::runtime_error(
+                        "IPC thin-shell mesh has a non-positive triangle");
+            }
+            const double vertex_mass = density * thickness * area / 3.0;
+            for (const IndexT vertex : triangle) {
+                masses[static_cast<std::size_t>(vertex)] += vertex_mass;
+            }
+        }
+        return masses;
+    }
+
     template <typename ContactElement>
     void BuildDeformables(
             const Json& bodies,
@@ -1794,6 +1833,9 @@ private:
             throw std::runtime_error("IPC deformable body table must be an array");
         }
         StableNeoHookean material;
+        StrainLimitingBaraffWitkinShell shell_material;
+        DiscreteShellBending shell_bending;
+        FiniteElementExternalForce external_force;
         SoftPositionConstraint attachment_constraint;
         auto object = scene_->objects().create("gobot_deformables");
         attachment_aims_by_geometry_.clear();
@@ -1805,29 +1847,72 @@ private:
                 const std::string path = body.at("path").get<std::string>();
                 const std::string blob_id =
                         body.at("mesh_blob").get<std::string>();
-                const IpcSolverArtifactBlobView& blob =
-                        FindBlob(blob_id, kTetEncoding, "IPC deformable mesh");
-                TetMeshData decoded = DecodeTetMesh(
-                        std::span<const std::uint8_t>(blob.data, blob.size));
                 const Matrix4x4 transform =
                         ParseTransform(body.at("transform"), path);
-                for (Vector3& vertex : decoded.vertices) {
-                    vertex = TransformPoint(transform, vertex);
+                const std::string model =
+                        body.value("model", std::string{"volumetric"});
+                std::vector<Vector3> decoded_vertices;
+                std::vector<double> vertex_masses;
+                std::unique_ptr<SimplicialComplex> mesh_storage;
+                if (model == "thin_shell") {
+                    const IpcSolverArtifactBlobView& blob = FindBlob(
+                            blob_id, kTriangleEncoding,
+                            "IPC thin-shell deformable mesh");
+                    TriangleMeshData decoded = DecodeTriangleMesh(
+                            std::span<const std::uint8_t>(blob.data, blob.size));
+                    for (Vector3& vertex : decoded.vertices) {
+                        vertex = TransformPoint(transform, vertex);
+                    }
+                    const double thickness = body.at("thickness").get<double>();
+                    if (!std::isfinite(thickness) || thickness <= 0.0) {
+                        throw std::runtime_error(
+                                "IPC thin-shell thickness must be finite and positive");
+                    }
+                    decoded_vertices = decoded.vertices;
+                    vertex_masses = ComputeVertexMasses(
+                            decoded, body.at("density").get<double>(), thickness);
+                    mesh_storage = std::make_unique<SimplicialComplex>(
+                            trimesh(decoded.vertices, decoded.triangles));
+                    label_surface(*mesh_storage);
+                    shell_material.apply_to(
+                            *mesh_storage,
+                            ElasticModuli2D::youngs_poisson(
+                                    body.at("young_modulus").get<double>(),
+                                    body.at("poisson_ratio").get<double>()),
+                            body.at("density").get<double>(),
+                            0.5 * thickness);
+                    shell_bending.apply_to(
+                            *mesh_storage,
+                            body.at("bending_stiffness").get<double>());
+                } else if (model == "volumetric") {
+                    const IpcSolverArtifactBlobView& blob = FindBlob(
+                            blob_id, kTetEncoding, "IPC deformable mesh");
+                    TetMeshData decoded = DecodeTetMesh(
+                            std::span<const std::uint8_t>(blob.data, blob.size));
+                    for (Vector3& vertex : decoded.vertices) {
+                        vertex = TransformPoint(transform, vertex);
+                    }
+                    decoded_vertices = decoded.vertices;
+                    vertex_masses = ComputeVertexMasses(
+                            decoded, body.at("density").get<double>());
+                    mesh_storage = std::make_unique<SimplicialComplex>(
+                            tetmesh(decoded.vertices, decoded.tetrahedra));
+                    label_surface(*mesh_storage);
+                    label_triangle_orient(*mesh_storage);
+                    material.apply_to(
+                            *mesh_storage,
+                            ElasticModuli::youngs_poisson(
+                                    body.at("young_modulus").get<double>(),
+                                    body.at("poisson_ratio").get<double>()),
+                            body.at("density").get<double>());
+                } else {
+                    throw std::runtime_error(
+                            "IPC deformable body has unsupported model '" +
+                            model + "'");
                 }
-                SimplicialComplex mesh =
-                        tetmesh(decoded.vertices, decoded.tetrahedra);
-                label_surface(mesh);
-                label_triangle_orient(mesh);
-                material.apply_to(
-                        mesh,
-                        ElasticModuli::youngs_poisson(
-                                body.at("young_modulus").get<double>(),
-                                body.at("poisson_ratio").get<double>()),
-                        body.at("density").get<double>());
+                SimplicialComplex& mesh = *mesh_storage;
+                external_force.apply_to(mesh, Vector3::Zero());
                 std::vector<DeformableAttachmentAim> geometry_aims;
-                const double density = body.at("density").get<double>();
-                const std::vector<double> vertex_masses =
-                        ComputeVertexMasses(decoded, density);
                 bool has_attachment_constraint = false;
                 for (const DeformableAttachmentSpec& attachment :
                      attachment_specs) {
@@ -1850,7 +1935,7 @@ private:
                         geometry_aims.push_back(DeformableAttachmentAim{
                                 vertex, attachment.rigid_link_path, environment,
                                 attachment.proxy_index,
-                                decoded.vertices[static_cast<std::size_t>(vertex)]});
+                                decoded_vertices[static_cast<std::size_t>(vertex)]});
                         deformable_attachment_vertices_.push_back(
                                 DeformableAttachmentVertex{
                                         global_vertex_offset +
@@ -1858,7 +1943,7 @@ private:
                                         attachment.rigid_link_path,
                                         environment,
                                         attachment.proxy_index,
-                                        decoded.vertices[static_cast<std::size_t>(vertex)],
+                                        decoded_vertices[static_cast<std::size_t>(vertex)],
                                         Vector3::Zero(),
                                         vertex_masses[static_cast<std::size_t>(vertex)],
                                         attachment.strength_rate});
@@ -1881,17 +1966,17 @@ private:
                 if (environment == 0) {
                     deformable_bodies_.push_back(BodyRecord{
                             path, environment_vertex_offset,
-                            decoded.vertices.size()});
+                            decoded_vertices.size()});
                 }
                 deformable_contact_ranges_.push_back(
                         DeformableContactRange{
                                 global_vertex_offset,
-                                decoded.vertices.size(), created.geometry});
+                                decoded_vertices.size(), created.geometry});
                 initial_fem_positions_.insert(initial_fem_positions_.end(),
-                                              decoded.vertices.begin(),
-                                              decoded.vertices.end());
-                environment_vertex_offset += decoded.vertices.size();
-                global_vertex_offset += decoded.vertices.size();
+                                              decoded_vertices.begin(),
+                                              decoded_vertices.end());
+                environment_vertex_offset += decoded_vertices.size();
+                global_vertex_offset += decoded_vertices.size();
             }
         }
         if (!deformable_attachment_vertices_.empty()) {
@@ -2155,11 +2240,14 @@ private:
                     view(*fixed)[0] = root_paths.contains(
                             link.at("path").get<std::string>()) ? 1 : 0;
                 } else if (one_way_proxy) {
-                    // OneWay bodies are prescribed collision geometry. Keeping
-                    // them out of the Newton unknowns avoids conditioning the
-                    // deformable solve on unrelated robot-link constraints.
-                    auto fixed = mesh.instances().find<IndexT>(uipc::builtin::is_fixed);
-                    view(*fixed)[0] = 1;
+                    // Keep OneWay proxies non-fixed and constrain them from
+                    // q_prev toward this frame's target. SoftTransformConstraint
+                    // interpolates that endpoint over libuipc substeps, so CCD
+                    // sees the complete sweep while contact cannot displace the
+                    // massless external body instead of the deformable.
+                    constraint.apply_to(
+                            mesh, Vector2{config.kinematic_strength,
+                                          config.kinematic_strength});
                     auto external_kinetic = mesh.instances().find<IndexT>(
                             uipc::builtin::external_kinetic);
                     view(*external_kinetic)[0] = 1;
@@ -2253,23 +2341,21 @@ private:
                     } else {
                         affine_targets_.emplace(path, target);
                     }
-                    if (!one_way_proxy) {
-                        scene_->animator().insert(
-                                *object,
-                                [target](uipc::core::Animation::UpdateInfo& info) {
-                                    auto geometry = info.geo_slots()[0]
-                                                            ->geometry()
-                                                            .as<SimplicialComplex>();
-                                    auto constrained =
-                                            geometry->instances().find<IndexT>(
-                                                    uipc::builtin::is_constrained);
-                                    auto aim =
-                                            geometry->instances().find<Matrix4x4>(
-                                                    uipc::builtin::aim_transform);
-                                    view(*constrained)[0] = 1;
-                                    view(*aim)[0] = target->value;
-                                });
-                    }
+                    scene_->animator().insert(
+                            *object,
+                            [target](uipc::core::Animation::UpdateInfo& info) {
+                                auto geometry = info.geo_slots()[0]
+                                                        ->geometry()
+                                                        .as<SimplicialComplex>();
+                                auto constrained =
+                                        geometry->instances().find<IndexT>(
+                                                uipc::builtin::is_constrained);
+                                auto aim =
+                                        geometry->instances().find<Matrix4x4>(
+                                                uipc::builtin::aim_transform);
+                                view(*constrained)[0] = 1;
+                                view(*aim)[0] = target->value;
+                            });
                 }
             }
 
@@ -2453,6 +2539,12 @@ private:
         fem_state_ = std::make_unique<SimplicialComplex>(fem_accessor_->create_geometry());
         fem_state_->vertices().create<Vector3>(uipc::builtin::position);
         fem_state_->vertices().create<Vector3>(uipc::builtin::velocity);
+        external_force_accessor_ = world_->features().find<
+                FiniteElementExternalForceAccessorFeature>();
+        if (external_force_accessor_ == nullptr) {
+            throw std::runtime_error(
+                    "libuipc CUDA backend has no FEM external-force accessor");
+        }
 
         if (!affine_bodies_.empty()) {
             affine_accessor_ = world_->features().find<AffineBodyStateAccessorFeature>();
@@ -2820,6 +2912,8 @@ private:
     std::unique_ptr<World> world_;
     std::unique_ptr<Scene> scene_;
     std::shared_ptr<FiniteElementStateAccessorFeature> fem_accessor_;
+    std::shared_ptr<FiniteElementExternalForceAccessorFeature>
+            external_force_accessor_;
     std::shared_ptr<AffineBodyStateAccessorFeature> affine_accessor_;
     std::shared_ptr<ContactSystemFeature> contact_system_;
     std::shared_ptr<SoftPositionConstraintAccessorFeature>
@@ -3024,6 +3118,10 @@ public:
                     environments_per_shard_);
             local.deformable_velocities = OffsetDeviceBuffer(
                     buffers.deformable_velocities,
+                    environment_offset * vertices * 3,
+                    environments_per_shard_);
+            local.deformable_external_forces = OffsetDeviceBuffer(
+                    buffers.deformable_external_forces,
                     environment_offset * vertices * 3,
                     environments_per_shard_);
             local.deformable_contact_forces = OffsetDeviceBuffer(

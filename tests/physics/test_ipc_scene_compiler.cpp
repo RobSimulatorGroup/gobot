@@ -21,6 +21,7 @@
 #include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
+#include <gobot/scene/resources/surface_mesh.hpp>
 #include <gobot/scene/resources/tetrahedral_mesh.hpp>
 #include <gobot/scene/rigid_body_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
@@ -40,6 +41,18 @@ gobot::Ref<gobot::TetrahedralMesh> MakeTetrahedron() {
             {0.0, 0.0, 1.0},
     });
     mesh->SetTetrahedra({0, 1, 2, 3});
+    return mesh;
+}
+
+gobot::Ref<gobot::SurfaceMesh> MakeQuadSurface() {
+    auto mesh = gobot::MakeRef<gobot::SurfaceMesh>();
+    mesh->SetVertices({
+            {-0.5, -0.5, 0.0},
+            {0.5, -0.5, 0.0},
+            {0.5, 0.5, 0.0},
+            {-0.5, 0.5, 0.0},
+    });
+    mesh->SetTriangles({0, 1, 2, 0, 2, 3});
     return mesh;
 }
 
@@ -121,6 +134,41 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     EXPECT_EQ(manifest.at("tactile_sensors").at(0).at("coat_vertex_indices"),
               nlohmann::json::array({0, 1, 2}));
 
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, compiles_thin_shell_deformable) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* body = gobot::Object::New<gobot::DeformableBody3D>();
+    body->SetName("film");
+    body->SetModel(gobot::DeformableBodyModel::ThinShell);
+    body->SetSurfaceMesh(MakeQuadSurface());
+    body->SetThickness(0.0012);
+    body->SetBendingStiffness(0.0002);
+    body->SetSelfCollisionEnabled(true);
+    tree.GetRoot()->AddChild(body);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error)) << error;
+    ASSERT_EQ(artifact.blobs.size(), 1);
+    EXPECT_EQ(artifact.blobs.front().encoding, "gobot.triangle-mesh.le.v1");
+
+    const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
+    const nlohmann::json& film = manifest.at("deformable_bodies").at(0);
+    EXPECT_EQ(film.at("model"), "thin_shell");
+    EXPECT_EQ(film.at("vertex_count"), 4);
+    EXPECT_EQ(film.at("tetrahedron_count"), 0);
+    EXPECT_EQ(film.at("surface_triangle_count"), 2);
+    EXPECT_NEAR(film.at("thickness").get<double>(), 0.0012, 1.0e-10);
+    EXPECT_NEAR(
+            film.at("bending_stiffness").get<double>(), 0.0002, 1.0e-10);
+    EXPECT_TRUE(film.at("self_collision"));
+
+    body->SetThickness(0.0);
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_NE(error.find("thickness"), std::string::npos);
     tree.Finalize();
 }
 

@@ -403,6 +403,8 @@ public:
                 values["positions"], "positions");
         buffers.deformable_velocities = DeviceBufferFromPython(
                 values["velocities"], "velocities");
+        buffers.deformable_external_forces = DeviceBufferFromPython(
+                values["external_forces"], "external_forces");
         buffers.deformable_contact_forces = DeviceBufferFromPython(
                 values["contact_forces"], "contact_forces");
         buffers.affine_targets = DeviceBufferFromPython(

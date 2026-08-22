@@ -76,6 +76,11 @@ class NodeScript:
             .value("TwoWay", PhysicsCouplingMode::TwoWay)
             .export_values();
 
+    py::enum_<DeformableBodyModel>(module, "DeformableBodyModel")
+            .value("Volumetric", DeformableBodyModel::Volumetric)
+            .value("ThinShell", DeformableBodyModel::ThinShell)
+            .export_values();
+
     py::enum_<RayReductionMode>(module, "RayReductionMode")
             .value("None_", RayReductionMode::None)
             .value("Min", RayReductionMode::Min)

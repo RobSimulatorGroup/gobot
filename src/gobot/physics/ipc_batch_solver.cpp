@@ -343,6 +343,9 @@ public:
                ValidateBuffer(buffers.deformable_velocities,
                               deformable_shape, device,
                               "deformable_velocities", &last_error_) &&
+               ValidateBuffer(buffers.deformable_external_forces,
+                              deformable_shape, device,
+                              "deformable_external_forces", &last_error_) &&
                ValidateBuffer(buffers.deformable_contact_forces,
                               deformable_shape, device,
                               "deformable_contact_forces", &last_error_) &&

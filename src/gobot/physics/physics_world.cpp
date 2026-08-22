@@ -968,10 +968,13 @@ std::string PhysicsWorld::GetCheckpointCompatibilityKey() const {
     for (const PhysicsDeformableSnapshot& deformable : scene_snapshot_.deformables) {
         append(deformable.scene_path);
         append_integer(deformable.stable_id);
+        append_integer(deformable.model);
         append_real(deformable.density);
         append_real(deformable.young_modulus);
         append_real(deformable.poisson_ratio);
         append_real(deformable.damping);
+        append_real(deformable.thickness);
+        append_real(deformable.bending_stiffness);
         append_integer(deformable.kinematic);
         append_integer(deformable.collision_layer);
         append_integer(deformable.collision_mask);

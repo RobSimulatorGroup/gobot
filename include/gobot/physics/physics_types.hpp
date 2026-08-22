@@ -254,10 +254,13 @@ struct PhysicsDeformableSnapshot {
     std::vector<Vector3> vertices;
     std::vector<std::uint32_t> tetrahedra;
     std::vector<std::uint32_t> surface_triangles;
+    int model{0};
     RealType density{1000.0};
     RealType young_modulus{100000.0};
     RealType poisson_ratio{0.45};
     RealType damping{0.0};
+    RealType thickness{0.001};
+    RealType bending_stiffness{0.001};
     bool kinematic{false};
     std::uint32_t collision_layer{1};
     std::uint32_t collision_mask{0xffffffffU};

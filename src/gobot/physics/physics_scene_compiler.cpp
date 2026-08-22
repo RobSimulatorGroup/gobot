@@ -645,7 +645,15 @@ void CollectSceneNodes(const Node* node,
         deformable_snapshot.name = deformable->GetName();
         deformable_snapshot.scene_path = CanonicalScenePath(deformable);
         deformable_snapshot.global_transform = global_transform;
-        if (const Ref<TetrahedralMesh>& mesh = deformable->GetMesh(); mesh.IsValid()) {
+        deformable_snapshot.model = static_cast<int>(deformable->GetModel());
+        if (deformable->GetModel() == DeformableBodyModel::ThinShell) {
+            if (const Ref<SurfaceMesh>& mesh = deformable->GetSurfaceMesh();
+                mesh.IsValid()) {
+                deformable_snapshot.vertices = mesh->GetVertices();
+                deformable_snapshot.surface_triangles = mesh->GetTriangles();
+            }
+        } else if (const Ref<TetrahedralMesh>& mesh = deformable->GetMesh();
+                   mesh.IsValid()) {
             deformable_snapshot.vertices = mesh->GetVertices();
             deformable_snapshot.tetrahedra = mesh->GetTetrahedra();
             deformable_snapshot.surface_triangles = mesh->GetResolvedSurfaceTriangles();
@@ -654,6 +662,8 @@ void CollectSceneNodes(const Node* node,
         deformable_snapshot.young_modulus = deformable->GetYoungModulus();
         deformable_snapshot.poisson_ratio = deformable->GetPoissonRatio();
         deformable_snapshot.damping = deformable->GetDamping();
+        deformable_snapshot.thickness = deformable->GetThickness();
+        deformable_snapshot.bending_stiffness = deformable->GetBendingStiffness();
         deformable_snapshot.kinematic = deformable->IsKinematic();
         deformable_snapshot.collision_layer = deformable->GetCollisionLayer();
         deformable_snapshot.collision_mask = deformable->GetCollisionMask();

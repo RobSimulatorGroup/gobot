@@ -491,6 +491,21 @@ class TetrahedralMesh:
     def validate(self) -> None: ...
 
 
+class SurfaceMesh:
+    vertices: list[Vector3]
+    triangles: npt.NDArray[np.uint32]
+    vertex_count: int
+    triangle_count: int
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
+
+
+class DeformableBodyModel(Enum):
+    Volumetric: ClassVar[DeformableBodyModel]
+    ThinShell: ClassVar[DeformableBodyModel]
+
+
 class TactileSensorConfig:
     image_width: int
     image_height: int
@@ -514,10 +529,14 @@ class TactileSensorConfig:
 
 class DeformableBody3D(Node3D):
     mesh: TetrahedralMesh | None
+    surface_mesh: SurfaceMesh | None
+    model: DeformableBodyModel
     density: float
     young_modulus: float
     poisson_ratio: float
     damping: float
+    thickness: float
+    bending_stiffness: float
     kinematic: bool
     collision_layer: int
     collision_mask: int

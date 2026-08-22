@@ -805,10 +805,24 @@ class SolverCoupledProxy:
                 ("subtree_com", self._subtree_com),
                 ("root_body_ids", self._root_body_ids),
                 ("cvel", self._cvel),
+                ("origin_targets", self._origin_targets),
+                (
+                    "target_transform_overrides",
+                    self._target_transform_overrides,
+                ),
+                (
+                    "target_transform_override_mask",
+                    self._target_transform_override_mask,
+                ),
                 ("affine_target_twists", self._target_twists),
                 ("com_positions", self._com_positions),
                 ("spatial_velocities", self._spatial_velocities),
                 ("origin_twists", self._origin_twists),
+                ("target_twist_overrides", self._target_twist_overrides),
+                (
+                    "target_twist_override_mask",
+                    self._target_twist_override_mask,
+                ),
                 ("origin_minus_com", self._origin_minus_com),
                 ("angular_cross_offset", self._angular_cross_offset),
                 ("iteration_guess", self._iteration_guess),
@@ -917,6 +931,15 @@ class SolverCoupledProxy:
                     )
 
         self._com_positions = self._torch.empty_like(self._positions)
+        self._origin_targets = self._torch.empty_like(self._targets)
+        self._target_transform_overrides = self._torch.zeros_like(
+            self._targets
+        )
+        self._target_transform_override_mask = self._torch.zeros(
+            (self._num_envs, self._body_count, 1, 1),
+            dtype=self._torch.bool,
+            device=self._targets.device,
+        )
         self._spatial_velocities = self._torch.empty(
             (self._num_envs, self._body_count, 6),
             dtype=self._cvel.dtype,
@@ -925,6 +948,16 @@ class SolverCoupledProxy:
         self._origin_twists = self._torch.empty(
             expected_twists,
             dtype=self._target_twists.dtype,
+            device=self._target_twists.device,
+        )
+        self._target_twist_overrides = self._torch.zeros(
+            expected_twists,
+            dtype=self._target_twists.dtype,
+            device=self._target_twists.device,
+        )
+        self._target_twist_override_mask = self._torch.zeros(
+            (self._num_envs, self._body_count, 1),
+            dtype=self._torch.bool,
             device=self._target_twists.device,
         )
         self._origin_minus_com = self._torch.empty_like(self._positions)
@@ -1091,7 +1124,12 @@ class SolverCoupledProxy:
         self._origin_twists[..., :3].copy_(linear_at_com)
         self._origin_twists[..., :3].add_(self._angular_cross_offset)
         self._origin_twists[..., 3:].copy_(angular)
-        self._target_twists.copy_(self._origin_twists)
+        self._torch.where(
+            self._target_twist_override_mask,
+            self._target_twist_overrides,
+            self._origin_twists,
+            out=self._target_twists,
+        )
 
     def _initialize_pose_error_feedback(self) -> None:
         if self._proxy_transforms is None or tuple(self._proxy_transforms.shape) != (
@@ -1265,10 +1303,18 @@ class SolverCoupledProxy:
         self._torch.index_select(
             self._xmat, 1, self._body_ids, out=self._rotations
         )
-        self._targets[..., :3, :3].copy_(
+        self._origin_targets[..., :3, :3].copy_(
             self._rotations.reshape(self._num_envs, self._body_count, 3, 3)
         )
-        self._targets[..., :3, 3].copy_(self._positions)
+        self._origin_targets[..., :3, 3].copy_(self._positions)
+        self._origin_targets[..., 3, :3].zero_()
+        self._origin_targets[..., 3, 3].fill_(1.0)
+        self._torch.where(
+            self._target_transform_override_mask,
+            self._target_transform_overrides,
+            self._origin_targets,
+            out=self._targets,
+        )
 
     def _gather_rigid_kinematics(self) -> None:
         self._replay_or_call(
@@ -1440,10 +1486,15 @@ class SolverCoupledProxy:
             "_last_interface_residual_device",
             "_last_interface_residual_l2_device",
             "_last_relaxation_coefficient_device",
+            "_origin_targets",
+            "_target_transform_overrides",
+            "_target_transform_override_mask",
             "_target_twists",
             "_com_positions",
             "_spatial_velocities",
             "_origin_twists",
+            "_target_twist_overrides",
+            "_target_twist_override_mask",
             "_origin_minus_com",
             "_angular_cross_offset",
             "_checkpoint_applied_wrenches",
@@ -1772,6 +1823,113 @@ class SolverCoupledProxy:
         """Synchronize targets outside a step, for construction/reset/forward."""
 
         self._gather_rigid_kinematics()
+
+    def set_proxy_twist_override(self, proxy_index: int, twists: Any) -> None:
+        """Override one proxy's world-space linear/angular target velocity.
+
+        ``twists`` is either ``[6]`` or ``[num_envs, 6]`` in
+        ``[vx, vy, vz, wx, wy, wz]`` order. The override changes velocity only;
+        proxy pose still follows its rigid owner. Backends may use this as a
+        velocity hint, but contact-relative motion can also require a matching
+        transform override.
+        """
+
+        if self._phase != "Idle":
+            raise RuntimeError(
+                "proxy twist overrides may only change between coupled steps"
+            )
+        try:
+            index = operator.index(proxy_index)
+        except TypeError as error:
+            raise TypeError("proxy index must be an integer") from error
+        if isinstance(proxy_index, bool) or not 0 <= index < self._body_count:
+            raise IndexError("proxy twist override index is out of range")
+        source = self._torch.as_tensor(
+            twists,
+            dtype=self._target_twist_overrides.dtype,
+            device=self._target_twist_overrides.device,
+        )
+        target = self._target_twist_overrides[:, index]
+        if tuple(source.shape) == (6,):
+            target.copy_(source.unsqueeze(0).expand_as(target))
+        elif tuple(source.shape) == (self._num_envs, 6):
+            target.copy_(source)
+        else:
+            raise ValueError(
+                "proxy twist override must have shape [6] or "
+                f"[{self._num_envs}, 6], got {tuple(source.shape)}"
+            )
+        self._target_twist_override_mask[:, index].fill_(True)
+
+    def set_proxy_transform_override(
+        self, proxy_index: int, transforms: Any
+    ) -> None:
+        """Override one proxy's world transform without moving its rigid owner.
+
+        ``transforms`` is either ``[4, 4]`` or ``[num_envs, 4, 4]``. The
+        override is staged through the same graph-safe target storage as normal
+        rigid kinematics. It is useful for solver-specific kinematic surfaces
+        whose authoring and MuJoCo geometry remain stationary.
+        """
+
+        if self._phase != "Idle":
+            raise RuntimeError(
+                "proxy transform overrides may only change between coupled steps"
+            )
+        try:
+            index = operator.index(proxy_index)
+        except TypeError as error:
+            raise TypeError("proxy index must be an integer") from error
+        if isinstance(proxy_index, bool) or not 0 <= index < self._body_count:
+            raise IndexError("proxy transform override index is out of range")
+        source = self._torch.as_tensor(
+            transforms,
+            dtype=self._target_transform_overrides.dtype,
+            device=self._target_transform_overrides.device,
+        )
+        target = self._target_transform_overrides[:, index]
+        if tuple(source.shape) == (4, 4):
+            target.copy_(source.unsqueeze(0).expand_as(target))
+        elif tuple(source.shape) == (self._num_envs, 4, 4):
+            target.copy_(source)
+        else:
+            raise ValueError(
+                "proxy transform override must have shape [4,4] or "
+                f"[{self._num_envs},4,4], got {tuple(source.shape)}"
+            )
+        self._target_transform_override_mask[:, index].fill_(True)
+
+    def clear_proxy_transform_override(self, proxy_index: int) -> None:
+        """Restore one proxy's transform from its rigid owner."""
+
+        if self._phase != "Idle":
+            raise RuntimeError(
+                "proxy transform overrides may only change between coupled steps"
+            )
+        try:
+            index = operator.index(proxy_index)
+        except TypeError as error:
+            raise TypeError("proxy index must be an integer") from error
+        if isinstance(proxy_index, bool) or not 0 <= index < self._body_count:
+            raise IndexError("proxy transform override index is out of range")
+        self._target_transform_overrides[:, index].zero_()
+        self._target_transform_override_mask[:, index].zero_()
+
+    def clear_proxy_twist_override(self, proxy_index: int) -> None:
+        """Restore one proxy's velocity from its rigid owner."""
+
+        if self._phase != "Idle":
+            raise RuntimeError(
+                "proxy twist overrides may only change between coupled steps"
+            )
+        try:
+            index = operator.index(proxy_index)
+        except TypeError as error:
+            raise TypeError("proxy index must be an integer") from error
+        if isinstance(proxy_index, bool) or not 0 <= index < self._body_count:
+            raise IndexError("proxy twist override index is out of range")
+        self._target_twist_overrides[:, index].zero_()
+        self._target_twist_override_mask[:, index].zero_()
 
     def release_wrenches(self) -> None:
         """Remove only forces previously contributed by this coupler."""
@@ -2102,6 +2260,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
             {
                 "ipc_positions": ipc["positions"],
                 "ipc_velocities": ipc["velocities"],
+                "ipc_external_forces": ipc["external_forces"],
                 "ipc_contact_forces": ipc["contact_forces"],
                 "ipc_affine_targets": ipc["affine_targets"],
                 "ipc_affine_target_twists": ipc.get("affine_target_twists"),
