@@ -20,87 +20,118 @@ PLAY_SCRIPT_NAME = "conveyor_packages_play.py"
 PLAY_SCRIPT_PATH = "res://" + PLAY_SCRIPT_NAME
 PLAY_SCRIPT_RESOURCE_ID = "conveyor_packages_play_script"
 
-OPENARM_ASSET_ROOT = HERE / "assets" / "openarm_description"
-OPENARM_URDF_RESOURCE = (
-    "res://assets/openarm_description/openarm_v20_bimanual.urdf"
+LEAP_ASSET_ROOT = HERE / "assets" / "leap_hand"
+LEAP_RESOURCE_ROOT = "res://assets/leap_hand"
+HAND_SIDES = ("left", "right")
+# Place the anatomical left/right models on their matching world sides so both
+# thumbs point inward toward the workpiece.
+LEAP_MJCF_BY_SIDE = ("left_hand.xml", "right_hand.xml")
+LEAP_ROBOT_NAMES = tuple(f"leap_{side}" for side in HAND_SIDES)
+LEAP_FINGER_JOINT_NAMES = (
+    "if_mcp",
+    "if_rot",
+    "if_pip",
+    "if_dip",
+    "mf_mcp",
+    "mf_rot",
+    "mf_pip",
+    "mf_dip",
+    "rf_mcp",
+    "rf_rot",
+    "rf_pip",
+    "rf_dip",
+    "th_cmc",
+    "th_axl",
+    "th_mcp",
+    "th_ipl",
 )
-ALLEGRO_RESOURCE_ROOT = "res://assets/wonik_allegro"
-OPENARM_ROBOT_NAME = "openarm_bimanual"
-ALLEGRO_HAND_SCALE = 1.50
-ALLEGRO_HAND_WRIST_OFFSET = 0.120
-ALLEGRO_FINGER_POSE = (0.0, 0.24, 0.34, 0.26)
-ALLEGRO_THUMB_POSE = (0.52, 0.18, 0.30, 0.24)
-# These bounds mirror the Allegro meshes shipped with this example.  Adjacent
-# segments are merged into two oriented proxies per finger.  The outer shell
-# absorbs the external-proxy coupling tolerance so the rendered fingertips do
-# not become visible through a deformable during release.
-ALLEGRO_VISUAL_PROXY_MARGIN = 0.006
-ALLEGRO_VISUAL_PROXY_GROUPS = (
-    ("root", ("base", "proximal"), "proximal"),
-    ("tip", ("medial", "distal", "tip"), "medial"),
+LEAP_FINGER_CLOSE_TARGETS = (
+    1.08,
+    0.0,
+    0.82,
+    0.78,
+    1.08,
+    0.0,
+    0.82,
+    0.78,
+    1.08,
+    0.0,
+    0.82,
+    0.78,
+    0.82,
+    0.50,
+    0.82,
+    0.78,
 )
-ALLEGRO_FINGER_MESH_BOUNDS = {
-    "base": ((-0.0098, -0.01345, 0.0), (0.0098, 0.01345, 0.0220)),
-    "proximal": ((-0.0098, -0.01355, -0.0088), (0.0098, 0.01345, 0.0628)),
-    "medial": ((-0.0098, -0.01355, -0.0063), (0.0098, 0.01345, 0.0472)),
-    "distal": ((-0.0098, -0.01345, -0.0063), (0.0098, 0.01345, 0.0157)),
-    "tip": ((-0.0120, -0.0120, -0.0110), (0.0120, 0.0120, 0.0120)),
-}
-ALLEGRO_THUMB_MESH_BOUNDS = {
-    "proximal": ((-0.0098, -0.01345, -0.000168), (0.0098, 0.01345, 0.021833)),
-    "medial": ((-0.0098, -0.01345, -0.0088), (0.0098, 0.01355, 0.0577)),
-    "distal": ((-0.0098, -0.01345, -0.0088), (0.0098, 0.01355, 0.0313)),
-    "tip": ((-0.0120, -0.0120, -0.0110), (0.0120, 0.0120, 0.0120)),
-}
-ALLEGRO_THUMB_BASE_MESH_BOUNDS = {
-    "left": ((-0.0392, -0.0080, -0.0415), (0.0055, 0.0260, 0.0080)),
-    "right": ((-0.0392, -0.0080, -0.0080), (0.0055, 0.0260, 0.0415)),
-}
-# One pad spans the scaled Allegro palm and fingers.  The longer footprint keeps
-# the visible down-facing hand in contact throughout the sweep instead of
-# shearing only the mailer's leading edge and then slipping off it.
-HAND_PUSH_PAD_SIZE = (0.180, 0.025, 0.260)
-HAND_DOWN_ANGLE_DEGREES = 60.0
-_HAND_DOWN = math.sin(math.radians(HAND_DOWN_ANGLE_DEGREES))
-_HAND_FORWARD = math.cos(math.radians(HAND_DOWN_ANGLE_DEGREES))
-HAND_PUSH_PAD_REFERENCE_ROTATION = np.asarray(
-    (
-        (0.0, -1.0, 0.0),
-        (_HAND_DOWN, 0.0, -_HAND_FORWARD),
-        (_HAND_FORWARD, 0.0, _HAND_DOWN),
-    ),
+LEAP_CONTACT_LINK_NAMES = (
+    "palm",
+    "if_bs",
+    "if_px",
+    "if_md",
+    "if_ds",
+    "mf_bs",
+    "mf_px",
+    "mf_md",
+    "mf_ds",
+    "rf_bs",
+    "rf_px",
+    "rf_md",
+    "rf_ds",
+    "th_mp",
+    "th_bs",
+    "th_px",
+    "th_ds",
+)
+HAND_STAGE_DOF_NAMES = ("x", "y", "z", "roll", "pitch", "yaw")
+HAND_STAGE_JOINT_NAMES_BY_SIDE = tuple(
+    tuple(f"leap_{side}_wrist_{name}" for name in HAND_STAGE_DOF_NAMES)
+    for side in HAND_SIDES
+)
+HAND_STAGE_LINK_NAMES_BY_SIDE = tuple(
+    (f"leap_{side}_mount",)
+    + tuple(
+        f"leap_{side}_stage_{name}" for name in HAND_STAGE_DOF_NAMES[:-1]
+    )
+    for side in HAND_SIDES
+)
+HAND_BASE_LINK_NAMES = tuple(names[1] for names in HAND_STAGE_LINK_NAMES_BY_SIDE)
+HAND_JOINT_NAMES_BY_SIDE = tuple(
+    stage_names + LEAP_FINGER_JOINT_NAMES
+    for stage_names in HAND_STAGE_JOINT_NAMES_BY_SIDE
+)
+HAND_LINK_NAMES_BY_SIDE = tuple(
+    stage_names[1:] + LEAP_CONTACT_LINK_NAMES
+    for stage_names in HAND_STAGE_LINK_NAMES_BY_SIDE
+)
+MANIPULATION_STATION_X = 0.16
+HAND_ROOT_POSITIONS = (
+    # The two Menagerie CAD frames are asymmetric. These roots align their
+    # fingertips in world Y/Z while leaving room for the inward-facing thumbs.
+    (MANIPULATION_STATION_X - 0.18, 0.0433, 1.0930),
+    (MANIPULATION_STATION_X + 0.18, -0.0321, 1.1195),
+)
+# Menagerie presents the hands palm-up. This proper rotation turns the palms
+# downward and points the fingers toward the outfeed (+Y).
+HAND_PALM_ALIGNMENT_ROTATION = np.asarray(
+    ((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
     dtype=np.float64,
 )
-HAND_PRESS_ANGLE_DEGREES = 90.0
-_HAND_PRESS_DOWN = math.sin(math.radians(HAND_PRESS_ANGLE_DEGREES))
-_HAND_PRESS_FORWARD = math.cos(math.radians(HAND_PRESS_ANGLE_DEGREES))
-HAND_PUSH_PAD_WORLD_ROTATION = np.asarray(
-    (
-        (1.0, 0.0, 0.0),
-        (0.0, _HAND_PRESS_FORWARD, _HAND_PRESS_DOWN),
-        (0.0, -_HAND_PRESS_DOWN, _HAND_PRESS_FORWARD),
-    ),
-    dtype=np.float64,
+HAND_STAGE_TRANSLATION_RANGE = 0.64
+HAND_STAGE_ROTATION_RANGE = math.pi + 0.12
+HAND_STAGE_LINEAR_STIFFNESS = 9000.0
+HAND_STAGE_LINEAR_DAMPING = 240.0
+HAND_STAGE_ANGULAR_STIFFNESS = 1400.0
+HAND_STAGE_ANGULAR_DAMPING = 85.0
+HAND_FINGER_STIFFNESS = 24.0
+HAND_FINGER_DAMPING = 0.75
+HAND_FRICTION = 1.35
+LEAP_TIP_BOUNDS = (
+    (-0.0112503, -0.0500004, 0.0023530),
+    (0.00958777, -0.0195963, 0.0266643),
 )
-HAND_PUSH_PAD_LOCAL_ROTATION = (
-    HAND_PUSH_PAD_REFERENCE_ROTATION.T @ HAND_PUSH_PAD_WORLD_ROTATION
-)
-HAND_PUSH_PAD_WORLD_OFFSETS = (
-    (0.10, 0.080, -0.110),
-    (-0.10, 0.080, -0.110),
-)
-HAND_VISUAL_WORLD_ADJUSTMENT = np.asarray(
-    (
-        (-1.0, 0.0, 0.0),
-        (0.0, 0.5, -math.sqrt(3.0) / 2.0),
-        (0.0, -math.sqrt(3.0) / 2.0, -0.5),
-    ),
-    dtype=np.float64,
-)
-HAND_VISUAL_LOCAL_ADJUSTMENT = (
-    HAND_PUSH_PAD_REFERENCE_ROTATION.T
-    @ HAND_VISUAL_WORLD_ADJUSTMENT
-    @ HAND_PUSH_PAD_REFERENCE_ROTATION
+LEAP_THUMB_TIP_BOUNDS = (
+    (-0.0112650, -0.0620958, -0.0266430),
+    (0.0095930, -0.0315304, -0.00234675),
 )
 RIGID_COLLISION_LAYER = 0b0001
 HAND_COLLISION_LAYER = 0b0010
@@ -108,118 +139,6 @@ DEFORMABLE_COLLISION_LAYER = 0b0100
 RIGID_COLLISION_MASK = RIGID_COLLISION_LAYER | DEFORMABLE_COLLISION_LAYER
 HAND_COLLISION_MASK = DEFORMABLE_COLLISION_LAYER
 DEFORMABLE_COLLISION_MASK = RIGID_COLLISION_LAYER | HAND_COLLISION_LAYER
-HAND_PUSH_PAD_LOCAL_OFFSETS = tuple(
-    tuple(
-        float(value)
-        for value in HAND_PUSH_PAD_REFERENCE_ROTATION.T
-        @ np.asarray(offset, dtype=np.float64)
-    )
-    for offset in HAND_PUSH_PAD_WORLD_OFFSETS
-)
-# The heel/curled-finger edge of each down-facing hand catches the rear wall of
-# the parcel.  A normal contact at this edge translates a volumetric mailer;
-# relying on top-surface friction alone only shears the FEM volume before it
-# elastically snaps back.
-HAND_SWEEP_EDGE_SIZE = (0.180, 0.025, 0.105)
-HAND_SWEEP_EDGE_WORLD_OFFSETS = (
-    (0.10, -0.080, -0.200),
-    (-0.10, -0.080, -0.200),
-)
-HAND_SWEEP_EDGE_LOCAL_OFFSETS = tuple(
-    tuple(
-        float(value)
-        for value in HAND_PUSH_PAD_REFERENCE_ROTATION.T
-        @ np.asarray(offset, dtype=np.float64)
-    )
-    for offset in HAND_SWEEP_EDGE_WORLD_OFFSETS
-)
-HAND_SWEEP_EDGE_LOCAL_ROTATION = HAND_PUSH_PAD_REFERENCE_ROTATION.T
-ARM_SIDES = ("left", "right")
-ARM_BASE_LINK_NAMES = tuple(
-    f"openarm_{side}_base_link" for side in ARM_SIDES
-)
-ARM_JOINT_NAMES_BY_SIDE = tuple(
-    tuple(f"openarm_{side}_joint{index}" for index in range(1, 8))
-    + tuple(f"openarm_{side}_finger_joint{index}" for index in range(1, 3))
-    for side in ARM_SIDES
-)
-ARM_LINK_NAMES_BY_SIDE = tuple(
-    (f"openarm_{side}_base_link",)
-    + tuple(f"openarm_{side}_link{index}" for index in range(1, 7))
-    + (
-        f"openarm_{side}_ee_base_link",
-        f"openarm_{side}_ee_link1",
-        f"openarm_{side}_ee_link2",
-    )
-    for side in ARM_SIDES
-)
-OPENARM_PROXY_LINK_NAMES = tuple(
-    link_name
-    for side in ARM_SIDES
-    for link_name in (
-        f"openarm_{side}_ee_base_link",
-        f"openarm_{side}_ee_link1",
-        f"openarm_{side}_ee_link2",
-    )
-)
-MANIPULATION_STATION_X = 0.16
-# Keep the shoulder bridge behind the work surface while placing the palms over
-# the rear half of the target mailer at the grip pose.  The previous -0.34 m
-# placement left the down-facing palms behind the package, so most of the arm
-# sweep happened before frictional contact began.
-OPENARM_ROOT_POSITION = (MANIPULATION_STATION_X, -0.19, 0.05)
-OPENARM_ROOT_YAW_DEGREES = 90.0
-# Offline IK keeps both elbows raised behind the static sorting table while the
-# hands frame the blue mailer. The robot root is yawed 90 degrees so its shared
-# shoulder follows the conveyor. The wrists sweep the package from the table
-# onto the front belt before retracting.
-ARM_INITIAL_POSES = (
-    (
-        -0.4248239998980243,
-        -1.0884326790574228,
-        1.4229884665739385,
-        2.247245233442501,
-        -1.5707899999999997,
-        -0.0755760882846291,
-        1.1553548821422193,
-    ),
-    (
-        0.4248295822718003,
-        1.0884330176982384,
-        -1.4229946651516743,
-        2.2472452224918924,
-        1.5707899999999997,
-        0.07557404197213391,
-        -1.1553539501786063,
-    ),
-)
-ARM_JOINT_AXES_BY_SIDE = (
-    (
-        (0.0, 1.0, 0.0),
-        (-1.0, 0.0, 0.0),
-        (0.0, 0.0, -1.0),
-        (0.0, -1.0, 0.0),
-        (0.0, 0.0, -1.0),
-        (0.0, -1.0, 0.0),
-        (1.0, 0.0, 0.0),
-    ),
-    (
-        (0.0, -1.0, 0.0),
-        (-1.0, 0.0, 0.0),
-        (0.0, 0.0, -1.0),
-        (0.0, -1.0, 0.0),
-        (0.0, 0.0, -1.0),
-        (0.0, 1.0, 0.0),
-        (1.0, 0.0, 0.0),
-    ),
-)
-FINGER_JOINT_AXES = ((-1.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-FINGER_OPEN_POSITIONS = (0.72, -0.72)
-ARM_STIFFNESS = (320.0, 300.0, 230.0, 210.0, 85.0, 70.0, 42.0)
-ARM_DAMPING = (30.0, 28.0, 23.0, 21.0, 9.0, 7.0, 5.0)
-GRIPPER_STIFFNESS = 150.0
-GRIPPER_DAMPING = 8.0
-GRIPPER_FRICTION = 2.5
 
 BELT_FRAME_LENGTH = 2.70
 BELT_SURFACE_LENGTH = BELT_FRAME_LENGTH
@@ -276,30 +195,33 @@ SOFT_PACKAGE_SPECS = (
     {
         "name": "soft_mailer_blue",
         "model": "thin_shell",
-        "size": (0.44, 0.32, 0.10),
+        "size": (0.44, 0.32, 0.13),
         "position": (
             MANIPULATION_STATION_X,
             0.045,
             WORKTABLE_TOP_Z + 0.235,
         ),
         "rotation_degrees": (4.0, -6.0, 2.0),
-        # The numerical film is thicker than real polyethylene so IPC keeps a
-        # robust contact shell. Its low density keeps the skin much lighter
-        # than the hidden contents.
-        "density": 260.0,
-        "young_modulus": 1.8e5,
+        # libuipc currently has no deformable-to-deformable attachment. Carry
+        # most parcel inertia on the closed film so a fingertip grasp moves the
+        # package as one object; the light inner core only supports its volume.
+        # The 0.35 kg total models a filled poly mailer rather than the earlier
+        # 1.12 kg parcel, which could not be held realistically by fingertip
+        # friction during a free-space turnover.
+        "density": 677.2658844569544,
+        "young_modulus": 1.6e5,
         "poisson_ratio": 0.36,
         "damping": 7.0,
         "thickness": 1.2e-3,
-        "bending_stiffness": 2.0e-4,
-        "cells": (18, 13),
+        "bending_stiffness": 1.2e-4,
+        "cells": (26, 19),
         "color": (0.10, 0.36, 0.64, 1.0),
         "visible": True,
     },
     {
         "name": "soft_mailer_blue_fill",
         "model": "volumetric",
-        "size": (0.35, 0.235, 0.060),
+        "size": (0.36, 0.245, 0.080),
         "position": (
             MANIPULATION_STATION_X,
             0.045,
@@ -309,11 +231,11 @@ SOFT_PACKAGE_SPECS = (
             WORKTABLE_TOP_Z + 0.225,
         ),
         "rotation_degrees": (4.0, -6.0, 2.0),
-        "density": 295.5586864819189,
-        "young_modulus": 8.0e3,
+        "density": 9.392413272488012,
+        "young_modulus": 7.0e3,
         "poisson_ratio": 0.43,
         "damping": 7.0,
-        "cells": (8, 6, 3),
+        "cells": (10, 8, 4),
         "color": (0.04, 0.08, 0.12, 0.0),
         "visible": False,
     },
@@ -347,7 +269,7 @@ def _nodes_by_name(root: Any) -> dict[str, Any]:
         node = pending.pop()
         if node.name in nodes:
             raise RuntimeError(
-                f"OpenArm source has duplicate node name {node.name!r}"
+                f"source scene has duplicate node name {node.name!r}"
             )
         nodes[node.name] = node
         pending.extend(node.children)
@@ -498,37 +420,6 @@ def _matrix_quaternion(rotation: np.ndarray) -> tuple[float, float, float, float
     )
 
 
-def _bake_revolute_joint(
-    nodes: dict[str, Any],
-    joint_name: str,
-    initial_position: float,
-    stiffness: float,
-    damping: float,
-    effort_floor: float = 1.0,
-) -> None:
-    joint = nodes[joint_name]
-    lower_limit = float(joint.lower_limit) - initial_position
-    upper_limit = float(joint.upper_limit) - initial_position
-    effort_limit = max(float(joint.effort_limit), float(effort_floor))
-    joint.drive_mode = gobot.JointDriveMode.Position
-    joint.drive_stiffness = stiffness
-    joint.drive_damping = damping
-    joint.damping = 0.02
-    joint.lower_limit = lower_limit
-    joint.upper_limit = upper_limit
-    joint.control_lower_limit = lower_limit
-    joint.control_upper_limit = upper_limit
-    joint.force_lower_limit = -effort_limit
-    joint.force_upper_limit = effort_limit
-    joint.initial_position = 0.0
-    joint.joint_position = 0.0
-    child = nodes[str(joint.child_link)]
-    child.set_transform(
-        (0.0, 0.0, 0.0),
-        _axis_angle_quaternion(tuple(joint.axis), initial_position),
-    )
-
-
 def _set_box_inertia(
     link: Any, mass: float, size: tuple[float, float, float]
 ) -> None:
@@ -620,384 +511,186 @@ def _add_box_geometry(
     )
 
 
-def _new_visual_frame(
-    parent: Any,
-    name: str,
-    *,
-    position: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    orientation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
-    scale: float = 1.0,
-) -> Any:
-    frame = gobot.create_node("Node3D", name)
-    frame.set_transform(position, orientation)
-    frame.scale = (scale, scale, scale)
-    parent.add_child(frame)
-    return frame
+def _set_virtual_link_inertia(link: Any) -> None:
+    link.has_inertial = True
+    link.mass = 0.02
+    link.inertia_diagonal = (2.0e-5, 2.0e-5, 2.0e-5)
 
 
-def _reparent_allegro_visual(
-    source_nodes: dict[str, Any],
-    source_link_name: str,
-    parent: Any,
-    target_name: str,
-    color: tuple[float, float, float, float],
-) -> Any:
-    visuals = [
-        child
-        for child in source_nodes[source_link_name].children
-        if child.type_name == "MeshInstance3D"
-    ]
-    if len(visuals) != 1:
-        raise RuntimeError(
-            f"Allegro link {source_link_name!r} must have exactly one visual"
-        )
-    visual = visuals[0]
-    visual.reparent(parent)
-    visual.name = target_name
-    visual.surface_color = color
-    visual.semantic_label = target_name
-    return visual
+def _configure_stage_joint(joint: Any, dof_name: str) -> None:
+    linear = dof_name in {"x", "y", "z"}
+    joint.joint_type = (
+        gobot.JointType.Prismatic if linear else gobot.JointType.Revolute
+    )
+    joint.axis = {
+        "x": (1.0, 0.0, 0.0),
+        "y": (0.0, 1.0, 0.0),
+        "z": (0.0, 0.0, 1.0),
+        "roll": (1.0, 0.0, 0.0),
+        "pitch": (0.0, 1.0, 0.0),
+        "yaw": (0.0, 0.0, 1.0),
+    }[dof_name]
+    limit = (
+        HAND_STAGE_TRANSLATION_RANGE
+        if linear
+        else HAND_STAGE_ROTATION_RANGE
+    )
+    joint.lower_limit = -limit
+    joint.upper_limit = limit
+    joint.control_lower_limit = -limit
+    joint.control_upper_limit = limit
+    joint.velocity_limit = 1.8 if linear else 7.0
+    joint.effort_limit = 1800.0 if linear else 420.0
+    joint.force_lower_limit = -joint.effort_limit
+    joint.force_upper_limit = joint.effort_limit
+    joint.armature = 0.01 if linear else 0.004
+    joint.damping = 8.0 if linear else 0.25
+    joint.drive_mode = gobot.JointDriveMode.Position
+    joint.drive_stiffness = (
+        HAND_STAGE_LINEAR_STIFFNESS
+        if linear
+        else HAND_STAGE_ANGULAR_STIFFNESS
+    )
+    joint.drive_damping = (
+        HAND_STAGE_LINEAR_DAMPING
+        if linear
+        else HAND_STAGE_ANGULAR_DAMPING
+    )
 
 
-def _allegro_visual_proxy_geometry(
-    visual: Any,
-    link_from_hand: np.ndarray,
-    hand_from_segment: np.ndarray,
-    mesh_bounds: tuple[
+def _box_from_bounds(
+    bounds: tuple[
         tuple[float, float, float], tuple[float, float, float]
     ],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    visual_scale = np.asarray(visual.scale, dtype=np.float64)
-    if not np.allclose(visual_scale, 1.0, atol=1.0e-12):
-        raise RuntimeError(
-            f"Allegro visual {visual.name!r} has unsupported local scale"
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    lower = np.asarray(bounds[0], dtype=np.float64)
+    upper = np.asarray(bounds[1], dtype=np.float64)
+    return (
+        tuple(float(value) for value in upper - lower),
+        tuple(float(value) for value in 0.5 * (lower + upper)),
+    )
+
+
+def _configure_leap_model(nodes: dict[str, Any], robot_name: str) -> None:
+    for node in nodes.values():
+        if node.type_name == "MeshInstance3D":
+            node.semantic_label = robot_name + "_dexterous_hand"
+        elif node.type_name == "CollisionShape3D":
+            node.disabled = False
+            node.visible = False
+            node.collision_layer = HAND_COLLISION_LAYER
+            node.collision_mask = HAND_COLLISION_MASK
+            node.contact_offset = 0.0
+            node.rest_offset = 0.0
+            node.physics_material = {
+                "sliding_friction": HAND_FRICTION,
+                "torsional_friction": 0.006,
+                "rolling_friction": 0.0002,
+                "contact_compliance": 0.0,
+                "contact_damping": 1.0,
+            }
+
+    for joint_name in LEAP_FINGER_JOINT_NAMES:
+        joint = nodes[joint_name]
+        joint.drive_mode = gobot.JointDriveMode.Position
+        joint.drive_stiffness = HAND_FINGER_STIFFNESS
+        joint.drive_damping = HAND_FINGER_DAMPING
+        joint.damping = 0.03
+        joint.armature = 0.002
+        joint.force_lower_limit = -8.0
+        joint.force_upper_limit = 8.0
+        joint.initial_position = 0.0
+        joint.joint_position = 0.0
+
+    regular_tip_size, regular_tip_center = _box_from_bounds(LEAP_TIP_BOUNDS)
+    for finger_name in ("if", "mf", "rf"):
+        _add_collision(
+            nodes[f"{finger_name}_ds"],
+            f"{robot_name}_{finger_name}_tip_collision",
+            regular_tip_size,
+            regular_tip_center,
+            sliding_friction=HAND_FRICTION,
+            collision_layer=HAND_COLLISION_LAYER,
+            collision_mask=HAND_COLLISION_MASK,
         )
-
-    hand_from_visual = hand_from_segment @ _node_local_rigid_matrix(visual)
-    link_rotation = link_from_hand[:3, :3] @ hand_from_visual[:3, :3]
-    link_translation = link_from_hand[:3, 3] + link_from_hand[
-        :3, :3
-    ] @ (ALLEGRO_HAND_SCALE * hand_from_visual[:3, 3])
-
-    lower = np.asarray(mesh_bounds[0], dtype=np.float64)
-    upper = np.asarray(mesh_bounds[1], dtype=np.float64)
-    center = 0.5 * (lower + upper)
-    size = ALLEGRO_HAND_SCALE * (upper - lower)
-    position = link_translation + link_rotation @ (
-        ALLEGRO_HAND_SCALE * center
+    thumb_tip_size, thumb_tip_center = _box_from_bounds(
+        LEAP_THUMB_TIP_BOUNDS
     )
-    return position, link_rotation, size
-
-
-def _add_merged_allegro_visual_proxy(
-    driven_link: Any,
-    target_name: str,
-    geometries: tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...],
-    reference_index: int,
-) -> None:
-    if not geometries or not 0 <= reference_index < len(geometries):
-        raise ValueError("Allegro proxy group requires a valid reference")
-    signs = np.asarray(
-        tuple(
-            (x_sign, y_sign, z_sign)
-            for x_sign in (-1.0, 1.0)
-            for y_sign in (-1.0, 1.0)
-            for z_sign in (-1.0, 1.0)
-        ),
-        dtype=np.float64,
-    )
-    corners = []
-    for position, rotation, size in geometries:
-        corners.append(position + (rotation @ (0.5 * size * signs).T).T)
-    points = np.concatenate(tuple(corners), axis=0)
-    rotation = geometries[reference_index][1]
-    aligned = (rotation.T @ points.T).T
-    lower = aligned.min(axis=0)
-    upper = aligned.max(axis=0)
-    position = rotation @ (0.5 * (lower + upper))
-    size = upper - lower + 2.0 * ALLEGRO_VISUAL_PROXY_MARGIN
     _add_collision(
-        driven_link,
-        target_name + "_proxy",
-        tuple(float(value) for value in size),
-        tuple(float(value) for value in position),
-        sliding_friction=GRIPPER_FRICTION,
-        orientation=_matrix_quaternion(rotation),
+        nodes["th_ds"],
+        f"{robot_name}_th_tip_collision",
+        thumb_tip_size,
+        thumb_tip_center,
+        sliding_friction=HAND_FRICTION,
         collision_layer=HAND_COLLISION_LAYER,
         collision_mask=HAND_COLLISION_MASK,
     )
 
 
-def _add_fixed_allegro_joint(
-    source_nodes: dict[str, Any],
-    parent: Any,
-    target_prefix: str,
-    source_joint_name: str,
-    position: float,
-) -> Any:
-    source_joint = source_nodes[source_joint_name]
-    origin = gobot.create_node(
-        "Node3D", f"{target_prefix}_{source_joint_name}_origin"
-    )
-    origin.position = tuple(float(value) for value in source_joint.position)
-    origin.rotation_degrees = tuple(
-        float(value) for value in source_joint.rotation_degrees
-    )
-    parent.add_child(origin)
-    pose = _new_visual_frame(
-        origin,
-        f"{target_prefix}_{source_joint_name}_pose",
-        orientation=_axis_angle_quaternion(
-            tuple(float(value) for value in source_joint.axis), position
-        ),
-    )
-    return pose
-
-
-def _add_allegro_finger_visuals(
-    source_nodes: dict[str, Any],
-    parent: Any,
-    driven_link: Any,
-    link_from_hand: np.ndarray,
-    side: str,
-    finger_prefix: str,
-) -> None:
-    target_prefix = f"openarm_{side}_allegro_{finger_prefix}"
-    segment_names = ("base", "proximal", "medial", "distal")
-    current = parent
-    hand_from_segment = np.eye(4, dtype=np.float64)
-    proxy_geometries: dict[
-        str, tuple[np.ndarray, np.ndarray, np.ndarray]
-    ] = {}
-    for joint_index, (segment_name, position) in enumerate(
-        zip(segment_names, ALLEGRO_FINGER_POSE, strict=True)
-    ):
-        source_joint = source_nodes[f"{finger_prefix}j{joint_index}"]
-        hand_from_segment = (
-            hand_from_segment
-            @ _node_local_rigid_matrix(source_joint)
-            @ _rigid_matrix(
-                (0.0, 0.0, 0.0),
-                _axis_angle_matrix(
-                    tuple(float(value) for value in source_joint.axis),
-                    position,
-                ),
-            )
-        )
-        current = _add_fixed_allegro_joint(
-            source_nodes,
-            current,
-            target_prefix,
-            f"{finger_prefix}j{joint_index}",
-            position,
-        )
-        visual = _reparent_allegro_visual(
-            source_nodes,
-            f"{finger_prefix}_{segment_name}",
-            current,
-            f"{target_prefix}_{segment_name}",
-            (0.055, 0.060, 0.065, 1.0),
-        )
-        proxy_geometries[segment_name] = _allegro_visual_proxy_geometry(
-            visual,
-            link_from_hand,
-            hand_from_segment,
-            ALLEGRO_FINGER_MESH_BOUNDS[segment_name],
-        )
-    visual = _reparent_allegro_visual(
-        source_nodes,
-        f"{finger_prefix}_tip",
-        current,
-        f"{target_prefix}_tip",
-        (0.52, 0.55, 0.56, 1.0),
-    )
-    proxy_geometries["tip"] = _allegro_visual_proxy_geometry(
-        visual,
-        link_from_hand,
-        hand_from_segment,
-        ALLEGRO_FINGER_MESH_BOUNDS["tip"],
-    )
-    for group_name, segment_group, reference_segment in (
-        ALLEGRO_VISUAL_PROXY_GROUPS
-    ):
-        _add_merged_allegro_visual_proxy(
-            driven_link,
-            f"{target_prefix}_{group_name}",
-            tuple(proxy_geometries[name] for name in segment_group),
-            segment_group.index(reference_segment),
-        )
-
-
-def _add_allegro_thumb_visuals(
-    source_nodes: dict[str, Any],
-    parent: Any,
-    driven_link: Any,
-    link_from_hand: np.ndarray,
-    side: str,
-) -> None:
-    target_prefix = f"openarm_{side}_allegro_thumb"
-    segment_names = ("base", "proximal", "medial", "distal")
-    current = parent
-    hand_from_segment = np.eye(4, dtype=np.float64)
-    proxy_geometries: dict[
-        str, tuple[np.ndarray, np.ndarray, np.ndarray]
-    ] = {}
-    for joint_index, (segment_name, position) in enumerate(
-        zip(segment_names, ALLEGRO_THUMB_POSE, strict=True)
-    ):
-        source_joint = source_nodes[f"thj{joint_index}"]
-        hand_from_segment = (
-            hand_from_segment
-            @ _node_local_rigid_matrix(source_joint)
-            @ _rigid_matrix(
-                (0.0, 0.0, 0.0),
-                _axis_angle_matrix(
-                    tuple(float(value) for value in source_joint.axis),
-                    position,
-                ),
-            )
-        )
-        current = _add_fixed_allegro_joint(
-            source_nodes,
-            current,
-            target_prefix,
-            f"thj{joint_index}",
-            position,
-        )
-        visual = _reparent_allegro_visual(
-            source_nodes,
-            f"th_{segment_name}",
-            current,
-            f"{target_prefix}_{segment_name}",
-            (0.055, 0.060, 0.065, 1.0),
-        )
-        mesh_bounds = (
-            ALLEGRO_THUMB_BASE_MESH_BOUNDS[side]
-            if segment_name == "base"
-            else ALLEGRO_THUMB_MESH_BOUNDS[segment_name]
-        )
-        proxy_geometries[segment_name] = _allegro_visual_proxy_geometry(
-            visual,
-            link_from_hand,
-            hand_from_segment,
-            mesh_bounds,
-        )
-    visual = _reparent_allegro_visual(
-        source_nodes,
-        "th_tip",
-        current,
-        f"{target_prefix}_tip",
-        (0.52, 0.55, 0.56, 1.0),
-    )
-    proxy_geometries["tip"] = _allegro_visual_proxy_geometry(
-        visual,
-        link_from_hand,
-        hand_from_segment,
-        ALLEGRO_THUMB_MESH_BOUNDS["tip"],
-    )
-    for group_name, segment_group, reference_segment in (
-        ALLEGRO_VISUAL_PROXY_GROUPS
-    ):
-        _add_merged_allegro_visual_proxy(
-            driven_link,
-            f"{target_prefix}_{group_name}",
-            tuple(proxy_geometries[name] for name in segment_group),
-            segment_group.index(reference_segment),
-        )
-
-
-def _add_robot_hand(
-    nodes: dict[str, Any], side: str, side_index: int
-) -> None:
-    palm = nodes[f"openarm_{side}_ee_base_link"]
-    for suffix in ("ee_base_link", "ee_link1", "ee_link2"):
-        imported_visual = nodes.get(f"openarm_{side}_{suffix}_visual")
-        if imported_visual is not None:
-            imported_visual.visible = False
-
-    source_scene = gobot.load_scene(
-        f"{ALLEGRO_RESOURCE_ROOT}/{side}_hand.xml"
-    )
+def _create_leap_hand(root: Any, side: str, side_index: int) -> None:
+    robot_name = LEAP_ROBOT_NAMES[side_index]
+    resource_name = LEAP_MJCF_BY_SIDE[side_index]
+    resource_path = f"{LEAP_RESOURCE_ROOT}/{resource_name}"
+    source_scene = gobot.load_scene(resource_path)
     source_nodes = _nodes_by_name(source_scene.root)
-    alignment_offset = (0.0, 0.0, -ALLEGRO_HAND_WRIST_OFFSET)
-    source_alignment = _axis_angle_matrix((1.0, 0.0, 0.0), math.pi)
-    alignment_rotation = HAND_VISUAL_LOCAL_ADJUSTMENT @ source_alignment
-    alignment = _rigid_matrix(alignment_offset, alignment_rotation)
-    palm_frame = _new_visual_frame(
-        palm,
-        f"openarm_{side}_allegro_hand",
-        position=alignment_offset,
-        orientation=_matrix_quaternion(alignment_rotation),
-        scale=ALLEGRO_HAND_SCALE,
-    )
-    _reparent_allegro_visual(
-        source_nodes,
-        "palm",
-        palm_frame,
-        f"openarm_{side}_allegro_palm",
-        (0.055, 0.060, 0.065, 1.0),
-    )
+    palm = source_nodes["palm"]
+    _configure_leap_model(source_nodes, robot_name)
 
-    for driven_link_index, group_name in ((1, "fingers"), (2, "thumb")):
-        driven_link = nodes[f"openarm_{side}_ee_link{driven_link_index}"]
-        source_joint = nodes[
-            f"openarm_{side}_finger_joint{driven_link_index}"
-        ]
-        link_rotation = _axis_angle_matrix(
-            tuple(float(value) for value in source_joint.axis),
-            FINGER_OPEN_POSITIONS[side_index],
-        )
-        link_reference = _rigid_matrix(
-            tuple(float(value) for value in source_joint.position),
-            link_rotation,
-        )
-        relative = np.linalg.inv(link_reference) @ alignment
-        group_frame = _new_visual_frame(
-            driven_link,
-            f"openarm_{side}_allegro_{group_name}_group",
-            position=tuple(float(value) for value in relative[:3, 3]),
-            orientation=_matrix_quaternion(relative[:3, :3]),
-            scale=ALLEGRO_HAND_SCALE,
-        )
-        if group_name == "fingers":
-            for finger_prefix in ("ff", "mf", "rf"):
-                _add_allegro_finger_visuals(
-                    source_nodes,
-                    group_frame,
-                    driven_link,
-                    relative,
-                    side,
-                    finger_prefix,
-                )
-        else:
-            _add_allegro_thumb_visuals(
-                source_nodes,
-                group_frame,
-                driven_link,
-                relative,
-                side,
+    robot = gobot.create_node("Robot3D", robot_name)
+    robot.mode = gobot.RobotMode.Motion
+    robot.source_path = resource_path
+    robot.position = HAND_ROOT_POSITIONS[side_index]
+    robot.semantic_label = "floating_leap_hand"
+
+    stage_links = HAND_STAGE_LINK_NAMES_BY_SIDE[side_index]
+    stage_joints = HAND_STAGE_JOINT_NAMES_BY_SIDE[side_index]
+    mount = gobot.create_node("Link3D", stage_links[0])
+    mount.role = gobot.LinkRole.VirtualRoot
+    robot.add_child(mount)
+    current_link = mount
+    for dof_index, (dof_name, joint_name) in enumerate(
+        zip(HAND_STAGE_DOF_NAMES, stage_joints, strict=True)
+    ):
+        joint = gobot.create_node("Joint3D", joint_name)
+        _configure_stage_joint(joint, dof_name)
+        joint.parent_link = current_link.name
+        current_link.add_child(joint)
+        if dof_index + 1 < len(stage_links):
+            child = gobot.create_node(
+                "Link3D", stage_links[dof_index + 1]
             )
+            _set_virtual_link_inertia(child)
+            joint.child_link = child.name
+            joint.add_child(child)
+            current_link = child
+        else:
+            joint.child_link = palm.name
+            palm.reparent(joint)
 
-    _add_collision(
-        palm,
-        f"openarm_{side}_palm_proxy",
-        HAND_PUSH_PAD_SIZE,
-        HAND_PUSH_PAD_LOCAL_OFFSETS[side_index],
-        sliding_friction=GRIPPER_FRICTION,
-        orientation=_matrix_quaternion(HAND_PUSH_PAD_LOCAL_ROTATION),
-        collision_layer=HAND_COLLISION_LAYER,
-        collision_mask=HAND_COLLISION_MASK,
+    aligned_palm = _rigid_matrix(
+        (0.0, 0.0, 0.0), HAND_PALM_ALIGNMENT_ROTATION
+    ) @ _node_local_rigid_matrix(palm)
+    palm.set_transform(
+        tuple(float(value) for value in aligned_palm[:3, 3]),
+        _matrix_quaternion(aligned_palm[:3, :3]),
     )
-    _add_collision(
-        palm,
-        f"openarm_{side}_sweep_edge_proxy",
-        HAND_SWEEP_EDGE_SIZE,
-        HAND_SWEEP_EDGE_LOCAL_OFFSETS[side_index],
-        sliding_friction=GRIPPER_FRICTION,
-        orientation=_matrix_quaternion(HAND_SWEEP_EDGE_LOCAL_ROTATION),
-        collision_layer=HAND_COLLISION_LAYER,
-        collision_mask=HAND_COLLISION_MASK,
-    )
+    root.add_child(robot)
+
+    robot_nodes = _nodes_by_name(robot)
+    for link_name in LEAP_CONTACT_LINK_NAMES:
+        _add_coupling(
+            root,
+            f"{robot_name}_{link_name}_coupling",
+            _path_from_root(root, robot_nodes[link_name]),
+            gobot.PhysicsCouplingMode.OneWay,
+        )
+
+
+def _create_leap_hands(root: Any) -> None:
+    for side_index, side in enumerate(HAND_SIDES):
+        _create_leap_hand(root, side, side_index)
+
+
 def _positive_tetrahedron(
     vertices: list[tuple[float, float, float]],
     indices: tuple[int, int, int, int],
@@ -1165,7 +858,7 @@ def _soft_mailer_shell_mesh(
                     )
                     z = (
                         -0.025 * height
-                        - 0.285 * height * fill
+                        - 0.245 * height * fill
                         + bottom_wrinkle
                         - (1.0 - fill) * seam_wave
                     )
@@ -1191,7 +884,7 @@ def _soft_mailer_shell_mesh(
                     crown = 0.96 - 0.07 * (0.55 * u * u + 0.45 * v * v)
                     z = (
                         0.025 * height
-                        + 0.625 * height * fill * crown
+                        + 0.785 * height * fill * crown
                         + top_wrinkle
                         - diagonal_crease
                         - cross_crease
@@ -1277,13 +970,6 @@ def _create_warehouse_frame(root: Any) -> None:
         (-0.70, 0.015, WORKTABLE_TOP_Z + 0.003),
         (0.29, 0.32, 0.33, 1.0),
     )
-    _add_visual(
-        frame,
-        "manual_sorting_zone",
-        (0.62, 0.48, 0.006),
-        (MANIPULATION_STATION_X, 0.015, WORKTABLE_TOP_Z + 0.003),
-        (0.46, 0.48, 0.48, 1.0),
-    )
     worktable_near_y = WORKTABLE_CENTER_Y - 0.5 * WORKTABLE_DEPTH
     worktable_far_y = WORKTABLE_CENTER_Y + 0.5 * WORKTABLE_DEPTH
     _add_visual(
@@ -1292,13 +978,6 @@ def _create_warehouse_frame(root: Any) -> None:
         (WORKTABLE_LENGTH, 0.055, 0.25),
         (WORKTABLE_CENTER_X, worktable_near_y + 0.02, 0.405),
         (0.19, 0.22, 0.24, 1.0),
-    )
-    _add_visual(
-        frame,
-        "worktable_transfer_lip",
-        (WORKTABLE_LENGTH - 0.04, 0.035, 0.012),
-        (WORKTABLE_CENTER_X, worktable_far_y + 0.0025, 0.566),
-        (0.72, 0.75, 0.76, 1.0),
     )
     for x_sign in (-1.0, 1.0):
         for y_sign in (-1.0, 1.0):
@@ -1472,112 +1151,6 @@ def _create_conveyor(root: Any) -> None:
     root.add_child(conveyor)
 
 
-def _create_openarm_station(root: Any) -> None:
-    urdf_path = OPENARM_ASSET_ROOT / "openarm_v20_bimanual.urdf"
-    if not urdf_path.is_file():
-        raise FileNotFoundError(f"OpenArm asset is missing: {urdf_path}")
-    source_scene = gobot.load_scene(OPENARM_URDF_RESOURCE)
-    source_root = source_scene.root
-    robot = gobot.create_node("Robot3D", OPENARM_ROBOT_NAME)
-    for child in tuple(source_root.children):
-        child.reparent(robot)
-    root.add_child(robot)
-    robot.mode = gobot.RobotMode.Motion
-    robot.source_path = OPENARM_URDF_RESOURCE
-    robot.position = OPENARM_ROOT_POSITION
-    robot.rotation_degrees = (0.0, 0.0, OPENARM_ROOT_YAW_DEGREES)
-    robot.semantic_label = "integrated_bimanual_package_manipulator"
-
-    nodes = _nodes_by_name(robot)
-    for node in nodes.values():
-        if (
-            node.type_name == "CollisionShape3D"
-            and node.name != "openarm_body_link0_collision"
-        ):
-            # Triangle collision meshes remain useful authoring assets, but a
-            # handful of primitive hand proxies is much cheaper for IPC.
-            node.disabled = True
-
-    for side_index, side in enumerate(ARM_SIDES):
-        for joint_index, (joint_name, initial_position) in enumerate(
-            zip(
-                ARM_JOINT_NAMES_BY_SIDE[side_index][:7],
-                ARM_INITIAL_POSES[side_index],
-                strict=True,
-            )
-        ):
-            _bake_revolute_joint(
-                nodes,
-                joint_name,
-                initial_position,
-                ARM_STIFFNESS[joint_index],
-                ARM_DAMPING[joint_index],
-            )
-        for joint_name in ARM_JOINT_NAMES_BY_SIDE[side_index][-2:]:
-            _bake_revolute_joint(
-                nodes,
-                joint_name,
-                FINGER_OPEN_POSITIONS[side_index],
-                GRIPPER_STIFFNESS,
-                GRIPPER_DAMPING,
-            )
-
-        _add_robot_hand(nodes, side, side_index)
-
-    # A raised shared shoulder, camera mast, and sensor head make the robot read
-    # as one human-scale bimanual station rather than two pedestal arms.
-    _add_visual(
-        robot,
-        "openarm_base_pedestal",
-        (0.48, 0.40, 0.10),
-        (0.0, 0.0, -0.05),
-        (0.18, 0.21, 0.23, 1.0),
-    )
-    _add_visual(
-        robot,
-        "openarm_base_plate",
-        (0.44, 0.36, 0.08),
-        (0.0, 0.0, 0.04),
-        (0.22, 0.25, 0.27, 1.0),
-    )
-    _add_visual(
-        robot,
-        "openarm_shoulder_shroud",
-        (0.12, 0.44, 0.10),
-        (0.0, 0.0, 0.94),
-        (0.68, 0.70, 0.71, 1.0),
-    )
-    _add_visual(
-        robot,
-        "openarm_camera_mast",
-        (0.055, 0.055, 0.43),
-        (-0.055, 0.0, 1.19),
-        (0.34, 0.37, 0.39, 1.0),
-    )
-    _add_visual(
-        robot,
-        "openarm_sensor_head",
-        (0.12, 0.25, 0.065),
-        (0.055, 0.0, 1.41),
-        (0.72, 0.74, 0.75, 1.0),
-    )
-    _add_visual(
-        robot,
-        "openarm_sensor_lens",
-        (0.012, 0.15, 0.035),
-        (0.119, 0.0, 1.41),
-        (0.025, 0.035, 0.045, 1.0),
-    )
-
-    for link_name in OPENARM_PROXY_LINK_NAMES:
-        _add_coupling(
-            root,
-            link_name + "_coupling",
-            _path_from_root(root, nodes[link_name]),
-            gobot.PhysicsCouplingMode.OneWay,
-        )
-
-
 def _create_carton(root: Any, spec: dict[str, Any]) -> None:
     name = str(spec["name"])
     size = tuple(float(value) for value in spec["size"])
@@ -1665,7 +1238,7 @@ def create_scene() -> Any:
     root = gobot.create_node("Node3D", "conveyor_packages")
     _create_warehouse_frame(root)
     _create_conveyor(root)
-    _create_openarm_station(root)
+    _create_leap_hands(root)
     for spec in RIGID_BOX_SPECS:
         _create_carton(root, spec)
     for spec in SOFT_PACKAGE_SPECS:
@@ -1700,36 +1273,6 @@ def _finalize_scene(scene_path: Path) -> None:
     resources = scene.get("__EXT_RESOURCES__", [])
     if not isinstance(nodes, list) or not isinstance(resources, list):
         raise RuntimeError("generated conveyor scene has no node/resource table")
-
-    # Imported scene roots retain their source SceneState during packing, which
-    # restores child transforms to the URDF zero pose. Reapply the deliberately
-    # baked IK rotations to the serialized child links.
-    baked_rotations: dict[str, tuple[float, float, float]] = {}
-    for side_index in range(len(ARM_SIDES)):
-        child_names = ARM_LINK_NAMES_BY_SIDE[side_index][1:]
-        positions = (
-            *ARM_INITIAL_POSES[side_index],
-            FINGER_OPEN_POSITIONS[side_index],
-            FINGER_OPEN_POSITIONS[side_index],
-        )
-        axes = (*ARM_JOINT_AXES_BY_SIDE[side_index], *FINGER_JOINT_AXES)
-        for child_name, position, axis in zip(
-            child_names, positions, axes, strict=True
-        ):
-            baked_rotations[child_name] = tuple(
-                math.degrees(position) * component for component in axis
-            )
-    for entry in nodes:
-        rotation = baked_rotations.get(str(entry.get("name", "")))
-        if rotation is None:
-            continue
-        entry.setdefault("properties", {})["rotation_degrees"] = {
-            "matrix_data": {
-                "cols": 1,
-                "rows": 3,
-                "storage": list(rotation),
-            }
-        }
 
     roots = [entry for entry in nodes if int(entry.get("parent", -2)) == -1]
     if len(roots) != 1:
@@ -1803,8 +1346,16 @@ def _finalize_scene(scene_path: Path) -> None:
 
 def _stage_project(output_dir: Path) -> None:
     source_assets = HERE / "assets"
-    if not (OPENARM_ASSET_ROOT / "openarm_v20_bimanual.urdf").is_file():
-        raise FileNotFoundError(f"OpenArm assets are missing: {OPENARM_ASSET_ROOT}")
+    missing_hands = [
+        path
+        for path in (
+            LEAP_ASSET_ROOT / "left_hand.xml",
+            LEAP_ASSET_ROOT / "right_hand.xml",
+        )
+        if not path.is_file()
+    ]
+    if missing_hands:
+        raise FileNotFoundError(f"LEAP Hand assets are missing: {missing_hands}")
     asset_link = output_dir / "assets"
     if output_dir != HERE and not asset_link.exists():
         relative_target = os.path.relpath(source_assets, output_dir)

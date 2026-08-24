@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -184,6 +185,48 @@ TEST(TestResourceFormatMJCF, imports_body_inertial_orientation) {
     ASSERT_NE(collision, nullptr);
     ASSERT_TRUE(collision->GetPhysicsMaterial().IsValid());
     EXPECT_NEAR(collision->GetPhysicsMaterial()->GetSlidingFriction(), 0.6, 1.0e-6);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, preserves_non_commuting_body_quaternion) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_mjcf_body_quaternion.xml";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<mujoco model="body_quaternion_bot">
+  <worldbody>
+    <body name="base" pos="0.1 -0.2 0.3" quat="1 2 3 4">
+      <geom name="base_collision" type="box" size="0.05 0.04 0.03"/>
+    </body>
+  </worldbody>
+</mujoco>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader =
+            gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(fixture_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base"));
+    ASSERT_NE(base, nullptr);
+
+    const gobot::RealType inverse_norm = static_cast<gobot::RealType>(1.0 / std::sqrt(30.0));
+    const gobot::Quaternion expected(
+            inverse_norm,
+            2.0 * inverse_norm,
+            3.0 * inverse_norm,
+            4.0 * inverse_norm);
+    EXPECT_TRUE(base->GetPosition().isApprox(gobot::Vector3(0.1, -0.2, 0.3), 1.0e-9));
+    EXPECT_TRUE(base->GetRotationMatrix().isApprox(expected.toRotationMatrix(), 1.0e-6));
 
     gobot::Object::Delete(root_node);
 }

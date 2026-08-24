@@ -113,7 +113,10 @@ void AddTransformProperties(SceneState::NodeData& node_data, const Vector3& posi
     transform.translation() = position;
     transform.linear() = rotation;
     AddProperty(node_data, "position", position);
-    const Vector3 euler = transform.GetEulerAngle(EulerOrder::RXYZ);
+    // Node3D reconstructs serialized rotation_degrees with its default SXYZ
+    // order. Decomposing with RXYZ here reorders non-commuting MJCF rotations
+    // when the PackedScene is instantiated (notably articulated hand links).
+    const Vector3 euler = transform.GetEulerAngle(EulerOrder::SXYZ);
     AddProperty(node_data, "rotation_degrees", Vector3{
             RAD_TO_DEG(euler.x()),
             RAD_TO_DEG(euler.y()),

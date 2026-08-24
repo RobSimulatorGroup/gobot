@@ -5,12 +5,13 @@ import importlib.util
 import json
 import math
 from pathlib import Path
-import re
 import sys
 import tempfile
 from types import SimpleNamespace
 
+import mujoco
 import numpy as np
+from scipy.spatial import cKDTree
 import trimesh
 
 
@@ -69,9 +70,10 @@ def _rotation_matrix(rotation_degrees: np.ndarray) -> np.ndarray:
     return rotation_z @ rotation_y @ rotation_x
 
 
-def _scene_world_transforms(scene: dict[str, object]) -> dict[str, np.ndarray]:
+def _scene_world_transform_list(
+    scene: dict[str, object],
+) -> list[np.ndarray]:
     transforms: list[np.ndarray] = []
-    result: dict[str, np.ndarray] = {}
     for node in scene["__NODES__"]:
         properties = node.get("properties", {})
         local = np.eye(4, dtype=np.float64)
@@ -88,8 +90,40 @@ def _scene_world_transforms(scene: dict[str, object]) -> dict[str, np.ndarray]:
         parent = int(node["parent"])
         world = transforms[parent] @ local if parent >= 0 else local
         transforms.append(world)
-        result[str(node["name"])] = world
-    return result
+    return transforms
+
+
+def _descendant_world_transform(
+    scene: dict[str, object], ancestor_name: str, node_name: str
+) -> np.ndarray:
+    index = _descendant_node_index(scene, ancestor_name, node_name)
+    return _scene_world_transform_list(scene)[index]
+
+
+def _descendant_node_index(
+    scene: dict[str, object], ancestor_name: str, node_name: str
+) -> int:
+    nodes = scene["__NODES__"]
+    ancestor = next(
+        index
+        for index, node in enumerate(nodes)
+        if node["name"] == ancestor_name
+    )
+    for index, node in enumerate(nodes):
+        if node["name"] != node_name:
+            continue
+        parent = index
+        while parent >= 0 and parent != ancestor:
+            parent = int(nodes[parent]["parent"])
+        if parent == ancestor:
+            return index
+    raise KeyError(f"{node_name!r} is not below {ancestor_name!r}")
+
+
+@lru_cache(maxsize=None)
+def _mesh_vertices(path: Path) -> np.ndarray:
+    mesh = trimesh.load_mesh(path, process=False)
+    return np.asarray(mesh.vertices, dtype=np.float64)
 
 
 def _load_module(name: str, path: Path):
@@ -191,12 +225,12 @@ def test_scene_compiles_to_mixed_package_conveyor_contract() -> None:
     builder = _builder()
     artifact = _artifact()
     assert artifact.mujoco.dimensions == {
-        "nq": 39,
-        "nv": 36,
-        "nu": 18,
-        "nbody": 27,
-        "njoint": 21,
-        "ngeom": 32,
+        "nq": 65,
+        "nv": 62,
+        "nu": 44,
+        "nbody": 50,
+        "njoint": 47,
+        "ngeom": 153,
         "nsensor": 0,
         "nhfield": 0,
     }
@@ -204,25 +238,23 @@ def test_scene_compiles_to_mixed_package_conveyor_contract() -> None:
     assert [robot.name for robot in artifact.mujoco.robots] == [
         "warehouse_frame",
         "conveyor",
-        "openarm_bimanual",
+        *builder.LEAP_ROBOT_NAMES,
         *rigid_names,
     ]
-    assert [
+    mappings = [
         (mapping.robot_name, mapping.link_name, mapping.mode)
         for mapping in artifact.coupled_bodies
-    ] == [
-        ("conveyor", "belt_surface", "OneWay"),
-        ("carton_small", "carton_small", "TwoWay"),
-        ("carton_tall", "carton_tall", "TwoWay"),
-        ("carton_wide", "carton_wide", "TwoWay"),
-        ("openarm_bimanual", "openarm_left_ee_base_link", "OneWay"),
-        ("openarm_bimanual", "openarm_left_ee_link1", "OneWay"),
-        ("openarm_bimanual", "openarm_left_ee_link2", "OneWay"),
-        ("openarm_bimanual", "openarm_right_ee_base_link", "OneWay"),
-        ("openarm_bimanual", "openarm_right_ee_link1", "OneWay"),
-        ("openarm_bimanual", "openarm_right_ee_link2", "OneWay"),
-        ("warehouse_frame", "frame", "OneWay"),
     ]
+    assert ("conveyor", "belt_surface", "OneWay") in mappings
+    assert ("warehouse_frame", "frame", "OneWay") in mappings
+    for name in rigid_names:
+        assert (name, name, "TwoWay") in mappings
+    for robot_name in builder.LEAP_ROBOT_NAMES:
+        assert {
+            link_name
+            for mapped_robot, link_name, mode in mappings
+            if mapped_robot == robot_name and mode == "OneWay"
+        } == set(builder.LEAP_CONTACT_LINK_NAMES)
     assert [body["name"] for body in artifact.ipc.deformable_bodies] == [
         str(spec["name"]) for spec in builder.SOFT_PACKAGE_SPECS
     ]
@@ -296,19 +328,24 @@ def test_scene_compiles_to_mixed_package_conveyor_contract() -> None:
     )
     assert artifact.mujoco.robots[0].joint_names == ()
     assert artifact.mujoco.robots[1].joint_names == ()
-    assert len(artifact.mujoco.robots[2].joint_names) == sum(
-        len(names) for names in builder.ARM_JOINT_NAMES_BY_SIDE
-    )
+    for robot, expected_names in zip(
+        artifact.mujoco.robots[2:4],
+        builder.HAND_JOINT_NAMES_BY_SIDE,
+        strict=True,
+    ):
+        assert robot.joint_names == tuple(
+            f"{robot.name}_{name}" for name in expected_names
+        )
     assert all(
         len(robot.joint_names) == 1
-        for robot in artifact.mujoco.robots[3:]
+        for robot in artifact.mujoco.robots[4:]
     )
     belt_mapping = artifact.coupled_bodies[0]
     assert belt_mapping.force_scale == 1.0
     assert belt_mapping.torque_scale == 1.0
 
 
-def test_scene_has_play_script_and_industrial_visuals() -> None:
+def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
     scene = json.loads(SCENE.read_text(encoding="utf-8"))
     roots = [node for node in scene["__NODES__"] if node["parent"] == -1]
     assert len(roots) == 1
@@ -646,7 +683,7 @@ def test_scene_has_play_script_and_industrial_visuals() -> None:
     )
 
 
-def test_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
+def _legacy_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
     builder = _builder()
     scene = json.loads(SCENE.read_text(encoding="utf-8"))
     nodes = {str(node["name"]): node for node in scene["__NODES__"]}
@@ -731,9 +768,311 @@ def test_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
             "ee_link2" if "_thumb_" in proxy_name else "ee_link1"
         )
         assert str(parent["name"]).endswith(expected_link)
+def test_scene_has_play_script_and_leap_hands() -> None:
+    builder = _builder()
+    scene = json.loads(SCENE.read_text(encoding="utf-8"))
+    roots = [node for node in scene["__NODES__"] if node["parent"] == -1]
+    assert len(roots) == 1
+    assert roots[0]["properties"]["script"] == (
+        "ExtResource(conveyor_packages_play_script)"
+    )
+    resource = next(
+        value
+        for value in scene["__EXT_RESOURCES__"]
+        if value["__ID__"] == "conveyor_packages_play_script"
+    )
+    assert resource["__PATH__"] == "res://conveyor_packages_play.py"
+
+    names = {str(node["name"]) for node in scene["__NODES__"]}
+    assert {
+        "scanner_crossbar",
+        "scanner_camera",
+        "worktable_surface_visual",
+        "worktable_surface_collision",
+        "incoming_package_lane",
+        "end_stop_visual",
+        "end_stop_collision",
+        "leap_left",
+        "leap_right",
+        "leap_left_if_tip_collision",
+        "leap_right_if_tip_collision",
+        "leap_left_th_tip_collision",
+        "leap_right_th_tip_collision",
+    } <= names
+    assert "manual_sorting_zone" not in names
+    assert "worktable_transfer_lip" not in names
+    assert not any("openarm" in name.lower() for name in names)
+    assert not any("allegro" in name.lower() for name in names)
+
+    external_resource_paths = {
+        str(resource["__ID__"]): str(resource["__PATH__"])
+        for resource in scene["__EXT_RESOURCES__"]
+    }
+    resource_paths = set(external_resource_paths.values())
+    assert {
+        "res://assets/leap_hand/assets/palm_left.obj",
+        "res://assets/leap_hand/assets/palm_right.obj",
+        "res://assets/leap_hand/assets/tip.obj",
+        "res://assets/leap_hand/assets/thumb_tip.obj",
+    } <= resource_paths
+    assert not any(
+        "openarm" in path or "allegro" in path for path in resource_paths
+    )
+    assert all(not path.startswith("res://../") for path in resource_paths)
+    for filename in ("left_hand.xml", "right_hand.xml", "SOURCE.md", "LICENSE"):
+        assert (builder.LEAP_ASSET_ROOT / filename).is_file()
+
+    assert math.isclose(
+        float(np.linalg.det(builder.HAND_PALM_ALIGNMENT_ROTATION)),
+        1.0,
+        abs_tol=1.0e-12,
+    )
+    scene_nodes = {
+        str(node["name"]): node
+        for node in scene["__NODES__"]
+        if str(node["name"]).startswith("leap_")
+    }
+    for side_index, side in enumerate(builder.HAND_SIDES):
+        robot_name = f"leap_{side}"
+        robot = scene_nodes[robot_name]
+        assert robot["properties"]["source_path"] == (
+            f"res://assets/leap_hand/{builder.LEAP_MJCF_BY_SIDE[side_index]}"
+        )
+        np.testing.assert_allclose(
+            _matrix_vector(
+                robot["properties"], "position", (0.0, 0.0, 0.0)
+            ),
+            builder.HAND_ROOT_POSITIONS[side_index],
+            atol=1.0e-7,
+        )
+
+        # Compare the generated hand directly with Menagerie's MJCF forward
+        # kinematics. This covers every coupled link and rendered mesh, so a
+        # quaternion-order, hierarchy, or left/right import regression cannot
+        # silently turn the hand into a plausible-looking but invalid model.
+        source_model = mujoco.MjModel.from_xml_path(
+            str(
+                builder.LEAP_ASSET_ROOT
+                / builder.LEAP_MJCF_BY_SIDE[side_index]
+            )
+        )
+        source_data = mujoco.MjData(source_model)
+        mujoco.mj_forward(source_model, source_data)
+        root_position = np.asarray(
+            builder.HAND_ROOT_POSITIONS[side_index], dtype=np.float64
+        )
+        alignment = np.asarray(
+            builder.HAND_PALM_ALIGNMENT_ROTATION, dtype=np.float64
+        )
+        for link_name in builder.LEAP_CONTACT_LINK_NAMES:
+            body_id = mujoco.mj_name2id(
+                source_model, mujoco.mjtObj.mjOBJ_BODY, link_name
+            )
+            assert body_id >= 0
+            imported = _descendant_world_transform(
+                scene, robot_name, link_name
+            )
+            np.testing.assert_allclose(
+                imported[:3, 3],
+                root_position + alignment @ source_data.xpos[body_id],
+                atol=2.0e-6,
+            )
+            np.testing.assert_allclose(
+                imported[:3, :3],
+                alignment @ source_data.xmat[body_id].reshape(3, 3),
+                atol=2.0e-6,
+            )
+
+        for geom_id in range(source_model.ngeom):
+            if source_model.geom_type[geom_id] != mujoco.mjtGeom.mjGEOM_MESH:
+                continue
+            geom_name = mujoco.mj_id2name(
+                source_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id
+            )
+            assert geom_name is not None
+            imported_index = _descendant_node_index(
+                scene, robot_name, geom_name
+            )
+            imported = _scene_world_transform_list(scene)[imported_index]
+            mesh_reference = str(
+                scene["__NODES__"][imported_index]["properties"]["mesh"]
+            )
+            assert mesh_reference.startswith("ExtResource(")
+            assert mesh_reference.endswith(")")
+            mesh_resource_id = mesh_reference[len("ExtResource(") : -1]
+            mesh_path = external_resource_paths[mesh_resource_id]
+            assert mesh_path.startswith("res://")
+            raw_vertices = _mesh_vertices(
+                EXAMPLE / mesh_path.removeprefix("res://")
+            )
+            imported_vertices = (
+                imported[:3, :3] @ raw_vertices.T
+            ).T + imported[:3, 3]
+
+            mesh_id = int(source_model.geom_dataid[geom_id])
+            vertex_address = int(source_model.mesh_vertadr[mesh_id])
+            vertex_count = int(source_model.mesh_vertnum[mesh_id])
+            compiled_vertices = np.asarray(
+                source_model.mesh_vert[
+                    vertex_address : vertex_address + vertex_count
+                ],
+                dtype=np.float64,
+            )
+            source_vertices = (
+                source_data.geom_xmat[geom_id].reshape(3, 3)
+                @ compiled_vertices.T
+            ).T + source_data.geom_xpos[geom_id]
+            expected_vertices = (
+                alignment @ source_vertices.T
+            ).T + root_position
+
+            imported_to_expected = cKDTree(expected_vertices).query(
+                imported_vertices
+            )[0]
+            expected_to_imported = cKDTree(imported_vertices).query(
+                expected_vertices
+            )[0]
+            assert float(imported_to_expected.max()) <= 2.0e-5, geom_name
+            assert float(expected_to_imported.max()) <= 2.0e-5, geom_name
+
+        palm = _descendant_world_transform(scene, robot_name, "palm")
+        np.testing.assert_allclose(
+            palm[:3, 2], (0.0, 0.0, 1.0), atol=1.0e-6
+        )
+        finger_vectors = []
+        for finger_name in ("if", "mf", "rf"):
+            base = _descendant_world_transform(
+                scene, robot_name, f"{finger_name}_bs"
+            )[:3, 3]
+            distal = _descendant_world_transform(
+                scene, robot_name, f"{finger_name}_ds"
+            )[:3, 3]
+            finger_vectors.append(distal - base)
+        finger_vectors = np.stack(finger_vectors)
+        assert np.all(finger_vectors[:, 1] > 0.08)
+        assert np.all(np.abs(finger_vectors[:, 2]) < 0.02)
+
+        index_tip = _descendant_world_transform(
+            scene, robot_name, "if_ds"
+        )[:3, 3]
+        ring_tip = _descendant_world_transform(
+            scene, robot_name, "rf_ds"
+        )[:3, 3]
+        thumb_tip = _descendant_world_transform(
+            scene, robot_name, "th_ds"
+        )[:3, 3]
+        inward_sign = 1.0 if side == "left" else -1.0
+        assert inward_sign * (index_tip[0] - ring_tip[0]) > 0.08
+        assert inward_sign * (thumb_tip[0] - palm[0, 3]) > 0.07
+
+    belt_surface = next(
+        node for node in scene["__NODES__"] if node["name"] == "belt_surface"
+    )
+    np.testing.assert_allclose(
+        _matrix_vector(
+            belt_surface["properties"], "position", (0.0, 0.0, 0.0)
+        ),
+        (builder.BELT_CENTER_X, builder.BELT_CENTER_Y, builder.BELT_CENTER_Z),
+    )
+    assert (
+        builder.WORKTABLE_CENTER_Y + 0.5 * builder.WORKTABLE_DEPTH
+        < builder.BELT_CENTER_Y - 0.5 * builder.BELT_WIDTH
+    )
+    assert len({name for name in names if name.startswith("belt_marker_")}) >= 12
+
+    soft_specs = {
+        str(spec["name"]): spec for spec in builder.SOFT_PACKAGE_SPECS
+    }
+    blue_spec = soft_specs["soft_mailer_blue"]
+    fill_spec = soft_specs["soft_mailer_blue_fill"]
+    yellow_spec = soft_specs["soft_pouch_yellow"]
+    assert blue_spec["model"] == "thin_shell"
+    assert tuple(blue_spec["cells"]) == (26, 19)
+    assert float(blue_spec["young_modulus"]) >= 1.0e5
+    assert float(blue_spec["bending_stiffness"]) <= 5.0e-4
+    assert float(blue_spec["thickness"]) <= 1.5e-3
+    assert fill_spec["model"] == "volumetric"
+    assert tuple(fill_spec["cells"]) == (10, 8, 4)
+    assert not bool(fill_spec["visible"])
+    assert tuple(yellow_spec["cells"]) == (9, 7, 4)
+
+    blue_mesh = builder._soft_mailer_shell_mesh(
+        blue_spec["size"], blue_spec["cells"]
+    )
+    blue_vertices = np.asarray(blue_mesh.vertices, dtype=np.float64)
+    blue_triangles = np.asarray(blue_mesh.triangles, dtype=np.int64)
+    layer_size = (blue_spec["cells"][0] + 1) * (
+        blue_spec["cells"][1] + 1
+    )
+    bottom_z = blue_vertices[:layer_size, 2]
+    top_z = blue_vertices[layer_size:, 2]
+    assert float(top_z.max() - bottom_z.min()) > 0.10
+    assert float(np.ptp(top_z)) > 0.06
+    edge_counts: dict[tuple[int, int], int] = {}
+    for triangle in blue_triangles:
+        for first, second in (
+            (triangle[0], triangle[1]),
+            (triangle[1], triangle[2]),
+            (triangle[2], triangle[0]),
+        ):
+            edge = tuple(sorted((int(first), int(second))))
+            edge_counts[edge] = edge_counts.get(edge, 0) + 1
+    assert edge_counts and set(edge_counts.values()) == {2}
+    assert (
+        float(blue_spec["position"][2])
+        + float(bottom_z.min())
+        - builder.WORKTABLE_TOP_Z
+        >= 0.18
+    )
+
+    properties_by_unique_name = {
+        str(node["name"]): node["properties"]
+        for node in scene["__NODES__"]
+        if node["name"]
+        in {
+            "worktable_surface_collision",
+            "leap_left_if_tip_collision",
+            "soft_mailer_blue",
+        }
+    }
+    assert (
+        properties_by_unique_name["worktable_surface_collision"]["collision_layer"],
+        properties_by_unique_name["worktable_surface_collision"]["collision_mask"],
+    ) == (builder.RIGID_COLLISION_LAYER, builder.RIGID_COLLISION_MASK)
+    assert (
+        properties_by_unique_name["leap_left_if_tip_collision"]["collision_layer"],
+        properties_by_unique_name["leap_left_if_tip_collision"]["collision_mask"],
+    ) == (builder.HAND_COLLISION_LAYER, builder.HAND_COLLISION_MASK)
+    assert (
+        properties_by_unique_name["soft_mailer_blue"]["collision_layer"],
+        properties_by_unique_name["soft_mailer_blue"]["collision_mask"],
+    ) == (
+        builder.DEFORMABLE_COLLISION_LAYER,
+        builder.DEFORMABLE_COLLISION_MASK,
+    )
+
+    stage_joint_names = {
+        name
+        for names_by_side in builder.HAND_STAGE_JOINT_NAMES_BY_SIDE
+        for name in names_by_side
+    }
+    stage_joints = [
+        node for node in scene["__NODES__"] if node["name"] in stage_joint_names
+    ]
+    assert len(stage_joints) == 12
+    for joint in stage_joints:
+        properties = joint["properties"]
+        assert properties["drive_mode"] == "Position"
+        linear = joint["name"].rsplit("_", 1)[-1] in {"x", "y", "z"}
+        expected_stiffness = (
+            builder.HAND_STAGE_LINEAR_STIFFNESS
+            if linear
+            else builder.HAND_STAGE_ANGULAR_STIFFNESS
+        )
+        assert math.isclose(properties["drive_stiffness"], expected_stiffness)
 
 
-def test_quality_profiles_and_belt_schedule() -> None:
+def _legacy_quality_profiles_and_belt_schedule() -> None:
     profile = _profile()
     assert math.isclose(profile.IPC_CONTACT_ACTIVATION_DISTANCE, 2.0e-3)
     assert math.isclose(profile.IPC_CONTACT_RESISTANCE, 1.0e8)
@@ -751,6 +1090,16 @@ def test_quality_profiles_and_belt_schedule() -> None:
         accurate.scene_sync_interval,
         accurate.contact_refresh_interval,
     ) == (2, "aitken", 1, 1)
+    assert (
+        interactive.newton_max_iterations,
+        interactive.line_search_max_iterations,
+        interactive.linear_system_tolerance_rate,
+    ) == (32, 8, 2.0e-3)
+    assert (
+        accurate.newton_max_iterations,
+        accurate.line_search_max_iterations,
+        accurate.linear_system_tolerance_rate,
+    ) == (16, 8, 1.0e-3)
     speeds = [
         profile.belt_speed_at_tick(tick)
         for tick in range(profile.CYCLE_TICKS)
@@ -861,7 +1210,178 @@ def test_quality_profiles_and_belt_schedule() -> None:
         assert math.isclose(mass, expected_mass, rel_tol=1.0e-12)
     assert math.isclose(
         sum(profile.SOFT_PACKAGE_MASSES[:2]),
-        1.1248596649061466,
+        0.35,
+        rel_tol=1.0e-12,
+    )
+
+
+def test_quality_profiles_and_flip_push_schedule() -> None:
+    profile = _profile()
+    assert math.isclose(profile.IPC_CONTACT_ACTIVATION_DISTANCE, 2.0e-3)
+    assert math.isclose(profile.IPC_CONTACT_RESISTANCE, 1.0e8)
+    interactive = profile.quality_profile("interactive")
+    accurate = profile.quality_profile("accurate")
+    assert (
+        interactive.coupling_iterations,
+        interactive.relaxation_mode,
+        interactive.scene_sync_interval,
+        interactive.contact_refresh_interval,
+    ) == (1, "fixed", 2, 4)
+    assert (
+        accurate.coupling_iterations,
+        accurate.relaxation_mode,
+        accurate.scene_sync_interval,
+        accurate.contact_refresh_interval,
+    ) == (2, "aitken", 1, 1)
+
+    speeds = [
+        profile.belt_speed_at_tick(tick)
+        for tick in range(profile.CYCLE_TICKS)
+    ]
+    assert all(value == 0.0 for value in speeds[: profile.BELT_START_TICKS])
+    ramp_start = profile.BELT_START_TICKS
+    assert 0.0 < speeds[ramp_start] < speeds[
+        ramp_start + profile.RAMP_TICKS - 1
+    ]
+    assert math.isclose(
+        speeds[ramp_start + profile.RAMP_TICKS - 1], profile.BELT_SPEED
+    )
+    assert math.isclose(
+        speeds[ramp_start + profile.RAMP_TICKS], profile.BELT_SPEED
+    )
+    assert speeds[-1] == 0.0
+    assert math.isclose(
+        sum(speeds) * profile.FIXED_DT,
+        0.60,
+        rel_tol=0.0,
+        abs_tol=1.0e-12,
+    )
+
+    phases_and_durations = (
+        ("drop_settle", profile.DROP_SETTLE_TICKS),
+        ("flip_approach", profile.FLIP_APPROACH_TICKS),
+        ("flip_grip", profile.FLIP_GRIP_TICKS),
+        ("flip_lift", profile.FLIP_LIFT_TICKS),
+        ("flip_rotate", profile.FLIP_ROTATE_TICKS),
+        ("flip_place", profile.FLIP_PLACE_TICKS),
+        ("flip_release", profile.FLIP_RELEASE_TICKS),
+        ("flip_clear", profile.FLIP_CLEAR_TICKS),
+        ("reorient", profile.REORIENT_TICKS),
+        ("push_approach", profile.PUSH_APPROACH_TICKS),
+        ("push", profile.PUSH_TICKS),
+        ("push_release", profile.PUSH_RELEASE_TICKS),
+        ("push_clear", profile.PUSH_CLEAR_TICKS),
+    )
+    tick = 0
+    for phase_name, duration in phases_and_durations:
+        assert profile.cycle_phase(tick) == phase_name
+        assert profile.cycle_phase(tick + duration - 1) == phase_name
+        tick += duration
+    assert tick == profile.MANIPULATION_TICKS
+    assert profile.cycle_phase(tick) == "settle"
+    assert profile.cycle_phase(profile.CYCLE_TICKS - 1) == "settle"
+
+    flip_grip_start = profile.DROP_SETTLE_TICKS + profile.FLIP_APPROACH_TICKS
+    assert profile.finger_close_fraction_at_tick(flip_grip_start - 1) == 0.0
+    assert 0.0 < profile.finger_close_fraction_at_tick(flip_grip_start)
+    assert math.isclose(
+        profile.finger_close_fraction_at_tick(
+            flip_grip_start + profile.FLIP_GRIP_TICKS - 1
+        ),
+        profile.FLIP_FINGER_CLOSE_FRACTION,
+    )
+    assert all(
+        len(targets) == 6
+        for pair in (
+            profile.HAND_STAGE_HOME_TARGETS,
+            profile.HAND_STAGE_FLIP_GRIP_TARGETS,
+            profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+            profile.HAND_STAGE_PUSH_TARGETS,
+        )
+        for targets in pair
+    )
+    assert all(
+        len(controls) == 22
+        for controls in profile.hand_controls_at_tick(flip_grip_start)
+    )
+    grip_preload = tuple(
+        grip[0] - approach[0]
+        for approach, grip in zip(
+            profile.HAND_STAGE_FLIP_APPROACH_TARGETS,
+            profile.HAND_STAGE_FLIP_GRIP_TARGETS,
+            strict=True,
+        )
+    )
+    np.testing.assert_allclose(grip_preload, (0.010, -0.010), atol=1.0e-12)
+    for grip, lift, flipped in zip(
+        profile.HAND_STAGE_FLIP_GRIP_TARGETS,
+        profile.HAND_STAGE_FLIP_LIFT_TARGETS,
+        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+        strict=True,
+    ):
+        assert math.isclose(grip[0], lift[0], abs_tol=1.0e-12)
+        assert math.isclose(lift[0], flipped[0], abs_tol=1.0e-12)
+    for before, after in zip(
+        profile.HAND_STAGE_FLIP_LIFT_TARGETS,
+        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+        strict=True,
+    ):
+        assert math.isclose(abs(after[3] - before[3]), math.pi)
+    rotate_start = (
+        profile.DROP_SETTLE_TICKS
+        + profile.FLIP_APPROACH_TICKS
+        + profile.FLIP_GRIP_TICKS
+        + profile.FLIP_LIFT_TICKS
+    )
+    for relative_tick in (
+        0,
+        profile.FLIP_ROTATE_TICKS // 4,
+        profile.FLIP_ROTATE_TICKS // 2 - 1,
+        profile.FLIP_ROTATE_TICKS - 1,
+    ):
+        stage_targets = profile.hand_stage_targets_at_tick(
+            rotate_start + relative_tick
+        )
+        for before, after, target in zip(
+            profile.HAND_STAGE_FLIP_LIFT_TARGETS,
+            profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+            stage_targets,
+            strict=True,
+        ):
+            pivot = 0.5 * (
+                np.asarray(before[1:3]) + np.asarray(after[1:3])
+            )
+            expected_radius = np.linalg.norm(
+                np.asarray(before[1:3]) - pivot
+            )
+            assert math.isclose(
+                np.linalg.norm(np.asarray(target[1:3]) - pivot),
+                expected_radius,
+                rel_tol=0.0,
+                abs_tol=1.0e-12,
+            )
+    assert all(
+        target[3:] == (0.0, 0.0, 0.0)
+        for target in profile.HAND_STAGE_PUSH_TARGETS
+    )
+
+    for spec, expected_mass in zip(
+        _builder().SOFT_PACKAGE_SPECS,
+        profile.SOFT_PACKAGE_MASSES,
+        strict=True,
+    ):
+        if spec.get("model", "volumetric") == "thin_shell":
+            mesh = _builder()._soft_mailer_shell_mesh(
+                spec["size"], spec["cells"]
+            )
+            mass = _surface_mass(mesh, spec["thickness"], spec["density"])
+        else:
+            mesh = _builder()._soft_package_mesh(spec["size"], spec["cells"])
+            mass = _tetrahedral_mass(mesh, spec["density"])
+        assert math.isclose(mass, expected_mass, rel_tol=1.0e-12)
+    assert math.isclose(
+        sum(profile.SOFT_PACKAGE_MASSES[:2]),
+        0.35,
         rel_tol=1.0e-12,
     )
 
@@ -1074,6 +1594,9 @@ def test_deformable_velocity_damping_is_mass_normalized_per_body() -> None:
 
 def test_deformable_force_arrows_expose_horizontal_and_belt_resultants() -> None:
     play = _play()
+    assert play._merge_contiguous_body_ranges(
+        ((0, 2), (2, 5), (5, 7)), ((0, 1), (2,))
+    ) == ((0, 5), (5, 7))
     positions = np.asarray(
         (
             (0.0, 0.0, 0.5),
@@ -1108,6 +1631,22 @@ def test_deformable_force_arrows_expose_horizontal_and_belt_resultants() -> None
     assert arrows[0].color == play.CONTACT_HORIZONTAL_RESULTANT_COLOR
     assert "push_target horizontal IPC resultant 5 N" == arrows[0].label
 
+    belt_arrows = play._body_resultant_force_arrows(
+        positions,
+        np.asarray((2.0, 3.0, 0.0), dtype=np.float64),
+        ((0, 2), (2, 3)),
+        ("push_target", "supported_only"),
+        horizontal_only=False,
+        force_axis=(1.0, 0.0, 0.0),
+        color=play.EXTERNAL_FORCE_RESULTANT_COLOR,
+        label="belt drive resultant",
+        force_scale=0.08,
+        max_force_length=0.8,
+    )
+    assert len(belt_arrows) == 1
+    assert np.allclose(belt_arrows[0].vector, (1.0, 0.0, 0.0))
+    assert "push_target belt drive resultant 5 N" == belt_arrows[0].label
+
 
 def test_runtime_uses_one_velocity_field_and_lazy_contact_output() -> None:
     play_source = (EXAMPLE / "conveyor_packages_play.py").read_text(
@@ -1125,11 +1664,13 @@ def test_runtime_uses_one_velocity_field_and_lazy_contact_output() -> None:
     assert "export_deformable_contact_forces=True" in play_source
     assert "contact_refresh_interval" in play_source
     assert "GOBOT_CONVEYOR_DROP_ONLY" in play_source
-    assert "ARM_PUSH_TARGETS" in play_source
+    assert "hand_controls_at_tick" in play_source
+    assert "self.soft_force_model.drive_force[0]" in play_source
+    assert 'self.provider.arrays["ipc_external_forces"][0]' not in play_source
     assert "profile_module.IPC_CONTACT_ACTIVATION_DISTANCE" in play_source
     assert "profile_module.IPC_CONTACT_RESISTANCE" in play_source
     assert "self.profile_module.IPC_CONTACT_FRICTION" not in play_source
-    assert "arm_push_fraction_at_tick" in batch_source
+    assert "hand_controls_at_tick" in batch_source
     assert "ConveyorForceModel" in batch_source
     assert "DeformableConveyorForceModel" in batch_source
     assert "--refresh-contact-forces" in batch_source
@@ -1142,8 +1683,8 @@ def test_runtime_uses_one_velocity_field_and_lazy_contact_output() -> None:
 def main() -> None:
     test_scene_is_reproducible()
     test_scene_compiles_to_mixed_package_conveyor_contract()
-    test_scene_has_play_script_and_industrial_visuals()
-    test_quality_profiles_and_belt_schedule()
+    test_scene_has_play_script_and_leap_hands()
+    test_quality_profiles_and_flip_push_schedule()
     test_mujoco_belt_material_overrides_parcel_friction()
     test_rigid_conveyor_force_is_coulomb_limited_and_composable()
     test_deformable_conveyor_force_is_coulomb_limited_and_belt_local()

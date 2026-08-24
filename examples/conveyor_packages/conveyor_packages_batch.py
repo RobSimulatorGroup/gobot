@@ -25,19 +25,17 @@ from gobot.rl import (
 )
 
 from build_scene import (
-    ARM_BASE_LINK_NAMES,
-    ARM_JOINT_NAMES_BY_SIDE,
-    ARM_LINK_NAMES_BY_SIDE,
-    ARM_SIDES,
     BELT_CENTER_X,
     BELT_CENTER_Y,
     BELT_SURFACE_LENGTH,
     BELT_TOP_Z,
     BELT_WIDTH,
-    HAND_PUSH_PAD_LOCAL_OFFSETS,
-    HAND_PUSH_PAD_LOCAL_ROTATION,
+    HAND_BASE_LINK_NAMES,
+    HAND_JOINT_NAMES_BY_SIDE,
+    HAND_LINK_NAMES_BY_SIDE,
+    HAND_SIDES,
     HERE,
-    OPENARM_ROBOT_NAME,
+    LEAP_ROBOT_NAMES,
     RIGID_BOX_SPECS,
     SCENE_NAME,
     SOFT_PACKAGE_SPECS,
@@ -49,24 +47,16 @@ from conveyor_forces import (
     configure_mujoco_velocity_field_belt,
 )
 from conveyor_profile import (
-    ARM_CLEAR_TARGETS,
-    ARM_GRIP_TARGETS,
-    ARM_PUSH_TARGETS,
-    ARM_RETRACT_TARGETS,
     CYCLE_TICKS,
     FIXED_DT,
     SOFT_PACKAGE_MASSES,
-    FINGER_GRIP_OFFSETS,
     IPC_CONTACT_ACTIVATION_DISTANCE,
     IPC_CONTACT_FRICTION,
     IPC_CONTACT_RESISTANCE,
-    arm_clear_fraction_at_tick,
-    arm_grip_fraction_at_tick,
-    arm_push_fraction_at_tick,
-    arm_retract_fraction_at_tick,
     belt_speed_at_tick,
     cycle_phase,
-    gripper_close_fraction_at_tick,
+    finger_close_fraction_at_tick,
+    hand_controls_at_tick,
     quality_profile,
 )
 
@@ -81,8 +71,8 @@ SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a bimanual sorting table that sweeps a deformable package "
-            "onto a transverse velocity-field outfeed conveyor."
+            "Run two floating LEAP Hands that flip a deformable package and "
+            "then push it onto a velocity-field outfeed conveyor."
         )
     )
     parser.add_argument("--scene", type=Path, default=HERE / SCENE_NAME)
@@ -237,6 +227,17 @@ def _body_extents(positions: Any, entries: tuple[dict[str, Any], ...]) -> Any:
     return torch.stack(tuple(extents), dim=1)
 
 
+def _mailer_layer_axis(positions: Any, entry: dict[str, Any]) -> Any:
+    begin = int(entry["element_offset"])
+    count = int(entry["element_count"])
+    if count % 2:
+        raise RuntimeError("thin-shell mailer must have two equal vertex layers")
+    half = count // 2
+    bottom = positions[:, begin : begin + half].mean(dim=1)
+    top = positions[:, begin + half : begin + count].mean(dim=1)
+    return torch.nn.functional.normalize(top - bottom, dim=-1)
+
+
 def _soft_body_diagnostics(
     positions: Any,
     velocities: Any,
@@ -304,7 +305,7 @@ def _force_flow_diagnostics(
     external_force_trace: Any,
     center_trace: Any,
     extent_trace: Any,
-    arm_wrench_trace: Any,
+    hand_wrench_trace: Any,
     initial_centers: Any,
     initial_extents: Any,
 ) -> list[dict[str, Any]]:
@@ -312,8 +313,8 @@ def _force_flow_diagnostics(
     external = external_force_trace[:, 0].detach().cpu()
     centers = center_trace[:, 0].detach().cpu()
     extents = extent_trace[:, 0].detach().cpu()
-    arm_reactions = (
-        arm_wrench_trace[:, 0, :, :3].sum(dim=1).detach().cpu()
+    hand_reactions = (
+        hand_wrench_trace[:, 0, :, :3].sum(dim=1).detach().cpu()
     )
     initial = initial_centers[0].detach().cpu()
     reference_extents = initial_extents[0].detach().cpu()
@@ -369,9 +370,9 @@ def _force_flow_diagnostics(
                     across_belt[reverse_peak_tick].item()
                 ),
                 "reverse_peak_across_belt_tick": reverse_peak_tick,
-                "arm_proxy_reaction_at_reverse_peak_newtons": [
+                "hand_proxy_reaction_at_reverse_peak_newtons": [
                     float(value)
-                    for value in arm_reactions[reverse_peak_tick].tolist()
+                    for value in hand_reactions[reverse_peak_tick].tolist()
                 ],
                 "net_across_belt_contact_impulse_newton_seconds": (
                     across_belt_impulse
@@ -391,8 +392,8 @@ def _force_flow_diagnostics(
                     float(value)
                     for value in contact[peak_tick, body_index].tolist()
                 ],
-                "arm_proxy_reaction_at_peak_newtons": [
-                    float(value) for value in arm_reactions[peak_tick].tolist()
+                "hand_proxy_reaction_at_peak_newtons": [
+                    float(value) for value in hand_reactions[peak_tick].tolist()
                 ],
                 "external_resultant_at_contact_peak_newtons": [
                     float(value)
@@ -464,23 +465,26 @@ def _rigid_body_diagnostics(body_states: tuple[Any, ...]) -> list[dict[str, Any]
     return diagnostics
 
 
-def _arm_diagnostics(
-    arm_states: tuple[Any, ...], arm_command: Any
+def _hand_diagnostics(
+    hand_states: tuple[Any, ...], hand_command: Any
 ) -> list[dict[str, Any]]:
     diagnostics = []
     for side, state, command in zip(
-        ARM_SIDES, arm_states, arm_command[0], strict=True
+        HAND_SIDES, hand_states, hand_command[0], strict=True
     ):
         joint_error = state.joint_position[0] - command
         diagnostics.append(
             {
                 "side": side,
-                "joint_position_error_peak_radians": float(
-                    joint_error.abs().amax().item()
+                "stage_control_error_peak": float(
+                    joint_error[:6].abs().amax().item()
                 ),
-                "end_effector_link_positions_meters": [
+                "finger_joint_error_peak_radians": float(
+                    joint_error[6:].abs().amax().item()
+                ),
+                "contact_link_positions_meters": [
                     [float(value) for value in position]
-                    for position in state.link_pose[0, -3:, :3].tolist()
+                    for position in state.link_pose[0, 5:, :3].tolist()
                 ],
             }
         )
@@ -491,6 +495,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     """Run one fixed-capacity batch and return JSON-compatible metrics."""
 
     _validate_args(args)
+    if torch.device(args.device).type != "cuda" or not torch.cuda.is_available():
+        raise RuntimeError("Torch cannot initialize the requested CUDA device")
+    # Establish Torch's CUDA primary context before module discovery dlopens
+    # the native IPC solver.
+    torch.cuda.init()
     scene_path = args.scene.expanduser().resolve()
     if args.rebuild_scene:
         scene_path = build_scene(scene_path.parent)
@@ -585,17 +594,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )[0]
             for name in box_names
         )
-        arm_views = tuple(
+        hand_views = tuple(
             provider.create_robot_view(
-                robot_name=OPENARM_ROBOT_NAME,
+                robot_name=robot_name,
                 base_link=base_link,
                 joint_names=joint_names,
                 link_names=link_names,
             )
-            for base_link, joint_names, link_names in zip(
-                ARM_BASE_LINK_NAMES,
-                ARM_JOINT_NAMES_BY_SIDE,
-                ARM_LINK_NAMES_BY_SIDE,
+            for robot_name, base_link, joint_names, link_names in zip(
+                LEAP_ROBOT_NAMES,
+                HAND_BASE_LINK_NAMES,
+                HAND_JOINT_NAMES_BY_SIDE,
+                HAND_LINK_NAMES_BY_SIDE,
                 strict=True,
             )
         )
@@ -618,36 +628,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             dtype=belt_speed.dtype,
             device=belt_speed.device,
         )
-        arm_command = torch.zeros(
-            (args.num_envs, len(ARM_SIDES), 9),
+        hand_command = torch.zeros(
+            (args.num_envs, len(HAND_SIDES), 22),
             dtype=belt_speed.dtype,
             device=belt_speed.device,
         )
-        arm_grip_target = torch.as_tensor(
-            ARM_GRIP_TARGETS,
+        control_ticks = args.warmup_steps + args.steps
+        hand_control_trajectory = torch.as_tensor(
+            tuple(hand_controls_at_tick(tick) for tick in range(control_ticks)),
             dtype=belt_speed.dtype,
             device=belt_speed.device,
-        ).reshape(1, len(ARM_SIDES), 7).expand(args.num_envs, -1, -1)
-        arm_push_target = torch.as_tensor(
-            ARM_PUSH_TARGETS,
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        ).reshape(1, len(ARM_SIDES), 7).expand(args.num_envs, -1, -1)
-        arm_clear_target = torch.as_tensor(
-            ARM_CLEAR_TARGETS,
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        ).reshape(1, len(ARM_SIDES), 7).expand(args.num_envs, -1, -1)
-        arm_retract_target = torch.as_tensor(
-            ARM_RETRACT_TARGETS,
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        ).reshape(1, len(ARM_SIDES), 7).expand(args.num_envs, -1, -1)
-        gripper_offsets = torch.as_tensor(
-            FINGER_GRIP_OFFSETS,
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        ).reshape(1, len(ARM_SIDES), 1).expand(args.num_envs, -1, 2)
+        ).unsqueeze(1).expand(-1, args.num_envs, -1, -1).contiguous()
         belt_travel = 0.0
         reset_mask = torch.ones(
             args.num_envs, dtype=torch.bool, device=belt_speed.device
@@ -673,13 +664,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if len(deformable_entries) != len(SOFT_PACKAGE_SPECS):
             raise RuntimeError("conveyor deformable body count changed")
         affine_entries = tuple(provider.ipc_solver.affine_bodies)
-        arm_proxy_indices = tuple(
+        hand_proxy_indices = tuple(
             index
             for index, entry in enumerate(affine_entries)
-            if "openarm_" in str(entry["path"])
+            if "leap_" in str(entry["path"])
         )
-        peak_arm_proxy_wrench = torch.zeros(
-            len(arm_proxy_indices),
+        peak_hand_proxy_wrench = torch.zeros(
+            len(hand_proxy_indices),
             dtype=belt_speed.dtype,
             device=belt_speed.device,
         )
@@ -702,6 +693,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             (), dtype=belt_speed.dtype, device=belt_speed.device
         )
         initial_ipc_positions = provider.arrays["ipc_positions"].clone()
+        initial_mailer_layer_axis = _mailer_layer_axis(
+            initial_ipc_positions, deformable_entries[0]
+        )
+        minimum_mailer_layer_dot = torch.ones(
+            args.num_envs,
+            dtype=initial_ipc_positions.dtype,
+            device=initial_ipc_positions.device,
+        )
         initial_soft_centers = _body_centers(
             initial_ipc_positions, deformable_entries
         )
@@ -715,12 +714,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             tuple(view.read_state().base_pose[:, 0] for view in box_views),
             dim=1,
         ).clone()
-        trace_step_count = args.warmup_steps + args.steps
+        trace_step_count = control_ticks
         contact_force_trace = None
         external_force_trace = None
         center_trace = None
         extent_trace = None
-        arm_wrench_trace = None
+        hand_wrench_trace = None
         if args.trace_force_flow:
             trace_shape = (
                 trace_step_count,
@@ -736,11 +735,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             external_force_trace = torch.empty_like(contact_force_trace)
             center_trace = torch.empty_like(contact_force_trace)
             extent_trace = torch.empty_like(contact_force_trace)
-            arm_wrench_trace = torch.empty(
+            hand_wrench_trace = torch.empty(
                 (
                     trace_step_count,
                     args.num_envs,
-                    len(arm_proxy_indices),
+                    len(hand_proxy_indices),
                     6,
                 ),
                 dtype=initial_ipc_positions.dtype,
@@ -756,31 +755,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             belt_travel += speed * FIXED_DT
             force_model.apply(belt_speed)
             soft_force_model.apply(belt_speed)
-            arm_command.zero_()
-            torch.mul(
-                arm_grip_target,
-                arm_grip_fraction_at_tick(tick),
-                out=arm_command[..., :7],
-            )
-            arm_command[..., :7].lerp_(
-                arm_push_target,
-                arm_push_fraction_at_tick(tick),
-            )
-            arm_command[..., :7].lerp_(
-                arm_clear_target,
-                arm_clear_fraction_at_tick(tick),
-            )
-            arm_command[..., :7].lerp_(
-                arm_retract_target,
-                arm_retract_fraction_at_tick(tick),
-            )
-            torch.mul(
-                gripper_offsets,
-                gripper_close_fraction_at_tick(tick),
-                out=arm_command[..., -2:],
-            )
-            for arm_index, arm_view in enumerate(arm_views):
-                arm_view.set_controls(arm_command[:, arm_index])
+            hand_command.copy_(hand_control_trajectory[tick])
+            for hand_index, hand_view in enumerate(hand_views):
+                hand_view.set_controls(hand_command[:, hand_index])
             torch.maximum(
                 peak_drive_force,
                 force_model.drive_force.abs().amax(dim=0),
@@ -826,21 +803,31 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         body_positions.amax(dim=1)
                         - body_positions.amin(dim=1)
                     )
-                arm_wrench_trace[tick].copy_(
+                hand_wrench_trace[tick].copy_(
                     provider.arrays["ipc_affine_contact_wrenches"][
-                        :, arm_proxy_indices
+                        :, hand_proxy_indices
                     ]
                 )
-            arm_proxy_wrench = torch.linalg.vector_norm(
+            current_mailer_layer_axis = _mailer_layer_axis(
+                provider.arrays["ipc_positions"], deformable_entries[0]
+            )
+            torch.minimum(
+                minimum_mailer_layer_dot,
+                (current_mailer_layer_axis * initial_mailer_layer_axis).sum(
+                    dim=-1
+                ),
+                out=minimum_mailer_layer_dot,
+            )
+            hand_proxy_wrench = torch.linalg.vector_norm(
                 provider.arrays["ipc_affine_contact_wrenches"][
-                    :, arm_proxy_indices
+                    :, hand_proxy_indices
                 ],
                 dim=-1,
             ).amax(dim=0)
             torch.maximum(
-                peak_arm_proxy_wrench,
-                arm_proxy_wrench,
-                out=peak_arm_proxy_wrench,
+                peak_hand_proxy_wrench,
+                hand_proxy_wrench,
+                out=peak_hand_proxy_wrench,
             )
             if tick >= args.warmup_steps:
                 provider.synchronize()
@@ -849,6 +836,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         provider.refresh_state()
         provider.synchronize()
         final_ipc_positions = provider.arrays["ipc_positions"].clone()
+        final_mailer_layer_axis = _mailer_layer_axis(
+            final_ipc_positions, deformable_entries[0]
+        )
+        final_mailer_layer_dot = (
+            final_mailer_layer_axis * initial_mailer_layer_axis
+        ).sum(dim=-1).clamp(-1.0, 1.0)
+        final_mailer_flip_degrees = torch.rad2deg(
+            torch.acos(final_mailer_layer_dot)
+        )
+        maximum_mailer_flip_degrees = torch.rad2deg(
+            torch.acos(minimum_mailer_layer_dot.clamp(-1.0, 1.0))
+        )
         final_soft_centers = _body_centers(
             final_ipc_positions, deformable_entries
         )
@@ -856,45 +855,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             final_ipc_positions, deformable_entries
         )
         final_rigid_states = tuple(view.read_state() for view in box_views)
-        final_arm_states = tuple(view.read_state() for view in arm_views)
-        arm_diagnostics = _arm_diagnostics(final_arm_states, arm_command)
-        arm_proxy_transforms = provider.arrays[
+        final_hand_states = tuple(view.read_state() for view in hand_views)
+        hand_diagnostics = _hand_diagnostics(final_hand_states, hand_command)
+        hand_proxy_transforms = provider.arrays[
             "ipc_affine_transforms"
-        ][0, arm_proxy_indices]
-        push_pad_local_offsets = torch.as_tensor(
-            HAND_PUSH_PAD_LOCAL_OFFSETS,
-            dtype=arm_proxy_transforms.dtype,
-            device=arm_proxy_transforms.device,
-        )
-        push_pad_local_rotation = torch.as_tensor(
-            HAND_PUSH_PAD_LOCAL_ROTATION,
-            dtype=arm_proxy_transforms.dtype,
-            device=arm_proxy_transforms.device,
-        )
-        push_pad_transforms = arm_proxy_transforms[::3]
-        push_pad_centers = torch.bmm(
-            push_pad_transforms[:, :3, :3],
-            push_pad_local_offsets.unsqueeze(-1),
-        )[..., 0] + push_pad_transforms[:, :3, 3]
-        push_pad_rotations = torch.matmul(
-            push_pad_transforms[:, :3, :3], push_pad_local_rotation
-        )
-        push_pad_diagnostics = [
-            {
-                "side": side,
-                "center_meters": [float(value) for value in center],
-                "surface_normal": [
-                    float(row[1]) for row in rotation
-                ],
-            }
-            for side, center, rotation in zip(
-                ARM_SIDES,
-                push_pad_centers.tolist(),
-                push_pad_rotations.tolist(),
-                strict=True,
-            )
-        ]
-        arm_proxy_diagnostics = [
+        ][0, hand_proxy_indices]
+        hand_proxy_diagnostics = [
             {
                 "path": str(affine_entries[index]["path"]),
                 "position_meters": [
@@ -910,9 +876,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 ],
             }
             for index, transform, wrench in zip(
-                arm_proxy_indices,
-                arm_proxy_transforms,
-                peak_arm_proxy_wrench.tolist(),
+                hand_proxy_indices,
+                hand_proxy_transforms,
+                peak_hand_proxy_wrench.tolist(),
                 strict=True,
             )
         ]
@@ -951,7 +917,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 external_force_trace,
                 center_trace,
                 extent_trace,
-                arm_wrench_trace,
+                hand_wrench_trace,
                 initial_soft_centers,
                 initial_soft_extents,
             )
@@ -971,7 +937,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         peak_soft_drive_force_newtons = float(peak_soft_drive_force.item())
         force_model.clear()
         soft_force_model.clear()
-        arm_command.zero_()
+        hand_command.zero_()
         belt_speed.zero_()
         belt_twist.zero_()
         provider.reset(
@@ -980,8 +946,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             qvel=initial_qvel,
             ctrl=initial_ctrl,
         )
-        for arm_index, arm_view in enumerate(arm_views):
-            arm_view.set_controls(arm_command[:, arm_index])
+        for hand_index, hand_view in enumerate(hand_views):
+            hand_view.set_controls(hand_command[:, hand_index])
         provider.refresh_state()
         provider.synchronize()
         reset_qpos_error = float(
@@ -997,8 +963,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
         rigid_displacement = final_rigid_x - initial_rigid_x
-        soft_displacement = (
+        soft_x_displacement = (
             final_soft_centers[..., 0] - initial_soft_centers[..., 0]
+        )
+        soft_y_displacement = (
+            final_soft_centers[..., 1] - initial_soft_centers[..., 1]
         )
         soft_center_displacement = final_soft_centers - initial_soft_centers
         soft_height_ratio = final_soft_heights / initial_soft_heights.clamp_min(
@@ -1020,7 +989,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "rigid_x_displacement_range_meters": _range(rigid_displacement),
             "rigid_body_diagnostics_environment_0": rigid_body_diagnostics,
-            "soft_x_displacement_range_meters": _range(soft_displacement),
+            "soft_x_displacement_range_meters": _range(soft_x_displacement),
+            "soft_y_displacement_range_meters": _range(soft_y_displacement),
             "soft_center_displacement_meters_environment_0": {
                 str(spec["name"]): [float(value) for value in displacement]
                 for spec, displacement in zip(
@@ -1030,14 +1000,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 )
             },
             "soft_height_ratio_range": _range(soft_height_ratio),
-            "arm_diagnostics_environment_0": arm_diagnostics,
-            "arm_proxy_diagnostics_environment_0": arm_proxy_diagnostics,
-            "push_pad_diagnostics_environment_0": push_pad_diagnostics,
+            "hand_diagnostics_environment_0": hand_diagnostics,
+            "hand_proxy_diagnostics_environment_0": hand_proxy_diagnostics,
+            "mailer_final_flip_degrees_range": _range(
+                final_mailer_flip_degrees
+            ),
+            "mailer_maximum_flip_degrees_range": _range(
+                maximum_mailer_flip_degrees
+            ),
             "peak_rigid_drive_force_newtons": peak_drive_force_newtons,
             "peak_rigid_normal_force_newtons": peak_normal_force_newtons,
             "peak_soft_drive_force_newtons": peak_soft_drive_force_newtons,
-            "final_gripper_close_fraction": float(
-                gripper_close_fraction_at_tick(
+            "final_finger_close_fraction": float(
+                finger_close_fraction_at_tick(
                     args.warmup_steps + args.steps - 1
                 )
             ),

@@ -38,25 +38,48 @@ SOFT_PACKAGE_NAMES = (
     "soft_mailer_blue_fill",
     "soft_pouch_yellow",
 )
-OPENARM_ROBOT_NAME = "openarm_bimanual"
-ARM_SIDES = ("left", "right")
-ARM_BASE_LINK_NAMES = tuple(
-    f"openarm_{side}_base_link" for side in ARM_SIDES
+SOFT_PACKAGE_RESULTANT_NAMES = (
+    "soft_mailer_blue",
+    "soft_pouch_yellow",
 )
-ARM_JOINT_NAMES_BY_SIDE = tuple(
-    tuple(f"openarm_{side}_joint{index}" for index in range(1, 8))
-    + tuple(f"openarm_{side}_finger_joint{index}" for index in range(1, 3))
-    for side in ARM_SIDES
+SOFT_PACKAGE_RESULTANT_BODY_GROUPS = ((0, 1), (2,))
+HAND_SIDES = ("left", "right")
+LEAP_ROBOT_NAMES = tuple(f"leap_{side}" for side in HAND_SIDES)
+LEAP_FINGER_JOINT_NAMES = (
+    "if_mcp", "if_rot", "if_pip", "if_dip",
+    "mf_mcp", "mf_rot", "mf_pip", "mf_dip",
+    "rf_mcp", "rf_rot", "rf_pip", "rf_dip",
+    "th_cmc", "th_axl", "th_mcp", "th_ipl",
 )
-ARM_LINK_NAMES_BY_SIDE = tuple(
-    (f"openarm_{side}_base_link",)
-    + tuple(f"openarm_{side}_link{index}" for index in range(1, 7))
-    + (
-        f"openarm_{side}_ee_base_link",
-        f"openarm_{side}_ee_link1",
-        f"openarm_{side}_ee_link2",
+LEAP_CONTACT_LINK_NAMES = (
+    "palm",
+    "if_bs", "if_px", "if_md", "if_ds",
+    "mf_bs", "mf_px", "mf_md", "mf_ds",
+    "rf_bs", "rf_px", "rf_md", "rf_ds",
+    "th_mp", "th_bs", "th_px", "th_ds",
+)
+HAND_STAGE_DOF_NAMES = ("x", "y", "z", "roll", "pitch", "yaw")
+HAND_STAGE_JOINT_NAMES_BY_SIDE = tuple(
+    tuple(f"leap_{side}_wrist_{name}" for name in HAND_STAGE_DOF_NAMES)
+    for side in HAND_SIDES
+)
+HAND_STAGE_BODY_NAMES_BY_SIDE = tuple(
+    tuple(
+        f"leap_{side}_stage_{name}"
+        for name in HAND_STAGE_DOF_NAMES[:-1]
     )
-    for side in ARM_SIDES
+    for side in HAND_SIDES
+)
+HAND_BASE_LINK_NAMES = tuple(
+    names[0] for names in HAND_STAGE_BODY_NAMES_BY_SIDE
+)
+HAND_JOINT_NAMES_BY_SIDE = tuple(
+    stage_names + LEAP_FINGER_JOINT_NAMES
+    for stage_names in HAND_STAGE_JOINT_NAMES_BY_SIDE
+)
+HAND_LINK_NAMES_BY_SIDE = tuple(
+    stage_names + LEAP_CONTACT_LINK_NAMES
+    for stage_names in HAND_STAGE_BODY_NAMES_BY_SIDE
 )
 BELT_CONTACT_SENSOR_NAMES = tuple(
     name + "_belt_contact" for name in RIGID_BOX_NAMES
@@ -79,12 +102,17 @@ EXTERNAL_FORCE_RESULTANT_COLOR = (1.0, 0.58, 0.08, 1.0)
 RESULTANT_ARROW_HEIGHT_OFFSET = 0.025
 
 
-def _nodes_by_name(root: Any) -> dict[str, Any]:
+def _nodes_by_name(
+    root: Any, *, allow_duplicate_names: bool = False
+) -> dict[str, Any]:
     result: dict[str, Any] = {}
     pending = [root]
     while pending:
         node = pending.pop()
         if node.name in result:
+            if allow_duplicate_names:
+                pending.extend(node.children)
+                continue
             raise RuntimeError(
                 f"conveyor scene has duplicate node name {node.name!r}"
             )
@@ -255,6 +283,7 @@ def _body_resultant_force_arrows(
     body_names: tuple[str, ...],
     *,
     horizontal_only: bool,
+    force_axis: tuple[float, float, float] | None = None,
     color: tuple[float, float, float, float],
     label: str,
     force_scale: float,
@@ -264,12 +293,24 @@ def _body_resultant_force_arrows(
 
     points = np.asarray(positions, dtype=np.float64)
     values = np.asarray(forces, dtype=np.float64)
-    if (
-        points.ndim != 2
-        or points.shape[1:] != (3,)
-        or values.shape != points.shape
-    ):
-        raise RuntimeError("deformable force arrays must have shape [count,3]")
+    if points.ndim != 2 or points.shape[1:] != (3,):
+        raise RuntimeError("deformable positions must have shape [count,3]")
+    axis = None
+    if force_axis is None:
+        if values.shape != points.shape:
+            raise RuntimeError(
+                "deformable force arrays must have shape [count,3]"
+            )
+    else:
+        if values.shape != (len(points),):
+            raise RuntimeError(
+                "axial deformable force arrays must have shape [count]"
+            )
+        axis = np.asarray(force_axis, dtype=np.float64)
+        axis_length = float(np.linalg.norm(axis))
+        if not math.isfinite(axis_length) or axis_length <= 0.0:
+            raise RuntimeError("deformable force axis must be finite and nonzero")
+        axis /= axis_length
     if len(body_ranges) != len(body_names):
         raise RuntimeError("deformable force ranges and names must align")
 
@@ -277,7 +318,11 @@ def _body_resultant_force_arrows(
     for name, (begin, end) in zip(body_names, body_ranges, strict=True):
         if begin < 0 or end <= begin or end > len(points):
             raise RuntimeError("deformable force range is out of bounds")
-        vector = values[begin:end].sum(axis=0)
+        vector = (
+            values[begin:end].sum(axis=0)
+            if axis is None
+            else axis * float(values[begin:end].sum())
+        )
         if horizontal_only:
             vector[2] = 0.0
         magnitude = float(np.linalg.norm(vector))
@@ -304,6 +349,21 @@ def _body_resultant_force_arrows(
     return arrows
 
 
+def _merge_contiguous_body_ranges(
+    body_ranges: tuple[tuple[int, int], ...],
+    body_groups: tuple[tuple[int, ...], ...],
+) -> tuple[tuple[int, int], ...]:
+    merged = []
+    for group in body_groups:
+        if not group:
+            raise RuntimeError("deformable force group cannot be empty")
+        ranges = tuple(body_ranges[index] for index in group)
+        if any(left[1] != right[0] for left, right in zip(ranges, ranges[1:])):
+            raise RuntimeError("deformable force group ranges must be contiguous")
+        merged.append((ranges[0][0], ranges[-1][1]))
+    return tuple(merged)
+
+
 class Script(gobot.NodeScript):
     """Run one repeating mixed rigid/deformable conveyor cycle."""
 
@@ -315,20 +375,17 @@ class Script(gobot.NodeScript):
         self.force_model = None
         self.soft_force_model = None
         self.box_views = ()
-        self.arm_views = ()
-        self.arm_links = ()
-        self.arm_command = None
-        self.arm_clear_target = None
-        self.arm_retract_target = None
-        self.arm_grip_target = None
-        self.arm_push_target = None
-        self.gripper_offsets = None
+        self.hand_views = ()
+        self.hand_links = ()
+        self.hand_command = None
+        self.hand_control_trajectory = None
         self.box_bodies = ()
         self.belt_markers = ()
         self.belt_marker_origins = ()
         self.deformable_bodies = ()
         self.deformable_counts = ()
         self.deformable_ranges = ()
+        self.deformable_resultant_ranges = ()
         self.deformable_buffer = None
         self.belt_speed = None
         self.belt_twist = None
@@ -350,14 +407,18 @@ class Script(gobot.NodeScript):
             root = self.get_root()
             if root is None or root.name != SCENE_ROOT_NAME:
                 raise RuntimeError("unexpected conveyor packages scene root")
-            nodes = _nodes_by_name(root)
+            nodes = _nodes_by_name(root, allow_duplicate_names=True)
             self.box_bodies = tuple(nodes[name] for name in RIGID_BOX_NAMES)
-            self.arm_links = tuple(
+            hand_roots = tuple(nodes[name] for name in LEAP_ROBOT_NAMES)
+            hand_nodes = tuple(_nodes_by_name(node) for node in hand_roots)
+            self.hand_links = tuple(
                 tuple(
-                    nodes[link_name]
+                    side_nodes[link_name]
                     for link_name in link_names
                 )
-                for link_names in ARM_LINK_NAMES_BY_SIDE
+                for side_nodes, link_names in zip(
+                    hand_nodes, HAND_LINK_NAMES_BY_SIDE, strict=True
+                )
             )
             self.deformable_bodies = tuple(
                 nodes[name] for name in SOFT_PACKAGE_NAMES
@@ -384,6 +445,11 @@ class Script(gobot.NodeScript):
             )
             self.profile = self.profile_module.quality_profile()
             fixed_dt = float(self.profile_module.FIXED_DT)
+            if not torch.cuda.is_available():
+                raise RuntimeError("Torch cannot initialize cuda:0")
+            # Module discovery in _batch_config dlopens the native IPC solver.
+            # Initialize Torch's primary context before that boundary.
+            torch.cuda.init()
             solver_config = _batch_config(
                 self.context, self.profile_module, self.profile, fixed_dt
             )
@@ -438,17 +504,18 @@ class Script(gobot.NodeScript):
                 )
                 for name in RIGID_BOX_NAMES
             )
-            self.arm_views = tuple(
+            self.hand_views = tuple(
                 self.provider.create_robot_view(
-                    robot_name=OPENARM_ROBOT_NAME,
+                    robot_name=robot_name,
                     base_link=base_link,
                     joint_names=joint_names,
                     link_names=link_names,
                 )
-                for base_link, joint_names, link_names in zip(
-                    ARM_BASE_LINK_NAMES,
-                    ARM_JOINT_NAMES_BY_SIDE,
-                    ARM_LINK_NAMES_BY_SIDE,
+                for robot_name, base_link, joint_names, link_names in zip(
+                    LEAP_ROBOT_NAMES,
+                    HAND_BASE_LINK_NAMES,
+                    HAND_JOINT_NAMES_BY_SIDE,
+                    HAND_LINK_NAMES_BY_SIDE,
                     strict=True,
                 )
             )
@@ -505,6 +572,10 @@ class Script(gobot.NodeScript):
                 )
                 for entry in entries
             )
+            self.deformable_resultant_ranges = _merge_contiguous_body_ranges(
+                self.deformable_ranges,
+                SOFT_PACKAGE_RESULTANT_BODY_GROUPS,
+            )
             self.deformable_buffer = np.zeros(
                 (len(counts), max(counts), 3), dtype=np.float32
             )
@@ -516,36 +587,20 @@ class Script(gobot.NodeScript):
             self.belt_twist = torch.zeros(
                 (NUM_ENVS, 6), dtype=dtype, device=device
             )
-            self.arm_command = torch.zeros(
-                (NUM_ENVS, len(ARM_SIDES), 9),
+            self.hand_command = torch.zeros(
+                (NUM_ENVS, len(HAND_SIDES), 22),
                 dtype=dtype,
                 device=device,
             )
-            self.arm_retract_target = torch.as_tensor(
-                self.profile_module.ARM_RETRACT_TARGETS,
+            trajectory = tuple(
+                self.profile_module.hand_controls_at_tick(tick)
+                for tick in range(self.profile_module.CYCLE_TICKS)
+            )
+            self.hand_control_trajectory = torch.as_tensor(
+                trajectory,
                 dtype=dtype,
                 device=device,
-            ).reshape(1, len(ARM_SIDES), 7).expand(NUM_ENVS, -1, -1)
-            self.arm_clear_target = torch.as_tensor(
-                self.profile_module.ARM_CLEAR_TARGETS,
-                dtype=dtype,
-                device=device,
-            ).reshape(1, len(ARM_SIDES), 7).expand(NUM_ENVS, -1, -1)
-            self.arm_grip_target = torch.as_tensor(
-                self.profile_module.ARM_GRIP_TARGETS,
-                dtype=dtype,
-                device=device,
-            ).reshape(1, len(ARM_SIDES), 7).expand(NUM_ENVS, -1, -1)
-            self.arm_push_target = torch.as_tensor(
-                self.profile_module.ARM_PUSH_TARGETS,
-                dtype=dtype,
-                device=device,
-            ).reshape(1, len(ARM_SIDES), 7).expand(NUM_ENVS, -1, -1)
-            self.gripper_offsets = torch.as_tensor(
-                self.profile_module.FINGER_GRIP_OFFSETS,
-                dtype=dtype,
-                device=device,
-            ).reshape(1, len(ARM_SIDES), 1).expand(NUM_ENVS, -1, 2)
+            ).unsqueeze(1).expand(-1, NUM_ENVS, -1, -1).contiguous()
             self.reset_mask = torch.ones(
                 NUM_ENVS, dtype=torch.bool, device=device
             )
@@ -565,13 +620,13 @@ class Script(gobot.NodeScript):
             self._update_status()
             description = (
                 "Drop-only mailer test started: a libuipc thin-shell mailer "
-                "falls and settles under gravity while the arms and belt "
+                "falls and settles under gravity while the hands and belt "
                 "remain stationary on cuda:0; "
                 if self.drop_only
-                else "Mixed package workcell started: downward-facing "
-                "bimanual palms sweep a libuipc thin-shell mailer from the "
-                "static sorting table onto the front velocity-field outfeed "
-                "on cuda:0; "
+                else "Mixed package workcell started: two floating LEAP "
+                "Hands physically grip and flip a libuipc thin-shell mailer, "
+                "then reorient palm-down and push it onto the outfeed on "
+                "cuda:0; "
             )
             print(
                 description
@@ -599,31 +654,9 @@ class Script(gobot.NodeScript):
         )
         self.force_model.apply(self.belt_speed)
         self.soft_force_model.apply(self.belt_speed)
-        self.arm_command.zero_()
-        torch.mul(
-            self.arm_grip_target,
-            self.profile_module.arm_grip_fraction_at_tick(control_tick),
-            out=self.arm_command[..., :7],
-        )
-        self.arm_command[..., :7].lerp_(
-            self.arm_push_target,
-            self.profile_module.arm_push_fraction_at_tick(control_tick),
-        )
-        self.arm_command[..., :7].lerp_(
-            self.arm_clear_target,
-            self.profile_module.arm_clear_fraction_at_tick(control_tick),
-        )
-        self.arm_command[..., :7].lerp_(
-            self.arm_retract_target,
-            self.profile_module.arm_retract_fraction_at_tick(control_tick),
-        )
-        torch.mul(
-            self.gripper_offsets,
-            self.profile_module.gripper_close_fraction_at_tick(control_tick),
-            out=self.arm_command[..., -2:],
-        )
-        for arm_index, arm_view in enumerate(self.arm_views):
-            arm_view.set_controls(self.arm_command[:, arm_index])
+        self.hand_command.copy_(self.hand_control_trajectory[control_tick])
+        for hand_index, hand_view in enumerate(self.hand_views):
+            hand_view.set_controls(self.hand_command[:, hand_index])
         self.tick += 1
 
     def _physics_process(self, delta: float) -> None:
@@ -656,15 +689,15 @@ class Script(gobot.NodeScript):
         )
         self.force_model.clear()
         self.soft_force_model.clear()
-        self.arm_command.zero_()
+        self.hand_command.zero_()
         self.provider.reset(
             self.reset_mask,
             qpos=self.initial_qpos,
             qvel=torch.zeros_like(self.provider.arrays["qvel"]),
             ctrl=torch.zeros_like(self.provider.arrays["ctrl"]),
         )
-        for arm_index, arm_view in enumerate(self.arm_views):
-            arm_view.set_controls(self.arm_command[:, arm_index])
+        for hand_index, hand_view in enumerate(self.hand_views):
+            hand_view.set_controls(self.hand_command[:, hand_index])
         self.tick = 0
         self.visual_belt_offset = 0.0
         self.last_scene_sync_frame = -1
@@ -711,8 +744,8 @@ class Script(gobot.NodeScript):
                 .cpu()
                 .numpy()
             )
-            external_forces = (
-                self.provider.arrays["ipc_external_forces"][0]
+            belt_drive_forces = (
+                self.soft_force_model.drive_force[0]
                 .detach()
                 .cpu()
                 .numpy()
@@ -729,8 +762,8 @@ class Script(gobot.NodeScript):
                 _body_resultant_force_arrows(
                     positions[0],
                     contact_forces,
-                    self.deformable_ranges,
-                    SOFT_PACKAGE_NAMES,
+                    self.deformable_resultant_ranges,
+                    SOFT_PACKAGE_RESULTANT_NAMES,
                     horizontal_only=True,
                     color=CONTACT_HORIZONTAL_RESULTANT_COLOR,
                     label="horizontal IPC resultant",
@@ -743,10 +776,11 @@ class Script(gobot.NodeScript):
             arrows.extend(
                 _body_resultant_force_arrows(
                     positions[0],
-                    external_forces,
-                    self.deformable_ranges,
-                    SOFT_PACKAGE_NAMES,
+                    belt_drive_forces,
+                    self.deformable_resultant_ranges,
+                    SOFT_PACKAGE_RESULTANT_NAMES,
                     horizontal_only=False,
+                    force_axis=(1.0, 0.0, 0.0),
                     color=EXTERNAL_FORCE_RESULTANT_COLOR,
                     label="belt drive resultant",
                     force_scale=float(settings["contact_force_scale"]),
@@ -779,7 +813,7 @@ class Script(gobot.NodeScript):
             pose = view.read_state().link_pose[0, 0].detach().cpu().numpy()
             self.context.apply_link_poses((body,), pose.reshape(1, 7))
 
-        for links, view in zip(self.arm_links, self.arm_views, strict=True):
+        for links, view in zip(self.hand_links, self.hand_views, strict=True):
             poses = view.read_state().link_pose[0].detach().cpu().numpy()
             self.context.apply_link_poses(links, poses)
 
