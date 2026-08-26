@@ -37,12 +37,13 @@ SOFT_PACKAGE_NAMES = (
     "soft_mailer_blue",
     "soft_mailer_blue_fill",
     "soft_pouch_yellow",
+    "soft_pouch_yellow_fill",
 )
 SOFT_PACKAGE_RESULTANT_NAMES = (
     "soft_mailer_blue",
     "soft_pouch_yellow",
 )
-SOFT_PACKAGE_RESULTANT_BODY_GROUPS = ((0, 1), (2,))
+SOFT_PACKAGE_RESULTANT_BODY_GROUPS = ((0, 1), (2, 3))
 HAND_SIDES = ("left", "right")
 LEAP_ROBOT_NAMES = tuple(f"leap_{side}" for side in HAND_SIDES)
 LEAP_FINGER_JOINT_NAMES = (
@@ -624,9 +625,8 @@ class Script(gobot.NodeScript):
                 "remain stationary on cuda:0; "
                 if self.drop_only
                 else "Mixed package workcell started: two floating LEAP "
-                "Hands physically grip and flip a libuipc thin-shell mailer, "
-                "then reorient palm-down and push it onto the outfeed on "
-                "cuda:0; "
+                "Hands flip the blue mailer, push it onto the outfeed, then "
+                "flip the yellow mailer and an incoming carton on cuda:0; "
             )
             print(
                 description

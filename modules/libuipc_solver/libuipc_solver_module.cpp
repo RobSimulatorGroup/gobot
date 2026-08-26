@@ -218,6 +218,7 @@ struct BodyRecord {
 
 struct DeformableContactRange {
     std::size_t output_offset{0};
+    std::size_t backend_vertex_offset{0};
     std::size_t vertex_count{0};
     S<SimplicialComplexSlot> geometry;
     IndexT global_vertex_offset{-1};
@@ -836,6 +837,7 @@ public:
         if (!world_->is_valid()) {
             throw std::runtime_error("libuipc rejected the compiled Gobot scene");
         }
+        ResolveDeformableBackendLayout();
         InitializeAccessors();
         InitializeContactForceExport(config.fixed_time_step);
         if (external_affine_proxies_) {
@@ -989,8 +991,8 @@ public:
         }
         ActivateDevice();
         device_buffers_ = buffers;
+        InitializeDeviceCouplingWorkspace();
         if (device_native_coupling_enabled_) {
-            InitializeDeviceCouplingWorkspace();
             UploadAffineTargetsAndTwists();
             if (!initial_affine_transforms_.empty()) {
                 if (soft_transform_accessor_ == nullptr) {
@@ -1018,8 +1020,11 @@ public:
             throw std::runtime_error(
                     "libuipc CUDA backend has no FEM external-force accessor");
         }
+        device_workspace_->StageDeformableExternalForces(
+                static_cast<const double*>(
+                        buffers.deformable_external_forces.data));
         external_force_accessor_->bind_external_forces(DeviceView(
-                buffers.deformable_external_forces,
+                device_workspace_->backend_deformable_external_forces(),
                 initial_fem_positions_.size(), sizeof(Vector3)));
         device_buffers_bound_ = true;
         WriteDeviceState(IpcBatchSolverOutputAll);
@@ -1041,6 +1046,9 @@ public:
         last_state_sync_latency_ms_ = 0.0;
         for (std::uint32_t index = 0; index < steps; ++index) {
             const auto staging_start = SteadyClock::now();
+            device_workspace_->StageDeformableExternalForces(
+                    static_cast<const double*>(
+                            device_buffers_.deformable_external_forces.data));
             UploadAffineTargetsAndTwists();
             last_target_staging_latency_ms_ +=
                     ElapsedMilliseconds(staging_start);
@@ -1182,9 +1190,11 @@ public:
     double LastStateSyncLatencyMs() const {
         return last_state_sync_latency_ms_;
     }
-    bool DeviceNativeCoupling() const { return device_workspace_ != nullptr; }
+    bool DeviceNativeCoupling() const {
+        return device_native_coupling_enabled_;
+    }
     std::size_t DeviceWorkspaceAllocationCount() const {
-        return device_workspace_ != nullptr
+        return device_native_coupling_enabled_ && device_workspace_ != nullptr
                        ? device_workspace_->allocation_count()
                        : 0;
     }
@@ -1326,14 +1336,29 @@ private:
         bool outputs_synchronized = false;
         if (export_deformable_state || export_affine_state) {
             if (export_deformable_state) {
-                fem_accessor_->copy_position_to(
-                        DeviceView(device_buffers_.deformable_positions,
-                                   vertex_count, sizeof(Vector3)),
-                        0, vertex_count);
-                fem_accessor_->copy_velocity_to(
-                        DeviceView(device_buffers_.deformable_velocities,
-                                   vertex_count, sizeof(Vector3)),
-                        0, vertex_count);
+                auto* position_output = static_cast<double*>(
+                        device_buffers_.deformable_positions.data);
+                auto* velocity_output = static_cast<double*>(
+                        device_buffers_.deformable_velocities.data);
+                for (const DeformableContactRange& range :
+                     deformable_contact_ranges_) {
+                    fem_accessor_->copy_position_to(
+                            DeviceView(
+                                    position_output +
+                                            range.output_offset * 3,
+                                    range.vertex_count, sizeof(Vector3)),
+                            static_cast<IndexT>(
+                                    range.backend_vertex_offset),
+                            range.vertex_count);
+                    fem_accessor_->copy_velocity_to(
+                            DeviceView(
+                                    velocity_output +
+                                            range.output_offset * 3,
+                                    range.vertex_count, sizeof(Vector3)),
+                            static_cast<IndexT>(
+                                    range.backend_vertex_offset),
+                            range.vertex_count);
+                }
             }
             if (export_affine_state && affine_count != 0) {
                 affine_accessor_->copy_transform_to(
@@ -1970,7 +1995,7 @@ private:
                 }
                 deformable_contact_ranges_.push_back(
                         DeformableContactRange{
-                                global_vertex_offset,
+                                global_vertex_offset, 0,
                                 decoded_vertices.size(), created.geometry});
                 initial_fem_positions_.insert(initial_fem_positions_.end(),
                                               decoded_vertices.begin(),
@@ -2524,6 +2549,71 @@ private:
         }
     }
 
+    void ResolveDeformableBackendLayout() {
+        const std::size_t vertex_count = initial_fem_positions_.size();
+        std::vector<Vector3> backend_initial_positions(vertex_count);
+        std::vector<std::size_t> logical_to_backend(vertex_count,
+                                                    vertex_count);
+        std::vector<bool> backend_covered(vertex_count, false);
+
+        for (DeformableContactRange& range : deformable_contact_ranges_) {
+            auto backend_offset =
+                    range.geometry->geometry().meta().find<IndexT>(
+                            uipc::builtin::backend_fem_vertex_offset);
+            if (backend_offset == nullptr) {
+                throw std::runtime_error(
+                        "libuipc deformable geometry has no backend FEM vertex offset");
+            }
+            const auto offsets = view(*backend_offset);
+            if (offsets.size() != 1 || offsets[0] < 0) {
+                throw std::runtime_error(
+                        "libuipc deformable geometry has an invalid backend FEM vertex offset");
+            }
+            range.backend_vertex_offset =
+                    static_cast<std::size_t>(offsets[0]);
+            if (range.output_offset + range.vertex_count > vertex_count ||
+                range.backend_vertex_offset + range.vertex_count >
+                        vertex_count) {
+                throw std::runtime_error(
+                        "libuipc deformable geometry has an out-of-range FEM layout");
+            }
+            for (std::size_t local = 0; local < range.vertex_count; ++local) {
+                const std::size_t logical = range.output_offset + local;
+                const std::size_t backend =
+                        range.backend_vertex_offset + local;
+                if (logical_to_backend[logical] != vertex_count ||
+                    backend_covered[backend]) {
+                    throw std::runtime_error(
+                            "libuipc deformable FEM layout overlaps another body");
+                }
+                logical_to_backend[logical] = backend;
+                backend_covered[backend] = true;
+                backend_initial_positions[backend] =
+                        initial_fem_positions_[logical];
+            }
+        }
+        if (std::ranges::any_of(
+                    logical_to_backend,
+                    [vertex_count](std::size_t value) {
+                        return value >= vertex_count;
+                    }) ||
+            std::ranges::any_of(backend_covered,
+                                [](bool value) { return !value; })) {
+            throw std::runtime_error(
+                    "libuipc deformable FEM layout does not cover all vertices");
+        }
+        for (DeformableAttachmentVertex& attachment :
+             deformable_attachment_vertices_) {
+            if (attachment.deformable_output_offset >= vertex_count) {
+                throw std::runtime_error(
+                        "libuipc deformable attachment has an invalid logical vertex");
+            }
+            attachment.deformable_output_offset =
+                    logical_to_backend[attachment.deformable_output_offset];
+        }
+        initial_fem_positions_ = std::move(backend_initial_positions);
+    }
+
     void InitializeAccessors() {
         solver_diagnostics_ =
                 world_->features().find<SolverDiagnosticsFeature>();
@@ -2574,6 +2664,16 @@ private:
     }
 
     void InitializeDeviceCouplingWorkspace() {
+        std::vector<DeviceDeformableLayoutRange> deformable_layout_ranges;
+        deformable_layout_ranges.reserve(deformable_contact_ranges_.size());
+        for (const DeformableContactRange& range :
+             deformable_contact_ranges_) {
+            deformable_layout_ranges.push_back(
+                    DeviceDeformableLayoutRange{
+                            range.output_offset,
+                            range.backend_vertex_offset,
+                            range.vertex_count});
+        }
         std::vector<DeviceDeformableContactRange> deformable_ranges;
         if (exact_contact_wrench_) {
             deformable_ranges.reserve(deformable_contact_ranges_.size());
@@ -2634,6 +2734,7 @@ private:
         device_workspace_ = std::make_unique<DeviceCouplingWorkspace>(
                 device_index_, initial_fem_positions_.size(),
                 initial_affine_transforms_.size(),
+                std::move(deformable_layout_ranges),
                 std::move(deformable_ranges), std::move(affine_ranges),
                 std::move(attachment_vertices));
     }
@@ -2877,10 +2978,18 @@ private:
         const auto velocities = view(*fem_state_->vertices().find<Vector3>(uipc::builtin::velocity));
         positions_.resize(positions.size() * 3);
         velocities_.resize(velocities.size() * 3);
-        for (std::size_t index = 0; index < positions.size(); ++index) {
-            for (std::size_t axis = 0; axis < 3; ++axis) {
-                positions_[index * 3 + axis] = positions[index][static_cast<Eigen::Index>(axis)];
-                velocities_[index * 3 + axis] = velocities[index][static_cast<Eigen::Index>(axis)];
+        for (const DeformableContactRange& range :
+             deformable_contact_ranges_) {
+            for (std::size_t local = 0; local < range.vertex_count; ++local) {
+                const std::size_t output = range.output_offset + local;
+                const std::size_t backend =
+                        range.backend_vertex_offset + local;
+                for (std::size_t axis = 0; axis < 3; ++axis) {
+                    positions_[output * 3 + axis] =
+                            positions[backend][static_cast<Eigen::Index>(axis)];
+                    velocities_[output * 3 + axis] =
+                            velocities[backend][static_cast<Eigen::Index>(axis)];
+                }
             }
         }
         if (affine_accessor_ != nullptr) {

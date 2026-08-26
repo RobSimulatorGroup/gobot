@@ -116,15 +116,20 @@ HAND_PALM_ALIGNMENT_ROTATION = np.asarray(
     ((0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
     dtype=np.float64,
 )
-HAND_STAGE_TRANSLATION_RANGE = 0.64
+HAND_STAGE_TRANSLATION_RANGE = 1.24
 HAND_STAGE_ROTATION_RANGE = math.pi + 0.12
+# Roll is intentionally unwrapped across the one-shot manipulation cycle. The
+# hands always turn toward the outfeed, so successive flips reach equivalent
+# orientations at increasingly negative joint coordinates without a 2*pi
+# controller jump between parcels.
+HAND_STAGE_ROLL_RANGE = 6.0 * math.pi + 0.12
 HAND_STAGE_LINEAR_STIFFNESS = 9000.0
 HAND_STAGE_LINEAR_DAMPING = 240.0
 HAND_STAGE_ANGULAR_STIFFNESS = 1400.0
 HAND_STAGE_ANGULAR_DAMPING = 85.0
-HAND_FINGER_STIFFNESS = 24.0
-HAND_FINGER_DAMPING = 0.75
-HAND_FRICTION = 1.35
+HAND_FINGER_STIFFNESS = 36.0
+HAND_FINGER_DAMPING = 1.20
+HAND_FRICTION = 3.00
 LEAP_TIP_BOUNDS = (
     (-0.0112503, -0.0500004, 0.0023530),
     (0.00958777, -0.0195963, 0.0266643),
@@ -136,9 +141,26 @@ LEAP_THUMB_TIP_BOUNDS = (
 RIGID_COLLISION_LAYER = 0b0001
 HAND_COLLISION_LAYER = 0b0010
 DEFORMABLE_COLLISION_LAYER = 0b0100
-RIGID_COLLISION_MASK = RIGID_COLLISION_LAYER | DEFORMABLE_COLLISION_LAYER
-HAND_COLLISION_MASK = DEFORMABLE_COLLISION_LAYER
-DEFORMABLE_COLLISION_MASK = RIGID_COLLISION_LAYER | HAND_COLLISION_LAYER
+RIGID_PACKAGE_COLLISION_LAYER = 0b1000
+RIGID_COLLISION_MASK = (
+    RIGID_COLLISION_LAYER
+    | DEFORMABLE_COLLISION_LAYER
+    | RIGID_PACKAGE_COLLISION_LAYER
+)
+HAND_COLLISION_MASK = (
+    DEFORMABLE_COLLISION_LAYER | RIGID_PACKAGE_COLLISION_LAYER
+)
+DEFORMABLE_COLLISION_MASK = (
+    RIGID_COLLISION_LAYER
+    | HAND_COLLISION_LAYER
+    | RIGID_PACKAGE_COLLISION_LAYER
+)
+RIGID_PACKAGE_COLLISION_MASK = (
+    RIGID_COLLISION_LAYER
+    | HAND_COLLISION_LAYER
+    | DEFORMABLE_COLLISION_LAYER
+    | RIGID_PACKAGE_COLLISION_LAYER
+)
 
 BELT_FRAME_LENGTH = 2.70
 BELT_SURFACE_LENGTH = BELT_FRAME_LENGTH
@@ -150,10 +172,14 @@ BELT_TOP_Z = BELT_CENTER_Z + 0.5 * BELT_THICKNESS
 BELT_CENTER_X = 0.0
 BELT_CENTER_Y = 0.58
 WORKTABLE_LENGTH = 2.10
-WORKTABLE_DEPTH = 0.66
+# Preserve the 15 mm handoff gap to the outfeed while extending the sorting
+# surface toward the operator. The deeper table supports the full reverse face
+# of a pouch after an outward turnover instead of letting a successful flip
+# fall past the old front edge.
+WORKTABLE_DEPTH = 1.08
 WORKTABLE_THICKNESS = 0.08
 WORKTABLE_CENTER_X = -0.15
-WORKTABLE_CENTER_Y = -0.125
+WORKTABLE_CENTER_Y = -0.335
 WORKTABLE_TOP_Z = BELT_TOP_Z
 # Polished sorting-table laminate against a plastic mailer.  Keeping this below
 # the palm's 2.5 coefficient lets the down-facing hand sweep the parcel by
@@ -166,7 +192,7 @@ RIGID_BOX_SPECS = (
         "size": (0.25, 0.20, 0.18),
         "mass": 0.62,
         # Incoming rigid parcel waiting on the left side of the static table.
-        "position": (-0.86, 0.015, WORKTABLE_TOP_Z + 0.092),
+        "position": (-1.02, 0.015, WORKTABLE_TOP_Z + 0.092),
         "rotation_degrees": (0.0, 0.0, 5.0),
         "color": (0.70, 0.43, 0.20, 1.0),
     },
@@ -198,7 +224,7 @@ SOFT_PACKAGE_SPECS = (
         "size": (0.44, 0.32, 0.13),
         "position": (
             MANIPULATION_STATION_X,
-            0.045,
+            -0.375,
             WORKTABLE_TOP_Z + 0.235,
         ),
         "rotation_degrees": (4.0, -6.0, 2.0),
@@ -206,58 +232,85 @@ SOFT_PACKAGE_SPECS = (
         # most parcel inertia on the closed film so a fingertip grasp moves the
         # package as one object; the light inner core only supports its volume.
         # The 0.35 kg total models a filled poly mailer rather than the earlier
-        # 1.12 kg parcel, which could not be held realistically by fingertip
-        # friction during a free-space turnover.
-        "density": 677.2658844569544,
+        # 1.12 kg parcel, which could not be rolled realistically by the two
+        # palm contacts while the table supports its weight.
+        "density": 675.3040236312168,
         "young_modulus": 1.6e5,
         "poisson_ratio": 0.36,
         "damping": 7.0,
         "thickness": 1.2e-3,
         "bending_stiffness": 1.2e-4,
-        "cells": (26, 19),
+        "cells": (34, 25),
         "color": (0.10, 0.36, 0.64, 1.0),
         "visible": True,
     },
     {
         "name": "soft_mailer_blue_fill",
         "model": "volumetric",
-        "size": (0.36, 0.245, 0.080),
+        "size": (0.39, 0.275, 0.110),
         "position": (
             MANIPULATION_STATION_X,
-            0.045,
+            -0.375,
             # Center the contents inside the asymmetric film cavity. The
             # mailer's top is intentionally fuller than its bottom, so the
             # core sits 10 mm below the shell origin to leave IPC clearance.
             WORKTABLE_TOP_Z + 0.225,
         ),
         "rotation_degrees": (4.0, -6.0, 2.0),
-        "density": 9.392413272488012,
+        "density": 5.44371665998382,
         "young_modulus": 7.0e3,
         "poisson_ratio": 0.43,
         "damping": 7.0,
-        "cells": (10, 8, 4),
+        "cells": (12, 9, 5),
         "color": (0.04, 0.08, 0.12, 0.0),
         "visible": False,
     },
     {
         "name": "soft_pouch_yellow",
-        "model": "volumetric",
-        "size": (0.30, 0.23, 0.09),
-        # This second deformable package queues upstream on the left side of
-        # the static sorting table rather than starting on the conveyor.
+        "model": "thin_shell",
+        "size": (0.29, 0.205, 0.120),
+        # The second mailer starts above the upstream table and settles under
+        # its own weight. Its visible film is finer than the blue mailer and
+        # encloses a separate soft fill body, avoiding the old solid trapezoid
+        # silhouette while retaining real volume during the later turnover.
         "position": (
             -0.42,
             0.055,
-            WORKTABLE_TOP_Z + 0.016,
+            WORKTABLE_TOP_Z + 0.250,
         ),
-        "rotation_degrees": (0.0, 0.0, 8.0),
-        "density": 208.72358069160808,
-        "young_modulus": 3.5e4,
-        "poisson_ratio": 0.43,
-        "damping": 0.70,
-        "cells": (9, 7, 4),
+        "rotation_degrees": (2.0, -5.0, 8.0),
+        "density": 1189.6129109172923,
+        "young_modulus": 1.2e5,
+        "poisson_ratio": 0.38,
+        "damping": 6.0,
+        "thickness": 1.1e-3,
+        # The fine 36 x 27 film needs enough edge bending resistance to keep
+        # the unsupported heat-sealed flange flat instead of rolling outward.
+        "bending_stiffness": 1.6e-4,
+        "cells": (36, 27),
         "color": (0.88, 0.56, 0.08, 1.0),
         "visible": True,
+    },
+    {
+        "name": "soft_pouch_yellow_fill",
+        "model": "volumetric",
+        "size": (0.255, 0.175, 0.095),
+        "position": (
+            -0.42,
+            0.055,
+            WORKTABLE_TOP_Z + 0.242,
+        ),
+        "rotation_degrees": (2.0, -5.0, 8.0),
+        "density": 13.65133343681454,
+        "young_modulus": 5.0e3,
+        "poisson_ratio": 0.44,
+        "damping": 6.0,
+        # Extra through-thickness layers resolve a rounded pillow profile:
+        # the contents bulge at mid-height and taper toward both film sheets.
+        "cells": (14, 11, 8),
+        "side_rounding": 0.08,
+        "color": (0.08, 0.06, 0.02, 0.0),
+        "visible": False,
     },
 )
 
@@ -500,6 +553,8 @@ def _add_box_geometry(
     color: tuple[float, float, float, float],
     *,
     sliding_friction: float,
+    collision_layer: int = RIGID_COLLISION_LAYER,
+    collision_mask: int = RIGID_COLLISION_MASK,
 ) -> None:
     _add_visual(parent, name + "_visual", size, position, color)
     _add_collision(
@@ -508,6 +563,8 @@ def _add_box_geometry(
         size,
         position,
         sliding_friction=sliding_friction,
+        collision_layer=collision_layer,
+        collision_mask=collision_mask,
     )
 
 
@@ -533,7 +590,11 @@ def _configure_stage_joint(joint: Any, dof_name: str) -> None:
     limit = (
         HAND_STAGE_TRANSLATION_RANGE
         if linear
-        else HAND_STAGE_ROTATION_RANGE
+        else (
+            HAND_STAGE_ROLL_RANGE
+            if dof_name == "roll"
+            else HAND_STAGE_ROTATION_RANGE
+        )
     )
     joint.lower_limit = -limit
     joint.upper_limit = limit
@@ -597,8 +658,8 @@ def _configure_leap_model(nodes: dict[str, Any], robot_name: str) -> None:
         joint.drive_damping = HAND_FINGER_DAMPING
         joint.damping = 0.03
         joint.armature = 0.002
-        joint.force_lower_limit = -8.0
-        joint.force_upper_limit = 8.0
+        joint.force_lower_limit = -12.0
+        joint.force_upper_limit = 12.0
         joint.initial_position = 0.0
         joint.joint_position = 0.0
 
@@ -710,10 +771,14 @@ def _positive_tetrahedron(
 def _soft_package_mesh(
     size: tuple[float, float, float],
     cells: tuple[int, int, int] = (6, 4, 3),
+    *,
+    side_rounding: float = 0.0,
 ) -> Any:
     cells_x, cells_y, cells_z = cells
     if min(*size, cells_x, cells_y, cells_z) <= 0:
         raise ValueError("soft package dimensions and cells must be positive")
+    if not 0.0 <= side_rounding < 0.5:
+        raise ValueError("soft package side rounding must be in [0, 0.5)")
     half_x, half_y, half_z = (0.5 * float(value) for value in size)
     nx = cells_x + 1
     ny = cells_y + 1
@@ -730,6 +795,38 @@ def _soft_package_mesh(
                 u = 2.0 * ix / cells_x - 1.0
                 center_x = max(0.0, 1.0 - u * u)
                 center_y = max(0.0, 1.0 - v * v)
+                if side_rounding > 0.0:
+                    # Map the regular grid to a rounded pillow volume. The
+                    # middle layers carry the full footprint, while the top
+                    # and bottom layers draw inward. Height also fades toward
+                    # the sealed perimeter, leaving a broad, inflated center.
+                    layer_side_scale = 1.0 - side_rounding * w * w
+                    x = (
+                        half_x
+                        * u
+                        * (1.0 - side_rounding * (1.0 - center_y))
+                        * layer_side_scale
+                    )
+                    y = (
+                        half_y
+                        * v
+                        * (1.0 - side_rounding * (1.0 - center_x))
+                        * layer_side_scale
+                    )
+                    center_fraction = math.sqrt(center_x * center_y)
+                    # Match the asymmetric film cavity: the contents have a
+                    # shallow underside and most of their loft above it. This
+                    # preserves clearance from both sheets at initialization.
+                    bottom = -(
+                        0.04 + 0.15 * center_fraction
+                    ) * size[2]
+                    top = (
+                        0.44 + 0.40 * center_fraction
+                    ) * size[2]
+                    layer = 0.5 * (w + 1.0)
+                    z = bottom + layer * (top - bottom)
+                    vertices.append((x, y, z))
+                    continue
                 # Keep a rounded rectangular footprint, but form the package
                 # from asymmetric top and bottom sheets.  A symmetric solid
                 # pillow leaves a bowl-shaped underside when it bridges the
@@ -844,9 +941,14 @@ def _soft_mailer_shell_mesh(
                 fill = min(1.0, seam_distance / 0.24)
                 fill = fill * fill * (3.0 - 2.0 * fill)
                 edge_band = 4.0 * fill * (1.0 - fill)
+                # A heat-sealed perimeter starts coplanar. Film irregularity
+                # belongs on the shoulder just inside that flange; placing the
+                # largest opposite-signed wave directly on the free seam made
+                # it curl into a tube as soon as gravity loaded the shell.
                 seam_wave = (
-                    0.012
+                    0.003
                     * height
+                    * edge_band
                     * math.sin(4.0 * math.pi * u - 3.0 * math.pi * v)
                 )
                 if layer == 0:
@@ -860,7 +962,7 @@ def _soft_mailer_shell_mesh(
                         -0.025 * height
                         - 0.245 * height * fill
                         + bottom_wrinkle
-                        - (1.0 - fill) * seam_wave
+                        - seam_wave
                     )
                 else:
                     diagonal_crease = (
@@ -888,7 +990,7 @@ def _soft_mailer_shell_mesh(
                         + top_wrinkle
                         - diagonal_crease
                         - cross_crease
-                        + (1.0 - fill) * seam_wave
+                        + seam_wave
                     )
                 vertices.append((x, y, z))
 
@@ -1166,6 +1268,8 @@ def _create_carton(root: Any, spec: dict[str, Any]) -> None:
         (0.0, 0.0, 0.0),
         spec["color"],
         sliding_friction=0.82,
+        collision_layer=RIGID_PACKAGE_COLLISION_LAYER,
+        collision_mask=RIGID_PACKAGE_COLLISION_MASK,
     )
 
     tape_width = min(0.055, 0.22 * size[1])
@@ -1198,7 +1302,11 @@ def _create_soft_package(root: Any, spec: dict[str, Any]) -> None:
         body.self_collision_enabled = True
     else:
         body.model = gobot.DeformableBodyModel.Volumetric
-        body.mesh = _soft_package_mesh(spec["size"], spec["cells"])
+        body.mesh = _soft_package_mesh(
+            spec["size"],
+            spec["cells"],
+            side_rounding=float(spec.get("side_rounding", 0.0)),
+        )
         body.self_collision_enabled = False
     body.position = spec["position"]
     body.rotation_degrees = spec["rotation_degrees"]

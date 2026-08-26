@@ -163,6 +163,17 @@ __global__ void StageTargetsKernel(const double *row_major_targets,
   velocity[14] = target_twists[body * 6 + 2];
 }
 
+__global__ void StageDeformableExternalForcesKernel(
+    const Vec3 *logical_forces, const std::size_t *backend_to_logical,
+    Vec3 *backend_forces, std::size_t vertex_count) {
+  const std::size_t backend =
+      blockIdx.x * static_cast<std::size_t>(blockDim.x) + threadIdx.x;
+  if (backend >= vertex_count) {
+    return;
+  }
+  backend_forces[backend] = logical_forces[backend_to_logical[backend]];
+}
+
 __global__ void StageAttachmentAimsKernel(const AttachmentData *attachments,
                                           std::size_t attachment_count,
                                           const double *target_transforms,
@@ -313,6 +324,7 @@ class DeviceCouplingWorkspace::Impl final {
 public:
   Impl(std::uint32_t device_index, std::size_t deformable_vertex_count,
        std::size_t affine_body_count,
+       std::vector<DeviceDeformableLayoutRange> deformable_layout_ranges,
        std::vector<DeviceDeformableContactRange> deformable_ranges,
        std::vector<DeviceAffineContactRange> affine_ranges,
        std::vector<DeviceAttachmentVertex> attachment_vertices)
@@ -332,6 +344,43 @@ public:
         deformable_vertex_count_, "allocating current FEM positions");
     current_affine_transforms_ = allocations_.Allocate<double>(
         affine_body_count_ * 16, "allocating current affine transforms");
+
+    std::vector<std::size_t> backend_to_logical(deformable_vertex_count_,
+                                                deformable_vertex_count_);
+    for (const DeviceDeformableLayoutRange &range :
+         deformable_layout_ranges) {
+      if (range.output_offset + range.vertex_count >
+              deformable_vertex_count_ ||
+          range.backend_vertex_offset + range.vertex_count >
+              deformable_vertex_count_) {
+        throw std::runtime_error(
+            "invalid deformable state range for CUDA coupling");
+      }
+      for (std::size_t local = 0; local < range.vertex_count; ++local) {
+        const std::size_t backend = range.backend_vertex_offset + local;
+        if (backend_to_logical[backend] != deformable_vertex_count_) {
+          throw std::runtime_error(
+              "overlapping deformable backend ranges for CUDA coupling");
+        }
+        backend_to_logical[backend] = range.output_offset + local;
+      }
+    }
+    if (std::ranges::any_of(
+            backend_to_logical,
+            [this](std::size_t value) {
+              return value >= deformable_vertex_count_;
+            })) {
+      throw std::runtime_error(
+          "deformable state ranges do not cover backend storage");
+    }
+    backend_to_logical_ = allocations_.Allocate<std::size_t>(
+        backend_to_logical.size(),
+        "allocating deformable state permutation");
+    backend_external_forces_ = allocations_.Allocate<Vec3>(
+        deformable_vertex_count_,
+        "allocating backend deformable external forces");
+    Upload(backend_to_logical_, backend_to_logical,
+           "uploading deformable state permutation");
 
     std::vector<std::int32_t> deformable_global_indices(
         deformable_vertex_count_, -1);
@@ -519,6 +568,8 @@ public:
   Vec3 *attachment_aim_positions_{nullptr};
   Vec3 *current_deformable_positions_{nullptr};
   double *current_affine_transforms_{nullptr};
+  std::size_t *backend_to_logical_{nullptr};
+  Vec3 *backend_external_forces_{nullptr};
   std::int32_t *deformable_global_indices_{nullptr};
   AffineRangeData *affine_ranges_{nullptr};
   std::int32_t *affine_global_indices_{nullptr};
@@ -538,11 +589,13 @@ public:
 DeviceCouplingWorkspace::DeviceCouplingWorkspace(
     std::uint32_t device_index, std::size_t deformable_vertex_count,
     std::size_t affine_body_count,
+    std::vector<DeviceDeformableLayoutRange> deformable_layout_ranges,
     std::vector<DeviceDeformableContactRange> deformable_ranges,
     std::vector<DeviceAffineContactRange> affine_ranges,
     std::vector<DeviceAttachmentVertex> attachment_vertices)
     : impl_(std::make_unique<Impl>(
           device_index, deformable_vertex_count, affine_body_count,
+          std::move(deformable_layout_ranges),
           std::move(deformable_ranges), std::move(affine_ranges),
           std::move(attachment_vertices))) {}
 
@@ -564,6 +617,20 @@ void DeviceCouplingWorkspace::StageTargets(const double *row_major_targets,
         impl_->target_transforms_, impl_->attachment_aim_positions_);
     RequireCuda(cudaGetLastError(), "staging attachment aims");
   }
+}
+
+void DeviceCouplingWorkspace::StageDeformableExternalForces(
+    const double *logical_forces) {
+  if (impl_->deformable_vertex_count_ == 0) {
+    return;
+  }
+  StageDeformableExternalForcesKernel<<<
+      BlockCount(impl_->deformable_vertex_count_), kThreads>>>(
+      reinterpret_cast<const Vec3 *>(logical_forces),
+      impl_->backend_to_logical_, impl_->backend_external_forces_,
+      impl_->deformable_vertex_count_);
+  RequireCuda(cudaGetLastError(),
+              "staging deformable external forces");
 }
 
 void DeviceCouplingWorkspace::ExportReactions(
@@ -677,6 +744,10 @@ void *DeviceCouplingWorkspace::current_deformable_positions() const {
 
 void *DeviceCouplingWorkspace::current_affine_transforms() const {
   return impl_->current_affine_transforms_;
+}
+
+void *DeviceCouplingWorkspace::backend_deformable_external_forces() const {
+  return impl_->backend_external_forces_;
 }
 
 std::size_t DeviceCouplingWorkspace::deformable_vertex_count() const {

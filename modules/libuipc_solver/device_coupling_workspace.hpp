@@ -8,6 +8,12 @@
 
 namespace gobot::libuipc_solver {
 
+struct DeviceDeformableLayoutRange {
+  std::size_t output_offset{0};
+  std::size_t backend_vertex_offset{0};
+  std::size_t vertex_count{0};
+};
+
 struct DeviceDeformableContactRange {
   std::size_t output_offset{0};
   std::size_t vertex_count{0};
@@ -41,6 +47,7 @@ public:
   DeviceCouplingWorkspace(
       std::uint32_t device_index, std::size_t deformable_vertex_count,
       std::size_t affine_body_count,
+      std::vector<DeviceDeformableLayoutRange> deformable_layout_ranges,
       std::vector<DeviceDeformableContactRange> deformable_ranges,
       std::vector<DeviceAffineContactRange> affine_ranges,
       std::vector<DeviceAttachmentVertex> attachment_vertices);
@@ -51,6 +58,8 @@ public:
 
   void StageTargets(const double *row_major_targets,
                     const double *target_twists);
+
+  void StageDeformableExternalForces(const double *logical_forces);
 
   void ExportReactions(std::span<const DeviceContactGradientView> gradients,
                        double inverse_time_step_squared,
@@ -64,6 +73,7 @@ public:
   void *attachment_aim_positions() const;
   void *current_deformable_positions() const;
   void *current_affine_transforms() const;
+  void *backend_deformable_external_forces() const;
 
   std::size_t deformable_vertex_count() const;
   std::size_t affine_body_count() const;

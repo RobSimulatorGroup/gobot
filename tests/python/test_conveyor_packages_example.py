@@ -510,6 +510,7 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
     blue_spec = soft_specs["soft_mailer_blue"]
     fill_spec = soft_specs["soft_mailer_blue_fill"]
     yellow_spec = soft_specs["soft_pouch_yellow"]
+    yellow_fill_spec = soft_specs["soft_pouch_yellow_fill"]
     rigid_specs = {
         str(spec["name"]): spec for spec in _builder().RIGID_BOX_SPECS
     }
@@ -520,6 +521,15 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
         < float(rigid_specs["carton_wide"]["position"][0])
         < float(rigid_specs["carton_tall"]["position"][0])
     )
+    carton_right_edge = (
+        float(rigid_specs["carton_small"]["position"][0])
+        + 0.5 * float(rigid_specs["carton_small"]["size"][0])
+    )
+    yellow_left_edge = (
+        float(yellow_spec["position"][0])
+        - 0.5 * float(yellow_spec["size"][0])
+    )
+    assert yellow_left_edge - carton_right_edge >= 0.30
     belt_near_edge = (
         _builder().BELT_CENTER_Y - 0.5 * _builder().BELT_WIDTH
     )
@@ -547,6 +557,7 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
         float(blue_spec["position"][2]),
         _builder().WORKTABLE_TOP_Z + 0.235,
     )
+    assert math.isclose(float(blue_spec["position"][1]), -0.375)
     assert math.isclose(_builder().WORKTABLE_SLIDING_FRICTION, 0.30)
     assert blue_spec["model"] == "thin_shell"
     assert float(blue_spec["young_modulus"]) >= 1.0e5
@@ -562,7 +573,35 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
     )
     assert float(fill_spec["young_modulus"]) <= 1.0e4
     assert tuple(fill_spec["cells"]) == (8, 6, 3)
-    assert tuple(yellow_spec["cells"]) == (9, 7, 4)
+    assert yellow_spec["model"] == "thin_shell"
+    assert tuple(yellow_spec["cells"]) == (28, 21)
+    assert float(yellow_spec["size"][2]) > float(blue_spec["size"][2])
+    assert yellow_fill_spec["model"] == "volumetric"
+    assert tuple(yellow_fill_spec["cells"]) == (11, 8, 5)
+    assert not bool(yellow_fill_spec["visible"])
+
+    yellow_fill_mesh = builder._soft_package_mesh(
+        yellow_fill_spec["size"],
+        yellow_fill_spec["cells"],
+        side_rounding=float(yellow_fill_spec["side_rounding"]),
+    )
+    yellow_fill_vertices = np.asarray(
+        yellow_fill_mesh.vertices, dtype=np.float64
+    )
+    yellow_fill_layers = yellow_fill_vertices.reshape(
+        yellow_fill_spec["cells"][2] + 1,
+        -1,
+        3,
+    )
+    middle_layer = yellow_fill_layers[
+        yellow_fill_spec["cells"][2] // 2
+    ]
+    for axis in (0, 1):
+        middle_extent = float(np.ptp(middle_layer[:, axis]))
+        bottom_extent = float(np.ptp(yellow_fill_layers[0, :, axis]))
+        top_extent = float(np.ptp(yellow_fill_layers[-1, :, axis]))
+        assert middle_extent > 1.08 * bottom_extent
+        assert middle_extent > 1.08 * top_extent
     blue_mesh = _builder()._soft_mailer_shell_mesh(
         blue_spec["size"], blue_spec["cells"]
     )
@@ -986,15 +1025,36 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     blue_spec = soft_specs["soft_mailer_blue"]
     fill_spec = soft_specs["soft_mailer_blue_fill"]
     yellow_spec = soft_specs["soft_pouch_yellow"]
+    yellow_fill_spec = soft_specs["soft_pouch_yellow_fill"]
+    assert math.isclose(float(blue_spec["position"][1]), -0.375)
     assert blue_spec["model"] == "thin_shell"
-    assert tuple(blue_spec["cells"]) == (26, 19)
+    assert tuple(blue_spec["cells"]) == (34, 25)
     assert float(blue_spec["young_modulus"]) >= 1.0e5
     assert float(blue_spec["bending_stiffness"]) <= 5.0e-4
     assert float(blue_spec["thickness"]) <= 1.5e-3
     assert fill_spec["model"] == "volumetric"
-    assert tuple(fill_spec["cells"]) == (10, 8, 4)
+    assert tuple(fill_spec["cells"]) == (12, 9, 5)
+    assert float(fill_spec["size"][2]) >= 0.11
     assert not bool(fill_spec["visible"])
-    assert tuple(yellow_spec["cells"]) == (9, 7, 4)
+    assert yellow_spec["model"] == "thin_shell"
+    assert tuple(yellow_spec["cells"]) == (36, 27)
+    assert float(yellow_spec["size"][0]) < float(blue_spec["size"][0])
+    assert float(yellow_spec["size"][1]) < float(blue_spec["size"][1])
+    assert float(yellow_spec["size"][2]) < float(blue_spec["size"][2])
+    assert yellow_fill_spec["model"] == "volumetric"
+    assert tuple(yellow_fill_spec["cells"]) == (14, 11, 8)
+    assert math.isclose(float(yellow_fill_spec["size"][2]), 0.095)
+    assert math.isclose(float(yellow_fill_spec["side_rounding"]), 0.08)
+    assert (
+        float(yellow_fill_spec["size"][2])
+        < float(fill_spec["size"][2])
+    )
+    assert (
+        float(yellow_spec["size"][0])
+        - float(yellow_fill_spec["size"][0])
+        >= 0.0349
+    )
+    assert not bool(yellow_fill_spec["visible"])
 
     blue_mesh = builder._soft_mailer_shell_mesh(
         blue_spec["size"], blue_spec["cells"]
@@ -1006,8 +1066,20 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     )
     bottom_z = blue_vertices[:layer_size, 2]
     top_z = blue_vertices[layer_size:, 2]
+    blue_perimeter = np.asarray(
+        [
+            iy * (blue_spec["cells"][0] + 1) + ix
+            for iy in range(blue_spec["cells"][1] + 1)
+            for ix in range(blue_spec["cells"][0] + 1)
+            if ix in (0, blue_spec["cells"][0])
+            or iy in (0, blue_spec["cells"][1])
+        ],
+        dtype=np.int64,
+    )
     assert float(top_z.max() - bottom_z.min()) > 0.10
     assert float(np.ptp(top_z)) > 0.06
+    assert float(np.ptp(bottom_z[blue_perimeter])) <= 1.0e-12
+    assert float(np.ptp(top_z[blue_perimeter])) <= 1.0e-12
     edge_counts: dict[tuple[int, int], int] = {}
     for triangle in blue_triangles:
         for first, second in (
@@ -1025,6 +1097,41 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         >= 0.18
     )
 
+    yellow_mesh = builder._soft_mailer_shell_mesh(
+        yellow_spec["size"], yellow_spec["cells"]
+    )
+    yellow_vertices = np.asarray(yellow_mesh.vertices, dtype=np.float64)
+    yellow_triangles = np.asarray(yellow_mesh.triangles, dtype=np.int64)
+    yellow_layer_size = (yellow_spec["cells"][0] + 1) * (
+        yellow_spec["cells"][1] + 1
+    )
+    yellow_bottom_z = yellow_vertices[:yellow_layer_size, 2]
+    yellow_top_z = yellow_vertices[yellow_layer_size:, 2]
+    yellow_perimeter = np.asarray(
+        [
+            iy * (yellow_spec["cells"][0] + 1) + ix
+            for iy in range(yellow_spec["cells"][1] + 1)
+            for ix in range(yellow_spec["cells"][0] + 1)
+            if ix in (0, yellow_spec["cells"][0])
+            or iy in (0, yellow_spec["cells"][1])
+        ],
+        dtype=np.int64,
+    )
+    assert len(blue_triangles) == 3636
+    assert len(yellow_triangles) == 4140
+    assert len(yellow_triangles) > len(blue_triangles)
+    assert 0.10 < float(
+        yellow_top_z.max() - yellow_bottom_z.min()
+    ) < 0.14
+    assert float(np.ptp(yellow_bottom_z[yellow_perimeter])) <= 1.0e-12
+    assert float(np.ptp(yellow_top_z[yellow_perimeter])) <= 1.0e-12
+    assert (
+        float(yellow_spec["position"][2])
+        + float(yellow_bottom_z.min())
+        - builder.WORKTABLE_TOP_Z
+        >= 0.18
+    )
+
     properties_by_unique_name = {
         str(node["name"]): node["properties"]
         for node in scene["__NODES__"]
@@ -1033,6 +1140,7 @@ def test_scene_has_play_script_and_leap_hands() -> None:
             "worktable_surface_collision",
             "leap_left_if_tip_collision",
             "soft_mailer_blue",
+            "carton_small_collision",
         }
     }
     assert (
@@ -1050,6 +1158,15 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         builder.DEFORMABLE_COLLISION_LAYER,
         builder.DEFORMABLE_COLLISION_MASK,
     )
+    assert (
+        properties_by_unique_name["carton_small_collision"]["collision_layer"],
+        properties_by_unique_name["carton_small_collision"]["collision_mask"],
+    ) == (
+        builder.RIGID_PACKAGE_COLLISION_LAYER,
+        builder.RIGID_PACKAGE_COLLISION_MASK,
+    )
+    assert builder.HAND_COLLISION_MASK & builder.RIGID_PACKAGE_COLLISION_LAYER
+    assert not builder.HAND_COLLISION_MASK & builder.RIGID_COLLISION_LAYER
 
     stage_joint_names = {
         name
@@ -1063,13 +1180,35 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     for joint in stage_joints:
         properties = joint["properties"]
         assert properties["drive_mode"] == "Position"
-        linear = joint["name"].rsplit("_", 1)[-1] in {"x", "y", "z"}
+        dof_name = joint["name"].rsplit("_", 1)[-1]
+        linear = dof_name in {"x", "y", "z"}
         expected_stiffness = (
             builder.HAND_STAGE_LINEAR_STIFFNESS
             if linear
             else builder.HAND_STAGE_ANGULAR_STIFFNESS
         )
         assert math.isclose(properties["drive_stiffness"], expected_stiffness)
+        expected_limit = (
+            builder.HAND_STAGE_TRANSLATION_RANGE
+            if linear
+            else (
+                builder.HAND_STAGE_ROLL_RANGE
+                if dof_name == "roll"
+                else builder.HAND_STAGE_ROTATION_RANGE
+            )
+        )
+        assert math.isclose(
+            properties["lower_limit"],
+            -expected_limit,
+            rel_tol=0.0,
+            abs_tol=1.0e-5,
+        )
+        assert math.isclose(
+            properties["upper_limit"],
+            expected_limit,
+            rel_tol=0.0,
+            abs_tol=1.0e-5,
+        )
 
 
 def _legacy_quality_profiles_and_belt_schedule() -> None:
@@ -1094,7 +1233,7 @@ def _legacy_quality_profiles_and_belt_schedule() -> None:
         interactive.newton_max_iterations,
         interactive.line_search_max_iterations,
         interactive.linear_system_tolerance_rate,
-    ) == (32, 8, 2.0e-3)
+    ) == (48, 8, 2.0e-3)
     assert (
         accurate.newton_max_iterations,
         accurate.line_search_max_iterations,
@@ -1205,7 +1344,11 @@ def _legacy_quality_profiles_and_belt_schedule() -> None:
             )
             mass = _surface_mass(mesh, spec["thickness"], spec["density"])
         else:
-            mesh = _builder()._soft_package_mesh(spec["size"], spec["cells"])
+            mesh = _builder()._soft_package_mesh(
+                spec["size"],
+                spec["cells"],
+                side_rounding=float(spec.get("side_rounding", 0.0)),
+            )
             mass = _tetrahedral_mass(mesh, spec["density"])
         assert math.isclose(mass, expected_mass, rel_tol=1.0e-12)
     assert math.isclose(
@@ -1257,45 +1400,93 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         abs_tol=1.0e-12,
     )
 
-    phases_and_durations = (
-        ("drop_settle", profile.DROP_SETTLE_TICKS),
-        ("flip_approach", profile.FLIP_APPROACH_TICKS),
-        ("flip_grip", profile.FLIP_GRIP_TICKS),
-        ("flip_lift", profile.FLIP_LIFT_TICKS),
-        ("flip_rotate", profile.FLIP_ROTATE_TICKS),
-        ("flip_place", profile.FLIP_PLACE_TICKS),
-        ("flip_release", profile.FLIP_RELEASE_TICKS),
-        ("flip_clear", profile.FLIP_CLEAR_TICKS),
-        ("reorient", profile.REORIENT_TICKS),
-        ("push_approach", profile.PUSH_APPROACH_TICKS),
-        ("push", profile.PUSH_TICKS),
-        ("push_release", profile.PUSH_RELEASE_TICKS),
-        ("push_clear", profile.PUSH_CLEAR_TICKS),
+    phases_and_durations = tuple(
+        (segment.phase, segment.duration)
+        for segment in profile.HAND_MOTION_SEGMENTS
     )
+    assert tuple(phase for phase, _ in phases_and_durations) == (
+        "drop_settle",
+        "blue_flip_approach",
+        "blue_flip_contact",
+        "blue_flip_grip",
+        "blue_flip_stabilize",
+        "blue_flip_rotate",
+        "blue_flip_release",
+        "blue_flip_clear",
+        "blue_flip_settle",
+        "blue_reorient",
+        "blue_push_approach",
+        "blue_push",
+        "blue_push_release",
+        "blue_push_clear",
+        "blue_push_depart",
+        "yellow_flip_transfer",
+        "yellow_flip_approach",
+        "yellow_flip_contact",
+        "yellow_flip_grip",
+        "yellow_flip_stabilize",
+        "yellow_flip_rotate",
+        "yellow_flip_release",
+        "yellow_flip_clear",
+        "yellow_flip_settle",
+        "yellow_flip_depart",
+        "carton_flip_transfer",
+        "carton_flip_approach",
+        "carton_flip_grip",
+        "carton_flip_stabilize",
+        "carton_flip_lift",
+        "carton_flip_rotate",
+        "carton_flip_place",
+        "carton_flip_release",
+        "carton_flip_clear",
+        "carton_flip_depart",
+        "return_home",
+    )
+    phase_starts = {}
     tick = 0
     for phase_name, duration in phases_and_durations:
+        phase_starts[phase_name] = tick
         assert profile.cycle_phase(tick) == phase_name
         assert profile.cycle_phase(tick + duration - 1) == phase_name
         tick += duration
     assert tick == profile.MANIPULATION_TICKS
     assert profile.cycle_phase(tick) == "settle"
     assert profile.cycle_phase(profile.CYCLE_TICKS - 1) == "settle"
+    assert profile.BELT_START_TICKS == (
+        phase_starts["blue_push"] + profile.PUSH_TICKS
+    )
+    for previous, following in zip(
+        profile.HAND_MOTION_SEGMENTS[:-1],
+        profile.HAND_MOTION_SEGMENTS[1:],
+        strict=True,
+    ):
+        np.testing.assert_allclose(previous.end, following.start, atol=1.0e-12)
 
-    flip_grip_start = profile.DROP_SETTLE_TICKS + profile.FLIP_APPROACH_TICKS
-    assert profile.finger_close_fraction_at_tick(flip_grip_start - 1) == 0.0
-    assert 0.0 < profile.finger_close_fraction_at_tick(flip_grip_start)
+    flip_grip_start = phase_starts["blue_flip_grip"]
+    assert profile.finger_close_fractions_at_tick(
+        flip_grip_start - 1
+    ) == (0.0, 0.0)
+    blue_close = profile.finger_close_fractions_at_tick(
+        flip_grip_start + profile.FLIP_GRIP_TICKS - 1
+    )
+    np.testing.assert_allclose(
+        blue_close,
+        profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS,
+        atol=1.0e-12,
+    )
     assert math.isclose(
         profile.finger_close_fraction_at_tick(
             flip_grip_start + profile.FLIP_GRIP_TICKS - 1
         ),
-        profile.FLIP_FINGER_CLOSE_FRACTION,
+        max(profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS),
     )
     assert all(
         len(targets) == 6
         for pair in (
             profile.HAND_STAGE_HOME_TARGETS,
-            profile.HAND_STAGE_FLIP_GRIP_TARGETS,
-            profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
             profile.HAND_STAGE_PUSH_TARGETS,
         )
         for targets in pair
@@ -1304,65 +1495,297 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         len(controls) == 22
         for controls in profile.hand_controls_at_tick(flip_grip_start)
     )
+    blue_contact_shift = (
+        np.asarray(profile.HAND_STAGE_BLUE_FLIP_CONTACT_TARGETS)
+        - np.asarray(profile.HAND_STAGE_BLUE_FLIP_APPROACH_TARGETS)
+    )
+    np.testing.assert_allclose(
+        blue_contact_shift,
+        (
+            (0.050, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (-0.050, 0.0, 0.0, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
     grip_preload = tuple(
+        grip[0] - contact[0]
+        for contact, grip in zip(
+            profile.HAND_STAGE_BLUE_FLIP_CONTACT_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+            strict=True,
+        )
+    )
+    np.testing.assert_allclose(
+        grip_preload,
+        (profile.BLUE_FLIP_PALM_PRELOAD, -profile.BLUE_FLIP_PALM_PRELOAD),
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS,
+        profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+        atol=1.0e-12,
+    )
+    blue_roll_delta = (
+        np.asarray(profile.HAND_STAGE_BLUE_FLIPPED_TARGETS)
+        - np.asarray(profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS)
+    )
+    np.testing.assert_allclose(blue_roll_delta[:, 0], 0.0, atol=1.0e-12)
+    np.testing.assert_allclose(blue_roll_delta[:, 3], -math.pi, atol=1.0e-12)
+    assert np.all(blue_roll_delta[:, 1] > 0.10)
+    assert all(np.linalg.norm(delta[:3]) > 0.10 for delta in blue_roll_delta)
+    np.testing.assert_allclose(
+        profile.HAND_STAGE_BLUE_FLIP_RELEASE_TARGETS,
+        profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_BLUE_FLIP_CLEAR_TARGETS)
+        - np.asarray(profile.HAND_STAGE_BLUE_FLIP_RELEASE_TARGETS),
+        (
+            (-0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+            (0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    assert profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS == (0.45, 0.45)
+    assert math.isclose(profile.BLUE_FLIP_Y_SHIFT, -0.480)
+    assert profile.YELLOW_FLIP_FINGER_CLOSE_FRACTIONS == (0.45, 0.45)
+    assert math.isclose(profile.YELLOW_FLIP_Z_SHIFT, -0.059)
+    assert profile.CARTON_FLIP_FINGER_CLOSE_FRACTION <= 0.25
+    yellow_contact_shift = (
+        np.asarray(profile.HAND_STAGE_YELLOW_FLIP_CONTACT_TARGETS)
+        - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_APPROACH_TARGETS)
+    )
+    np.testing.assert_allclose(
+        yellow_contact_shift[:, 1:],
+        0.0,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        yellow_contact_shift[:, 0],
+        (0.0, -profile.YELLOW_FLIP_RIGHT_APPROACH_CLEARANCE),
+        atol=1.0e-12,
+    )
+    yellow_grip_shift = (
+        np.asarray(profile.HAND_STAGE_YELLOW_FLIP_GRIP_TARGETS)
+        - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_CONTACT_TARGETS)
+    )
+    np.testing.assert_allclose(
+        yellow_grip_shift,
+        (
+            (profile.YELLOW_FLIP_PALM_PRELOAD, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (-profile.YELLOW_FLIP_PALM_PRELOAD, 0.0, 0.0, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    assert profile.YELLOW_FLIP_RIGHT_APPROACH_CLEARANCE >= 0.09
+    blue_controls = profile.hand_controls_at_tick(
+        flip_grip_start + profile.FLIP_GRIP_TICKS - 1
+    )
+    for controls, close_fraction in zip(
+        blue_controls,
+        profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS,
+        strict=True,
+    ):
+        np.testing.assert_allclose(
+            controls[6:],
+            np.asarray(profile.LEAP_FINGER_CLOSE_TARGETS) * close_fraction,
+            atol=1.0e-12,
+        )
+    assert all(
+        math.isclose(target[3], profile.BLUE_POST_FLIP_ROLL)
+        and target[4:] == (0.0, 0.0)
+        for target in profile.HAND_STAGE_PUSH_TARGETS
+    )
+    for phase_name, duration, expected_fractions in (
+        (
+            "yellow_flip_grip",
+            profile.YELLOW_FLIP_GRIP_TICKS,
+            profile.YELLOW_FLIP_FINGER_CLOSE_FRACTIONS,
+        ),
+        (
+            "carton_flip_grip",
+            profile.CARTON_FLIP_GRIP_TICKS,
+            (profile.CARTON_FLIP_FINGER_CLOSE_FRACTION,) * 2,
+        ),
+    ):
+        start = phase_starts[phase_name]
+        assert profile.finger_close_fractions_at_tick(start - 1) == (0.0, 0.0)
+        assert all(
+            fraction > 0.0
+            for fraction in profile.finger_close_fractions_at_tick(start)
+        )
+        np.testing.assert_allclose(
+            profile.finger_close_fractions_at_tick(start + duration - 1),
+            expected_fractions,
+            atol=1.0e-12,
+        )
+    yellow_release_end = (
+        phase_starts["yellow_flip_release"]
+        + profile.YELLOW_FLIP_RELEASE_TICKS
+        - 1
+    )
+    assert profile.finger_close_fractions_at_tick(
+        yellow_release_end
+    ) == (0.0, 0.0)
+    np.testing.assert_allclose(
+        profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS,
+        profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+        atol=1.0e-12,
+    )
+    yellow_unfollowed_targets = profile._retarget_flip_targets(
+        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
+        x_shift=profile.YELLOW_FLIP_X_SHIFT,
+        y_shift=profile.YELLOW_FLIP_Y_SHIFT,
+        z_shift=profile.YELLOW_FLIP_Z_SHIFT,
+        width_inset=profile.YELLOW_FLIP_WIDTH_INSET,
+        roll_offset=profile.YELLOW_FLIP_ROLL_OFFSET,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS)
+        - np.asarray(yellow_unfollowed_targets),
+        (
+            (0.0, profile.YELLOW_FLIP_FOLLOW_THROUGH, 0.0, 0.0, 0.0, 0.0),
+            (0.0, profile.YELLOW_FLIP_FOLLOW_THROUGH, 0.0, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_YELLOW_FLIP_CLEAR_TARGETS)
+        - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS),
+        (
+            (-0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+            (0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    for blue, yellow, carton in zip(
+        profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+        profile.HAND_STAGE_YELLOW_FLIP_GRIP_TARGETS,
+        profile.HAND_STAGE_CARTON_FLIP_GRIP_TARGETS,
+        strict=True,
+    ):
+        assert carton[0] < yellow[0] < blue[0]
+    assert all(
+        math.isclose(target[2], 0.15, abs_tol=1.0e-12)
+        for target in (
+            *profile.HAND_STAGE_BLUE_PUSH_DEPART_TARGETS,
+            *profile.HAND_STAGE_YELLOW_FLIP_TRANSFER_TARGETS,
+            *profile.HAND_STAGE_YELLOW_FLIP_DEPART_TARGETS,
+            *profile.HAND_STAGE_CARTON_FLIP_TRANSFER_TARGETS,
+            *profile.HAND_STAGE_CARTON_FLIP_DEPART_TARGETS,
+        )
+    )
+    carton_preload = tuple(
         grip[0] - approach[0]
         for approach, grip in zip(
-            profile.HAND_STAGE_FLIP_APPROACH_TARGETS,
-            profile.HAND_STAGE_FLIP_GRIP_TARGETS,
+            profile.HAND_STAGE_CARTON_FLIP_APPROACH_TARGETS,
+            profile.HAND_STAGE_CARTON_FLIP_GRIP_TARGETS,
             strict=True,
         )
     )
-    np.testing.assert_allclose(grip_preload, (0.010, -0.010), atol=1.0e-12)
-    for grip, lift, flipped in zip(
-        profile.HAND_STAGE_FLIP_GRIP_TARGETS,
-        profile.HAND_STAGE_FLIP_LIFT_TARGETS,
-        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
-        strict=True,
-    ):
-        assert math.isclose(grip[0], lift[0], abs_tol=1.0e-12)
-        assert math.isclose(lift[0], flipped[0], abs_tol=1.0e-12)
-    for before, after in zip(
-        profile.HAND_STAGE_FLIP_LIFT_TARGETS,
-        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
-        strict=True,
-    ):
-        assert math.isclose(abs(after[3] - before[3]), math.pi)
-    rotate_start = (
-        profile.DROP_SETTLE_TICKS
-        + profile.FLIP_APPROACH_TICKS
-        + profile.FLIP_GRIP_TICKS
-        + profile.FLIP_LIFT_TICKS
+    np.testing.assert_allclose(
+        carton_preload,
+        (profile.CARTON_FLIP_PALM_PRELOAD, -profile.CARTON_FLIP_PALM_PRELOAD),
+        atol=1.0e-12,
     )
-    for relative_tick in (
-        0,
-        profile.FLIP_ROTATE_TICKS // 4,
-        profile.FLIP_ROTATE_TICKS // 2 - 1,
-        profile.FLIP_ROTATE_TICKS - 1,
+    assert 0.0 < profile.CARTON_FLIP_PALM_PRELOAD <= 0.002
+    assert math.isclose(
+        profile.CARTON_FLIP_FINGER_CLOSE_FRACTION,
+        0.15,
+        abs_tol=1.0e-12,
+    )
+    for flipped, placed, released in zip(
+        profile.HAND_STAGE_CARTON_FLIPPED_LIFT_TARGETS,
+        profile.HAND_STAGE_CARTON_FLIP_PLACE_TARGETS,
+        profile.HAND_STAGE_CARTON_FLIP_RELEASE_TARGETS,
+        strict=True,
     ):
-        stage_targets = profile.hand_stage_targets_at_tick(
-            rotate_start + relative_tick
+        assert math.isclose(
+            flipped[2] - placed[2],
+            profile.CARTON_FLIP_PLACE_DROP,
+            abs_tol=1.0e-12,
         )
-        for before, after, target in zip(
-            profile.HAND_STAGE_FLIP_LIFT_TARGETS,
-            profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
-            stage_targets,
-            strict=True,
-        ):
-            pivot = 0.5 * (
-                np.asarray(before[1:3]) + np.asarray(after[1:3])
-            )
-            expected_radius = np.linalg.norm(
-                np.asarray(before[1:3]) - pivot
-            )
-            assert math.isclose(
-                np.linalg.norm(np.asarray(target[1:3]) - pivot),
-                expected_radius,
-                rel_tol=0.0,
-                abs_tol=1.0e-12,
-            )
+        np.testing.assert_allclose(placed, released, atol=1.0e-12)
+    assert (
+        profile.HAND_STAGE_CARTON_FLIP_CLEAR_TARGETS[0][0]
+        <= profile.HAND_STAGE_CARTON_FLIP_RELEASE_TARGETS[0][0]
+    )
+    assert (
+        profile.HAND_STAGE_CARTON_FLIP_CLEAR_TARGETS[1][0]
+        > profile.HAND_STAGE_CARTON_FLIP_RELEASE_TARGETS[1][0]
+    )
     assert all(
-        target[3:] == (0.0, 0.0, 0.0)
-        for target in profile.HAND_STAGE_PUSH_TARGETS
+        all(
+            abs(value) <= _builder().HAND_STAGE_TRANSLATION_RANGE
+            for value in target[:3]
+        )
+        for segment in profile.HAND_MOTION_SEGMENTS
+        for pair in (segment.start, segment.end)
+        for target in pair
+    )
+    assert all(
+        math.isclose(end[3] - start[3], -math.pi)
+        for start, end in zip(
+            profile.HAND_STAGE_CARTON_FLIP_LIFT_TARGETS,
+            profile.HAND_STAGE_CARTON_FLIPPED_LIFT_TARGETS,
+            strict=True,
+        )
+    )
+    assert tuple(
+        segment.phase
+        for segment in profile.HAND_MOTION_SEGMENTS
+        if segment.pivot_roll
+    ) == ("blue_flip_rotate", "yellow_flip_rotate", "carton_flip_rotate")
+    for phase_name, duration, before_targets, after_targets in (
+        (
+            "blue_flip_rotate",
+            profile.FLIP_ROTATE_TICKS,
+            profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+        ),
+        (
+            "yellow_flip_rotate",
+            profile.YELLOW_FLIP_ROTATE_TICKS,
+            profile.HAND_STAGE_YELLOW_FLIP_STABILIZE_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+        ),
+        (
+            "carton_flip_rotate",
+            profile.CARTON_FLIP_ROTATE_TICKS,
+            profile.HAND_STAGE_CARTON_FLIP_LIFT_TARGETS,
+            profile.HAND_STAGE_CARTON_FLIPPED_LIFT_TARGETS,
+        ),
+    ):
+        for relative_tick in (0, duration // 4, duration // 2 - 1, duration - 1):
+            stage_targets = profile.hand_stage_targets_at_tick(
+                phase_starts[phase_name] + relative_tick
+            )
+            for before, after, target in zip(
+                before_targets, after_targets, stage_targets, strict=True
+            ):
+                pivot = 0.5 * (
+                    np.asarray(before[1:3]) + np.asarray(after[1:3])
+                )
+                expected_radius = np.linalg.norm(
+                    np.asarray(before[1:3]) - pivot
+                )
+                assert math.isclose(
+                    np.linalg.norm(np.asarray(target[1:3]) - pivot),
+                    expected_radius,
+                    rel_tol=0.0,
+                    abs_tol=1.0e-12,
+                )
+    assert all(
+        abs(target[3]) <= _builder().HAND_STAGE_ROLL_RANGE
+        for segment in profile.HAND_MOTION_SEGMENTS
+        for pair in (segment.start, segment.end)
+        for target in pair
+    )
+    assert all(
+        abs(end[3] - start[3]) <= math.pi + 1.0e-12
+        for segment in profile.HAND_MOTION_SEGMENTS
+        for start, end in zip(segment.start, segment.end, strict=True)
     )
 
     for spec, expected_mass in zip(
@@ -1376,12 +1799,21 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
             )
             mass = _surface_mass(mesh, spec["thickness"], spec["density"])
         else:
-            mesh = _builder()._soft_package_mesh(spec["size"], spec["cells"])
+            mesh = _builder()._soft_package_mesh(
+                spec["size"],
+                spec["cells"],
+                side_rounding=float(spec.get("side_rounding", 0.0)),
+            )
             mass = _tetrahedral_mass(mesh, spec["density"])
         assert math.isclose(mass, expected_mass, rel_tol=1.0e-12)
     assert math.isclose(
         sum(profile.SOFT_PACKAGE_MASSES[:2]),
         0.35,
+        rel_tol=1.0e-12,
+    )
+    assert math.isclose(
+        sum(profile.SOFT_PACKAGE_MASSES[2:]),
+        0.28,
         rel_tol=1.0e-12,
     )
 
@@ -1595,8 +2027,9 @@ def test_deformable_velocity_damping_is_mass_normalized_per_body() -> None:
 def test_deformable_force_arrows_expose_horizontal_and_belt_resultants() -> None:
     play = _play()
     assert play._merge_contiguous_body_ranges(
-        ((0, 2), (2, 5), (5, 7)), ((0, 1), (2,))
-    ) == ((0, 5), (5, 7))
+        ((0, 2), (2, 5), (5, 7), (7, 11)), ((0, 1), (2, 3))
+    ) == ((0, 5), (5, 11))
+    assert play.SOFT_PACKAGE_RESULTANT_BODY_GROUPS == ((0, 1), (2, 3))
     positions = np.asarray(
         (
             (0.0, 0.0, 0.5),

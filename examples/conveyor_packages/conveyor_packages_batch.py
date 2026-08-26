@@ -49,6 +49,7 @@ from conveyor_forces import (
 from conveyor_profile import (
     CYCLE_TICKS,
     FIXED_DT,
+    HAND_MOTION_SEGMENTS,
     SOFT_PACKAGE_MASSES,
     IPC_CONTACT_ACTIVATION_DISTANCE,
     IPC_CONTACT_FRICTION,
@@ -71,8 +72,8 @@ SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run two floating LEAP Hands that flip a deformable package and "
-            "then push it onto a velocity-field outfeed conveyor."
+            "Run two floating LEAP Hands that flip and convey a blue mailer, "
+            "then flip a yellow mailer and a rigid carton."
         )
     )
     parser.add_argument("--scene", type=Path, default=HERE / SCENE_NAME)
@@ -101,6 +102,13 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "record per-step deformable contact/external resultant forces; "
             "intended for physics diagnostics, not latency measurement"
+        ),
+    )
+    parser.add_argument(
+        "--phase-diagnostics",
+        action="store_true",
+        help=(
+            "record device-side object state at manipulation phase boundaries"
         ),
     )
     parser.add_argument(
@@ -693,11 +701,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             (), dtype=belt_speed.dtype, device=belt_speed.device
         )
         initial_ipc_positions = provider.arrays["ipc_positions"].clone()
-        initial_mailer_layer_axis = _mailer_layer_axis(
-            initial_ipc_positions, deformable_entries[0]
+        mailer_entry_indices = (0, 2)
+        initial_mailer_layer_axes = torch.stack(
+            tuple(
+                _mailer_layer_axis(
+                    initial_ipc_positions, deformable_entries[index]
+                )
+                for index in mailer_entry_indices
+            ),
+            dim=1,
         )
-        minimum_mailer_layer_dot = torch.ones(
-            args.num_envs,
+        minimum_mailer_layer_dots = torch.ones(
+            (args.num_envs, len(mailer_entry_indices)),
             dtype=initial_ipc_positions.dtype,
             device=initial_ipc_positions.device,
         )
@@ -714,6 +729,51 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             tuple(view.read_state().base_pose[:, 0] for view in box_views),
             dim=1,
         ).clone()
+        initial_carton_quaternion = (
+            box_views[0].read_state().base_pose[:, 3:7].clone()
+        )
+        minimum_carton_quaternion_dot = torch.ones(
+            args.num_envs,
+            dtype=initial_ipc_positions.dtype,
+            device=initial_ipc_positions.device,
+        )
+        phase_snapshot_indices: dict[int, int] = {}
+        phase_snapshot_centers = None
+        phase_snapshot_mailer_axes = None
+        phase_snapshot_carton_poses = None
+        if args.phase_diagnostics:
+            phase_end_tick = -1
+            for phase_index, segment in enumerate(HAND_MOTION_SEGMENTS):
+                phase_end_tick += segment.duration
+                if phase_end_tick >= control_ticks:
+                    break
+                phase_snapshot_indices[phase_end_tick] = phase_index
+            snapshot_count = len(phase_snapshot_indices)
+            phase_snapshot_centers = torch.empty(
+                (
+                    snapshot_count,
+                    args.num_envs,
+                    len(deformable_entries),
+                    3,
+                ),
+                dtype=initial_ipc_positions.dtype,
+                device=initial_ipc_positions.device,
+            )
+            phase_snapshot_mailer_axes = torch.empty(
+                (
+                    snapshot_count,
+                    args.num_envs,
+                    len(mailer_entry_indices),
+                    3,
+                ),
+                dtype=initial_ipc_positions.dtype,
+                device=initial_ipc_positions.device,
+            )
+            phase_snapshot_carton_poses = torch.empty(
+                (snapshot_count, args.num_envs, 7),
+                dtype=initial_ipc_positions.dtype,
+                device=initial_ipc_positions.device,
+            )
         trace_step_count = control_ticks
         contact_force_trace = None
         external_force_trace = None
@@ -808,16 +868,45 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         :, hand_proxy_indices
                     ]
                 )
-            current_mailer_layer_axis = _mailer_layer_axis(
-                provider.arrays["ipc_positions"], deformable_entries[0]
+            current_mailer_layer_axes = torch.stack(
+                tuple(
+                    _mailer_layer_axis(
+                        provider.arrays["ipc_positions"],
+                        deformable_entries[index],
+                    )
+                    for index in mailer_entry_indices
+                ),
+                dim=1,
             )
             torch.minimum(
-                minimum_mailer_layer_dot,
-                (current_mailer_layer_axis * initial_mailer_layer_axis).sum(
+                minimum_mailer_layer_dots,
+                (current_mailer_layer_axes * initial_mailer_layer_axes).sum(
                     dim=-1
                 ),
-                out=minimum_mailer_layer_dot,
+                out=minimum_mailer_layer_dots,
             )
+            carton_quaternion = box_views[0].read_state().base_pose[:, 3:7]
+            carton_quaternion_dot = torch.sum(
+                carton_quaternion * initial_carton_quaternion, dim=-1
+            ).abs()
+            torch.minimum(
+                minimum_carton_quaternion_dot,
+                carton_quaternion_dot,
+                out=minimum_carton_quaternion_dot,
+            )
+            phase_snapshot_index = phase_snapshot_indices.get(tick)
+            if phase_snapshot_index is not None:
+                phase_snapshot_centers[phase_snapshot_index].copy_(
+                    _body_centers(
+                        provider.arrays["ipc_positions"], deformable_entries
+                    )
+                )
+                phase_snapshot_mailer_axes[phase_snapshot_index].copy_(
+                    current_mailer_layer_axes
+                )
+                phase_snapshot_carton_poses[phase_snapshot_index].copy_(
+                    box_views[0].read_state().base_pose
+                )
             hand_proxy_wrench = torch.linalg.vector_norm(
                 provider.arrays["ipc_affine_contact_wrenches"][
                     :, hand_proxy_indices
@@ -836,17 +925,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         provider.refresh_state()
         provider.synchronize()
         final_ipc_positions = provider.arrays["ipc_positions"].clone()
-        final_mailer_layer_axis = _mailer_layer_axis(
-            final_ipc_positions, deformable_entries[0]
+        final_mailer_layer_axes = torch.stack(
+            tuple(
+                _mailer_layer_axis(
+                    final_ipc_positions, deformable_entries[index]
+                )
+                for index in mailer_entry_indices
+            ),
+            dim=1,
         )
-        final_mailer_layer_dot = (
-            final_mailer_layer_axis * initial_mailer_layer_axis
+        final_mailer_layer_dots = (
+            final_mailer_layer_axes * initial_mailer_layer_axes
         ).sum(dim=-1).clamp(-1.0, 1.0)
         final_mailer_flip_degrees = torch.rad2deg(
-            torch.acos(final_mailer_layer_dot)
+            torch.acos(final_mailer_layer_dots)
         )
         maximum_mailer_flip_degrees = torch.rad2deg(
-            torch.acos(minimum_mailer_layer_dot.clamp(-1.0, 1.0))
+            torch.acos(minimum_mailer_layer_dots.clamp(-1.0, 1.0))
         )
         final_soft_centers = _body_centers(
             final_ipc_positions, deformable_entries
@@ -855,6 +950,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             final_ipc_positions, deformable_entries
         )
         final_rigid_states = tuple(view.read_state() for view in box_views)
+        final_carton_quaternion_dot = torch.sum(
+            final_rigid_states[0].base_pose[:, 3:7]
+            * initial_carton_quaternion,
+            dim=-1,
+        ).abs().clamp(0.0, 1.0)
+        final_carton_flip_degrees = torch.rad2deg(
+            2.0 * torch.acos(final_carton_quaternion_dot)
+        )
+        maximum_carton_flip_degrees = torch.rad2deg(
+            2.0
+            * torch.acos(
+                minimum_carton_quaternion_dot.clamp(0.0, 1.0)
+            )
+        )
         final_hand_states = tuple(view.read_state() for view in hand_views)
         hand_diagnostics = _hand_diagnostics(final_hand_states, hand_command)
         hand_proxy_transforms = provider.arrays[
@@ -921,6 +1030,53 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 initial_soft_centers,
                 initial_soft_extents,
             )
+        phase_diagnostics = []
+        if phase_snapshot_centers is not None:
+            snapshot_mailer_dots = (
+                phase_snapshot_mailer_axes
+                * initial_mailer_layer_axes.unsqueeze(0)
+            ).sum(dim=-1).clamp(-1.0, 1.0)
+            snapshot_mailer_angles = torch.rad2deg(
+                torch.acos(snapshot_mailer_dots)
+            )
+            snapshot_carton_dots = torch.sum(
+                phase_snapshot_carton_poses[..., 3:7]
+                * initial_carton_quaternion.unsqueeze(0),
+                dim=-1,
+            ).abs().clamp(0.0, 1.0)
+            snapshot_carton_angles = torch.rad2deg(
+                2.0 * torch.acos(snapshot_carton_dots)
+            )
+            completed_segments = HAND_MOTION_SEGMENTS[
+                : len(phase_snapshot_indices)
+            ]
+            for phase_index, segment in enumerate(completed_segments):
+                phase_diagnostics.append(
+                    {
+                        "phase": segment.phase,
+                        "soft_centers_meters": {
+                            str(spec["name"]): [
+                                float(value) for value in center
+                            ]
+                            for spec, center in zip(
+                                SOFT_PACKAGE_SPECS,
+                                phase_snapshot_centers[
+                                    phase_index, 0
+                                ].tolist(),
+                                strict=True,
+                            )
+                        },
+                        "blue_mailer_flip_degrees": float(
+                            snapshot_mailer_angles[phase_index, 0, 0]
+                        ),
+                        "yellow_mailer_flip_degrees": float(
+                            snapshot_mailer_angles[phase_index, 0, 1]
+                        ),
+                        "carton_small_flip_degrees": float(
+                            snapshot_carton_angles[phase_index, 0]
+                        ),
+                    }
+                )
 
         peak_drive_force_newtons = {
             name: float(value)
@@ -1003,10 +1159,28 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "hand_diagnostics_environment_0": hand_diagnostics,
             "hand_proxy_diagnostics_environment_0": hand_proxy_diagnostics,
             "mailer_final_flip_degrees_range": _range(
-                final_mailer_flip_degrees
+                final_mailer_flip_degrees[:, 0]
             ),
             "mailer_maximum_flip_degrees_range": _range(
-                maximum_mailer_flip_degrees
+                maximum_mailer_flip_degrees[:, 0]
+            ),
+            "blue_mailer_final_flip_degrees_range": _range(
+                final_mailer_flip_degrees[:, 0]
+            ),
+            "blue_mailer_maximum_flip_degrees_range": _range(
+                maximum_mailer_flip_degrees[:, 0]
+            ),
+            "yellow_mailer_final_flip_degrees_range": _range(
+                final_mailer_flip_degrees[:, 1]
+            ),
+            "yellow_mailer_maximum_flip_degrees_range": _range(
+                maximum_mailer_flip_degrees[:, 1]
+            ),
+            "carton_small_final_flip_degrees_range": _range(
+                final_carton_flip_degrees
+            ),
+            "carton_small_maximum_flip_degrees_range": _range(
+                maximum_carton_flip_degrees
             ),
             "peak_rigid_drive_force_newtons": peak_drive_force_newtons,
             "peak_rigid_normal_force_newtons": peak_normal_force_newtons,
@@ -1022,6 +1196,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 args.refresh_contact_forces
             ),
             "force_flow_trace_environment_0": force_flow_diagnostics,
+            "phase_diagnostics_environment_0": phase_diagnostics,
             "coupling_solver": diagnostics["coupling_solver"],
             "exact_contact_wrench": bool(
                 provider.capabilities.exact_contact_wrench

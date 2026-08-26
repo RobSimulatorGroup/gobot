@@ -1,10 +1,11 @@
 # LEAP Hand deformable-package workcell
 
-This example is a parcel-sorting station with a static manipulation table and a
-separate outfeed conveyor. Parcels queue on the left, two suspended LEAP Hands
-work over the center of the table, and the selected parcel is pushed forward
-onto the conveyor. The belt then carries it to the right through the scanner.
-There are no robot arms in the scene.
+This example is a parcel-sorting station with a deep static manipulation table
+and a separate outfeed conveyor. Parcels queue on the left and two suspended LEAP
+Hands work over the center of the table. They first turn the blue mailer and
+push it onto the conveyor, then turn the smaller yellow pouch, and finally turn
+the incoming rigid carton. The belt carries the blue mailer to the right
+through the scanner. There are no robot arms in the scene.
 
 The hands are the left and right Carnegie Mellon University LEAP Hand models
 from Google DeepMind's MuJoCo Menagerie. Their source MJCF and meshes are
@@ -14,16 +15,16 @@ six-DOF Cartesian wrist stage lets the hand remain suspended and follow the demo
 trajectory without adding a visible arm.
 
 All official palm and finger collision boxes are imported. Gobot adds a tight
-tip box to each distal digit and exposes 17 one-way IPC proxies per hand. During
-the flip, the palms face one another and the three regular fingers curl upward
-from the lower side of the mailer. The palms then close another 10 mm per side,
-forming a repeatable physical envelope around the package. During the push, the
-wrists return palm-down and the fingers remain lightly curved.
+tip box to each distal digit and exposes 17 one-way IPC proxies per hand. For
+both soft packages, the palms face one another, establish a symmetric 15 mm
+side preload, close both fingertip rows to 45%, and roll forward together while
+following the advancing side seams. The carton uses 15% closure. During the
+blue push, both wrists return palm-down and the fingers remain lightly curved.
 
 ## Thin-shell mailer
 
 The blue parcel is a closed film shell rather than a softened solid. Its mesh
-has 1,080 vertices and 2,156 triangles: separate top and bottom sheets, a sealed
+has 1,820 vertices and 3,636 triangles: separate top and bottom sheets, a sealed
 perimeter, asymmetric fullness, and small deterministic wrinkles. libuipc solves
 in-plane strain and shell bending, so the surface can crease and fold without
 turning into a rounded block.
@@ -32,20 +33,39 @@ A hidden, very soft tetrahedral body represents the loose contents. It supports
 the film through contact but is not attached to the hands or moved by the
 controller. The shell weighs 0.30 kg and the fill weighs 0.05 kg. At the start
 of every cycle they drop about 18 cm, deform under gravity, and settle onto the
-table before either hand moves. The bottom support patch therefore comes from
-weight and contact, not from an authored flat base.
+rear half of the table before either hand moves. That 42 cm setback leaves one
+package length for the physical forward turnover, so the reversed mailer stays
+on the table for the separate push phase. The bottom support patch therefore
+comes from weight and contact, not from an authored flat base.
+
+The yellow pouch uses the same closed-film construction in a lower pillow
+shape. Its 2,072-vertex, 4,140-triangle shell surrounds a finer 1,620-vertex,
+7,392-tetrahedron soft fill. The fill is widest at mid-height and tapers toward
+both film sheets, so all four sides bow outward instead of forming vertical
+walls. It remains puffed while the underside flattens under its own weight and
+the film wrinkles during the two-hand turn.
 
 The manipulation is entirely contact driven:
 
-1. Both hands approach the short sides, curl three fingers under the lower edge,
-   and apply the 10 mm palm preload.
-2. They lift the package clear of the table and roll 180 degrees around a fixed
-   fingertip pivot.
-3. The fingers open, the hands withdraw, and gravity finishes laying the reverse
-   face onto the table.
-4. Both wrists return palm-down, approach behind the package, and push it in
+1. Both hands approach the blue mailer's short sides, touch the seams with open
+   fingers, and then apply a symmetric 15 mm palm preload while both fingertip
+   rows close to 45%.
+2. Both wrists move toward the outfeed and execute the same 180-degree forward
+   roll around their fingertip rows. They open only after the reverse face has
+   reached the table, then withdraw sideways while the shell settles.
+3. Both wrists return palm-down, approach behind the blue mailer, and push it in
    `+Y` onto the outfeed.
-5. Only after the package reaches the belt does the stationary collider's
+4. The hands first rise vertically clear of the blue mailer and move upstream
+   at clearance height. They descend outside the smaller, fuller yellow pouch,
+   establish a symmetric 15 mm side preload, close both fingertip rows to 45%,
+   and execute one synchronized 180-degree wrist roll. Both wrists translate
+   180 mm toward the outfeed during the turn so their fingertips remain on the
+   advancing seams instead of sliding off when the pouch passes vertical.
+5. They again rise before traversing upstream and turn the rigid incoming
+   carton with a measured 2 mm palm preload and 15% finger closure. The hands
+   lower the reversed carton onto the table, open, withdraw sideways, and only
+   then rise and return at clearance height.
+6. Only after the blue mailer reaches the belt does the stationary collider's
    velocity field carry it in `+X` toward the scanner.
 
 No deformable vertex is attached, teleported, or position-driven. Before belt
@@ -99,15 +119,18 @@ Regenerate the scene and run one complete 2 ms fixed-step cycle:
 ```bash
 uv run python examples/conveyor_packages/build_scene.py
 uv run python examples/conveyor_packages/conveyor_packages_batch.py \
-  --steps 2980 --refresh-contact-forces
+  --refresh-contact-forces
 ```
 
-The JSON output reports final and maximum mailer flip angle, rigid and soft-body
-displacement, support-patch size, contact-force peaks, interface residual,
-actual CUDA graph state, reset error, latency, and throughput. Add
+The JSON output reports separate final and maximum flip angles for the blue
+mailer, yellow pouch, and small carton, plus rigid and soft-body displacement,
+support-patch size, contact-force peaks, interface residual, actual CUDA graph
+state, reset error, latency, and throughput. Add
 `--trace-force-flow` to record per-step contact and external resultants; that
 mode adds GPU reductions and is intended for physics diagnosis rather than
-performance measurement.
+performance measurement. `--phase-diagnostics` records only the device-side
+state at motion boundaries and is useful for calibrating multi-object contact
+without introducing per-step CPU synchronization.
 
 An in-tree libuipc solver module is discovered automatically. Set
 `GOBOT_LIBUIPC_SOLVER_MODULE` or pass `--module-path` to select another build.
