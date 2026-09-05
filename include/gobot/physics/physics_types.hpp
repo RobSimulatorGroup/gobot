@@ -22,7 +22,26 @@ namespace gobot {
 
 enum class PhysicsBackendType {
     Null,
-    MuJoCoCpu
+    MuJoCoCpu,
+    SuperDex
+};
+
+enum class SuperDexExecutionMode {
+    Cpu,
+    Cuda
+};
+
+enum class SuperDexLinearSolver {
+    Auto,
+    CG,
+    GMRES
+};
+
+enum class PhysicsSolverConvergenceStatus {
+    Unknown,
+    Converged,
+    Stopped,
+    Diverged
 };
 
 enum class PhysicsShapeType {
@@ -111,11 +130,34 @@ struct MuJoCoSolverSettings {
     RealType impedance_ratio{1.0};
 };
 
+struct SuperDexSolverSettings {
+    SuperDexExecutionMode execution_mode{SuperDexExecutionMode::Cpu};
+    SuperDexLinearSolver linear_solver{SuperDexLinearSolver::Auto};
+    int newton_iterations{16};
+    int line_search_iterations{8};
+    int linear_iterations{-1};
+    int substeps{1};
+    bool record_deformable_contact_forces{false};
+};
+
+struct PhysicsSolverDiagnostics {
+    double total_step_time_seconds{0.0};
+    double solve_time_seconds{0.0};
+    int newton_iterations{0};
+    int line_search_iterations{0};
+    RealType residual_norm{0.0};
+    PhysicsSolverConvergenceStatus convergence{PhysicsSolverConvergenceStatus::Unknown};
+    std::string execution_device{"cpu"};
+    bool device_native{false};
+    bool graph_capture{false};
+};
+
 struct PhysicsWorldSettings {
     Vector3 gravity{0.0, 0.0, -9.81};
     RealType fixed_time_step{0.002};
     JointControllerGains default_joint_gains{100.0, 10.0, 0.0, 0.0};
     MuJoCoSolverSettings mujoco_solver;
+    SuperDexSolverSettings superdex_solver;
     bool debug_draw_contacts{false};
     bool debug_draw_contact_forces{false};
     RealType debug_contact_force_scale{0.08};
@@ -261,6 +303,7 @@ struct PhysicsDeformableSnapshot {
     RealType damping{0.0};
     RealType thickness{0.001};
     RealType bending_stiffness{0.001};
+    PhysicsMaterialSnapshot material;
     bool kinematic{false};
     std::uint32_t collision_layer{1};
     std::uint32_t collision_mask{0xffffffffU};
@@ -617,6 +660,11 @@ struct PhysicsExternalForce {
     bool use_spring{false};
 };
 
+struct PhysicsDeformableExternalForces {
+    std::uint64_t stable_id{0};
+    std::vector<Vector3> forces;
+};
+
 struct PhysicsEnvironmentRobotResetState {
     std::size_t environment_index{0};
     std::string robot_name;
@@ -638,13 +686,22 @@ struct PhysicsRobotState {
     std::vector<PhysicsSensorState> sensors;
 };
 
+struct PhysicsDeformableState {
+    std::uint64_t stable_id{0};
+    std::vector<Vector3> local_vertices;
+    std::vector<Vector3> local_velocities;
+    std::vector<Vector3> contact_forces_world;
+};
+
 struct PhysicsSceneState {
     std::vector<PhysicsRobotState> robots;
+    std::vector<PhysicsDeformableState> deformables;
     std::vector<PhysicsContactState> contacts;
     std::vector<PhysicsSensorState> loose_sensors;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_sensor_count{0};
+    std::size_t total_deformable_count{0};
 };
 
 class GOBOT_EXPORT PhysicsRuntimeCheckpoint : public RefCounted {
@@ -660,15 +717,18 @@ public:
 private:
     friend class PhysicsWorld;
     friend class MuJoCoPhysicsWorld;
+    friend class SuperDexPhysicsWorld;
 
-    std::uint32_t schema_version_{1};
+    std::uint32_t schema_version_{2};
     PhysicsBackendType backend_{PhysicsBackendType::Null};
     std::string artifact_digest_;
     std::size_t environment_count_{0};
     RealType fixed_time_step_{0.0};
     std::vector<PhysicsSceneState> scene_states_;
     std::vector<PhysicsExternalForce> external_forces_;
+    std::vector<PhysicsDeformableExternalForces> deformable_external_forces_;
     std::vector<std::vector<double>> backend_states_;
+    std::vector<std::vector<std::uint8_t>> backend_state_blobs_;
     std::vector<JointControllerRuntimeState> controller_states_;
 };
 

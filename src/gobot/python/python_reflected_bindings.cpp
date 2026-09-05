@@ -86,9 +86,13 @@ void RegisterReflectedTypes(py::module_& module) {
     RegisterReflectedEnum<PhysicsIntegratorType>(module, "physics");
     RegisterReflectedEnum<PhysicsFrictionConeType>(module, "physics");
     RegisterReflectedEnum<PhysicsJacobianType>(module, "physics");
+    RegisterReflectedEnum<SuperDexExecutionMode>(module, "physics");
+    RegisterReflectedEnum<SuperDexLinearSolver>(module, "physics");
+    RegisterReflectedEnum<PhysicsSolverConvergenceStatus>(module, "physics");
     RegisterReflectedEnum<TerrainSubTerrainType>(module, "scene");
     RegisterReflectedValueType<JointControllerGains>(module, "sim");
     RegisterReflectedValueType<PhysicsBackendInfo>(module, "physics");
+    RegisterReflectedValueType<SuperDexSolverSettings>(module, "physics");
 }
 
 } // namespace gobot::python

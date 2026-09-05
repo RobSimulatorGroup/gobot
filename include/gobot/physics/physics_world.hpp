@@ -24,6 +24,8 @@ public:
 
     virtual PhysicsBackendCapabilities GetCapabilities() const;
 
+    virtual PhysicsSolverDiagnostics GetSolverDiagnostics() const;
+
     const PhysicsWorldSettings& GetSettings() const;
 
     void SetSettings(const PhysicsWorldSettings& settings);
@@ -124,6 +126,11 @@ public:
                                     const Vector3& target_point,
                                     const Vector3& force_hint);
 
+    virtual bool SetDeformableExternalForces(std::uint64_t stable_id,
+                                             const std::vector<Vector3>& forces);
+
+    virtual void ClearDeformableExternalForces();
+
     virtual void ClearExternalForces();
 
     const PhysicsSceneSnapshot& GetSceneSnapshot() const;
@@ -220,6 +227,7 @@ protected:
     PhysicsSceneTopology scene_topology_;
     PhysicsSceneState scene_state_;
     std::vector<PhysicsExternalForce> external_forces_;
+    std::vector<PhysicsDeformableExternalForces> deformable_external_forces_;
     std::string last_error_;
 };
 

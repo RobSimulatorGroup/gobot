@@ -481,12 +481,15 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
                                      RealType z_far,
                                      const py::handle& debug_arrows);
 
-py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state);
+py::dict RuntimeStateToPythonDict(
+        const PhysicsSceneState& state,
+        const PhysicsSceneSnapshot* snapshot = nullptr);
 const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot, const std::string& link_name);
 const PhysicsJointState* FindJointState(const PhysicsRobotState& robot, const std::string& joint_name);
 const PhysicsSensorState* FindSensorState(const PhysicsRobotState& robot, const std::string& sensor_name);
 SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle);
 SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle);
+Ref<PhysicsWorld> RuntimeWorldForNodeHandle(const PyNodeHandle& handle);
 Node* RuntimeRigidSystemForNodeHandle(const PyNodeHandle& handle);
 const PhysicsRobotState& RequiredRobotStateForNodeHandle(const PyNodeHandle& handle);
 const PhysicsRobotSnapshot& RequiredRobotSnapshotForHandle(const PyRobot3DHandle& handle);

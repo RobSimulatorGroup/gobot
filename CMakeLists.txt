@@ -54,6 +54,9 @@ option(GOB_BUNDLE_OPENUSD_RUNTIME
        ON)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
+option(GOB_BUILD_SUPERDEX "build the experimental unified SuperDex physics backend" OFF)
+option(GOB_SUPERDEX_ENABLE_CUDA "enable the experimental SuperDex CUDA linear solver" OFF)
+option(GOB_REAL_T_IS_DOUBLE "build Gobot and optional physics SDKs with double precision" OFF)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
 option(GOB_BUILD_LUISA_RENDERER "build the optional LuisaCompute CUDA viewport renderer module" OFF)
 option(GOB_BUILD_GSPLAT_INFERENCE "build Gaussian Splatting inference support into the Luisa renderer" ON)
@@ -61,6 +64,12 @@ option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository whe
 option(GOB_FORCE_FETCH_MUJOCO "use the pinned fetched MuJoCo even when an SDK/package is discoverable" OFF)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
+set(GOB_SUPERDEX_ROOT "" CACHE PATH
+        "Installed SuperDex SDK prefix. When empty, build the configured source tree in isolation.")
+set(GOB_SUPERDEX_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/project_superdex" CACHE PATH
+        "SuperDex SDK source tree used by the isolated ExternalProject build")
+set(GOB_SUPERDEX_CUDA_ARCHITECTURES "native" CACHE STRING
+        "CUDA architectures used by the optional SuperDex linear solver")
 set(GOB_OPENUSD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/openusd/install" CACHE PATH
         "OpenUSD install prefix containing pxrConfig.cmake.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
@@ -615,6 +624,11 @@ INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
 
+if(GOB_BUILD_SUPERDEX)
+    include(cmake/GobotSuperDex.cmake)
+    gobot_configure_superdex()
+endif()
+
 set(GOBOT_GENERATED_DIR "${PROJECT_BINARY_DIR}/generated/gobot/generated")
 set(GOBOT_EDITOR_ICON_HEADER "${GOBOT_GENERATED_DIR}/editor_icon_svg.hpp")
 add_custom_command(
@@ -674,9 +688,12 @@ file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
 file(GLOB_RECURSE SOURCE_SIMULATION CONFIGURE_DEPENDS "src/gobot/simulation/*.cpp")
 set(SOURCE_PHYSICS_MUJOCO
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/mujoco_physics_world.cpp")
+set(SOURCE_PHYSICS_SUPERDEX
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/superdex_physics_world.cpp")
 set(SOURCE_RESOURCE_MJCF
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/core/io/resource_format_mjcf.cpp")
 list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_MUJOCO})
+list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_SUPERDEX})
 list(REMOVE_ITEM SOURCE_CORE ${SOURCE_RESOURCE_MJCF})
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_OPENGL_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/opengl/*.cpp")
@@ -727,6 +744,9 @@ function(gobot_configure_engine_object_target TARGET_NAME)
                 GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
                 GOBOT_VERSION="${PROJECT_VERSION}"
                 GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
+    if(GOB_REAL_T_IS_DOUBLE)
+        target_compile_definitions(${TARGET_NAME} PRIVATE REAL_T_IS_DOUBLE=1)
+    endif()
 endfunction()
 
 add_library(gobot_physics_core OBJECT ${SOURCE_PHYSICS})
@@ -738,8 +758,35 @@ gobot_configure_engine_object_target(gobot_simulation_core)
 add_library(gobot_physics_mujoco_cpu OBJECT ${SOURCE_PHYSICS_MUJOCO})
 gobot_configure_engine_object_target(gobot_physics_mujoco_cpu)
 
+set(GOBOT_PHYSICS_SUPERDEX_OBJECTS)
+if(GOB_BUILD_SUPERDEX)
+    # Mochi exports SIMD options that affect Eigen's fixed-size type ABI. Every
+    # translation unit sharing Gobot physics types must use the same options.
+    foreach(GOBOT_SUPERDEX_ABI_TARGET IN ITEMS
+            gobot_physics_core
+            gobot_simulation_core
+            gobot_physics_mujoco_cpu)
+        target_link_libraries(${GOBOT_SUPERDEX_ABI_TARGET} PRIVATE SuperDex::Physics)
+    endforeach()
+
+    add_library(gobot_physics_superdex OBJECT ${SOURCE_PHYSICS_SUPERDEX})
+    gobot_configure_engine_object_target(gobot_physics_superdex)
+    target_compile_definitions(gobot_physics_superdex PRIVATE
+        GOBOT_HAS_SUPERDEX=1
+        GOBOT_SUPERDEX_HAS_CUDA=$<BOOL:${GOB_SUPERDEX_ENABLE_CUDA}>)
+    target_link_libraries(gobot_physics_superdex PRIVATE SuperDex::Physics)
+    if(GOBOT_SUPERDEX_SDK_TARGET)
+        add_dependencies(gobot_physics_superdex ${GOBOT_SUPERDEX_SDK_TARGET})
+    endif()
+    list(APPEND GOBOT_PHYSICS_SUPERDEX_OBJECTS
+        $<TARGET_OBJECTS:gobot_physics_superdex>)
+endif()
+
 add_library(gobot_resource_mjcf OBJECT ${SOURCE_RESOURCE_MJCF})
 gobot_configure_engine_object_target(gobot_resource_mjcf)
+if(GOB_BUILD_SUPERDEX)
+    target_link_libraries(gobot_resource_mjcf PRIVATE SuperDex::Physics)
+endif()
 
 if(GOB_BUILD_MUJOCO)
     target_compile_definitions(gobot_physics_mujoco_cpu PRIVATE GOBOT_HAS_MUJOCO=1)
@@ -759,6 +806,7 @@ add_library(gobot SHARED
         $<TARGET_OBJECTS:gobot_physics_core>
         $<TARGET_OBJECTS:gobot_simulation_core>
         $<TARGET_OBJECTS:gobot_physics_mujoco_cpu>
+        ${GOBOT_PHYSICS_SUPERDEX_OBJECTS}
         $<TARGET_OBJECTS:gobot_resource_mjcf>)
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
@@ -790,6 +838,9 @@ target_compile_definitions(gobot PUBLIC
         GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         GOBOT_VERSION="${PROJECT_VERSION}"
         GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
+if(GOB_REAL_T_IS_DOUBLE)
+    target_compile_definitions(gobot PUBLIC REAL_T_IS_DOUBLE=1)
+endif()
 
 if(GOB_ENABLE_TRACY AND GOBOT_TRACY_TARGET)
     target_compile_definitions(gobot PUBLIC GOBOT_ENABLE_TRACY=1 TRACY_ENABLE=1)
@@ -808,6 +859,14 @@ endif()
 
 if(GOB_BUILD_MUJOCO)
     target_link_libraries(gobot PRIVATE ${GOBOT_MUJOCO_TARGET})
+endif()
+
+if(GOB_BUILD_SUPERDEX)
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_SUPERDEX=1)
+    target_link_libraries(gobot PUBLIC SuperDex::Physics)
+    if(GOBOT_SUPERDEX_SDK_TARGET)
+        add_dependencies(gobot ${GOBOT_SUPERDEX_SDK_TARGET})
+    endif()
 endif()
 
 target_link_libraries(gobot PRIVATE ${CMAKE_DL_LIBS})
@@ -926,6 +985,21 @@ if(GOB_BUILD_OPENUSD AND GOB_BUNDLE_OPENUSD_RUNTIME)
             DESTINATION "gobot/openusd/share"
             COMPONENT python)
 endif()
+if(GOB_BUILD_SUPERDEX)
+    install(FILES "${GOBOT_SUPERDEX_MOCHI_LIBRARY}"
+            DESTINATION "gobot"
+            COMPONENT python)
+    # MARL uses an SONAME symlink chain (for example libmarl.so.1 ->
+    # libmarl.so.1.0.0-dev). Installing only the SONAME leaves a broken wheel.
+    install(DIRECTORY "${GOBOT_SUPERDEX_RUNTIME_DIR}/"
+            DESTINATION "gobot"
+            COMPONENT python
+            FILES_MATCHING
+            PATTERN "${CMAKE_SHARED_LIBRARY_PREFIX}marl*${CMAKE_SHARED_LIBRARY_SUFFIX}*"
+            PATTERN "EnTT" EXCLUDE
+            PATTERN "cmake" EXCLUDE
+            PATTERN "pkgconfig" EXCLUDE)
+endif()
 if(NOT SKBUILD)
     # scikit-build-core installs these through wheel.packages. Keeping a second
     # CMake copy makes editable imports resolve to stale wheel staging files.
@@ -1012,6 +1086,9 @@ if(dlpack_SOURCE_DIR)
 endif()
 if(mujoco_SOURCE_DIR)
     set(GOBOT_MUJOCO_LICENSE_SOURCE_DIR "${mujoco_SOURCE_DIR}")
+endif()
+if(GOB_BUILD_SUPERDEX)
+    gobot_install_license_files("${GOB_SUPERDEX_SOURCE_DIR}" "project_superdex")
 endif()
 if(GOBOT_MUJOCO_LICENSE_SOURCE_DIR)
     gobot_install_license_files("${GOBOT_MUJOCO_LICENSE_SOURCE_DIR}" "mujoco")

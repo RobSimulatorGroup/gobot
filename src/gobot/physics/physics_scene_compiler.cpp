@@ -664,11 +664,13 @@ void CollectSceneNodes(const Node* node,
         deformable_snapshot.damping = deformable->GetDamping();
         deformable_snapshot.thickness = deformable->GetThickness();
         deformable_snapshot.bending_stiffness = deformable->GetBendingStiffness();
+        deformable_snapshot.material = CapturePhysicsMaterial(deformable->GetPhysicsMaterial());
         deformable_snapshot.kinematic = deformable->IsKinematic();
         deformable_snapshot.collision_layer = deformable->GetCollisionLayer();
         deformable_snapshot.collision_mask = deformable->GetCollisionMask();
         deformable_snapshot.self_collision_enabled = deformable->IsSelfCollisionEnabled();
         snapshot->deformables.push_back(std::move(deformable_snapshot));
+        bindings->deformable_ids.push_back(deformable->GetInstanceId());
         ++snapshot->total_deformable_count;
     } else if (const auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
         PhysicsCouplingSnapshot coupling_snapshot;

@@ -44,3 +44,7 @@
 [submodule "3rdparty/libuipc"]
 	path = 3rdparty/libuipc
 	url = https://github.com/Wuqiqi123/libuipc.git
+[submodule "3rdparty/project_superdex"]
+	path = 3rdparty/project_superdex
+	url = https://github.com/RobSimulatorGroup/project_superdex.git
+	branch = gobot-superdex-core

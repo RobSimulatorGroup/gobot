@@ -7,6 +7,10 @@ from ._core import (
     PhysicsIntegratorType,
     PhysicsJacobianType,
     PhysicsSolverType,
+    PhysicsSolverConvergenceStatus,
+    SuperDexExecutionMode,
+    SuperDexLinearSolver,
+    SuperDexSolverSettings,
 )
 
 __all__ = [
@@ -16,4 +20,8 @@ __all__ = [
     "PhysicsIntegratorType",
     "PhysicsJacobianType",
     "PhysicsSolverType",
+    "PhysicsSolverConvergenceStatus",
+    "SuperDexExecutionMode",
+    "SuperDexLinearSolver",
+    "SuperDexSolverSettings",
 ]

@@ -53,6 +53,16 @@ PhysicsBackendInfo MissingBackendInfo(PhysicsBackendType backend_type) {
                     true,
                     "MuJoCo CPU support is not compiled into this build."
             };
+        case PhysicsBackendType::SuperDex:
+            return {
+                    PhysicsBackendType::SuperDex,
+                    "SuperDex",
+                    false,
+                    true,
+                    false,
+                    true,
+                    "Experimental: SuperDex support is not compiled into this build."
+            };
     }
     return {};
 }
@@ -101,6 +111,7 @@ std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfos() {
     return {
             GetBackendInfo(PhysicsBackendType::Null),
             GetBackendInfo(PhysicsBackendType::MuJoCoCpu),
+            GetBackendInfo(PhysicsBackendType::SuperDex),
     };
 }
 

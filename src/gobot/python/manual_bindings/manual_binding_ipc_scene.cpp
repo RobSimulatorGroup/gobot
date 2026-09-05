@@ -1,10 +1,62 @@
 #include "manual_bindings_internal.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
 namespace gobot::python {
 namespace {
+
+std::string CanonicalNodePath(const Node* node) {
+    std::vector<std::string> names;
+    for (const Node* current = node; current != nullptr; current = current->GetParent()) {
+        names.push_back(current->GetName());
+    }
+    std::string path;
+    for (auto iterator = names.rbegin(); iterator != names.rend(); ++iterator) {
+        path.push_back('/');
+        path += *iterator;
+    }
+    return path.empty() ? std::string{"/"} : path;
+}
+
+const PhysicsDeformableSnapshot& RequiredDeformableSnapshot(
+        const PyDeformableBody3DHandle& handle) {
+    const DeformableBody3D* body = handle.ResolveAs<DeformableBody3D>();
+    const PhysicsSceneSnapshot& snapshot =
+            RuntimeWorldForNodeHandle(handle)->GetSceneSnapshot();
+    const std::string path = CanonicalNodePath(body);
+    const auto found = std::find_if(
+            snapshot.deformables.begin(),
+            snapshot.deformables.end(),
+            [&path](const PhysicsDeformableSnapshot& candidate) {
+                return candidate.scene_path == path;
+            });
+    if (found == snapshot.deformables.end()) {
+        throw std::runtime_error(
+                "Gobot runtime snapshot has no deformable at '" + path + "'");
+    }
+    return *found;
+}
+
+const PhysicsDeformableState& RequiredDeformableState(
+        const PyDeformableBody3DHandle& handle,
+        const PhysicsDeformableSnapshot& snapshot) {
+    const PhysicsSceneState& state =
+            RuntimeWorldForNodeHandle(handle)->GetSceneState();
+    const auto found = std::find_if(
+            state.deformables.begin(),
+            state.deformables.end(),
+            [&snapshot](const PhysicsDeformableState& candidate) {
+                return candidate.stable_id == snapshot.stable_id;
+            });
+    if (found == state.deformables.end()) {
+        throw std::runtime_error(
+                "Gobot runtime state has no deformable stable ID " +
+                std::to_string(snapshot.stable_id));
+    }
+    return *found;
+}
 
 std::vector<std::uint32_t> PythonToIndexTable(
         const py::handle& value, py::ssize_t width, const char* description) {
@@ -495,6 +547,20 @@ void RegisterManualIpcSceneBindings(
                         SetNodeValue(handle, "bending_stiffness", value);
                     })
             .def_property(
+                    "physics_material",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return ResourceToPythonDict(
+                                handle.ResolveAs<DeformableBody3D>()
+                                        ->GetPhysicsMaterial());
+                    },
+                    [](PyDeformableBody3DHandle& handle,
+                       const py::handle& value) {
+                        SetNodeValue(
+                                handle,
+                                "physics_material",
+                                PhysicsMaterialFromPython(value));
+                    })
+            .def_property(
                     "kinematic",
                     [](const PyDeformableBody3DHandle& handle) {
                         return handle.ResolveAs<DeformableBody3D>()->IsKinematic();
@@ -542,7 +608,58 @@ void RegisterManualIpcSceneBindings(
                     },
                     [](PyDeformableBody3DHandle& handle, bool value) {
                         SetNodeValue(handle, "debug_wireframe_visible", value);
-                    });
+                    })
+            .def_property_readonly(
+                    "physics_stable_id",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return RequiredDeformableSnapshot(handle).stable_id;
+                    })
+            .def("set_external_forces",
+                 [](PyDeformableBody3DHandle& handle,
+                    const py::handle& forces) {
+                     Ref<PhysicsWorld> world = RuntimeWorldForNodeHandle(handle);
+                     const PhysicsDeformableSnapshot& snapshot =
+                             RequiredDeformableSnapshot(handle);
+                     if (!world->SetDeformableExternalForces(
+                                 snapshot.stable_id,
+                                 PythonToVector3List(forces))) {
+                         throw std::runtime_error(world->GetLastError());
+                     }
+                 },
+                 py::arg("forces"))
+            .def("clear_external_forces",
+                 [](PyDeformableBody3DHandle& handle) {
+                     Ref<PhysicsWorld> world = RuntimeWorldForNodeHandle(handle);
+                     const PhysicsDeformableSnapshot& snapshot =
+                             RequiredDeformableSnapshot(handle);
+                     if (!world->SetDeformableExternalForces(
+                                 snapshot.stable_id,
+                                 std::vector<Vector3>(
+                                         snapshot.vertices.size(),
+                                         Vector3::Zero()))) {
+                         throw std::runtime_error(world->GetLastError());
+                     }
+                 })
+            .def("get_runtime_state",
+                 [](const PyDeformableBody3DHandle& handle) {
+                     const PhysicsDeformableSnapshot& snapshot =
+                             RequiredDeformableSnapshot(handle);
+                     const PhysicsDeformableState& state =
+                             RequiredDeformableState(handle, snapshot);
+                     py::dict result;
+                     result["name"] = snapshot.name;
+                     result["scene_path"] = snapshot.scene_path;
+                     result["stable_id"] = state.stable_id;
+                     result["global_transform"] =
+                             TransformToPythonDict(snapshot.global_transform);
+                     result["local_vertices"] =
+                             Vector3ListToPython(state.local_vertices);
+                     result["local_velocities"] =
+                             Vector3ListToPython(state.local_velocities);
+                     result["contact_forces_world"] =
+                             Vector3ListToPython(state.contact_forces_world);
+                     return result;
+                 });
 
     tactile_sensor_class
             .def_property(

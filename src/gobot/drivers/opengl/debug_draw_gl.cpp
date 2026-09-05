@@ -39,6 +39,11 @@ namespace gobot::opengl {
 
 namespace {
 
+void UploadMatrix4(GLint location, const Matrix4& value) {
+    const Eigen::Matrix4f float_value = value.template cast<float>();
+    glUniformMatrix4fv(location, 1, GL_FALSE, float_value.data());
+}
+
 GLuint CompileDebugShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
@@ -351,7 +356,7 @@ void DrawLineBuffer(GLRendererDebugDraw::LineBuffer& buffer,
     buffer.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
 
     const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
+    UploadMatrix4(glGetUniformLocation(program, "u_model"), model);
     glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
     glUniform1i(glGetUniformLocation(program, "u_surface_shading"), GL_FALSE);
     glBindVertexArray(buffer.vao);
@@ -381,7 +386,7 @@ void DrawTriangleBuffer(GLRendererDebugDraw::LineBuffer& buffer,
     buffer.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
 
     const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
+    UploadMatrix4(glGetUniformLocation(program, "u_model"), model);
     glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
     glUniform1i(glGetUniformLocation(program, "u_surface_shading"), surface_shading);
     glBindVertexArray(buffer.vao);
@@ -665,7 +670,7 @@ void GLRendererDebugDraw::DrawEditorGrid() {
     }
 
     const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
+    UploadMatrix4(glGetUniformLocation(program_, "u_model"), model);
     glUniform4f(glGetUniformLocation(program_, "u_color"), 0.32f, 0.34f, 0.38f, 1.0f);
     glBindVertexArray(editor_grid_.vao);
     glDrawArrays(GL_LINES, 0, editor_grid_.vertex_count);
@@ -678,7 +683,7 @@ void GLRendererDebugDraw::DrawWorldAxes() {
     }
 
     const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
+    UploadMatrix4(glGetUniformLocation(program_, "u_model"), model);
 
     glBindVertexArray(world_axes_.vao);
     glLineWidth(2.0f);
@@ -719,7 +724,7 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
     collision_lines_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
 
     const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
+    UploadMatrix4(glGetUniformLocation(program_, "u_model"), model);
     glUniform4f(glGetUniformLocation(program_, "u_color"), 0.15f, 0.95f, 0.72f, 0.85f);
     glBindVertexArray(collision_lines_.vao);
     glLineWidth(1.5f);
@@ -1002,8 +1007,8 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
     glUseProgram(program_);
     const Matrix4 view = camera->GetViewMatrix();
     const Matrix4 projection = camera->GetProjectionMatrix();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_view"), 1, GL_FALSE, view.data());
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
+    UploadMatrix4(glGetUniformLocation(program_, "u_view"), view);
+    UploadMatrix4(glGetUniformLocation(program_, "u_projection"), projection);
 
     std::optional<NullPhysicsWorld> preview_world;
     if (physics_world == nullptr && scene_root != nullptr) {
@@ -1075,8 +1080,8 @@ void GLRendererDebugDraw::RenderDebugArrows(const RID& render_target,
     glUseProgram(program_);
     const Matrix4 view = camera->GetViewMatrix();
     const Matrix4 projection = camera->GetProjectionMatrix();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_view"), 1, GL_FALSE, view.data());
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
+    UploadMatrix4(glGetUniformLocation(program_, "u_view"), view);
+    UploadMatrix4(glGetUniformLocation(program_, "u_projection"), projection);
 
     for (const ArrowBatch& batch : BuildArrowBatches(arrows)) {
         DrawLineBuffer(debug_arrow_lines_,

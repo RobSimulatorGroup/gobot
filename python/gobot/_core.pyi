@@ -73,6 +73,25 @@ class _IpcBatchSolverSession:
 class PhysicsBackendType(Enum):
     Null: ClassVar[PhysicsBackendType]
     MuJoCoCpu: ClassVar[PhysicsBackendType]
+    SuperDex: ClassVar[PhysicsBackendType]
+
+
+class SuperDexExecutionMode(Enum):
+    Cpu: ClassVar[SuperDexExecutionMode]
+    Cuda: ClassVar[SuperDexExecutionMode]
+
+
+class SuperDexLinearSolver(Enum):
+    Auto: ClassVar[SuperDexLinearSolver]
+    CG: ClassVar[SuperDexLinearSolver]
+    GMRES: ClassVar[SuperDexLinearSolver]
+
+
+class PhysicsSolverConvergenceStatus(Enum):
+    Unknown: ClassVar[PhysicsSolverConvergenceStatus]
+    Converged: ClassVar[PhysicsSolverConvergenceStatus]
+    Stopped: ClassVar[PhysicsSolverConvergenceStatus]
+    Diverged: ClassVar[PhysicsSolverConvergenceStatus]
 
 
 class PhysicsSolverType(Enum):
@@ -166,6 +185,21 @@ class PhysicsBackendInfo:
     def from_dict(value: dict[str, Any]) -> PhysicsBackendInfo: ...
 
 
+class SuperDexSolverSettings:
+    execution_mode: SuperDexExecutionMode
+    linear_solver: SuperDexLinearSolver
+    newton_iterations: int
+    line_search_iterations: int
+    linear_iterations: int
+    substeps: int
+    record_deformable_contact_forces: bool
+
+    def __init__(self) -> None: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    @staticmethod
+    def from_dict(value: dict[str, Any]) -> SuperDexSolverSettings: ...
+
+
 class Input:
     has_control_focus: bool
 
@@ -247,6 +281,19 @@ class AppContext:
     def reset_simulation(self) -> None: ...
     def step_once(self) -> None: ...
     def step(self, ticks: int = 1) -> None: ...
+    def get_physics_state(self) -> dict[str, Any]: ...
+    def get_solver_diagnostics(self) -> dict[str, Any]: ...
+    def set_link_external_force(
+        self,
+        robot: str,
+        link: str,
+        point: VectorLike,
+        force: VectorLike,
+    ) -> None: ...
+    def set_deformable_external_forces(
+        self, stable_id: int, forces: Sequence[VectorLike]
+    ) -> None: ...
+    def clear_external_forces(self) -> None: ...
     def configure_batch_world(self, num_envs: int) -> None: ...
     def create_locomotion_batch_view(
         self,
@@ -292,6 +339,8 @@ class AppContext:
     def get_default_joint_gains(self) -> dict[str, Any]: ...
     def set_mujoco_solver_settings(self, settings: dict[str, Any]) -> None: ...
     def get_mujoco_solver_settings(self) -> dict[str, Any]: ...
+    def set_superdex_solver_settings(self, settings: dict[str, Any]) -> None: ...
+    def get_superdex_solver_settings(self) -> dict[str, Any]: ...
     def get_physics_debug_settings(self) -> dict[str, bool | float]: ...
     def get_batch_runtime_state(self, env_id: int) -> dict[str, Any]: ...
     def get_batch_robot_state(
@@ -421,6 +470,10 @@ class Link3D(Node3D):
         angular_velocity: VectorLike = (0.0, 0.0, 0.0),
     ) -> None: ...
     def get_runtime_state(self) -> dict[str, Any]: ...
+    def set_external_force(
+        self, point: VectorLike, force: VectorLike
+    ) -> None: ...
+    def clear_external_force(self) -> None: ...
 
 
 class RigidBody3D(Link3D):
@@ -537,12 +590,18 @@ class DeformableBody3D(Node3D):
     damping: float
     thickness: float
     bending_stiffness: float
+    physics_material: dict[str, Any] | None
     kinematic: bool
     collision_layer: int
     collision_mask: int
     self_collision_enabled: bool
     debug_surface_color: tuple[float, float, float, float]
     debug_wireframe_visible: bool
+    physics_stable_id: int
+
+    def set_external_forces(self, forces: Sequence[VectorLike]) -> None: ...
+    def clear_external_forces(self) -> None: ...
+    def get_runtime_state(self) -> dict[str, Any]: ...
 
 
 class Terrain3D(Node3D):

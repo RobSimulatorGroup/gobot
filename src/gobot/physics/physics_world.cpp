@@ -722,6 +722,10 @@ PhysicsBackendCapabilities PhysicsWorld::GetCapabilities() const {
     return capabilities;
 }
 
+PhysicsSolverDiagnostics PhysicsWorld::GetSolverDiagnostics() const {
+    return {};
+}
+
 void PhysicsWorld::SetSettings(const PhysicsWorldSettings& settings) {
     settings_ = settings;
 }
@@ -783,6 +787,20 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
             sensor_state.timestamp = previous_sensor_state->timestamp;
             sensor_state.sample_count = previous_sensor_state->sample_count;
         }
+    }
+
+    for (PhysicsDeformableState& deformable_state : scene_state_.deformables) {
+        const auto previous = std::find_if(
+                previous_state.deformables.begin(),
+                previous_state.deformables.end(),
+                [&deformable_state](const PhysicsDeformableState& candidate) {
+                    return candidate.stable_id == deformable_state.stable_id;
+                });
+        if (previous == previous_state.deformables.end() ||
+            previous->local_vertices.size() != deformable_state.local_vertices.size()) {
+            continue;
+        }
+        deformable_state = *previous;
     }
 
     UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
@@ -975,6 +993,7 @@ std::string PhysicsWorld::GetCheckpointCompatibilityKey() const {
         append_real(deformable.damping);
         append_real(deformable.thickness);
         append_real(deformable.bending_stiffness);
+        append_material(deformable.material);
         append_integer(deformable.kinematic);
         append_integer(deformable.collision_layer);
         append_integer(deformable.collision_mask);
@@ -1001,9 +1020,9 @@ bool PhysicsWorld::ValidateCheckpoint(
         *error = "Runtime checkpoint is null.";
         return false;
     }
-    if (checkpoint->schema_version_ != 1) {
+    if (checkpoint->schema_version_ != 2) {
         *error = fmt::format(
-                "Runtime checkpoint schema {} is unsupported; expected 1.",
+                "Runtime checkpoint schema {} is unsupported; expected 2.",
                 checkpoint->schema_version_);
         return false;
     }
@@ -1068,6 +1087,7 @@ Ref<PhysicsRuntimeCheckpoint> PhysicsWorld::CaptureCheckpoint() const {
     checkpoint->environment_count_ = environment_count;
     checkpoint->fixed_time_step_ = settings_.fixed_time_step;
     checkpoint->external_forces_ = external_forces_;
+    checkpoint->deformable_external_forces_ = deformable_external_forces_;
     checkpoint->scene_states_.reserve(environment_count);
     for (std::size_t environment_index = 0; environment_index < environment_count;
          ++environment_index) {
@@ -1095,6 +1115,7 @@ bool PhysicsWorld::RestoreCheckpoint(
     }
     scene_state_ = checkpoint->scene_states_.front();
     external_forces_ = checkpoint->external_forces_;
+    deformable_external_forces_ = checkpoint->deformable_external_forces_;
     last_error_.clear();
     return true;
 }
@@ -1397,8 +1418,56 @@ bool PhysicsWorld::SetLinkSpringForce(const std::string& robot_name,
     return true;
 }
 
+bool PhysicsWorld::SetDeformableExternalForces(
+        std::uint64_t stable_id,
+        const std::vector<Vector3>& forces) {
+    const auto deformable = std::find_if(
+            scene_snapshot_.deformables.begin(),
+            scene_snapshot_.deformables.end(),
+            [stable_id](const PhysicsDeformableSnapshot& candidate) {
+                return candidate.stable_id == stable_id;
+            });
+    if (deformable == scene_snapshot_.deformables.end()) {
+        SetLastError(fmt::format(
+                "Cannot apply external forces to missing deformable stable ID {}.",
+                stable_id));
+        return false;
+    }
+    if (forces.size() != deformable->vertices.size()) {
+        SetLastError(fmt::format(
+                "Deformable stable ID {} expects {} nodal force(s), got {}.",
+                stable_id,
+                deformable->vertices.size(),
+                forces.size()));
+        return false;
+    }
+    if (!std::ranges::all_of(forces, [](const Vector3& force) { return force.allFinite(); })) {
+        SetLastError("Deformable external forces must be finite.");
+        return false;
+    }
+
+    const auto existing = std::find_if(
+            deformable_external_forces_.begin(),
+            deformable_external_forces_.end(),
+            [stable_id](const PhysicsDeformableExternalForces& candidate) {
+                return candidate.stable_id == stable_id;
+            });
+    if (existing != deformable_external_forces_.end()) {
+        existing->forces = forces;
+    } else {
+        deformable_external_forces_.push_back({stable_id, forces});
+    }
+    last_error_.clear();
+    return true;
+}
+
+void PhysicsWorld::ClearDeformableExternalForces() {
+    deformable_external_forces_.clear();
+}
+
 void PhysicsWorld::ClearExternalForces() {
     external_forces_.clear();
+    ClearDeformableExternalForces();
 }
 
 const PhysicsSceneSnapshot& PhysicsWorld::GetSceneSnapshot() const {
@@ -1875,6 +1944,17 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
         ++scene_state.total_sensor_count;
     }
 
+    scene_state.deformables.reserve(scene_snapshot_.deformables.size());
+    for (const PhysicsDeformableSnapshot& deformable_snapshot : scene_snapshot_.deformables) {
+        PhysicsDeformableState deformable_state;
+        deformable_state.stable_id = deformable_snapshot.stable_id;
+        deformable_state.local_vertices = deformable_snapshot.vertices;
+        deformable_state.local_velocities.assign(
+                deformable_snapshot.vertices.size(), Vector3::Zero());
+        scene_state.deformables.emplace_back(std::move(deformable_state));
+        ++scene_state.total_deformable_count;
+    }
+
     return scene_state;
 }
 
@@ -1962,6 +2042,9 @@ GOBOT_REGISTRATION {
     QuickEnumeration_<PhysicsIntegratorType>("PhysicsIntegratorType");
     QuickEnumeration_<PhysicsFrictionConeType>("PhysicsFrictionConeType");
     QuickEnumeration_<PhysicsJacobianType>("PhysicsJacobianType");
+    QuickEnumeration_<SuperDexExecutionMode>("SuperDexExecutionMode");
+    QuickEnumeration_<SuperDexLinearSolver>("SuperDexLinearSolver");
+    QuickEnumeration_<PhysicsSolverConvergenceStatus>("PhysicsSolverConvergenceStatus");
 
     Class_<PhysicsBackendInfo>("PhysicsBackendInfo")
             .constructor()
@@ -1995,10 +2078,22 @@ GOBOT_REGISTRATION {
             .property("fixed_time_step", &PhysicsWorldSettings::fixed_time_step)
             .property("default_joint_gains", &PhysicsWorldSettings::default_joint_gains)
             .property("mujoco_solver", &PhysicsWorldSettings::mujoco_solver)
+            .property("superdex_solver", &PhysicsWorldSettings::superdex_solver)
             .property("debug_draw_contacts", &PhysicsWorldSettings::debug_draw_contacts)
             .property("debug_draw_contact_forces", &PhysicsWorldSettings::debug_draw_contact_forces)
             .property("debug_contact_force_scale", &PhysicsWorldSettings::debug_contact_force_scale)
             .property("debug_contact_force_max_length", &PhysicsWorldSettings::debug_contact_force_max_length);
+
+    Class_<SuperDexSolverSettings>("SuperDexSolverSettings")
+            .constructor()
+            .property("execution_mode", &SuperDexSolverSettings::execution_mode)
+            .property("linear_solver", &SuperDexSolverSettings::linear_solver)
+            .property("newton_iterations", &SuperDexSolverSettings::newton_iterations)
+            .property("line_search_iterations", &SuperDexSolverSettings::line_search_iterations)
+            .property("linear_iterations", &SuperDexSolverSettings::linear_iterations)
+            .property("substeps", &SuperDexSolverSettings::substeps)
+            .property("record_deformable_contact_forces",
+                      &SuperDexSolverSettings::record_deformable_contact_forces);
 
     Class_<PhysicsWorld>("PhysicsWorld")
             .method("is_available", &PhysicsWorld::IsAvailable)

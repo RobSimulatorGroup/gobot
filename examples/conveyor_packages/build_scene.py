@@ -1,4 +1,4 @@
-"""Build the coupled rigid/deformable parcel conveyor scene."""
+"""Build the native rigid/deformable SuperDex parcel conveyor scene."""
 
 from __future__ import annotations
 
@@ -118,15 +118,15 @@ HAND_PALM_ALIGNMENT_ROTATION = np.asarray(
 )
 HAND_STAGE_TRANSLATION_RANGE = 1.24
 HAND_STAGE_ROTATION_RANGE = math.pi + 0.12
-# Roll is intentionally unwrapped across the one-shot manipulation cycle. The
-# hands always turn toward the outfeed, so successive flips reach equivalent
-# orientations at increasingly negative joint coordinates without a 2*pi
-# controller jump between parcels.
+# Keep enough range for continuous wrist turns during a one-shot manipulation
+# cycle. The profile chooses nearby equivalent angles between parcels so high
+# transfers never contain a hidden multi-revolution controller jump.
 HAND_STAGE_ROLL_RANGE = 6.0 * math.pi + 0.12
 HAND_STAGE_LINEAR_STIFFNESS = 9000.0
 HAND_STAGE_LINEAR_DAMPING = 240.0
 HAND_STAGE_ANGULAR_STIFFNESS = 1400.0
 HAND_STAGE_ANGULAR_DAMPING = 85.0
+HAND_STAGE_ARMATURE = 0.1
 HAND_FINGER_STIFFNESS = 36.0
 HAND_FINGER_DAMPING = 1.20
 HAND_FRICTION = 3.00
@@ -142,19 +142,24 @@ RIGID_COLLISION_LAYER = 0b0001
 HAND_COLLISION_LAYER = 0b0010
 DEFORMABLE_COLLISION_LAYER = 0b0100
 RIGID_PACKAGE_COLLISION_LAYER = 0b1000
+DEFORMABLE_FILL_COLLISION_LAYER = 0b10000
 RIGID_COLLISION_MASK = (
     RIGID_COLLISION_LAYER
     | DEFORMABLE_COLLISION_LAYER
     | RIGID_PACKAGE_COLLISION_LAYER
 )
 HAND_COLLISION_MASK = (
-    DEFORMABLE_COLLISION_LAYER | RIGID_PACKAGE_COLLISION_LAYER
+    RIGID_COLLISION_LAYER
+    | DEFORMABLE_COLLISION_LAYER
+    | RIGID_PACKAGE_COLLISION_LAYER
 )
 DEFORMABLE_COLLISION_MASK = (
     RIGID_COLLISION_LAYER
     | HAND_COLLISION_LAYER
+    | DEFORMABLE_FILL_COLLISION_LAYER
     | RIGID_PACKAGE_COLLISION_LAYER
 )
+DEFORMABLE_FILL_COLLISION_MASK = DEFORMABLE_COLLISION_LAYER
 RIGID_PACKAGE_COLLISION_MASK = (
     RIGID_COLLISION_LAYER
     | HAND_COLLISION_LAYER
@@ -181,9 +186,9 @@ WORKTABLE_THICKNESS = 0.08
 WORKTABLE_CENTER_X = -0.15
 WORKTABLE_CENTER_Y = -0.335
 WORKTABLE_TOP_Z = BELT_TOP_Z
-# Polished sorting-table laminate against a plastic mailer.  Keeping this below
-# the palm's 2.5 coefficient lets the down-facing hand sweep the parcel by
-# contact friction while the belt remains stationary.
+# Polished sorting-table laminate against a plastic mailer. Keeping this below
+# the hand coefficient lets a down-facing palm sweep the parcel by contact
+# friction while the belt remains stationary.
 WORKTABLE_SLIDING_FRICTION = 0.30
 
 RIGID_BOX_SPECS = (
@@ -192,8 +197,10 @@ RIGID_BOX_SPECS = (
         "size": (0.25, 0.20, 0.18),
         "mass": 0.62,
         # Incoming rigid parcel waiting on the left side of the static table.
-        "position": (-1.02, 0.015, WORKTABLE_TOP_Z + 0.092),
-        "rotation_degrees": (0.0, 0.0, 5.0),
+        # Start at the native contact equilibrium instead of dropping a
+        # yawed triangle mesh onto one corner before the hands arrive.
+        "position": (-1.02, 0.015, WORKTABLE_TOP_Z + 0.091),
+        "rotation_degrees": (0.0, 0.0, 0.0),
         "color": (0.70, 0.43, 0.20, 1.0),
     },
     {
@@ -225,12 +232,14 @@ SOFT_PACKAGE_SPECS = (
         "position": (
             MANIPULATION_STATION_X,
             -0.375,
-            WORKTABLE_TOP_Z + 0.235,
+            # The lowest film node starts 1 mm outside its 10 mm point-cloud
+            # collider. This avoids a 200 mm impact before the hands arrive.
+            WORKTABLE_TOP_Z + 0.0461,
         ),
-        "rotation_degrees": (4.0, -6.0, 2.0),
-        # libuipc currently has no deformable-to-deformable attachment. Carry
-        # most parcel inertia on the closed film so a fingertip grasp moves the
-        # package as one object; the light inner core only supports its volume.
+        "rotation_degrees": (0.0, 0.0, 2.0),
+        # Carry most parcel inertia on the closed film so a fingertip grasp
+        # moves the package as one object; the light inner core only supports
+        # its volume through native deformable contact.
         # The 0.35 kg total models a filled poly mailer rather than the earlier
         # 1.12 kg parcel, which could not be rolled realistically by the two
         # palm contacts while the table supports its weight.
@@ -247,17 +256,18 @@ SOFT_PACKAGE_SPECS = (
     {
         "name": "soft_mailer_blue_fill",
         "model": "volumetric",
-        "size": (0.39, 0.275, 0.110),
+        "internal_fill": True,
+        "size": (0.38, 0.27, 0.070),
         "position": (
             MANIPULATION_STATION_X,
             -0.375,
-            # Center the contents inside the asymmetric film cavity. The
-            # mailer's top is intentionally fuller than its bottom, so the
-            # core sits 10 mm below the shell origin to leave IPC clearance.
-            WORKTABLE_TOP_Z + 0.225,
+            # Keep the core entirely inside the asymmetric closed film. It
+            # falls about 14 mm onto the lower sheet before the two native
+            # deformables make contact and establish the parcel volume.
+            WORKTABLE_TOP_Z + 0.0361,
         ),
-        "rotation_degrees": (4.0, -6.0, 2.0),
-        "density": 5.44371665998382,
+        "rotation_degrees": (0.0, 0.0, 2.0),
+        "density": 8.942111762007034,
         "young_modulus": 7.0e3,
         "poisson_ratio": 0.43,
         "damping": 7.0,
@@ -276,10 +286,16 @@ SOFT_PACKAGE_SPECS = (
         "position": (
             -0.42,
             0.055,
-            WORKTABLE_TOP_Z + 0.250,
+            # The generated 8.1059 mm shell radius leaves the same 1 mm
+            # authored contact gap as the blue mailer and rigid carton.
+            WORKTABLE_TOP_Z + 0.0415059,
         ),
-        "rotation_degrees": (2.0, -5.0, 8.0),
-        "density": 1189.6129109172923,
+        "rotation_degrees": (0.0, 0.0, 8.0),
+        # Scale payload mass with film area. The previous 0.24 kg shell made
+        # this compact pouch carry almost twice the areal load of the larger
+        # blue mailer, so a real LEAP pinch slid along the seam instead of
+        # lifting it. This density gives a 0.14 kg closed film.
+        "density": 693.9408647017538,
         "young_modulus": 1.2e5,
         "poisson_ratio": 0.38,
         "damping": 6.0,
@@ -294,14 +310,19 @@ SOFT_PACKAGE_SPECS = (
     {
         "name": "soft_pouch_yellow_fill",
         "model": "volumetric",
-        "size": (0.255, 0.175, 0.095),
+        "internal_fill": True,
+        "size": (0.25, 0.17, 0.065),
         "position": (
             -0.42,
             0.055,
-            WORKTABLE_TOP_Z + 0.242,
+            # Match the blue mailer's short internal settling distance so the
+            # first shell contact stays below the 1 mm penetration budget.
+            WORKTABLE_TOP_Z + 0.0365059,
         ),
-        "rotation_degrees": (2.0, -5.0, 8.0),
-        "density": 13.65133343681454,
+        "rotation_degrees": (0.0, 0.0, 8.0),
+        # The soft contents contribute another 25 g, for a plausible 165 g
+        # small parcel while retaining enough volume to form a pillow profile.
+        "density": 13.093466369750443,
         "young_modulus": 5.0e3,
         "poisson_ratio": 0.44,
         "damping": 6.0,
@@ -327,17 +348,6 @@ def _nodes_by_name(root: Any) -> dict[str, Any]:
         nodes[node.name] = node
         pending.extend(node.children)
     return nodes
-
-
-def _path_from_root(root: Any, node: Any) -> str:
-    names: list[str] = []
-    current = node
-    while current.name != root.name:
-        if current.parent is None:
-            raise RuntimeError(f"{node.name!r} is not below {root.name!r}")
-        names.append(current.name)
-        current = current.parent
-    return "../" + "/".join(reversed(names))
 
 
 def _axis_angle_quaternion(
@@ -537,8 +547,7 @@ def _add_collision(
         "contact_compliance": 0.0,
         "contact_damping": 1.0,
     }
-    # MuJoCo Warp's MULTICCD path requires zero geom margin. libuipc uses its
-    # own contact_activation_distance, so deformable contact remains buffered.
+    # Keep authored shape margins neutral; SuperDex owns contact buffering.
     collision.contact_offset = 0.0
     collision.rest_offset = 0.0
     parent.add_child(collision)
@@ -604,7 +613,12 @@ def _configure_stage_joint(joint: Any, dof_name: str) -> None:
     joint.effort_limit = 1800.0 if linear else 420.0
     joint.force_lower_limit = -joint.effort_limit
     joint.force_upper_limit = joint.effort_limit
-    joint.armature = 0.01 if linear else 0.004
+    # The six virtual coordinates carry the complete downstream LEAP model.
+    # Mochi applies authored drives as generalized forces, so the small CAD
+    # link inertias alone make the high-bandwidth Cartesian stage underdamped
+    # at a 2 ms step. A common reflected inertia keeps both prismatic and
+    # angular drives stable without weakening their loaded tracking gains.
+    joint.armature = HAND_STAGE_ARMATURE
     joint.damping = 8.0 if linear else 0.25
     joint.drive_mode = gobot.JointDriveMode.Position
     joint.drive_stiffness = (
@@ -736,16 +750,6 @@ def _create_leap_hand(root: Any, side: str, side_index: int) -> None:
         _matrix_quaternion(aligned_palm[:3, :3]),
     )
     root.add_child(robot)
-
-    robot_nodes = _nodes_by_name(robot)
-    for link_name in LEAP_CONTACT_LINK_NAMES:
-        _add_coupling(
-            root,
-            f"{robot_name}_{link_name}_coupling",
-            _path_from_root(root, robot_nodes[link_name]),
-            gobot.PhysicsCouplingMode.OneWay,
-        )
-
 
 def _create_leap_hands(root: Any) -> None:
     for side_index, side in enumerate(HAND_SIDES):
@@ -1314,32 +1318,29 @@ def _create_soft_package(root: Any, spec: dict[str, Any]) -> None:
     body.young_modulus = spec["young_modulus"]
     body.poisson_ratio = spec["poisson_ratio"]
     body.damping = spec["damping"]
-    # The symmetric filter matrix keeps the moving hand proxies away from the
-    # rigid table while preserving hand-package and table-package contact.
-    body.collision_layer = DEFORMABLE_COLLISION_LAYER
-    body.collision_mask = DEFORMABLE_COLLISION_MASK
+    body.physics_material = {
+        "sliding_friction": 0.85,
+        "torsional_friction": 0.004,
+        "rolling_friction": 0.0002,
+        # A 2e9 Pa/m penalty keeps the thin point-cloud shells below the
+        # 1 mm acceptance penetration while retaining compliant contact.
+        "contact_compliance": 5.0e-10,
+        "contact_damping": 1.0,
+    }
+    # Hidden tetrahedral contents contact only their closed-film actor. This
+    # prevents fingertips or the table from bypassing the shell while still
+    # letting native deformable contact establish the package volume.
+    if bool(spec.get("internal_fill", False)):
+        body.collision_layer = DEFORMABLE_FILL_COLLISION_LAYER
+        body.collision_mask = DEFORMABLE_FILL_COLLISION_MASK
+    else:
+        body.collision_layer = DEFORMABLE_COLLISION_LAYER
+        body.collision_mask = DEFORMABLE_COLLISION_MASK
     body.debug_surface_color = spec["color"]
     body.debug_wireframe_visible = False
     body.visible = bool(spec.get("visible", True))
     body.semantic_label = "deformable_shipping_package"
     root.add_child(body)
-
-
-def _add_coupling(
-    root: Any,
-    name: str,
-    target_body_path: str,
-    mode: Any,
-    *,
-    force_scale: float = 1.0,
-    torque_scale: float = 1.0,
-) -> None:
-    coupling = gobot.create_node("PhysicsCoupling", name)
-    coupling.target_body_path = target_body_path
-    coupling.mode = mode
-    coupling.force_scale = force_scale
-    coupling.torque_scale = torque_scale
-    root.add_child(coupling)
 
 
 def create_scene() -> Any:
@@ -1351,27 +1352,6 @@ def create_scene() -> Any:
         _create_carton(root, spec)
     for spec in SOFT_PACKAGE_SPECS:
         _create_soft_package(root, spec)
-
-    _add_coupling(
-        root,
-        "belt_surface_coupling",
-        "../conveyor/belt_surface",
-        gobot.PhysicsCouplingMode.OneWay,
-    )
-    _add_coupling(
-        root,
-        "warehouse_frame_coupling",
-        "../warehouse_frame/frame",
-        gobot.PhysicsCouplingMode.OneWay,
-    )
-    for spec in RIGID_BOX_SPECS:
-        name = str(spec["name"])
-        _add_coupling(
-            root,
-            name + "_coupling",
-            "../" + name,
-            gobot.PhysicsCouplingMode.TwoWay,
-        )
     return root
 
 
@@ -1429,6 +1409,8 @@ def _finalize_scene(scene_path: Path) -> None:
         replacements[str(entry["__ID__"])] = f"{resource_type}_{index}"
 
     def rewrite(value: Any) -> Any:
+        if isinstance(value, float) and abs(value) < 1.0e-12:
+            return 0.0
         if isinstance(value, str):
             for old, new in external_replacements.items():
                 if value == f"ExtResource({old})":

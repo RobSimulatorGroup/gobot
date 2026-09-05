@@ -65,7 +65,7 @@ Matrix4 Camera3D::GetViewMatrix() const {
 Matrix4 Camera3D::GetProjectionMatrix() const {
     // TODO(wqq): Add cache
     // TODO(wqq): add Ortho projection
-    return Matrix4f::Perspective(fovy_, aspect_, near_, far_);
+    return Matrix4::Perspective(fovy_, aspect_, near_, far_);
 }
 
 } // namespace gobot

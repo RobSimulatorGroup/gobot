@@ -1799,6 +1799,112 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("ticks") = 1)
+            .def("get_physics_state", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error(
+                            "active Gobot app context has no SimulationServer");
+                }
+                Ref<PhysicsWorld> world = simulation->GetWorld();
+                if (!world.IsValid()) {
+                    throw std::runtime_error(
+                            "simulation world has not been built from a scene");
+                }
+                return RuntimeStateToPythonDict(
+                        world->GetSceneState(), &world->GetSceneSnapshot());
+            })
+            .def("get_solver_diagnostics", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error(
+                            "active Gobot app context has no SimulationServer");
+                }
+                Ref<PhysicsWorld> world = simulation->GetWorld();
+                if (!world.IsValid()) {
+                    throw std::runtime_error(
+                            "simulation world has not been built from a scene");
+                }
+                const PhysicsSolverDiagnostics diagnostics =
+                        world->GetSolverDiagnostics();
+                const char* convergence = "unknown";
+                switch (diagnostics.convergence) {
+                    case PhysicsSolverConvergenceStatus::Converged:
+                        convergence = "converged";
+                        break;
+                    case PhysicsSolverConvergenceStatus::Stopped:
+                        convergence = "stopped";
+                        break;
+                    case PhysicsSolverConvergenceStatus::Diverged:
+                        convergence = "diverged";
+                        break;
+                    case PhysicsSolverConvergenceStatus::Unknown:
+                        break;
+                }
+                py::dict result;
+                result["total_step_time_seconds"] =
+                        diagnostics.total_step_time_seconds;
+                result["solve_time_seconds"] = diagnostics.solve_time_seconds;
+                result["newton_iterations"] = diagnostics.newton_iterations;
+                result["line_search_iterations"] =
+                        diagnostics.line_search_iterations;
+                result["residual_norm"] = diagnostics.residual_norm;
+                result["convergence"] = convergence;
+                result["execution_device"] = diagnostics.execution_device;
+                result["device_native"] = diagnostics.device_native;
+                result["graph_capture"] = diagnostics.graph_capture;
+                return result;
+            })
+            .def("set_link_external_force", [](EngineContext& context,
+                                                  const std::string& robot,
+                                                  const std::string& link,
+                                                  const py::handle& point,
+                                                  const py::handle& force) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                SimulationScene* runtime_scene =
+                        simulation != nullptr ? simulation->GetRuntimeScene() : nullptr;
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error(
+                            "simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetLinkExternalForce(
+                            robot,
+                            link,
+                            PythonToVector3(point),
+                            PythonToVector3(force))) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
+                }
+            },
+            py::arg("robot"),
+            py::arg("link"),
+            py::arg("point"),
+            py::arg("force"))
+            .def("set_deformable_external_forces", [](EngineContext& context,
+                                                         std::uint64_t stable_id,
+                                                         const py::handle& forces) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                Ref<PhysicsWorld> world =
+                        simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>{};
+                if (!world.IsValid()) {
+                    throw std::runtime_error(
+                            "simulation world has not been built from a scene");
+                }
+                if (!world->SetDeformableExternalForces(
+                            stable_id, PythonToVector3List(forces))) {
+                    throw std::runtime_error(world->GetLastError());
+                }
+            },
+            py::arg("stable_id"),
+            py::arg("forces"))
+            .def("clear_external_forces", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                Ref<PhysicsWorld> world =
+                        simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>{};
+                if (!world.IsValid()) {
+                    throw std::runtime_error(
+                            "simulation world has not been built from a scene");
+                }
+                world->ClearExternalForces();
+            })
             .def("configure_batch_world", [](EngineContext& context, std::size_t num_envs) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -2031,6 +2137,28 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
                 return ReflectedToPythonDict(simulation->GetPhysicsWorldSettings().mujoco_solver);
+            })
+            .def("set_superdex_solver_settings", [](EngineContext& context,
+                                                       py::dict settings) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error(
+                            "active Gobot app context has no SimulationServer");
+                }
+                PhysicsWorldSettings world_settings =
+                        simulation->GetPhysicsWorldSettings();
+                world_settings.superdex_solver =
+                        DictToReflected<SuperDexSolverSettings>(settings);
+                simulation->SetPhysicsWorldSettings(world_settings);
+            }, py::arg("settings"))
+            .def("get_superdex_solver_settings", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error(
+                            "active Gobot app context has no SimulationServer");
+                }
+                return ReflectedToPythonDict(
+                        simulation->GetPhysicsWorldSettings().superdex_solver);
             })
             .def("get_physics_debug_settings", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();

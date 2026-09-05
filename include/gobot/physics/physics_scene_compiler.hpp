@@ -28,6 +28,7 @@ struct PhysicsRobotSceneBinding {
 struct PhysicsSceneBindings {
     ObjectID scene_root_id{};
     std::vector<PhysicsRobotSceneBinding> robots;
+    std::vector<ObjectID> deformable_ids;
 };
 
 enum class PhysicsSceneCompileSeverity {

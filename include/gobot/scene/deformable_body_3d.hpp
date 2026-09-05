@@ -11,6 +11,7 @@
 
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/surface_mesh.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 
@@ -54,6 +55,9 @@ public:
     void SetBendingStiffness(RealType stiffness);
     RealType GetBendingStiffness() const;
 
+    void SetPhysicsMaterial(const Ref<PhysicsMaterial3D>& material);
+    const Ref<PhysicsMaterial3D>& GetPhysicsMaterial() const;
+
     void SetKinematic(bool kinematic);
     bool IsKinematic() const;
 
@@ -86,6 +90,7 @@ private:
     RealType damping_{0.0};
     RealType thickness_{0.001};
     RealType bending_stiffness_{0.001};
+    Ref<PhysicsMaterial3D> physics_material_;
     bool kinematic_{false};
     std::uint32_t collision_layer_{1};
     std::uint32_t collision_mask_{0xffffffffU};

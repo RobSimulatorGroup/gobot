@@ -1,28 +1,18 @@
-"""Run the mixed rigid/deformable package conveyor without the editor."""
+"""Run the native SuperDex conveyor workcell without the editor."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from statistics import median
-import tempfile
 import time
-from typing import Any
+from typing import Any, Sequence
 
-# Torch initializes CUDA before the native libuipc module is loaded.
-import torch
+import numpy as np
 
 import gobot
-from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
-from gobot.rl import (
-    CompiledMuJoCoIpcArtifact,
-    MuJoCoIpcConfig,
-    MuJoCoIpcConvergencePolicy,
-    MuJoCoIpcProvider,
-    MuJoCoWarpContactSensorSpec,
-    MuJoCoWarpProvider,
-)
 
 from build_scene import (
     BELT_CENTER_X,
@@ -30,661 +20,361 @@ from build_scene import (
     BELT_SURFACE_LENGTH,
     BELT_TOP_Z,
     BELT_WIDTH,
-    HAND_BASE_LINK_NAMES,
     HAND_JOINT_NAMES_BY_SIDE,
-    HAND_LINK_NAMES_BY_SIDE,
-    HAND_SIDES,
+    HAND_STAGE_JOINT_NAMES_BY_SIDE,
     HERE,
+    LEAP_CONTACT_LINK_NAMES,
     LEAP_ROBOT_NAMES,
     RIGID_BOX_SPECS,
     SCENE_NAME,
     SOFT_PACKAGE_SPECS,
     build_scene,
 )
-from conveyor_forces import (
-    ConveyorForceModel,
-    DeformableConveyorForceModel,
-    configure_mujoco_velocity_field_belt,
-)
+from conveyor_forces import ConveyorForceModel, DeformableConveyorForceModel
 from conveyor_profile import (
     CYCLE_TICKS,
     FIXED_DT,
     HAND_MOTION_SEGMENTS,
+    SOFT_PACKAGE_DAMPING_RATES,
     SOFT_PACKAGE_MASSES,
-    IPC_CONTACT_ACTIVATION_DISTANCE,
-    IPC_CONTACT_FRICTION,
-    IPC_CONTACT_RESISTANCE,
     belt_speed_at_tick,
     cycle_phase,
     finger_close_fraction_at_tick,
     hand_controls_at_tick,
     quality_profile,
+    soft_damping_scale_at_tick,
 )
 
 
 BELT_ROBOT_NAME = "conveyor"
 BELT_LINK_NAME = "belt_surface"
-BELT_GEOM_NAME = "conveyor_moving_belt_collision"
 BELT_DRIVE_FRICTION = 0.92
-SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run two floating LEAP Hands that flip and convey a blue mailer, "
-            "then flip a yellow mailer and a rigid carton."
+            "Run two floating LEAP Hands and rigid/thin-shell/volumetric "
+            "packages in one native SuperDex physics world."
         )
     )
     parser.add_argument("--scene", type=Path, default=HERE / SCENE_NAME)
     parser.add_argument("--rebuild-scene", action="store_true")
     parser.add_argument(
-        "--quality",
-        choices=("interactive", "accurate"),
-        default="interactive",
+        "--quality", choices=("interactive", "accurate"), default="interactive"
     )
-    parser.add_argument("--num-envs", type=int, default=1)
-    parser.add_argument("--environments-per-shard", type=int, default=1)
     parser.add_argument("--steps", type=int, default=CYCLE_TICKS)
     parser.add_argument("--warmup-steps", type=int, default=4)
-    parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--module-path", default="")
-    parser.add_argument("--no-mujoco-graph", action="store_true")
-    parser.add_argument("--no-coupler-graph", action="store_true")
+    parser.add_argument("--num-envs", type=int, default=1)
     parser.add_argument(
-        "--refresh-contact-forces",
-        action="store_true",
-        help="export per-vertex libuipc contact forces after the final step",
+        "--execution", choices=("cpu", "cuda"), default="cpu"
     )
     parser.add_argument(
-        "--trace-force-flow",
-        action="store_true",
-        help=(
-            "record per-step deformable contact/external resultant forces; "
-            "intended for physics diagnostics, not latency measurement"
-        ),
+        "--linear-solver", choices=("auto", "cg", "gmres"), default="auto"
     )
-    parser.add_argument(
-        "--phase-diagnostics",
-        action="store_true",
-        help=(
-            "record device-side object state at manipulation phase boundaries"
-        ),
-    )
-    parser.add_argument(
-        "--workspace",
-        type=Path,
-        default=Path(tempfile.gettempdir()) / "gobot-conveyor-packages",
-    )
+    parser.add_argument("--trace-force-flow", action="store_true")
+    parser.add_argument("--phase-diagnostics", action="store_true")
     return parser
 
 
 def _validate_args(args: argparse.Namespace) -> None:
-    if args.num_envs <= 0:
-        raise ValueError("--num-envs must be positive")
-    if args.environments_per_shard <= 0:
-        raise ValueError("--environments-per-shard must be positive")
-    if args.num_envs % args.environments_per_shard:
-        raise ValueError(
-            "--num-envs must be divisible by --environments-per-shard"
-        )
     if args.steps <= 0:
         raise ValueError("--steps must be positive")
     if args.warmup_steps < 0:
         raise ValueError("--warmup-steps must be non-negative")
+    if args.num_envs != 1:
+        raise ValueError("native SuperDex currently supports exactly one environment")
 
 
-def _load_artifact(
-    scene_path: Path,
-) -> tuple[Any, CompiledMuJoCoIpcArtifact]:
-    context = gobot.app.create_context()
-    context.set_project_path(str(scene_path.parent))
-    context.load_scene("res://" + scene_path.name)
-    settings = context.get_mujoco_solver_settings()
-    settings["integrator"] = gobot.PhysicsIntegratorType.ImplicitFast
-    settings["cone"] = gobot.PhysicsFrictionConeType.Elliptic
-    context.set_mujoco_solver_settings(settings)
-    return context, CompiledMuJoCoIpcArtifact.from_context(context)
+def _nodes_by_name(
+    root: Any, *, allow_duplicate_names: bool = False
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.name in result:
+            if allow_duplicate_names:
+                pending.extend(node.children)
+                continue
+            raise RuntimeError(f"scene subtree has duplicate node name {node.name!r}")
+        result[node.name] = node
+        pending.extend(node.children)
+    return result
 
 
-def _discover_solver_module(repository_root: Path) -> str:
-    candidates = {
-        repository_root
-        / "build"
-        / "libuipc-novcpkg"
-        / "python"
-        / "gobot"
-        / SOLVER_MODULE_NAME,
-        repository_root / "build" / "python" / "gobot" / SOLVER_MODULE_NAME,
+def _robot_table(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {str(robot["name"]): robot for robot in state["robots"]}
+
+
+def _deformable_table(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(body.get("name", "")): body for body in state["deformables"]
     }
-    candidates.update(
-        (repository_root / "build").glob(
-            "*/python/gobot/" + SOLVER_MODULE_NAME
-        )
-    )
-    resolved_candidates = sorted(
-        (candidate.resolve() for candidate in candidates if candidate.is_file()),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for resolved in resolved_candidates:
-        availability = LibuipcBatchSolver.availability(
-            LibuipcBatchConfig(
-                solver=LibuipcConfig(module_path=str(resolved))
-            )
-        )
-        if availability.available:
-            return str(resolved)
-    return ""
 
 
-def _contact_sensor_specs() -> tuple[MuJoCoWarpContactSensorSpec, ...]:
-    return tuple(
-        MuJoCoWarpContactSensorSpec(
-            name=f"{spec['name']}_belt_contact",
-            primary_type="geom",
-            primary_names=(BELT_GEOM_NAME,),
-            secondary_type="body",
-            secondary_name=f"{spec['name']}_{spec['name']}",
-            fields=("found", "force"),
-            reduce="none",
-            num_slots=8,
-        )
-        for spec in RIGID_BOX_SPECS
-    )
-def _range(values: Any) -> list[float]:
-    return [float(values.min().item()), float(values.max().item())]
+def _link_state(
+    state: dict[str, Any], robot_name: str, link_name: str
+) -> dict[str, Any]:
+    robot = _robot_table(state)[robot_name]
+    return next(link for link in robot["links"] if link["name"] == link_name)
 
 
-def _body_centers(positions: Any, entries: tuple[dict[str, Any], ...]) -> Any:
-    return torch.stack(
-        tuple(
-            positions[
-                :,
-                int(entry["element_offset"]) : int(entry["element_offset"])
-                + int(entry["element_count"]),
-            ].mean(dim=1)
-            for entry in entries
-        ),
-        dim=1,
-    )
+def _deformable_center(body: dict[str, Any]) -> np.ndarray:
+    return np.asarray(body["world_vertices"], dtype=np.float64).mean(axis=0)
 
 
-def _body_heights(positions: Any, entries: tuple[dict[str, Any], ...]) -> Any:
-    heights = []
-    for entry in entries:
-        vertices = positions[
-            :,
-            int(entry["element_offset"]) : int(entry["element_offset"])
-            + int(entry["element_count"]),
-            2,
-        ]
-        heights.append(vertices.amax(dim=1) - vertices.amin(dim=1))
-    return torch.stack(tuple(heights), dim=1)
+def _deformable_bounds(body: dict[str, Any]) -> dict[str, list[float]]:
+    vertices = np.asarray(body["world_vertices"], dtype=np.float64)
+    return {
+        "lower": [float(value) for value in vertices.min(axis=0)],
+        "upper": [float(value) for value in vertices.max(axis=0)],
+    }
 
 
-def _body_extents(positions: Any, entries: tuple[dict[str, Any], ...]) -> Any:
-    extents = []
-    for entry in entries:
-        vertices = positions[
-            :,
-            int(entry["element_offset"]) : int(entry["element_offset"])
-            + int(entry["element_count"]),
-        ]
-        extents.append(vertices.amax(dim=1) - vertices.amin(dim=1))
-    return torch.stack(tuple(extents), dim=1)
-
-
-def _mailer_layer_axis(positions: Any, entry: dict[str, Any]) -> Any:
-    begin = int(entry["element_offset"])
-    count = int(entry["element_count"])
-    if count % 2:
-        raise RuntimeError("thin-shell mailer must have two equal vertex layers")
-    half = count // 2
-    bottom = positions[:, begin : begin + half].mean(dim=1)
-    top = positions[:, begin + half : begin + count].mean(dim=1)
-    return torch.nn.functional.normalize(top - bottom, dim=-1)
-
-
-def _soft_body_diagnostics(
-    positions: Any,
-    velocities: Any,
-    contact_forces: Any | None,
-    entries: tuple[dict[str, Any], ...],
-) -> list[dict[str, Any]]:
-    diagnostics = []
-    for spec, entry in zip(SOFT_PACKAGE_SPECS, entries, strict=True):
-        begin = int(entry["element_offset"])
-        end = begin + int(entry["element_count"])
-        body_positions = positions[0, begin:end]
-        body_velocities = velocities[0, begin:end]
-        center_velocity = body_velocities.mean(dim=0)
-        minimum_height = body_positions[:, 2].amin()
-        support_vertices = body_positions[
-            body_positions[:, 2] <= minimum_height + 3.0e-3
-        ]
-        support_extent = support_vertices.amax(dim=0) - support_vertices.amin(
-            dim=0
-        )
-        body_diagnostics = {
-            "name": str(spec["name"]),
-            "aabb_min_meters": [
-                float(value)
-                for value in body_positions.amin(dim=0).tolist()
-            ],
-            "aabb_max_meters": [
-                float(value)
-                for value in body_positions.amax(dim=0).tolist()
-            ],
-            "vertex_speed_peak_meters_per_second": float(
-                torch.linalg.vector_norm(body_velocities, dim=-1)
-                .amax()
-                .item()
-            ),
-            "center_velocity_meters_per_second": [
-                float(value) for value in center_velocity.tolist()
-            ],
-            "center_speed_meters_per_second": float(
-                torch.linalg.vector_norm(center_velocity).item()
-            ),
-            "support_vertices_within_3mm": int(support_vertices.shape[0]),
-            "support_patch_extent_meters": [
-                float(value) for value in support_extent.tolist()
-            ],
-        }
-        if contact_forces is not None:
-            body_contact_forces = contact_forces[0, begin:end]
-            body_diagnostics["contact_force_peak_newtons"] = float(
-                torch.linalg.vector_norm(
-                    body_contact_forces, dim=-1
-                )
-                .amax()
-                .item()
-            )
-            body_diagnostics["contact_force_resultant_newtons"] = [
-                float(value) for value in body_contact_forces.sum(dim=0).tolist()
-            ]
-        diagnostics.append(body_diagnostics)
-    return diagnostics
-
-
-def _force_flow_diagnostics(
-    contact_force_trace: Any,
-    external_force_trace: Any,
-    center_trace: Any,
-    extent_trace: Any,
-    hand_wrench_trace: Any,
-    initial_centers: Any,
-    initial_extents: Any,
-) -> list[dict[str, Any]]:
-    contact = contact_force_trace[:, 0].detach().cpu()
-    external = external_force_trace[:, 0].detach().cpu()
-    centers = center_trace[:, 0].detach().cpu()
-    extents = extent_trace[:, 0].detach().cpu()
-    hand_reactions = (
-        hand_wrench_trace[:, 0, :, :3].sum(dim=1).detach().cpu()
-    )
-    initial = initial_centers[0].detach().cpu()
-    reference_extents = initial_extents[0].detach().cpu()
-    diagnostics = []
-    for body_index, spec in enumerate(SOFT_PACKAGE_SPECS):
-        across_belt = contact[:, body_index, 1]
-        peak_tick = int(torch.argmax(across_belt).item())
-        reverse_peak_tick = int(torch.argmin(across_belt).item())
-        across_belt_impulse = float(
-            (across_belt.sum() * FIXED_DT).item()
-        )
-        across_belt_displacement = (
-            centers[:, body_index, 1] - initial[body_index, 1]
-        )
-        forward_displacement_tick = int(
-            torch.argmax(across_belt_displacement).item()
-        )
-        horizontal = torch.linalg.vector_norm(
-            contact[:, body_index, :2], dim=-1
-        )
-        horizontal_peak_tick = int(torch.argmax(horizontal).item())
-        external_magnitude = torch.linalg.vector_norm(
-            external[:, body_index], dim=-1
-        )
-        external_peak_tick = int(torch.argmax(external_magnitude).item())
-        external_active = external_magnitude > 1.0e-6
-        external_active_ticks = torch.nonzero(
-            external_active, as_tuple=False
-        ).flatten()
-        external_first_tick = (
-            int(external_active_ticks[0].item())
-            if external_active_ticks.numel()
-            else -1
-        )
-        external_last_tick = (
-            int(external_active_ticks[-1].item())
-            if external_active_ticks.numel()
-            else -1
-        )
-        extent_ratios = extents[:, body_index] / reference_extents[body_index]
-        minimum_thickness_tick = int(
-            torch.argmin(extent_ratios[:, 2]).item()
-        )
-        diagnostics.append(
-            {
-                "name": str(spec["name"]),
-                "peak_across_belt_contact_force_newtons": float(
-                    across_belt[peak_tick].item()
-                ),
-                "peak_across_belt_tick": peak_tick,
-                "peak_across_belt_phase": cycle_phase(peak_tick),
-                "reverse_peak_across_belt_contact_force_newtons": float(
-                    across_belt[reverse_peak_tick].item()
-                ),
-                "reverse_peak_across_belt_tick": reverse_peak_tick,
-                "hand_proxy_reaction_at_reverse_peak_newtons": [
-                    float(value)
-                    for value in hand_reactions[reverse_peak_tick].tolist()
-                ],
-                "net_across_belt_contact_impulse_newton_seconds": (
-                    across_belt_impulse
-                ),
-                "maximum_forward_displacement_meters": float(
-                    across_belt_displacement[
-                        forward_displacement_tick
-                    ].item()
-                ),
-                "maximum_forward_displacement_tick": (
-                    forward_displacement_tick
-                ),
-                "belt_speed_at_peak_meters_per_second": float(
-                    belt_speed_at_tick(peak_tick)
-                ),
-                "contact_resultant_at_peak_newtons": [
-                    float(value)
-                    for value in contact[peak_tick, body_index].tolist()
-                ],
-                "hand_proxy_reaction_at_peak_newtons": [
-                    float(value) for value in hand_reactions[peak_tick].tolist()
-                ],
-                "external_resultant_at_contact_peak_newtons": [
-                    float(value)
-                    for value in external[peak_tick, body_index].tolist()
-                ],
-                "center_displacement_at_peak_meters": [
-                    float(value)
-                    for value in (
-                        centers[peak_tick, body_index] - initial[body_index]
-                    ).tolist()
-                ],
-                "peak_horizontal_contact_force_newtons": float(
-                    horizontal[horizontal_peak_tick].item()
-                ),
-                "peak_horizontal_contact_tick": horizontal_peak_tick,
-                "peak_external_force_newtons": float(
-                    external_magnitude[external_peak_tick].item()
-                ),
-                "peak_external_force_tick": external_peak_tick,
-                "external_force_active_steps": int(
-                    external_active_ticks.numel()
-                ),
-                "external_force_first_tick": external_first_tick,
-                "external_force_last_tick": external_last_tick,
-                "external_force_impulse_newton_seconds": [
-                    float(value)
-                    for value in (
-                        external[:, body_index].sum(dim=0) * FIXED_DT
-                    ).tolist()
-                ],
-                "external_peak_resultant_newtons": [
-                    float(value)
-                    for value in external[external_peak_tick, body_index].tolist()
-                ],
-                "extent_ratio_at_contact_peak": [
-                    float(value)
-                    for value in extent_ratios[peak_tick].tolist()
-                ],
-                "minimum_thickness_ratio": float(
-                    extent_ratios[minimum_thickness_tick, 2].item()
-                ),
-                "minimum_thickness_tick": minimum_thickness_tick,
-                "minimum_thickness_phase": cycle_phase(
-                    minimum_thickness_tick
-                ),
-            }
-        )
-    return diagnostics
-
-
-def _rigid_body_diagnostics(body_states: tuple[Any, ...]) -> list[dict[str, Any]]:
-    diagnostics = []
-    for spec, state in zip(RIGID_BOX_SPECS, body_states, strict=True):
-        velocity = state.base_velocity[0]
-        diagnostics.append(
-            {
-                "name": str(spec["name"]),
-                "position_meters": [
-                    float(value) for value in state.base_pose[0, :3].tolist()
-                ],
-                "linear_speed_meters_per_second": float(
-                    torch.linalg.vector_norm(velocity[:3]).item()
-                ),
-                "angular_speed_radians_per_second": float(
-                    torch.linalg.vector_norm(velocity[3:]).item()
-                ),
-            }
-        )
-    return diagnostics
-
-
-def _hand_diagnostics(
-    hand_states: tuple[Any, ...], hand_command: Any
-) -> list[dict[str, Any]]:
-    diagnostics = []
-    for side, state, command in zip(
-        HAND_SIDES, hand_states, hand_command[0], strict=True
+def _hand_diagnostics(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    robots = _robot_table(state)
+    result: dict[str, dict[str, Any]] = {}
+    for robot_name, stage_names in zip(
+        LEAP_ROBOT_NAMES, HAND_STAGE_JOINT_NAMES_BY_SIDE, strict=True
     ):
-        joint_error = state.joint_position[0] - command
-        diagnostics.append(
-            {
-                "side": side,
-                "stage_control_error_peak": float(
-                    joint_error[:6].abs().amax().item()
-                ),
-                "finger_joint_error_peak_radians": float(
-                    joint_error[6:].abs().amax().item()
-                ),
-                "contact_link_positions_meters": [
-                    [float(value) for value in position]
-                    for position in state.link_pose[0, 5:, :3].tolist()
-                ],
-            }
+        robot = robots[robot_name]
+        joints = {str(joint["name"]): joint for joint in robot["joints"]}
+        links = {str(link["name"]): link for link in robot["links"]}
+        result[robot_name] = {
+            "stage_max_tracking_error": max(
+                abs(float(joints[name]["tracking_error"]))
+                for name in stage_names
+            ),
+            "stage_max_speed": max(
+                abs(float(joints[name]["velocity"])) for name in stage_names
+            ),
+            "contact_link_positions_meters": {
+                name: [
+                    float(value)
+                    for value in links[name]["global_transform"]["position"]
+                ]
+                for name in LEAP_CONTACT_LINK_NAMES
+            },
+        }
+    return result
+
+
+def _group_center(
+    bodies: dict[str, dict[str, Any]], names: Sequence[str]
+) -> np.ndarray:
+    vertices = np.concatenate(
+        tuple(
+            np.asarray(bodies[name]["world_vertices"], dtype=np.float64)
+            for name in names
+        ),
+        axis=0,
+    )
+    return vertices.mean(axis=0)
+
+
+def _shell_axis(body: dict[str, Any]) -> np.ndarray:
+    vertices = np.asarray(body["world_vertices"], dtype=np.float64)
+    if len(vertices) % 2:
+        raise RuntimeError("closed mailer shell must have two equal vertex sheets")
+    half = len(vertices) // 2
+    axis = vertices[half:].mean(axis=0) - vertices[:half].mean(axis=0)
+    length = float(np.linalg.norm(axis))
+    if length <= 1.0e-12:
+        raise RuntimeError("closed mailer shell layer axis is degenerate")
+    return axis / length
+
+
+def _quaternion_angle_degrees(current: Any, initial: Any) -> float:
+    left = np.asarray(current, dtype=np.float64)
+    right = np.asarray(initial, dtype=np.float64)
+    dot = float(np.clip(abs(np.dot(left, right)), 0.0, 1.0))
+    return math.degrees(2.0 * math.acos(dot))
+
+
+def _contact_hands(
+    contacts: Sequence[dict[str, Any]], target_names: set[str]
+) -> set[str]:
+    hands: set[str] = set()
+    for contact in contacts:
+        first = (str(contact["robot_name"]), str(contact["link_name"]))
+        second = (
+            str(contact["other_robot_name"]),
+            str(contact["other_link_name"]),
         )
-    return diagnostics
+        for hand, target in ((first, second), (second, first)):
+            if hand[0] in LEAP_ROBOT_NAMES and (
+                target[0] in target_names or target[1] in target_names
+            ):
+                hands.add(hand[0])
+    return hands
+
+
+def _max_penetration(contacts: Sequence[dict[str, Any]]) -> float:
+    return max(
+        (max(0.0, -float(contact["distance"])) for contact in contacts),
+        default=0.0,
+    )
+
+
+def _contact_pair_name(contact: dict[str, Any]) -> str:
+    def endpoint(robot_key: str, link_key: str) -> str:
+        robot = str(contact[robot_key])
+        link = str(contact[link_key])
+        return f"{robot}/{link}" if robot else link
+
+    return " <-> ".join(
+        sorted(
+            (
+                endpoint("robot_name", "link_name"),
+                endpoint("other_robot_name", "other_link_name"),
+            )
+        )
+    )
+
+
+def _assert_finite_state(state: dict[str, Any]) -> None:
+    values: list[np.ndarray] = []
+    for robot in state["robots"]:
+        for link in robot["links"]:
+            values.extend(
+                (
+                    np.asarray(link["global_transform"]["matrix"]),
+                    np.asarray(link["linear_velocity"]),
+                    np.asarray(link["angular_velocity"]),
+                )
+            )
+        for joint in robot["joints"]:
+            values.append(
+                np.asarray(
+                    (joint["position"], joint["velocity"], joint["effort"])
+                )
+            )
+    for body in state["deformables"]:
+        values.extend(
+            (
+                np.asarray(body["local_vertices"]),
+                np.asarray(body["local_velocities"]),
+                np.asarray(body["contact_forces_world"]),
+            )
+        )
+    if any(value.size and not np.isfinite(value).all() for value in values):
+        raise RuntimeError("SuperDex produced non-finite conveyor state")
+
+
+def _phase_end_ticks() -> dict[int, str]:
+    result: dict[int, str] = {}
+    end = 0
+    for segment in HAND_MOTION_SEGMENTS:
+        end += segment.duration
+        result[end] = segment.phase
+    return result
+
+
+def _linear_solver(name: str) -> Any:
+    return {
+        "auto": gobot.SuperDexLinearSolver.Auto,
+        "cg": gobot.SuperDexLinearSolver.CG,
+        "gmres": gobot.SuperDexLinearSolver.GMRES,
+    }[name]
+
+
+def _execution_mode(name: str) -> Any:
+    return {
+        "cpu": gobot.SuperDexExecutionMode.Cpu,
+        "cuda": gobot.SuperDexExecutionMode.Cuda,
+    }[name]
+
+
+def _apply_hand_targets(
+    hand_joints: Sequence[Sequence[Any]], tick: int
+) -> None:
+    controls = hand_controls_at_tick(tick)
+    for joints, targets in zip(hand_joints, controls, strict=True):
+        for joint, target in zip(joints, targets, strict=True):
+            joint.set_position_target(float(target))
+
+
+def _reset_error(
+    initial: dict[str, Any], restored: dict[str, Any]
+) -> float:
+    error = 0.0
+    initial_robots = _robot_table(initial)
+    restored_robots = _robot_table(restored)
+    for robot_name, robot in initial_robots.items():
+        restored_links = {
+            str(link["name"]): link for link in restored_robots[robot_name]["links"]
+        }
+        for link in robot["links"]:
+            current = np.asarray(link["global_transform"]["matrix"])
+            reset = np.asarray(
+                restored_links[str(link["name"])]["global_transform"]["matrix"]
+            )
+            error = max(error, float(np.max(np.abs(current - reset))))
+    initial_bodies = _deformable_table(initial)
+    restored_bodies = _deformable_table(restored)
+    for name, body in initial_bodies.items():
+        current = np.asarray(body["local_vertices"])
+        reset = np.asarray(restored_bodies[name]["local_vertices"])
+        error = max(error, float(np.max(np.abs(current - reset))))
+    return error
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    """Run one fixed-capacity batch and return JSON-compatible metrics."""
-
     _validate_args(args)
-    if torch.device(args.device).type != "cuda" or not torch.cuda.is_available():
-        raise RuntimeError("Torch cannot initialize the requested CUDA device")
-    # Establish Torch's CUDA primary context before module discovery dlopens
-    # the native IPC solver.
-    torch.cuda.init()
     scene_path = args.scene.expanduser().resolve()
     if args.rebuild_scene:
         scene_path = build_scene(scene_path.parent)
-    elif not scene_path.is_file():
-        raise FileNotFoundError(
-            f"scene does not exist: {scene_path}; run build_scene.py first"
-        )
+    if not scene_path.is_file():
+        raise FileNotFoundError(scene_path)
 
     profile = quality_profile(args.quality)
-    context, artifact = _load_artifact(scene_path)
-    module_path = (
-        str(Path(args.module_path).expanduser().resolve())
-        if args.module_path
-        else ""
-    )
-    if not module_path:
-        repository_root = HERE.parents[1]
-        module_path = _discover_solver_module(repository_root)
-    solver_config = LibuipcBatchConfig(
-        solver=LibuipcConfig(
-            fixed_time_step=FIXED_DT,
-            gravity=(0.0, 0.0, -9.81),
-            friction_coefficient=IPC_CONTACT_FRICTION,
-            contact_activation_distance=IPC_CONTACT_ACTIVATION_DISTANCE,
-            contact_resistance=IPC_CONTACT_RESISTANCE,
-            affine_stiffness=1.0e8,
-            module_path=module_path,
-            workspace=str(args.workspace.expanduser().resolve()),
-        ),
-        environments_per_shard=args.environments_per_shard,
-        newton_max_iterations=profile.newton_max_iterations,
-        line_search_max_iterations=profile.line_search_max_iterations,
-        linear_system_tolerance_rate=profile.linear_system_tolerance_rate,
-        strict_convergence=profile.strict_convergence,
-        # The velocity-field force model consumes these device buffers every
-        # step. The visualization flag below only controls host readback.
-        export_deformable_state=True,
-        export_affine_state=profile.scene_sync_interval == 1,
-        export_deformable_contact_forces=True,
-    )
-    rigid_availability = MuJoCoWarpProvider.availability()
-    if not rigid_availability.available:
-        context.clear_scene()
-        raise RuntimeError(rigid_availability.reason)
-    ipc_availability = LibuipcBatchSolver.availability(solver_config)
-    if not ipc_availability.available:
-        context.clear_scene()
-        raise RuntimeError(
-            ipc_availability.reason
-            + "; pass --module-path or build the in-tree libuipc module"
-        )
-
-    provider = MuJoCoIpcProvider(
-        artifact,
-        config=MuJoCoIpcConfig(
-            num_envs=args.num_envs,
-            device=args.device,
-            environments_per_shard=args.environments_per_shard,
-            coupling_iterations=profile.coupling_iterations,
-            relaxation_mode=profile.relaxation_mode,
-            relaxation_factor=1.0,
-            capture_mujoco_graphs=not args.no_mujoco_graph,
-            capture_coupler_graphs=not args.no_coupler_graph,
-            convergence_policy=MuJoCoIpcConvergencePolicy(
-                enabled=profile.strict_convergence
-            ),
-        ),
-        libuipc_config=solver_config,
-        mujoco_options={
-            "nconmax": 512,
-            "njmax": 4096,
-            "contact_sensor_maxmatch": 64,
-            "contact_sensors": _contact_sensor_specs(),
-            "overflow_check_interval": 0,
-        },
-    )
+    context = gobot.app.create_context()
     try:
-        configure_mujoco_velocity_field_belt(provider, BELT_GEOM_NAME)
-        box_names = tuple(str(spec["name"]) for spec in RIGID_BOX_SPECS)
-        box_views = tuple(
-            provider.create_robot_view(
-                robot_name=name,
-                base_link=name,
-                joint_names=(),
-                link_names=(name,),
-            )
-            for name in box_names
+        context.set_project_path(str(scene_path.parent))
+        root = context.load_scene("res://" + scene_path.name)
+        context.fixed_time_step = FIXED_DT
+        context.max_sub_steps = 1
+        settings = context.get_superdex_solver_settings()
+        settings.update(
+            {
+                "execution_mode": _execution_mode(args.execution),
+                "linear_solver": _linear_solver(args.linear_solver),
+                "newton_iterations": profile.newton_max_iterations,
+                "line_search_iterations": profile.line_search_max_iterations,
+                "linear_iterations": -1,
+                "substeps": 1,
+                "record_deformable_contact_forces": True,
+            }
         )
-        box_body_ids = tuple(
-            provider.rigid_solver.resolve_object_ids(
-                "body", (f"{name}_{name}",)
-            )[0]
-            for name in box_names
-        )
-        hand_views = tuple(
-            provider.create_robot_view(
-                robot_name=robot_name,
-                base_link=base_link,
-                joint_names=joint_names,
-                link_names=link_names,
+        context.set_superdex_solver_settings(settings)
+        context.build_world(gobot.PhysicsBackendType.SuperDex)
+
+        root_nodes = _nodes_by_name(root, allow_duplicate_names=True)
+        hand_joints = tuple(
+            tuple(
+                _nodes_by_name(root_nodes[robot_name])[joint_name]
+                for joint_name in joint_names
             )
-            for robot_name, base_link, joint_names, link_names in zip(
-                LEAP_ROBOT_NAMES,
-                HAND_BASE_LINK_NAMES,
-                HAND_JOINT_NAMES_BY_SIDE,
-                HAND_LINK_NAMES_BY_SIDE,
-                strict=True,
+            for robot_name, joint_names in zip(
+                LEAP_ROBOT_NAMES, HAND_JOINT_NAMES_BY_SIDE, strict=True
             )
         )
-        force_model = ConveyorForceModel(
-            provider,
-            box_views,
-            box_body_ids,
-            tuple(f"{name}_belt_contact" for name in box_names),
-            tuple(float(spec["mass"]) for spec in RIGID_BOX_SPECS),
+        rigid_names = tuple(str(spec["name"]) for spec in RIGID_BOX_SPECS)
+        rigid_masses = tuple(float(spec["mass"]) for spec in RIGID_BOX_SPECS)
+        soft_names = tuple(str(spec["name"]) for spec in SOFT_PACKAGE_SPECS)
+        rigid_forces = ConveyorForceModel(
+            context,
+            rigid_names,
+            rigid_masses,
+            belt_robot=BELT_ROBOT_NAME,
+            belt_link=BELT_LINK_NAME,
             friction_coefficient=BELT_DRIVE_FRICTION,
             fixed_dt=FIXED_DT,
         )
-        belt_speed = torch.zeros(
-            args.num_envs,
-            dtype=provider.arrays["qpos"].dtype,
-            device=provider.arrays["qpos"].device,
-        )
-        belt_twist = torch.zeros(
-            (args.num_envs, 6),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        )
-        hand_command = torch.zeros(
-            (args.num_envs, len(HAND_SIDES), 22),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        )
-        control_ticks = args.warmup_steps + args.steps
-        hand_control_trajectory = torch.as_tensor(
-            tuple(hand_controls_at_tick(tick) for tick in range(control_ticks)),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        ).unsqueeze(1).expand(-1, args.num_envs, -1, -1).contiguous()
-        belt_travel = 0.0
-        reset_mask = torch.ones(
-            args.num_envs, dtype=torch.bool, device=belt_speed.device
-        )
-        initial_qpos = provider.arrays["qpos"].clone()
-        initial_qvel = torch.zeros_like(provider.arrays["qvel"])
-        initial_ctrl = torch.zeros_like(provider.arrays["ctrl"])
-        ipc_position_pointer = provider.arrays["ipc_positions"].data_ptr()
-        peak_drive_force = torch.zeros(
-            len(box_names),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        )
-        peak_normal_force = torch.zeros(
-            len(box_names),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        )
-
-        provider.refresh_state()
-        provider.synchronize()
-        deformable_entries = tuple(provider.ipc_solver.deformable_bodies)
-        if len(deformable_entries) != len(SOFT_PACKAGE_SPECS):
-            raise RuntimeError("conveyor deformable body count changed")
-        affine_entries = tuple(provider.ipc_solver.affine_bodies)
-        hand_proxy_indices = tuple(
-            index
-            for index, entry in enumerate(affine_entries)
-            if "leap_" in str(entry["path"])
-        )
-        peak_hand_proxy_wrench = torch.zeros(
-            len(hand_proxy_indices),
-            dtype=belt_speed.dtype,
-            device=belt_speed.device,
-        )
-        soft_force_model = DeformableConveyorForceModel(
-            provider,
-            deformable_entries,
+        soft_forces = DeformableConveyorForceModel(
+            context,
+            soft_names,
             SOFT_PACKAGE_MASSES,
             friction_coefficient=BELT_DRIVE_FRICTION,
             fixed_dt=FIXED_DT,
@@ -693,538 +383,360 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             belt_top=BELT_TOP_Z,
             belt_center_x=BELT_CENTER_X,
             belt_center_y=BELT_CENTER_Y,
-            velocity_damping_rates=tuple(
-                float(spec["damping"]) for spec in SOFT_PACKAGE_SPECS
-            ),
+            velocity_damping_rates=SOFT_PACKAGE_DAMPING_RATES,
         )
-        peak_soft_drive_force = torch.zeros(
-            (), dtype=belt_speed.dtype, device=belt_speed.device
-        )
-        initial_ipc_positions = provider.arrays["ipc_positions"].clone()
-        mailer_entry_indices = (0, 2)
-        initial_mailer_layer_axes = torch.stack(
-            tuple(
-                _mailer_layer_axis(
-                    initial_ipc_positions, deformable_entries[index]
-                )
-                for index in mailer_entry_indices
-            ),
-            dim=1,
-        )
-        minimum_mailer_layer_dots = torch.ones(
-            (args.num_envs, len(mailer_entry_indices)),
-            dtype=initial_ipc_positions.dtype,
-            device=initial_ipc_positions.device,
-        )
-        initial_soft_centers = _body_centers(
-            initial_ipc_positions, deformable_entries
-        )
-        initial_soft_heights = _body_heights(
-            initial_ipc_positions, deformable_entries
-        )
-        initial_soft_extents = _body_extents(
-            initial_ipc_positions, deformable_entries
-        )
-        initial_rigid_x = torch.stack(
-            tuple(view.read_state().base_pose[:, 0] for view in box_views),
-            dim=1,
-        ).clone()
-        initial_carton_quaternion = (
-            box_views[0].read_state().base_pose[:, 3:7].clone()
-        )
-        minimum_carton_quaternion_dot = torch.ones(
-            args.num_envs,
-            dtype=initial_ipc_positions.dtype,
-            device=initial_ipc_positions.device,
-        )
-        phase_snapshot_indices: dict[int, int] = {}
-        phase_snapshot_centers = None
-        phase_snapshot_mailer_axes = None
-        phase_snapshot_carton_poses = None
-        if args.phase_diagnostics:
-            phase_end_tick = -1
-            for phase_index, segment in enumerate(HAND_MOTION_SEGMENTS):
-                phase_end_tick += segment.duration
-                if phase_end_tick >= control_ticks:
-                    break
-                phase_snapshot_indices[phase_end_tick] = phase_index
-            snapshot_count = len(phase_snapshot_indices)
-            phase_snapshot_centers = torch.empty(
-                (
-                    snapshot_count,
-                    args.num_envs,
-                    len(deformable_entries),
-                    3,
-                ),
-                dtype=initial_ipc_positions.dtype,
-                device=initial_ipc_positions.device,
-            )
-            phase_snapshot_mailer_axes = torch.empty(
-                (
-                    snapshot_count,
-                    args.num_envs,
-                    len(mailer_entry_indices),
-                    3,
-                ),
-                dtype=initial_ipc_positions.dtype,
-                device=initial_ipc_positions.device,
-            )
-            phase_snapshot_carton_poses = torch.empty(
-                (snapshot_count, args.num_envs, 7),
-                dtype=initial_ipc_positions.dtype,
-                device=initial_ipc_positions.device,
-            )
-        trace_step_count = control_ticks
-        contact_force_trace = None
-        external_force_trace = None
-        center_trace = None
-        extent_trace = None
-        hand_wrench_trace = None
-        if args.trace_force_flow:
-            trace_shape = (
-                trace_step_count,
-                args.num_envs,
-                len(deformable_entries),
-                3,
-            )
-            contact_force_trace = torch.empty(
-                trace_shape,
-                dtype=initial_ipc_positions.dtype,
-                device=initial_ipc_positions.device,
-            )
-            external_force_trace = torch.empty_like(contact_force_trace)
-            center_trace = torch.empty_like(contact_force_trace)
-            extent_trace = torch.empty_like(contact_force_trace)
-            hand_wrench_trace = torch.empty(
-                (
-                    trace_step_count,
-                    args.num_envs,
-                    len(hand_proxy_indices),
-                    6,
-                ),
-                dtype=initial_ipc_positions.dtype,
-                device=initial_ipc_positions.device,
-            )
 
-        latency_samples = []
-        for tick in range(trace_step_count):
-            speed = belt_speed_at_tick(tick)
-            belt_speed.fill_(speed)
-            belt_twist.zero_()
-            belt_twist[:, 0].copy_(belt_speed)
+        for _ in range(args.warmup_steps):
+            state = context.get_physics_state()
+            _apply_hand_targets(hand_joints, 0)
+            rigid_forces.apply(0.0, state)
+            soft_forces.apply(0.0, state=state)
+            context.step_once()
+        context.clear_external_forces()
+        context.reset_simulation()
+
+        initial_state = context.get_physics_state()
+        _assert_finite_state(initial_state)
+        initial_bodies = _deformable_table(initial_state)
+        initial_shell_axes = {
+            "soft_mailer_blue": _shell_axis(
+                initial_bodies["soft_mailer_blue"]
+            ),
+            "soft_pouch_yellow": _shell_axis(
+                initial_bodies["soft_pouch_yellow"]
+            ),
+        }
+        initial_carton = _link_state(
+            initial_state, "carton_small", "carton_small"
+        )["global_transform"]["quaternion"]
+        parcel_groups = {
+            "blue_mailer": ("soft_mailer_blue", "soft_mailer_blue_fill"),
+            "yellow_pouch": ("soft_pouch_yellow", "soft_pouch_yellow_fill"),
+            "carton_small": ("carton_small",),
+        }
+        initial_centers = {
+            "blue_mailer": _group_center(
+                initial_bodies, parcel_groups["blue_mailer"]
+            ),
+            "yellow_pouch": _group_center(
+                initial_bodies, parcel_groups["yellow_pouch"]
+            ),
+            "carton_small": np.asarray(
+                _link_state(initial_state, "carton_small", "carton_small")
+                ["global_transform"]["position"]
+            ),
+        }
+
+        latency_samples: list[float] = []
+        belt_travel = 0.0
+        peak_penetration = 0.0
+        peak_penetration_by_pair: dict[str, float] = {}
+        peak_penetration_contact: dict[str, Any] | None = None
+        peak_rigid_drive = np.zeros(len(rigid_names), dtype=np.float64)
+        peak_soft_drive = 0.0
+        maximum_flip = {
+            "blue_mailer": 0.0,
+            "yellow_pouch": 0.0,
+            "carton_small": 0.0,
+        }
+        simultaneous_hand_contact = {name: False for name in parcel_groups}
+        hand_contact_frames = {
+            name: {hand: 0 for hand in LEAP_ROBOT_NAMES}
+            for name in parcel_groups
+        }
+        first_hand_contact_tick = {
+            name: {hand: None for hand in LEAP_ROBOT_NAMES}
+            for name in parcel_groups
+        }
+        last_hand_contact_tick = {
+            name: {hand: None for hand in LEAP_ROBOT_NAMES}
+            for name in parcel_groups
+        }
+        maximum_simultaneous_hands = {name: 0 for name in parcel_groups}
+        hand_contact_started = {name: False for name in parcel_groups}
+        current_contacting_hands = {
+            name: [] for name in parcel_groups
+        }
+        precontact_horizontal_drift = {name: 0.0 for name in parcel_groups}
+        force_trace: list[dict[str, Any]] = []
+        phase_trace: list[dict[str, Any]] = []
+        phase_end_ticks = _phase_end_ticks()
+
+        final_state = initial_state
+        for tick in range(args.steps):
+            control_tick = min(tick, CYCLE_TICKS - 1)
+            state = context.get_physics_state()
+            speed = float(belt_speed_at_tick(control_tick))
+            _apply_hand_targets(hand_joints, control_tick)
+            rigid_drive = rigid_forces.apply(speed, state)
+            soft_forces.apply(
+                speed,
+                damping_scale=soft_damping_scale_at_tick(control_tick),
+                state=state,
+            )
+            started = time.perf_counter()
+            context.step_once()
+            latency_samples.append(time.perf_counter() - started)
             belt_travel += speed * FIXED_DT
-            force_model.apply(belt_speed)
-            soft_force_model.apply(belt_speed)
-            hand_command.copy_(hand_control_trajectory[tick])
-            for hand_index, hand_view in enumerate(hand_views):
-                hand_view.set_controls(hand_command[:, hand_index])
-            torch.maximum(
-                peak_drive_force,
-                force_model.drive_force.abs().amax(dim=0),
-                out=peak_drive_force,
-            )
-            torch.maximum(
-                peak_normal_force,
-                force_model.normal_force.amax(dim=0),
-                out=peak_normal_force,
-            )
-            torch.maximum(
-                peak_soft_drive_force,
-                soft_force_model.drive_force.abs().amax(),
-                out=peak_soft_drive_force,
-            )
-            if tick >= args.warmup_steps:
-                provider.synchronize()
-                started = time.perf_counter()
-            provider.step()
-            if contact_force_trace is not None:
-                for body_index, entry in enumerate(deformable_entries):
-                    begin = int(entry["element_offset"])
-                    end = begin + int(entry["element_count"])
-                    torch.sum(
-                        provider.arrays["ipc_contact_forces"][:, begin:end],
-                        dim=1,
-                        out=contact_force_trace[tick, :, body_index],
-                    )
-                    torch.sum(
-                        provider.arrays["ipc_external_forces"][:, begin:end],
-                        dim=1,
-                        out=external_force_trace[tick, :, body_index],
-                    )
-                    torch.mean(
-                        provider.arrays["ipc_positions"][:, begin:end],
-                        dim=1,
-                        out=center_trace[tick, :, body_index],
-                    )
-                    body_positions = provider.arrays["ipc_positions"][
-                        :, begin:end
-                    ]
-                    extent_trace[tick, :, body_index].copy_(
-                        body_positions.amax(dim=1)
-                        - body_positions.amin(dim=1)
-                    )
-                hand_wrench_trace[tick].copy_(
-                    provider.arrays["ipc_affine_contact_wrenches"][
-                        :, hand_proxy_indices
-                    ]
+            final_state = context.get_physics_state()
+            _assert_finite_state(final_state)
+            for contact in final_state["contacts"]:
+                penetration = max(0.0, -float(contact["distance"]))
+                pair_name = _contact_pair_name(contact)
+                peak_penetration_by_pair[pair_name] = max(
+                    peak_penetration_by_pair.get(pair_name, 0.0),
+                    penetration,
                 )
-            current_mailer_layer_axes = torch.stack(
-                tuple(
-                    _mailer_layer_axis(
-                        provider.arrays["ipc_positions"],
-                        deformable_entries[index],
-                    )
-                    for index in mailer_entry_indices
+                if penetration <= peak_penetration:
+                    continue
+                peak_penetration = penetration
+                peak_penetration_contact = {
+                    "tick": tick + 1,
+                    "robot": str(contact["robot_name"]),
+                    "link": str(contact["link_name"]),
+                    "other_robot": str(contact["other_robot_name"]),
+                    "other_link": str(contact["other_link_name"]),
+                    "distance_meters": float(contact["distance"]),
+                }
+            peak_rigid_drive = np.maximum(
+                peak_rigid_drive, np.abs(rigid_drive)
+            )
+            peak_soft_drive = max(
+                peak_soft_drive,
+                max(
+                    (
+                        float(np.max(np.abs(values)))
+                        for values in soft_forces.drive_force.values()
+                    ),
+                    default=0.0,
                 ),
-                dim=1,
             )
-            torch.minimum(
-                minimum_mailer_layer_dots,
-                (current_mailer_layer_axes * initial_mailer_layer_axes).sum(
-                    dim=-1
-                ),
-                out=minimum_mailer_layer_dots,
-            )
-            carton_quaternion = box_views[0].read_state().base_pose[:, 3:7]
-            carton_quaternion_dot = torch.sum(
-                carton_quaternion * initial_carton_quaternion, dim=-1
-            ).abs()
-            torch.minimum(
-                minimum_carton_quaternion_dot,
-                carton_quaternion_dot,
-                out=minimum_carton_quaternion_dot,
-            )
-            phase_snapshot_index = phase_snapshot_indices.get(tick)
-            if phase_snapshot_index is not None:
-                phase_snapshot_centers[phase_snapshot_index].copy_(
-                    _body_centers(
-                        provider.arrays["ipc_positions"], deformable_entries
-                    )
-                )
-                phase_snapshot_mailer_axes[phase_snapshot_index].copy_(
-                    current_mailer_layer_axes
-                )
-                phase_snapshot_carton_poses[phase_snapshot_index].copy_(
-                    box_views[0].read_state().base_pose
-                )
-            hand_proxy_wrench = torch.linalg.vector_norm(
-                provider.arrays["ipc_affine_contact_wrenches"][
-                    :, hand_proxy_indices
-                ],
-                dim=-1,
-            ).amax(dim=0)
-            torch.maximum(
-                peak_hand_proxy_wrench,
-                hand_proxy_wrench,
-                out=peak_hand_proxy_wrench,
-            )
-            if tick >= args.warmup_steps:
-                provider.synchronize()
-                latency_samples.append(time.perf_counter() - started)
 
-        provider.refresh_state()
-        provider.synchronize()
-        final_ipc_positions = provider.arrays["ipc_positions"].clone()
-        final_mailer_layer_axes = torch.stack(
-            tuple(
-                _mailer_layer_axis(
-                    final_ipc_positions, deformable_entries[index]
-                )
-                for index in mailer_entry_indices
-            ),
-            dim=1,
-        )
-        final_mailer_layer_dots = (
-            final_mailer_layer_axes * initial_mailer_layer_axes
-        ).sum(dim=-1).clamp(-1.0, 1.0)
-        final_mailer_flip_degrees = torch.rad2deg(
-            torch.acos(final_mailer_layer_dots)
-        )
-        maximum_mailer_flip_degrees = torch.rad2deg(
-            torch.acos(minimum_mailer_layer_dots.clamp(-1.0, 1.0))
-        )
-        final_soft_centers = _body_centers(
-            final_ipc_positions, deformable_entries
-        )
-        final_soft_heights = _body_heights(
-            final_ipc_positions, deformable_entries
-        )
-        final_rigid_states = tuple(view.read_state() for view in box_views)
-        final_carton_quaternion_dot = torch.sum(
-            final_rigid_states[0].base_pose[:, 3:7]
-            * initial_carton_quaternion,
-            dim=-1,
-        ).abs().clamp(0.0, 1.0)
-        final_carton_flip_degrees = torch.rad2deg(
-            2.0 * torch.acos(final_carton_quaternion_dot)
-        )
-        maximum_carton_flip_degrees = torch.rad2deg(
-            2.0
-            * torch.acos(
-                minimum_carton_quaternion_dot.clamp(0.0, 1.0)
-            )
-        )
-        final_hand_states = tuple(view.read_state() for view in hand_views)
-        hand_diagnostics = _hand_diagnostics(final_hand_states, hand_command)
-        hand_proxy_transforms = provider.arrays[
-            "ipc_affine_transforms"
-        ][0, hand_proxy_indices]
-        hand_proxy_diagnostics = [
-            {
-                "path": str(affine_entries[index]["path"]),
-                "position_meters": [
-                    float(value)
-                    for value in transform[:3, 3].tolist()
-                ],
-                "peak_contact_wrench": float(wrench),
-                "final_contact_wrench": [
-                    float(value)
-                    for value in provider.arrays[
-                        "ipc_affine_contact_wrenches"
-                    ][0, index].tolist()
-                ],
-            }
-            for index, transform, wrench in zip(
-                hand_proxy_indices,
-                hand_proxy_transforms,
-                peak_hand_proxy_wrench.tolist(),
-                strict=True,
-            )
-        ]
-        final_rigid_x = torch.stack(
-            tuple(state.base_pose[:, 0] for state in final_rigid_states),
-            dim=1,
-        )
-        rigid_body_diagnostics = _rigid_body_diagnostics(
-            final_rigid_states
-        )
-        soft_body_diagnostics = _soft_body_diagnostics(
-            final_ipc_positions,
-            provider.arrays["ipc_velocities"],
-            (
-                provider.arrays["ipc_contact_forces"]
-                if args.refresh_contact_forces
-                else None
-            ),
-            deformable_entries,
-        )
-        elapsed = sum(latency_samples)
-        diagnostics = provider.diagnostics
-        contact_force_peak = 0.0
-        if args.refresh_contact_forces:
-            contact_force_peak = float(
-                torch.linalg.vector_norm(
-                    provider.arrays["ipc_contact_forces"], dim=-1
-                )
-                .amax()
-                .item()
-            )
-        force_flow_diagnostics = []
-        if contact_force_trace is not None:
-            force_flow_diagnostics = _force_flow_diagnostics(
-                contact_force_trace,
-                external_force_trace,
-                center_trace,
-                extent_trace,
-                hand_wrench_trace,
-                initial_soft_centers,
-                initial_soft_extents,
-            )
-        phase_diagnostics = []
-        if phase_snapshot_centers is not None:
-            snapshot_mailer_dots = (
-                phase_snapshot_mailer_axes
-                * initial_mailer_layer_axes.unsqueeze(0)
-            ).sum(dim=-1).clamp(-1.0, 1.0)
-            snapshot_mailer_angles = torch.rad2deg(
-                torch.acos(snapshot_mailer_dots)
-            )
-            snapshot_carton_dots = torch.sum(
-                phase_snapshot_carton_poses[..., 3:7]
-                * initial_carton_quaternion.unsqueeze(0),
-                dim=-1,
-            ).abs().clamp(0.0, 1.0)
-            snapshot_carton_angles = torch.rad2deg(
-                2.0 * torch.acos(snapshot_carton_dots)
-            )
-            completed_segments = HAND_MOTION_SEGMENTS[
-                : len(phase_snapshot_indices)
-            ]
-            for phase_index, segment in enumerate(completed_segments):
-                phase_diagnostics.append(
-                    {
-                        "phase": segment.phase,
-                        "soft_centers_meters": {
-                            str(spec["name"]): [
-                                float(value) for value in center
-                            ]
-                            for spec, center in zip(
-                                SOFT_PACKAGE_SPECS,
-                                phase_snapshot_centers[
-                                    phase_index, 0
-                                ].tolist(),
-                                strict=True,
+            bodies = _deformable_table(final_state)
+            current_flip = {
+                "blue_mailer": math.degrees(
+                    math.acos(
+                        float(
+                            np.clip(
+                                np.dot(
+                                    _shell_axis(bodies["soft_mailer_blue"]),
+                                    initial_shell_axes["soft_mailer_blue"],
+                                ),
+                                -1.0,
+                                1.0,
                             )
-                        },
-                        "blue_mailer_flip_degrees": float(
-                            snapshot_mailer_angles[phase_index, 0, 0]
+                        )
+                    )
+                ),
+                "yellow_pouch": math.degrees(
+                    math.acos(
+                        float(
+                            np.clip(
+                                np.dot(
+                                    _shell_axis(bodies["soft_pouch_yellow"]),
+                                    initial_shell_axes["soft_pouch_yellow"],
+                                ),
+                                -1.0,
+                                1.0,
+                            )
+                        )
+                    )
+                ),
+                "carton_small": _quaternion_angle_degrees(
+                    _link_state(final_state, "carton_small", "carton_small")
+                    ["global_transform"]["quaternion"],
+                    initial_carton,
+                ),
+            }
+            for name, angle in current_flip.items():
+                maximum_flip[name] = max(maximum_flip[name], angle)
+
+            centers = {
+                "blue_mailer": _group_center(
+                    bodies, parcel_groups["blue_mailer"]
+                ),
+                "yellow_pouch": _group_center(
+                    bodies, parcel_groups["yellow_pouch"]
+                ),
+                "carton_small": np.asarray(
+                    _link_state(final_state, "carton_small", "carton_small")
+                    ["global_transform"]["position"]
+                ),
+            }
+            for name, targets in parcel_groups.items():
+                hands = _contact_hands(final_state["contacts"], set(targets))
+                current_contacting_hands[name] = sorted(hands)
+                maximum_simultaneous_hands[name] = max(
+                    maximum_simultaneous_hands[name], len(hands)
+                )
+                for hand in hands:
+                    hand_contact_frames[name][hand] += 1
+                    if first_hand_contact_tick[name][hand] is None:
+                        first_hand_contact_tick[name][hand] = tick + 1
+                    last_hand_contact_tick[name][hand] = tick + 1
+                if len(hands) == 2:
+                    simultaneous_hand_contact[name] = True
+                hand_contact_started[name] |= bool(hands)
+                if not hand_contact_started[name]:
+                    drift = float(
+                        np.linalg.norm(
+                            (centers[name] - initial_centers[name])[:2]
+                        )
+                    )
+                    precontact_horizontal_drift[name] = max(
+                        precontact_horizontal_drift[name], drift
+                    )
+
+            if args.trace_force_flow:
+                force_trace.append(
+                    {
+                        "tick": tick + 1,
+                        "phase": cycle_phase(control_tick),
+                        "rigid_drive_resultant_newtons": float(
+                            np.sum(rigid_drive)
                         ),
-                        "yellow_mailer_flip_degrees": float(
-                            snapshot_mailer_angles[phase_index, 0, 1]
-                        ),
-                        "carton_small_flip_degrees": float(
-                            snapshot_carton_angles[phase_index, 0]
+                        "soft_drive_resultant_newtons": float(
+                            sum(
+                                np.sum(values)
+                                for values in soft_forces.drive_force.values()
+                            )
                         ),
                     }
                 )
+            if args.phase_diagnostics and tick + 1 in phase_end_ticks:
+                phase_trace.append(
+                    {
+                        "phase": phase_end_ticks[tick + 1],
+                        "tick": tick + 1,
+                        "flip_degrees": current_flip.copy(),
+                        "centers_meters": {
+                            name: [float(value) for value in center]
+                            for name, center in centers.items()
+                        },
+                        "hand_diagnostics": _hand_diagnostics(final_state),
+                        "deformable_bounds_meters": {
+                            name: _deformable_bounds(body)
+                            for name, body in bodies.items()
+                        },
+                        "contact_count": len(final_state["contacts"]),
+                        "contacting_hands": {
+                            name: list(hands)
+                            for name, hands in current_contacting_hands.items()
+                        },
+                    }
+                )
 
-        peak_drive_force_newtons = {
-            name: float(value)
-            for name, value in zip(
-                box_names, peak_drive_force.tolist(), strict=True
-            )
+        final_bodies = _deformable_table(final_state)
+        final_flip = {
+            "blue_mailer": math.degrees(
+                math.acos(
+                    float(
+                        np.clip(
+                            np.dot(
+                                _shell_axis(final_bodies["soft_mailer_blue"]),
+                                initial_shell_axes["soft_mailer_blue"],
+                            ),
+                            -1.0,
+                            1.0,
+                        )
+                    )
+                )
+            ),
+            "yellow_pouch": math.degrees(
+                math.acos(
+                    float(
+                        np.clip(
+                            np.dot(
+                                _shell_axis(final_bodies["soft_pouch_yellow"]),
+                                initial_shell_axes["soft_pouch_yellow"],
+                            ),
+                            -1.0,
+                            1.0,
+                        )
+                    )
+                )
+            ),
+            "carton_small": _quaternion_angle_degrees(
+                _link_state(final_state, "carton_small", "carton_small")
+                ["global_transform"]["quaternion"],
+                initial_carton,
+            ),
         }
-        peak_normal_force_newtons = {
-            name: float(value)
-            for name, value in zip(
-                box_names, peak_normal_force.tolist(), strict=True
-            )
-        }
-        peak_soft_drive_force_newtons = float(peak_soft_drive_force.item())
-        force_model.clear()
-        soft_force_model.clear()
-        hand_command.zero_()
-        belt_speed.zero_()
-        belt_twist.zero_()
-        provider.reset(
-            reset_mask,
-            qpos=initial_qpos,
-            qvel=initial_qvel,
-            ctrl=initial_ctrl,
+        diagnostics = context.get_solver_diagnostics()
+        context.clear_external_forces()
+        context.reset_simulation()
+        restored_state = context.get_physics_state()
+        reset_max_error = _reset_error(initial_state, restored_state)
+        latency_sorted = sorted(latency_samples)
+        p95_index = max(
+            0, math.ceil(0.95 * len(latency_sorted)) - 1
         )
-        for hand_index, hand_view in enumerate(hand_views):
-            hand_view.set_controls(hand_command[:, hand_index])
-        provider.refresh_state()
-        provider.synchronize()
-        reset_qpos_error = float(
-            (provider.arrays["qpos"] - initial_qpos).abs().amax().item()
-        )
-        reset_ipc_error = float(
-            (
-                provider.arrays["ipc_positions"] - initial_ipc_positions
-            )
-            .abs()
-            .amax()
-            .item()
-        )
-
-        rigid_displacement = final_rigid_x - initial_rigid_x
-        soft_x_displacement = (
-            final_soft_centers[..., 0] - initial_soft_centers[..., 0]
-        )
-        soft_y_displacement = (
-            final_soft_centers[..., 1] - initial_soft_centers[..., 1]
-        )
-        soft_center_displacement = final_soft_centers - initial_soft_centers
-        soft_height_ratio = final_soft_heights / initial_soft_heights.clamp_min(
-            1.0e-8
-        )
+        elapsed = sum(latency_samples)
         return {
+            "backend": "SuperDex",
+            "experimental": True,
             "quality": profile.name,
+            "execution_requested": args.execution,
+            "execution_device": diagnostics["execution_device"],
+            "device_native": bool(diagnostics["device_native"]),
+            "graph_capture": bool(diagnostics["graph_capture"]),
+            "environment_batch": False,
+            "masked_reset": False,
+            "environments": 1,
             "steps": args.steps,
             "warmup_steps": args.warmup_steps,
-            "belt_surface_commanded_travel_meters": belt_travel,
-            "environments": args.num_envs,
-            "environments_per_shard": args.environments_per_shard,
             "elapsed_seconds": elapsed,
-            "environment_steps_per_second": (
-                args.num_envs * args.steps / elapsed if elapsed > 0.0 else 0.0
-            ),
+            "steps_per_second": args.steps / elapsed if elapsed else 0.0,
             "median_step_latency_seconds": (
                 median(latency_samples) if latency_samples else 0.0
             ),
-            "rigid_x_displacement_range_meters": _range(rigid_displacement),
-            "rigid_body_diagnostics_environment_0": rigid_body_diagnostics,
-            "soft_x_displacement_range_meters": _range(soft_x_displacement),
-            "soft_y_displacement_range_meters": _range(soft_y_displacement),
-            "soft_center_displacement_meters_environment_0": {
-                str(spec["name"]): [float(value) for value in displacement]
-                for spec, displacement in zip(
-                    SOFT_PACKAGE_SPECS,
-                    soft_center_displacement[0].tolist(),
-                    strict=True,
+            "p95_step_latency_seconds": (
+                latency_sorted[p95_index] if latency_sorted else 0.0
+            ),
+            "belt_surface_commanded_travel_meters": belt_travel,
+            "final_flip_degrees": final_flip,
+            "maximum_flip_degrees": maximum_flip,
+            "simultaneous_hand_contact": simultaneous_hand_contact,
+            "maximum_simultaneous_hands": maximum_simultaneous_hands,
+            "hand_contact_frames": hand_contact_frames,
+            "first_hand_contact_tick": first_hand_contact_tick,
+            "last_hand_contact_tick": last_hand_contact_tick,
+            "precontact_horizontal_drift_meters": precontact_horizontal_drift,
+            "initial_centers_meters": {
+                name: [float(value) for value in center]
+                for name, center in initial_centers.items()
+            },
+            "final_centers_meters": {
+                name: [float(value) for value in center]
+                for name, center in centers.items()
+            },
+            "final_hand_diagnostics": _hand_diagnostics(final_state),
+            "final_deformable_bounds_meters": {
+                name: _deformable_bounds(body)
+                for name, body in final_bodies.items()
+            },
+            "peak_contact_penetration_meters": peak_penetration,
+            "peak_contact_penetration_by_pair_meters": dict(
+                sorted(peak_penetration_by_pair.items())
+            ),
+            "peak_penetration_contact": peak_penetration_contact,
+            "peak_rigid_drive_force_newtons": {
+                name: float(value)
+                for name, value in zip(
+                    rigid_names, peak_rigid_drive, strict=True
                 )
             },
-            "soft_height_ratio_range": _range(soft_height_ratio),
-            "hand_diagnostics_environment_0": hand_diagnostics,
-            "hand_proxy_diagnostics_environment_0": hand_proxy_diagnostics,
-            "mailer_final_flip_degrees_range": _range(
-                final_mailer_flip_degrees[:, 0]
-            ),
-            "mailer_maximum_flip_degrees_range": _range(
-                maximum_mailer_flip_degrees[:, 0]
-            ),
-            "blue_mailer_final_flip_degrees_range": _range(
-                final_mailer_flip_degrees[:, 0]
-            ),
-            "blue_mailer_maximum_flip_degrees_range": _range(
-                maximum_mailer_flip_degrees[:, 0]
-            ),
-            "yellow_mailer_final_flip_degrees_range": _range(
-                final_mailer_flip_degrees[:, 1]
-            ),
-            "yellow_mailer_maximum_flip_degrees_range": _range(
-                maximum_mailer_flip_degrees[:, 1]
-            ),
-            "carton_small_final_flip_degrees_range": _range(
-                final_carton_flip_degrees
-            ),
-            "carton_small_maximum_flip_degrees_range": _range(
-                maximum_carton_flip_degrees
-            ),
-            "peak_rigid_drive_force_newtons": peak_drive_force_newtons,
-            "peak_rigid_normal_force_newtons": peak_normal_force_newtons,
-            "peak_soft_drive_force_newtons": peak_soft_drive_force_newtons,
+            "peak_soft_nodal_drive_force_newtons": peak_soft_drive,
             "final_finger_close_fraction": float(
-                finger_close_fraction_at_tick(
-                    args.warmup_steps + args.steps - 1
-                )
+                finger_close_fraction_at_tick(min(args.steps - 1, CYCLE_TICKS - 1))
             ),
-            "final_deformable_contact_force_peak_newtons": contact_force_peak,
-            "soft_body_diagnostics_environment_0": soft_body_diagnostics,
-            "deformable_contact_forces_refreshed": bool(
-                args.refresh_contact_forces
-            ),
-            "force_flow_trace_environment_0": force_flow_diagnostics,
-            "phase_diagnostics_environment_0": phase_diagnostics,
-            "coupling_solver": diagnostics["coupling_solver"],
-            "exact_contact_wrench": bool(
-                provider.capabilities.exact_contact_wrench
-            ),
-            "coupling_iterations": diagnostics["coupling_iterations"],
-            "actual_coupling_iterations": diagnostics[
-                "actual_coupling_iterations"
-            ],
-            "interface_residual": diagnostics["interface_residual"],
-            "interface_residual_l2": diagnostics["interface_residual_l2"],
-            "coupler_graph_captured": diagnostics[
-                "coupler_graph_captured"
-            ],
-            "coupler_graph_capture_reason": diagnostics[
-                "coupler_graph_capture_reason"
-            ],
-            "mujoco_graph_captured": bool(
-                getattr(provider.rigid_solver, "graph_captured", False)
-            ),
-            "reset_qpos_max_error": reset_qpos_error,
-            "reset_ipc_position_max_error": reset_ipc_error,
-            "ipc_position_storage_stable": (
-                provider.arrays["ipc_positions"].data_ptr()
-                == ipc_position_pointer
-            ),
+            "solver": diagnostics,
+            "reset_max_error": reset_max_error,
+            "force_flow_trace": force_trace,
+            "phase_diagnostics": phase_trace,
         }
     finally:
-        provider.close()
+        context.clear_world()
         context.clear_scene()
 
 

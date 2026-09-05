@@ -7,27 +7,11 @@ import math
 from pathlib import Path
 import sys
 import tempfile
-from types import SimpleNamespace
 
 import mujoco
 import numpy as np
 from scipy.spatial import cKDTree
 import trimesh
-
-
-OPTIONAL_DEPENDENCY_SKIP_CODE = 77
-
-try:
-    import torch
-except ModuleNotFoundError as error:
-    if error.name != "torch":
-        raise
-    print("Conveyor packages example skipped: torch is unavailable")
-    raise SystemExit(OPTIONAL_DEPENDENCY_SKIP_CODE) from error
-
-import gobot
-from gobot.rl import CompiledMuJoCoIpcArtifact
-
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "examples" / "conveyor_packages"
@@ -163,17 +147,6 @@ def _play():
     )
 
 
-@lru_cache(maxsize=1)
-def _artifact() -> CompiledMuJoCoIpcArtifact:
-    context = gobot.app.create_context()
-    try:
-        context.set_project_path(str(EXAMPLE))
-        context.load_scene("res://" + SCENE.name)
-        return CompiledMuJoCoIpcArtifact.from_context(context)
-    finally:
-        context.clear_scene()
-
-
 def _tetrahedral_mass(mesh: object, density: float) -> float:
     vertices = np.asarray(mesh.vertices, dtype=np.float64)
     tetrahedra = np.asarray(mesh.tetrahedra, dtype=np.int64)
@@ -219,130 +192,6 @@ def test_scene_is_reproducible() -> None:
         }
         assert (output / "assets").is_symlink()
         assert (output / "assets").resolve() == (builder.HERE / "assets").resolve()
-
-
-def test_scene_compiles_to_mixed_package_conveyor_contract() -> None:
-    builder = _builder()
-    artifact = _artifact()
-    assert artifact.mujoco.dimensions == {
-        "nq": 65,
-        "nv": 62,
-        "nu": 44,
-        "nbody": 50,
-        "njoint": 47,
-        "ngeom": 153,
-        "nsensor": 0,
-        "nhfield": 0,
-    }
-    rigid_names = tuple(str(spec["name"]) for spec in builder.RIGID_BOX_SPECS)
-    assert [robot.name for robot in artifact.mujoco.robots] == [
-        "warehouse_frame",
-        "conveyor",
-        *builder.LEAP_ROBOT_NAMES,
-        *rigid_names,
-    ]
-    mappings = [
-        (mapping.robot_name, mapping.link_name, mapping.mode)
-        for mapping in artifact.coupled_bodies
-    ]
-    assert ("conveyor", "belt_surface", "OneWay") in mappings
-    assert ("warehouse_frame", "frame", "OneWay") in mappings
-    for name in rigid_names:
-        assert (name, name, "TwoWay") in mappings
-    for robot_name in builder.LEAP_ROBOT_NAMES:
-        assert {
-            link_name
-            for mapped_robot, link_name, mode in mappings
-            if mapped_robot == robot_name and mode == "OneWay"
-        } == set(builder.LEAP_CONTACT_LINK_NAMES)
-    assert [body["name"] for body in artifact.ipc.deformable_bodies] == [
-        str(spec["name"]) for spec in builder.SOFT_PACKAGE_SPECS
-    ]
-    for body, spec in zip(
-        artifact.ipc.deformable_bodies,
-        builder.SOFT_PACKAGE_SPECS,
-        strict=True,
-    ):
-        model = str(spec.get("model", "volumetric"))
-        assert body["model"] == model
-        if model == "thin_shell":
-            cells_x, cells_y = spec["cells"]
-            assert int(body["vertex_count"]) == (
-                2 * (cells_x + 1) * (cells_y + 1)
-            )
-            assert int(body["tetrahedron_count"]) == 0
-            assert int(body["surface_triangle_count"]) == (
-                4 * cells_x * cells_y + 4 * (cells_x + cells_y)
-            )
-            assert math.isclose(
-                float(body["thickness"]), spec["thickness"], rel_tol=1.0e-6
-            )
-            assert math.isclose(
-                float(body["bending_stiffness"]),
-                spec["bending_stiffness"],
-                rel_tol=1.0e-6,
-            )
-        else:
-            cells_x, cells_y, cells_z = spec["cells"]
-            assert int(body["vertex_count"]) == (
-                (cells_x + 1) * (cells_y + 1) * (cells_z + 1)
-            )
-            assert int(body["tetrahedron_count"]) == (
-                6 * cells_x * cells_y * cells_z
-            )
-            assert int(body["surface_triangle_count"]) == 4 * (
-                cells_x * cells_y
-                + cells_x * cells_z
-                + cells_y * cells_z
-            )
-        assert math.isclose(
-            float(body["young_modulus"]), float(spec["young_modulus"])
-        )
-        assert math.isclose(
-            float(body["density"]),
-            float(spec["density"]),
-            rel_tol=1.0e-6,
-        )
-
-    conveyor = next(
-        robot for robot in artifact.ipc.robots if robot["name"] == "conveyor"
-    )
-    belt_shape = conveyor["links"][0]["collision_shapes"][0]
-    assert belt_shape["name"] == "moving_belt_collision"
-    assert math.isclose(
-        float(belt_shape["material"]["sliding_friction"]),
-        1.0e-5,
-        rel_tol=1.0e-5,
-    )
-    assert all(
-        math.isclose(float(actual), float(expected), rel_tol=1.0e-6)
-        for actual, expected in zip(
-            belt_shape["size"],
-            (
-                builder.BELT_PROXY_LENGTH,
-                builder.BELT_WIDTH,
-                builder.BELT_THICKNESS,
-            ),
-            strict=True,
-        )
-    )
-    assert artifact.mujoco.robots[0].joint_names == ()
-    assert artifact.mujoco.robots[1].joint_names == ()
-    for robot, expected_names in zip(
-        artifact.mujoco.robots[2:4],
-        builder.HAND_JOINT_NAMES_BY_SIDE,
-        strict=True,
-    ):
-        assert robot.joint_names == tuple(
-            f"{robot.name}_{name}" for name in expected_names
-        )
-    assert all(
-        len(robot.joint_names) == 1
-        for robot in artifact.mujoco.robots[4:]
-    )
-    belt_mapping = artifact.coupled_bodies[0]
-    assert belt_mapping.force_scale == 1.0
-    assert belt_mapping.torque_scale == 1.0
 
 
 def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
@@ -555,7 +404,7 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
         ) < 0.5 * _builder().BELT_WIDTH
     assert math.isclose(
         float(blue_spec["position"][2]),
-        _builder().WORKTABLE_TOP_Z + 0.235,
+        _builder().WORKTABLE_TOP_Z + 0.0461,
     )
     assert math.isclose(float(blue_spec["position"][1]), -0.375)
     assert math.isclose(_builder().WORKTABLE_SLIDING_FRICTION, 0.30)
@@ -630,7 +479,7 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
         + float(bottom_z.min())
         - _builder().WORKTABLE_TOP_Z
     )
-    assert initial_bottom_gap >= 0.18
+    assert math.isclose(initial_bottom_gap, 0.011, abs_tol=1.0e-6)
     assert (
         _builder().OPENARM_ROOT_POSITION[1]
         < _builder().BELT_CENTER_Y - 0.5 * _builder().BELT_WIDTH
@@ -807,6 +656,76 @@ def _legacy_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
             "ee_link2" if "_thumb_" in proxy_name else "ee_link1"
         )
         assert str(parent["name"]).endswith(expected_link)
+
+
+def test_scene_compiles_to_native_superdex_conveyor_contract() -> None:
+    builder = _builder()
+    scene = json.loads(SCENE.read_text(encoding="utf-8"))
+    nodes = scene["__NODES__"]
+
+    assert not any(node["type"] == "PhysicsCoupling3D" for node in nodes)
+    assert {
+        str(node["name"])
+        for node in nodes
+        if node["type"] == "Robot3D"
+    } == {
+        "warehouse_frame",
+        "conveyor",
+        *builder.LEAP_ROBOT_NAMES,
+    }
+    assert {
+        str(node["name"])
+        for node in nodes
+        if node["type"] == "RigidBody3D"
+    } == {
+        str(spec["name"]) for spec in builder.RIGID_BOX_SPECS
+    }
+
+    deformables = [
+        node for node in nodes if node["type"] == "DeformableBody3D"
+    ]
+    assert [str(node["name"]) for node in deformables] == [
+        str(spec["name"]) for spec in builder.SOFT_PACKAGE_SPECS
+    ]
+    for node, spec in zip(
+        deformables, builder.SOFT_PACKAGE_SPECS, strict=True
+    ):
+        properties = node["properties"]
+        model = str(spec.get("model", "volumetric"))
+        assert properties["model"] == (
+            "ThinShell" if model == "thin_shell" else "Volumetric"
+        )
+        assert str(properties["physics_material"]).startswith("SubResource(")
+        internal_fill = bool(spec.get("internal_fill", False))
+        assert (
+            properties["collision_layer"], properties["collision_mask"]
+        ) == (
+            (
+                builder.DEFORMABLE_FILL_COLLISION_LAYER
+                if internal_fill
+                else builder.DEFORMABLE_COLLISION_LAYER
+            ),
+            (
+                builder.DEFORMABLE_FILL_COLLISION_MASK
+                if internal_fill
+                else builder.DEFORMABLE_COLLISION_MASK
+            ),
+        )
+        assert bool(properties["self_collision_enabled"]) == bool(
+            model == "thin_shell"
+        )
+        if model == "thin_shell":
+            assert properties["mesh"] is None
+            assert properties["surface_mesh"] is not None
+            assert math.isclose(
+                float(properties["bending_stiffness"]),
+                float(spec["bending_stiffness"]),
+                rel_tol=1.0e-6,
+            )
+        else:
+            assert properties["mesh"] is not None
+
+
 def test_scene_has_play_script_and_leap_hands() -> None:
     builder = _builder()
     scene = json.loads(SCENE.read_text(encoding="utf-8"))
@@ -1033,8 +952,11 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert float(blue_spec["bending_stiffness"]) <= 5.0e-4
     assert float(blue_spec["thickness"]) <= 1.5e-3
     assert fill_spec["model"] == "volumetric"
+    assert bool(fill_spec["internal_fill"])
     assert tuple(fill_spec["cells"]) == (12, 9, 5)
-    assert float(fill_spec["size"][2]) >= 0.11
+    assert math.isclose(float(fill_spec["size"][2]), 0.070)
+    assert builder.WORKTABLE_TOP_Z < float(fill_spec["position"][2])
+    assert float(fill_spec["position"][2]) < float(blue_spec["position"][2])
     assert not bool(fill_spec["visible"])
     assert yellow_spec["model"] == "thin_shell"
     assert tuple(yellow_spec["cells"]) == (36, 27)
@@ -1042,9 +964,15 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert float(yellow_spec["size"][1]) < float(blue_spec["size"][1])
     assert float(yellow_spec["size"][2]) < float(blue_spec["size"][2])
     assert yellow_fill_spec["model"] == "volumetric"
+    assert bool(yellow_fill_spec["internal_fill"])
     assert tuple(yellow_fill_spec["cells"]) == (14, 11, 8)
-    assert math.isclose(float(yellow_fill_spec["size"][2]), 0.095)
+    assert math.isclose(float(yellow_fill_spec["size"][2]), 0.065)
     assert math.isclose(float(yellow_fill_spec["side_rounding"]), 0.08)
+    assert builder.WORKTABLE_TOP_Z < float(yellow_fill_spec["position"][2])
+    assert (
+        float(yellow_fill_spec["position"][2])
+        < float(yellow_spec["position"][2])
+    )
     assert (
         float(yellow_fill_spec["size"][2])
         < float(fill_spec["size"][2])
@@ -1055,6 +983,18 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         >= 0.0349
     )
     assert not bool(yellow_fill_spec["visible"])
+    assert not (
+        builder.HAND_COLLISION_MASK
+        & builder.DEFORMABLE_FILL_COLLISION_LAYER
+    )
+    assert (
+        builder.DEFORMABLE_COLLISION_MASK
+        & builder.DEFORMABLE_FILL_COLLISION_LAYER
+    )
+    assert (
+        builder.DEFORMABLE_FILL_COLLISION_MASK
+        & builder.DEFORMABLE_COLLISION_LAYER
+    )
 
     blue_mesh = builder._soft_mailer_shell_mesh(
         blue_spec["size"], blue_spec["cells"]
@@ -1090,12 +1030,12 @@ def test_scene_has_play_script_and_leap_hands() -> None:
             edge = tuple(sorted((int(first), int(second))))
             edge_counts[edge] = edge_counts.get(edge, 0) + 1
     assert edge_counts and set(edge_counts.values()) == {2}
-    assert (
+    blue_bottom_gap = (
         float(blue_spec["position"][2])
         + float(bottom_z.min())
         - builder.WORKTABLE_TOP_Z
-        >= 0.18
     )
+    assert math.isclose(blue_bottom_gap, 0.011, abs_tol=1.0e-6)
 
     yellow_mesh = builder._soft_mailer_shell_mesh(
         yellow_spec["size"], yellow_spec["cells"]
@@ -1125,11 +1065,13 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     ) < 0.14
     assert float(np.ptp(yellow_bottom_z[yellow_perimeter])) <= 1.0e-12
     assert float(np.ptp(yellow_top_z[yellow_perimeter])) <= 1.0e-12
-    assert (
+    yellow_bottom_gap = (
         float(yellow_spec["position"][2])
         + float(yellow_bottom_z.min())
         - builder.WORKTABLE_TOP_Z
-        >= 0.18
+    )
+    assert math.isclose(
+        yellow_bottom_gap, 0.0091059, abs_tol=1.0e-6
     )
 
     properties_by_unique_name = {
@@ -1166,7 +1108,7 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         builder.RIGID_PACKAGE_COLLISION_MASK,
     )
     assert builder.HAND_COLLISION_MASK & builder.RIGID_PACKAGE_COLLISION_LAYER
-    assert not builder.HAND_COLLISION_MASK & builder.RIGID_COLLISION_LAYER
+    assert builder.HAND_COLLISION_MASK & builder.RIGID_COLLISION_LAYER
 
     stage_joint_names = {
         name
@@ -1188,6 +1130,12 @@ def test_scene_has_play_script_and_leap_hands() -> None:
             else builder.HAND_STAGE_ANGULAR_STIFFNESS
         )
         assert math.isclose(properties["drive_stiffness"], expected_stiffness)
+        assert math.isclose(
+            properties["armature"],
+            builder.HAND_STAGE_ARMATURE,
+            rel_tol=0.0,
+            abs_tol=1.0e-6,
+        )
         expected_limit = (
             builder.HAND_STAGE_TRANSLATION_RANGE
             if linear
@@ -1360,22 +1308,20 @@ def _legacy_quality_profiles_and_belt_schedule() -> None:
 
 def test_quality_profiles_and_flip_push_schedule() -> None:
     profile = _profile()
-    assert math.isclose(profile.IPC_CONTACT_ACTIVATION_DISTANCE, 2.0e-3)
-    assert math.isclose(profile.IPC_CONTACT_RESISTANCE, 1.0e8)
     interactive = profile.quality_profile("interactive")
     accurate = profile.quality_profile("accurate")
     assert (
-        interactive.coupling_iterations,
-        interactive.relaxation_mode,
-        interactive.scene_sync_interval,
+        interactive.name,
         interactive.contact_refresh_interval,
-    ) == (1, "fixed", 2, 4)
+        interactive.newton_max_iterations,
+        interactive.line_search_max_iterations,
+    ) == ("interactive", 4, 16, 8)
     assert (
-        accurate.coupling_iterations,
-        accurate.relaxation_mode,
-        accurate.scene_sync_interval,
+        accurate.name,
         accurate.contact_refresh_interval,
-    ) == (2, "aitken", 1, 1)
+        accurate.newton_max_iterations,
+        accurate.line_search_max_iterations,
+    ) == ("accurate", 1, 48, 8)
 
     speeds = [
         profile.belt_speed_at_tick(tick)
@@ -1411,6 +1357,8 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         "blue_flip_grip",
         "blue_flip_stabilize",
         "blue_flip_rotate",
+        "blue_flip_place",
+        "blue_flip_turnover",
         "blue_flip_release",
         "blue_flip_clear",
         "blue_flip_settle",
@@ -1426,6 +1374,7 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         "yellow_flip_grip",
         "yellow_flip_stabilize",
         "yellow_flip_rotate",
+        "yellow_flip_place",
         "yellow_flip_release",
         "yellow_flip_clear",
         "yellow_flip_settle",
@@ -1502,8 +1451,8 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
     np.testing.assert_allclose(
         blue_contact_shift,
         (
-            (0.050, 0.0, 0.0, 0.0, 0.0, 0.0),
-            (-0.050, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (0.0, 0.0, -profile.SOFT_FLIP_APPROACH_CLEARANCE, 0.0, 0.0, 0.0),
+            (0.0, 0.0, -profile.SOFT_FLIP_APPROACH_CLEARANCE, 0.0, 0.0, 0.0),
         ),
         atol=1.0e-12,
     )
@@ -1520,50 +1469,132 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         (profile.BLUE_FLIP_PALM_PRELOAD, -profile.BLUE_FLIP_PALM_PRELOAD),
         atol=1.0e-12,
     )
+    assert profile.BLUE_FLIP_PALM_PRELOAD == 0.0
     np.testing.assert_allclose(
-        profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS,
-        profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+        np.asarray(profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS)
+        - np.asarray(profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS),
+        (
+            (0.0, 0.0, profile.BLUE_FLIP_STABILIZE_LIFT, 0.0, 0.0, 0.0),
+            (0.0, 0.0, profile.BLUE_FLIP_STABILIZE_LIFT, 0.0, 0.0, 0.0),
+        ),
         atol=1.0e-12,
     )
-    blue_roll_delta = (
+    blue_turnover_delta = (
         np.asarray(profile.HAND_STAGE_BLUE_FLIPPED_TARGETS)
         - np.asarray(profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS)
     )
-    np.testing.assert_allclose(blue_roll_delta[:, 0], 0.0, atol=1.0e-12)
-    np.testing.assert_allclose(blue_roll_delta[:, 3], -math.pi, atol=1.0e-12)
-    assert np.all(blue_roll_delta[:, 1] > 0.10)
-    assert all(np.linalg.norm(delta[:3]) > 0.10 for delta in blue_roll_delta)
+    expected_blue_flipped = profile._pinched_edge_turnover_targets(
+        profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS,
+        fraction=1.0,
+        forward_travel=profile.BLUE_FLIP_EDGE_FORWARD_TRAVEL,
+        end_lift=profile.BLUE_FLIP_EDGE_END_LIFT,
+        arc_height=profile.BLUE_FLIP_EDGE_ARC_HEIGHT,
+    )
     np.testing.assert_allclose(
-        profile.HAND_STAGE_BLUE_FLIP_RELEASE_TARGETS,
         profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+        expected_blue_flipped,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        blue_turnover_delta,
+        (
+            (
+                0.0,
+                profile.BLUE_FLIP_EDGE_FORWARD_TRAVEL,
+                profile.BLUE_FLIP_EDGE_END_LIFT,
+                0.0,
+                0.0,
+                0.0,
+            ),
+            (
+                0.0,
+                profile.BLUE_FLIP_EDGE_FORWARD_TRAVEL,
+                profile.BLUE_FLIP_EDGE_END_LIFT,
+                0.0,
+                0.0,
+                0.0,
+            ),
+        ),
         atol=1.0e-12,
     )
     np.testing.assert_allclose(
         np.asarray(profile.HAND_STAGE_BLUE_FLIP_CLEAR_TARGETS)
         - np.asarray(profile.HAND_STAGE_BLUE_FLIP_RELEASE_TARGETS),
         (
-            (-0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
-            (0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+            (
+                -profile.BLUE_FLIP_CLEAR_SIDE_RETREAT,
+                0.0,
+                profile.BLUE_FLIP_CLEAR_LIFT,
+                0.0,
+                0.0,
+                0.0,
+            ),
+            (
+                profile.BLUE_FLIP_CLEAR_SIDE_RETREAT,
+                0.0,
+                profile.BLUE_FLIP_CLEAR_LIFT,
+                0.0,
+                0.0,
+                0.0,
+            ),
         ),
         atol=1.0e-12,
     )
-    assert profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS == (0.45, 0.45)
-    assert math.isclose(profile.BLUE_FLIP_Y_SHIFT, -0.480)
-    assert profile.YELLOW_FLIP_FINGER_CLOSE_FRACTIONS == (0.45, 0.45)
-    assert math.isclose(profile.YELLOW_FLIP_Z_SHIFT, -0.059)
+    assert profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS == (1.0, 1.0)
+    assert math.isclose(profile.BLUE_POST_FLIP_ROLL, 0.0)
+    assert 0.40 < profile.BLUE_FLIP_EDGE_FORWARD_TRAVEL < 0.50
+    assert profile.BLUE_FLIP_STABILIZE_LIFT > 0.32
+    assert profile.BLUE_FLIP_EDGE_END_LIFT == 0.0
+    assert 0.0 < profile.BLUE_FLIP_EDGE_ARC_HEIGHT <= 0.05
+    assert 0.08 < profile.BLUE_FLIP_PLACE_DROP < 0.10
+    assert 0.40 < profile.BLUE_FLIP_TURNOVER_FORWARD_TRAVEL < 0.50
+    assert 0.20 < profile.BLUE_FLIP_TURNOVER_DROP < 0.30
+    expected_blue_turnover = profile._table_pivot_turnover_targets(
+        profile.HAND_STAGE_BLUE_FLIP_PLACE_TARGETS,
+        fraction=1.0,
+        forward_travel=profile.BLUE_FLIP_TURNOVER_FORWARD_TRAVEL,
+        drop=profile.BLUE_FLIP_TURNOVER_DROP,
+    )
+    np.testing.assert_allclose(
+        profile.HAND_STAGE_BLUE_FLIP_TURNOVER_TARGETS,
+        expected_blue_turnover,
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_PUSH_APPROACH_TARGETS)[:, 1],
+        (-0.8000, -0.8705),
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_PUSH_RELEASE_TARGETS)
+        - np.asarray(profile.HAND_STAGE_PUSH_TARGETS),
+        (
+            (0.0, -profile.PUSH_RELEASE_RETREAT, 0.0, 0.0, 0.0, 0.0),
+            (0.0, -profile.PUSH_RELEASE_RETREAT, 0.0, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_PUSH_CLEAR_TARGETS)
+        - np.asarray(profile.HAND_STAGE_PUSH_RELEASE_TARGETS),
+        (
+            (0.0, 0.0, profile.PUSH_CLEAR_LIFT, 0.0, 0.0, 0.0),
+            (0.0, 0.0, profile.PUSH_CLEAR_LIFT, 0.0, 0.0, 0.0),
+        ),
+        atol=1.0e-12,
+    )
+    assert profile.YELLOW_FLIP_FINGER_CLOSE_FRACTIONS == (1.0, 1.0)
     assert profile.CARTON_FLIP_FINGER_CLOSE_FRACTION <= 0.25
     yellow_contact_shift = (
         np.asarray(profile.HAND_STAGE_YELLOW_FLIP_CONTACT_TARGETS)
         - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_APPROACH_TARGETS)
     )
     np.testing.assert_allclose(
-        yellow_contact_shift[:, 1:],
-        0.0,
-        atol=1.0e-12,
-    )
-    np.testing.assert_allclose(
-        yellow_contact_shift[:, 0],
-        (0.0, -profile.YELLOW_FLIP_RIGHT_APPROACH_CLEARANCE),
+        yellow_contact_shift,
+        (
+            (0.0, 0.0, -profile.SOFT_FLIP_APPROACH_CLEARANCE, 0.0, 0.0, 0.0),
+            (0.0, 0.0, -profile.SOFT_FLIP_APPROACH_CLEARANCE, 0.0, 0.0, 0.0),
+        ),
         atol=1.0e-12,
     )
     yellow_grip_shift = (
@@ -1578,18 +1609,46 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         ),
         atol=1.0e-12,
     )
-    assert profile.YELLOW_FLIP_RIGHT_APPROACH_CLEARANCE >= 0.09
+    assert profile.YELLOW_FLIP_PALM_PRELOAD == 0.0
+    assert all(
+        target[3:] == (0.0, 0.0, 0.0)
+        for targets in (
+            profile.HAND_STAGE_BLUE_FLIP_APPROACH_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIP_CONTACT_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIP_GRIP_TARGETS,
+            profile.HAND_STAGE_BLUE_FLIP_STABILIZE_TARGETS,
+                profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+                profile.HAND_STAGE_BLUE_FLIP_PLACE_TARGETS,
+                profile.HAND_STAGE_BLUE_FLIP_TURNOVER_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIP_APPROACH_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIP_CONTACT_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIP_GRIP_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIP_STABILIZE_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+            profile.HAND_STAGE_YELLOW_FLIP_PLACE_TARGETS,
+        )
+        for target in targets
+    )
     blue_controls = profile.hand_controls_at_tick(
         flip_grip_start + profile.FLIP_GRIP_TICKS - 1
     )
-    for controls, close_fraction in zip(
+    for controls, expected_targets, close_fraction in zip(
         blue_controls,
+        profile.LEAP_BLUE_AIR_PINCH_TARGETS_BY_SIDE,
         profile.BLUE_FLIP_FINGER_CLOSE_FRACTIONS,
         strict=True,
     ):
         np.testing.assert_allclose(
             controls[6:],
-            np.asarray(profile.LEAP_FINGER_CLOSE_TARGETS) * close_fraction,
+            np.asarray(expected_targets) * close_fraction,
+            atol=1.0e-12,
+        )
+    blue_push_start = phase_starts["blue_push"]
+    for controls in profile.hand_controls_at_tick(blue_push_start):
+        np.testing.assert_allclose(
+            controls[6:],
+            np.asarray(profile.LEAP_FINGER_CLOSE_TARGETS)
+            * profile.PUSH_FINGER_CLOSE_FRACTION,
             atol=1.0e-12,
         )
     assert all(
@@ -1625,37 +1684,85 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         + profile.YELLOW_FLIP_RELEASE_TICKS
         - 1
     )
-    assert profile.finger_close_fractions_at_tick(
-        yellow_release_end
-    ) == (0.0, 0.0)
+    blue_release_end = (
+        phase_starts["blue_flip_release"] + profile.FLIP_RELEASE_TICKS - 1
+    )
     np.testing.assert_allclose(
-        profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS,
-        profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+        profile.finger_close_fractions_at_tick(blue_release_end),
+        (profile.BLUE_FLIP_RELEASE_CLOSE_FRACTION,) * 2,
         atol=1.0e-12,
     )
-    yellow_unfollowed_targets = profile._retarget_flip_targets(
-        profile.HAND_STAGE_FLIPPED_LIFT_TARGETS,
-        x_shift=profile.YELLOW_FLIP_X_SHIFT,
-        y_shift=profile.YELLOW_FLIP_Y_SHIFT,
-        z_shift=profile.YELLOW_FLIP_Z_SHIFT,
-        width_inset=profile.YELLOW_FLIP_WIDTH_INSET,
-        roll_offset=profile.YELLOW_FLIP_ROLL_OFFSET,
+    release_fraction = profile.SOFT_FLIP_RELEASE_CLOSE_FRACTION
+    np.testing.assert_allclose(
+        profile.finger_close_fractions_at_tick(yellow_release_end),
+        (release_fraction, release_fraction),
+        atol=1.0e-12,
+    )
+    for controls, targets in zip(
+        profile.hand_controls_at_tick(yellow_release_end),
+        profile.LEAP_SOFT_PINCH_TARGETS_BY_SIDE,
+        strict=True,
+    ):
+        np.testing.assert_allclose(
+            controls[6:], np.asarray(targets) * release_fraction,
+            atol=1.0e-12,
+        )
+    for prefix, clear_ticks, settle_ticks, clear_fraction in (
+        (
+            "blue",
+            profile.FLIP_CLEAR_TICKS,
+            profile.FLIP_SETTLE_TICKS,
+            profile.BLUE_FLIP_RELEASE_CLOSE_FRACTION,
+        ),
+        (
+            "yellow",
+            profile.YELLOW_FLIP_CLEAR_TICKS,
+            profile.YELLOW_FLIP_SETTLE_TICKS,
+            release_fraction,
+        ),
+    ):
+        clear_end = (
+            phase_starts[f"{prefix}_flip_clear"]
+            + clear_ticks - 1
+        )
+        settle_end = (
+            phase_starts[f"{prefix}_flip_settle"]
+            + settle_ticks - 1
+        )
+        np.testing.assert_allclose(
+            profile.finger_close_fractions_at_tick(clear_end),
+            (clear_fraction, clear_fraction),
+            atol=1.0e-12,
+        )
+        np.testing.assert_allclose(
+            profile.finger_close_fractions_at_tick(settle_end),
+            (0.0, 0.0),
+            atol=1.0e-12,
+        )
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS)
+        - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_PLACE_TARGETS),
+        0.0,
+        atol=1.0e-12,
+    )
+    expected_yellow_flipped = profile._pinched_edge_turnover_targets(
+        profile.HAND_STAGE_YELLOW_FLIP_STABILIZE_TARGETS,
+        fraction=1.0,
+        forward_travel=profile.YELLOW_FLIP_EDGE_FORWARD_TRAVEL,
+        end_lift=profile.YELLOW_FLIP_EDGE_END_LIFT,
+        arc_height=profile.YELLOW_FLIP_EDGE_ARC_HEIGHT,
     )
     np.testing.assert_allclose(
-        np.asarray(profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS)
-        - np.asarray(yellow_unfollowed_targets),
-        (
-            (0.0, profile.YELLOW_FLIP_FOLLOW_THROUGH, 0.0, 0.0, 0.0, 0.0),
-            (0.0, profile.YELLOW_FLIP_FOLLOW_THROUGH, 0.0, 0.0, 0.0, 0.0),
-        ),
+        profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+        expected_yellow_flipped,
         atol=1.0e-12,
     )
     np.testing.assert_allclose(
         np.asarray(profile.HAND_STAGE_YELLOW_FLIP_CLEAR_TARGETS)
         - np.asarray(profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS),
         (
-            (-0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
-            (0.200, 0.0, 0.120, 0.0, 0.0, 0.0),
+            (0.0, 0.0, profile.YELLOW_FLIP_CLEAR_LIFT, 0.0, 0.0, 0.0),
+            (0.0, 0.0, profile.YELLOW_FLIP_CLEAR_LIFT, 0.0, 0.0, 0.0),
         ),
         atol=1.0e-12,
     )
@@ -1707,6 +1814,41 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
             abs_tol=1.0e-12,
         )
         np.testing.assert_allclose(placed, released, atol=1.0e-12)
+    for flipped, placed, released in zip(
+        profile.HAND_STAGE_YELLOW_FLIPPED_TARGETS,
+        profile.HAND_STAGE_YELLOW_FLIP_PLACE_TARGETS,
+        profile.HAND_STAGE_YELLOW_FLIP_RELEASE_TARGETS,
+        strict=True,
+    ):
+        assert math.isclose(
+            flipped[2] - placed[2],
+            profile.YELLOW_FLIP_PLACE_DROP,
+            abs_tol=1.0e-12,
+        )
+        np.testing.assert_allclose(placed, released, atol=1.0e-12)
+    for flipped, placed, turned, released in zip(
+        profile.HAND_STAGE_BLUE_FLIPPED_TARGETS,
+        profile.HAND_STAGE_BLUE_FLIP_PLACE_TARGETS,
+        profile.HAND_STAGE_BLUE_FLIP_TURNOVER_TARGETS,
+        profile.HAND_STAGE_BLUE_FLIP_RELEASE_TARGETS,
+        strict=True,
+    ):
+        assert math.isclose(
+            turned[1] - placed[1],
+            profile.BLUE_FLIP_TURNOVER_FORWARD_TRAVEL,
+            abs_tol=1.0e-12,
+        )
+        assert math.isclose(
+            placed[2] - turned[2],
+            profile.BLUE_FLIP_TURNOVER_DROP,
+            abs_tol=1.0e-12,
+        )
+        assert math.isclose(
+            flipped[2] - placed[2],
+            profile.BLUE_FLIP_PLACE_DROP,
+            abs_tol=1.0e-12,
+        )
+        np.testing.assert_allclose(turned, released, atol=1.0e-12)
     assert (
         profile.HAND_STAGE_CARTON_FLIP_CLEAR_TARGETS[0][0]
         <= profile.HAND_STAGE_CARTON_FLIP_RELEASE_TARGETS[0][0]
@@ -1725,18 +1867,19 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
         for target in pair
     )
     assert all(
-        math.isclose(end[3] - start[3], -math.pi)
+        math.isclose(end[3] - start[3], -0.5 * math.pi)
         for start, end in zip(
             profile.HAND_STAGE_CARTON_FLIP_LIFT_TARGETS,
             profile.HAND_STAGE_CARTON_FLIPPED_LIFT_TARGETS,
             strict=True,
         )
     )
-    assert tuple(
-        segment.phase
-        for segment in profile.HAND_MOTION_SEGMENTS
-        if segment.pivot_roll
-    ) == ("blue_flip_rotate", "yellow_flip_rotate", "carton_flip_rotate")
+    np.testing.assert_allclose(
+        np.asarray(profile.HAND_STAGE_CARTON_FLIPPED_LIFT_TARGETS)[:, 1]
+        - np.asarray(profile.HAND_STAGE_CARTON_FLIP_LIFT_TARGETS)[:, 1],
+        profile.CARTON_FLIP_FOLLOW_THROUGH,
+        atol=1.0e-12,
+    )
     for phase_name, duration, before_targets, after_targets in (
         (
             "blue_flip_rotate",
@@ -1761,32 +1904,61 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
             stage_targets = profile.hand_stage_targets_at_tick(
                 phase_starts[phase_name] + relative_tick
             )
-            for before, after, target in zip(
-                before_targets, after_targets, stage_targets, strict=True
-            ):
-                pivot = 0.5 * (
-                    np.asarray(before[1:3]) + np.asarray(after[1:3])
+            if phase_name in {"blue_flip_rotate", "yellow_flip_rotate"}:
+                fraction = profile.smoothstep(
+                    float(relative_tick + 1) / duration
                 )
-                expected_radius = np.linalg.norm(
-                    np.asarray(before[1:3]) - pivot
+                if phase_name == "blue_flip_rotate":
+                    forward_travel = profile.BLUE_FLIP_EDGE_FORWARD_TRAVEL
+                    end_lift = profile.BLUE_FLIP_EDGE_END_LIFT
+                    arc_height = profile.BLUE_FLIP_EDGE_ARC_HEIGHT
+                else:
+                    forward_travel = profile.YELLOW_FLIP_EDGE_FORWARD_TRAVEL
+                    end_lift = profile.YELLOW_FLIP_EDGE_END_LIFT
+                    arc_height = profile.YELLOW_FLIP_EDGE_ARC_HEIGHT
+                expected_targets = profile._pinched_edge_turnover_targets(
+                    before_targets,
+                    fraction=fraction,
+                    forward_travel=forward_travel,
+                    end_lift=end_lift,
+                    arc_height=arc_height,
                 )
-                assert math.isclose(
-                    np.linalg.norm(np.asarray(target[1:3]) - pivot),
-                    expected_radius,
-                    rel_tol=0.0,
-                    abs_tol=1.0e-12,
+            else:
+                expected_targets = profile._transition(
+                    relative_tick, duration, before_targets, after_targets
                 )
+            np.testing.assert_allclose(
+                stage_targets, expected_targets, atol=1.0e-12
+            )
     assert all(
         abs(target[3]) <= _builder().HAND_STAGE_ROLL_RANGE
         for segment in profile.HAND_MOTION_SEGMENTS
         for pair in (segment.start, segment.end)
         for target in pair
     )
+    large_roll_phases = tuple(
+        segment.phase
+        for segment in profile.HAND_MOTION_SEGMENTS
+        if any(
+            abs(end[3] - start[3]) > 0.5 * math.pi + 1.0e-12
+            for start, end in zip(segment.start, segment.end, strict=True)
+        )
+    )
+    assert large_roll_phases == ()
     assert all(
-        abs(end[3] - start[3]) <= math.pi + 1.0e-12
+        abs(end[3] - start[3]) <= 1.5 * math.pi + 1.0e-12
         for segment in profile.HAND_MOTION_SEGMENTS
         for start, end in zip(segment.start, segment.end, strict=True)
     )
+    for segment in profile.HAND_MOTION_SEGMENTS:
+        expected_scale = (
+            0.0
+            if segment.phase in profile.SOFT_DAMPING_DISABLED_PHASES
+            else 1.0
+        )
+        assert profile.soft_damping_scale_at_tick(
+            phase_starts[segment.phase]
+        ) == expected_scale
 
     for spec, expected_mass in zip(
         _builder().SOFT_PACKAGE_SPECS,
@@ -1813,162 +1985,378 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
     )
     assert math.isclose(
         sum(profile.SOFT_PACKAGE_MASSES[2:]),
-        0.28,
+        0.165,
         rel_tol=1.0e-12,
     )
 
 
-class _FakeView:
-    def __init__(self, velocity: torch.Tensor) -> None:
-        self.state = SimpleNamespace(base_velocity=velocity)
+def test_soft_package_targets_form_opposed_leap_fingertip_pinches() -> None:
+    builder = _builder()
+    profile = _profile()
+    assert len(profile.LEAP_SOFT_PINCH_TARGETS_BY_SIDE) == 2
 
-    def read_state(self):
+    def body_box(
+        model: mujoco.MjModel,
+        data: mujoco.MjData,
+        body_name: str,
+        bounds: tuple[tuple[float, ...], tuple[float, ...]],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        lower = np.asarray(bounds[0], dtype=np.float64)
+        upper = np.asarray(bounds[1], dtype=np.float64)
+        body_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_BODY, body_name
+        )
+        rotation = data.xmat[body_id].reshape(3, 3)
+        center = data.xpos[body_id] + rotation @ (0.5 * (lower + upper))
+        return center, 0.5 * (upper - lower), rotation
+
+    for side_index, (side, targets) in enumerate(zip(
+        builder.HAND_SIDES,
+        profile.LEAP_SOFT_PINCH_TARGETS_BY_SIDE,
+        strict=True,
+    )):
+        model = mujoco.MjModel.from_xml_path(
+            str(builder.LEAP_ASSET_ROOT / f"{side}_hand.xml")
+        )
+        data = mujoco.MjData(model)
+        for joint_name, target in zip(
+            builder.LEAP_FINGER_JOINT_NAMES, targets, strict=True
+        ):
+            joint_id = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+            )
+            joint_range = model.jnt_range[joint_id]
+            assert joint_range[0] <= target <= joint_range[1]
+            data.qpos[model.jnt_qposadr[joint_id]] = target
+        mujoco.mj_forward(model, data)
+
+        index_center, _, _ = body_box(
+            model, data, "if_ds", builder.LEAP_TIP_BOUNDS
+        )
+        middle_center, middle_half_size, middle_rotation = body_box(
+            model, data, "mf_ds", builder.LEAP_TIP_BOUNDS
+        )
+        thumb_center, thumb_half_size, thumb_rotation = body_box(
+            model, data, "th_ds", builder.LEAP_THUMB_TIP_BOUNDS
+        )
+        pinch_delta = middle_center - thumb_center
+        center_gap = float(np.linalg.norm(pinch_delta))
+        pinch_axis = pinch_delta / center_gap
+        middle_radius = float(
+            np.abs(pinch_axis @ middle_rotation) @ middle_half_size
+        )
+        thumb_radius = float(
+            np.abs(pinch_axis @ thumb_rotation) @ thumb_half_size
+        )
+        surface_gap = center_gap - middle_radius - thumb_radius
+
+        assert 0.054 < center_gap < 0.055
+        assert np.linalg.norm(pinch_delta[1:]) < 0.0001
+        assert math.isclose(surface_gap, 0.0205, abs_tol=0.0001)
+
+        source_pinch_center = 0.5 * (middle_center + thumb_center)
+        target = profile.HAND_STAGE_YELLOW_FLIP_CONTACT_TARGETS[
+            side_index
+        ]
+        assert target[3:] == (0.0, 0.0, 0.0)
+        world_pinch_center = (
+            np.asarray(builder.HAND_ROOT_POSITIONS[side_index])
+            + np.asarray(target[:3])
+            + np.asarray(builder.HAND_PALM_ALIGNMENT_ROTATION)
+            @ source_pinch_center
+        )
+        np.testing.assert_allclose(
+            world_pinch_center,
+            profile.YELLOW_FLIP_PINCH_WORLD_CENTERS[side_index],
+            atol=2.0e-6,
+        )
+
+        regular_centers = [index_center, middle_center]
+        for body_name in ("rf_ds",):
+            regular_center, _, _ = body_box(
+                model, data, body_name, builder.LEAP_TIP_BOUNDS
+            )
+            regular_centers.append(regular_center)
+            np.testing.assert_allclose(
+                regular_center[[0, 2]],
+                index_center[[0, 2]],
+                atol=0.0002,
+            )
+
+        lateral_steps = np.diff(
+            np.asarray([center[1] for center in regular_centers])
+        )
+        expected_step = -0.0454 if side == "left" else 0.0454
+        np.testing.assert_allclose(
+            lateral_steps, (expected_step, expected_step), atol=0.0001
+        )
+        for offset in (4, 8):
+            np.testing.assert_allclose(
+                targets[offset:offset + 4], targets[0:4], atol=0.0
+            )
+        np.testing.assert_allclose(
+            np.asarray(targets)[[1, 5, 9]], 0.0, atol=0.0
+        )
+
+    assert len(profile.LEAP_BLUE_AIR_PINCH_TARGETS_BY_SIDE) == 2
+    palm_alignment = np.asarray(builder.HAND_PALM_ALIGNMENT_ROTATION)
+    for side_index, (side, targets) in enumerate(zip(
+        builder.HAND_SIDES,
+        profile.LEAP_BLUE_AIR_PINCH_TARGETS_BY_SIDE,
+        strict=True,
+    )):
+        model = mujoco.MjModel.from_xml_path(
+            str(builder.LEAP_ASSET_ROOT / f"{side}_hand.xml")
+        )
+        data = mujoco.MjData(model)
+        for joint_name, target_value in zip(
+            builder.LEAP_FINGER_JOINT_NAMES, targets, strict=True
+        ):
+            joint_id = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+            )
+            joint_range = model.jnt_range[joint_id]
+            assert joint_range[0] <= target_value <= joint_range[1]
+            data.qpos[model.jnt_qposadr[joint_id]] = target_value
+        mujoco.mj_forward(model, data)
+
+        index_center, _, _ = body_box(
+            model, data, "if_ds", builder.LEAP_TIP_BOUNDS
+        )
+        middle_center, middle_half_size, middle_rotation = body_box(
+            model, data, "mf_ds", builder.LEAP_TIP_BOUNDS
+        )
+        thumb_center, thumb_half_size, thumb_rotation = body_box(
+            model, data, "th_ds", builder.LEAP_THUMB_TIP_BOUNDS
+        )
+        pinch_delta = middle_center - thumb_center
+        center_gap = float(np.linalg.norm(pinch_delta))
+        pinch_axis = pinch_delta / center_gap
+        middle_radius = float(
+            np.abs(pinch_axis @ middle_rotation) @ middle_half_size
+        )
+        thumb_radius = float(
+            np.abs(pinch_axis @ thumb_rotation) @ thumb_half_size
+        )
+        surface_gap = center_gap - middle_radius - thumb_radius
+        world_delta = palm_alignment @ pinch_delta
+
+        assert abs(world_delta[0]) < 1.0e-6
+        assert 0.0469 < world_delta[1] < 0.0471
+        assert -0.0301 < world_delta[2] < -0.0299
+        assert 0.0204 < surface_gap < 0.0206
+
+        source_pinch_center = 0.5 * (middle_center + thumb_center)
+        stage_target = profile.HAND_STAGE_BLUE_FLIP_CONTACT_TARGETS[
+            side_index
+        ]
+        assert stage_target[3:] == (0.0, 0.0, 0.0)
+        world_pinch_center = (
+            np.asarray(builder.HAND_ROOT_POSITIONS[side_index])
+            + np.asarray(stage_target[:3])
+            + palm_alignment @ source_pinch_center
+        )
+        np.testing.assert_allclose(
+            world_pinch_center,
+            profile.BLUE_FLIP_PINCH_WORLD_CENTERS[side_index],
+            atol=2.0e-6,
+        )
+
+        for body_name in ("mf_ds", "rf_ds"):
+            regular_center, _, _ = body_box(
+                model, data, body_name, builder.LEAP_TIP_BOUNDS
+            )
+            np.testing.assert_allclose(
+                regular_center[[0, 2]],
+                index_center[[0, 2]],
+                atol=0.0002,
+            )
+        for offset in (4, 8):
+            np.testing.assert_allclose(
+                targets[offset:offset + 4], targets[0:4], atol=0.0
+            )
+        np.testing.assert_allclose(
+            np.asarray(targets)[[1, 5, 9]], 0.0, atol=0.0
+        )
+
+    left, right = profile.LEAP_SOFT_PINCH_TARGETS_BY_SIDE
+    assert left[13] < 0.0 < right[13]
+    blue_left, blue_right = profile.LEAP_BLUE_AIR_PINCH_TARGETS_BY_SIDE
+    assert blue_left[13] < 0.0 < blue_right[13]
+
+
+class _FakeNativeContext:
+    def __init__(self, state: dict[str, object]) -> None:
+        self.state = state
+        self.link_force_calls: list[
+            tuple[str, str, tuple[float, ...], tuple[float, ...]]
+        ] = []
+        self.deformable_force_calls: list[tuple[int, np.ndarray]] = []
+
+    def get_physics_state(self) -> dict[str, object]:
         return self.state
 
-
-class _FakeRigidSolver:
-    def __init__(self, sensors: dict[str, dict[str, torch.Tensor]]) -> None:
-        self._torch = torch
-        self._sensors = sensors
-
-    def contact_sensor(self, name: str):
-        return self._sensors[name]
-
-
-class _FakeBeltRigidSolver:
-    def __init__(self) -> None:
-        self._torch = torch
-        self._arrays = {
-            "geom_friction": torch.full((1, 4, 3), 0.6),
-            "geom_condim": torch.full((4,), 3, dtype=torch.int32),
-            "geom_priority": torch.zeros(4, dtype=torch.int32),
-        }
-        self.recompute_calls = 0
-
-    def resolve_object_ids(self, object_type: str, names: tuple[str, ...]):
-        assert object_type == "geom"
-        assert names == ("conveyor_moving_belt_collision",)
-        return (2,)
-
-    def model_array(self, name: str) -> torch.Tensor:
-        return self._arrays[name]
-
-    def recompute_constants(self) -> None:
-        self.recompute_calls += 1
-
-
-class _FakeProvider:
-    def __init__(self, sensors: dict[str, dict[str, torch.Tensor]]) -> None:
-        self.num_envs = 2
-        self.rigid_solver = _FakeRigidSolver(sensors)
-        self.arrays = {"xfrc_applied": torch.zeros(2, 4, 6)}
-        self.sense_calls = 0
-
-    def sense(self) -> None:
-        self.sense_calls += 1
-
-
-def test_mujoco_belt_material_overrides_parcel_friction() -> None:
-    rigid = _FakeBeltRigidSolver()
-    provider = SimpleNamespace(rigid_solver=rigid)
-    _forces().configure_mujoco_velocity_field_belt(
-        provider, "conveyor_moving_belt_collision"
-    )
-
-    assert rigid.recompute_calls == 1
-    assert torch.count_nonzero(rigid._arrays["geom_friction"][:, 2]) == 0
-    assert torch.all(rigid._arrays["geom_friction"][:, (0, 1, 3)] == 0.6)
-    assert rigid._arrays["geom_condim"].tolist() == [3, 3, 1, 3]
-    assert rigid._arrays["geom_priority"].tolist() == [0, 0, 1, 0]
-
-
-class _FakeDeformableProvider:
-    def __init__(self) -> None:
-        self.num_envs = 2
-        self.rigid_solver = SimpleNamespace(_torch=torch)
-        positions = torch.zeros(2, 6, 3)
-        positions[..., 1] = 0.58
-        positions[:, 0, 1] = 0.0
-        positions[..., 2] = 0.56
-        positions[:, 5, 2] = 0.75
-        velocities = torch.zeros_like(positions)
-        contact_forces = torch.zeros_like(positions)
-        contact_forces[..., 2] = torch.tensor(
-            [[2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
-             [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]
+    def set_link_external_force(
+        self,
+        robot_name: str,
+        link_name: str,
+        point: tuple[float, ...],
+        force: tuple[float, ...],
+    ) -> None:
+        self.link_force_calls.append(
+            (
+                str(robot_name),
+                str(link_name),
+                tuple(float(value) for value in point),
+                tuple(float(value) for value in force),
+            )
         )
-        self.arrays = {
-            "ipc_positions": positions,
-            "ipc_velocities": velocities,
-            "ipc_contact_forces": contact_forces,
-            "ipc_external_forces": torch.zeros_like(positions),
-        }
+
+    def set_deformable_external_forces(
+        self, stable_id: int, forces: object
+    ) -> None:
+        array = np.asarray(forces, dtype=np.float64)
+        assert array.ndim == 2 and array.shape[1] == 3
+        self.deformable_force_calls.append((int(stable_id), array.copy()))
 
 
-def test_rigid_conveyor_force_is_coulomb_limited_and_composable() -> None:
-    def sensor(normal_forces: tuple[tuple[float, float], ...]):
-        force = torch.zeros(2, 2, 3)
-        force[..., 0] = torch.tensor(normal_forces)
-        return {
-            "force": force,
-            "found": torch.tensor([[True, True], [True, True]]),
-        }
-
-    sensors = {
-        "first": sensor(((6.0, 4.0), (3.0, 2.0))),
-        "second": sensor(((12.0, 8.0), (5.0, 3.0))),
+def _identity_transform(position: tuple[float, float, float]) -> dict[str, object]:
+    return {
+        "position": position,
+        "matrix": (
+            (1.0, 0.0, 0.0, position[0]),
+            (0.0, 1.0, 0.0, position[1]),
+            (0.0, 0.0, 1.0, position[2]),
+            (0.0, 0.0, 0.0, 1.0),
+        ),
     }
-    provider = _FakeProvider(sensors)
-    provider.arrays["xfrc_applied"][:, 1, 2] = 3.0
-    provider.arrays["xfrc_applied"][:, 3, 2] = -2.0
-    external = provider.arrays["xfrc_applied"].clone()
-    views = (
-        _FakeView(torch.zeros(2, 6)),
-        _FakeView(torch.zeros(2, 6)),
-    )
+
+
+def _native_rigid_state() -> dict[str, object]:
+    def robot(name: str, velocity_x: float, x: float) -> dict[str, object]:
+        return {
+            "name": name,
+            "links": [
+                {
+                    "name": name,
+                    "linear_velocity": (velocity_x, 0.0, 0.0),
+                    "global_transform": _identity_transform((x, 0.58, 0.62)),
+                }
+            ],
+        }
+
+    return {
+        "robots": [
+            robot("carton_small", 0.0, -0.2),
+            robot("carton_wide", 0.0, 0.2),
+        ],
+        "contacts": [
+            {
+                "robot_name": "carton_small",
+                "link_name": "carton_small",
+                "other_robot_name": "conveyor",
+                "other_link_name": "belt_surface",
+                "normal_force": 6.0,
+            },
+            {
+                "robot_name": "carton_small",
+                "link_name": "carton_small",
+                "other_robot_name": "conveyor",
+                "other_link_name": "belt_surface",
+                "normal_force": 4.0,
+            },
+            {
+                "robot_name": "carton_wide",
+                "link_name": "carton_wide",
+                "other_robot_name": "conveyor",
+                "other_link_name": "belt_surface",
+                "normal_force": 30.0,
+            },
+        ],
+        "deformables": [],
+    }
+
+
+def _native_deformable_state(
+    velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> dict[str, object]:
+    def body(
+        name: str,
+        stable_id: int,
+        x_offset: float,
+        normal_forces: tuple[float, float, float],
+    ) -> dict[str, object]:
+        vertices = np.asarray(
+            (
+                (x_offset, 0.58, 0.56),
+                (x_offset + 0.2, 0.58, 0.56),
+                (1.5, 0.58, 0.56),
+            ),
+            dtype=np.float64,
+        )
+        velocities = np.repeat(
+            np.asarray(velocity, dtype=np.float64)[None, :],
+            len(vertices),
+            axis=0,
+        )
+        contacts = np.zeros_like(vertices)
+        contacts[:, 2] = normal_forces
+        return {
+            "name": name,
+            "stable_id": stable_id,
+            "global_transform": _identity_transform((0.0, 0.0, 0.0)),
+            "local_vertices": vertices.copy(),
+            "world_vertices": vertices,
+            "local_velocities": velocities,
+            "contact_forces_world": contacts,
+        }
+
+    return {
+        "robots": [],
+        "contacts": [],
+        "deformables": [
+            body("soft_mailer_blue", 101, -0.2, (2.0, 4.0, 6.0)),
+            body("soft_pouch_yellow", 202, -0.1, (1.0, 2.0, 3.0)),
+        ],
+    }
+
+
+def test_native_rigid_conveyor_force_is_coulomb_limited() -> None:
+    context = _FakeNativeContext(_native_rigid_state())
     model = _forces().ConveyorForceModel(
-        provider,
-        views,
-        (1, 3),
-        ("first", "second"),
+        context,
+        ("carton_small", "carton_wide"),
         (1.0, 2.0),
+        belt_robot="conveyor",
+        belt_link="belt_surface",
         friction_coefficient=0.5,
         fixed_dt=0.1,
+        max_acceleration=4.0,
     )
 
-    model.apply(torch.tensor([1.0, 0.5]))
-    assert provider.sense_calls == 1
-    assert torch.allclose(
-        model.drive_force,
-        torch.tensor([[4.0, 8.0], [2.5, 4.0]]),
-    )
-    assert torch.allclose(
-        provider.arrays["xfrc_applied"][:, (1, 3), 0],
-        model.drive_force,
-    )
-    assert torch.allclose(
-        provider.arrays["xfrc_applied"][:, (1, 3), 2],
-        external[:, (1, 3), 2],
+    assert np.allclose(model.apply(1.0), (4.0, 8.0))
+    assert [call[:2] for call in context.link_force_calls] == [
+        ("carton_small", "carton_small"),
+        ("carton_wide", "carton_wide"),
+    ]
+    assert np.allclose(
+        [call[3] for call in context.link_force_calls],
+        ((4.0, 0.0, 0.0), (8.0, 0.0, 0.0)),
     )
 
-    for value in sensors.values():
-        value["force"].zero_()
-        value["found"].zero_()
-    model.apply(0.0)
-    assert torch.allclose(provider.arrays["xfrc_applied"], external)
     model.clear()
-    assert torch.allclose(provider.arrays["xfrc_applied"], external)
+    assert np.count_nonzero(
+        np.asarray([call[3] for call in context.link_force_calls[-2:]])
+    ) == 0
+    assert np.count_nonzero(model.normal_force) == 0
+    assert np.count_nonzero(model.drive_force) == 0
 
 
-def test_deformable_conveyor_force_is_coulomb_limited_and_belt_local() -> None:
-    provider = _FakeDeformableProvider()
-    entries = (
-        {"element_offset": 0, "element_count": 3},
-        {"element_offset": 3, "element_count": 3},
-    )
+def test_native_deformable_force_is_nodal_and_belt_local() -> None:
+    context = _FakeNativeContext(_native_deformable_state())
     model = _forces().DeformableConveyorForceModel(
-        provider,
-        entries,
+        context,
+        ("soft_mailer_blue", "soft_pouch_yellow"),
         (0.6, 0.9),
         friction_coefficient=0.5,
         fixed_dt=0.1,
@@ -1978,34 +2366,43 @@ def test_deformable_conveyor_force_is_coulomb_limited_and_belt_local() -> None:
         belt_center_y=0.58,
     )
 
-    model.apply(torch.tensor([1.0, 0.5]))
-    expected = torch.tensor(
-        [[0.0, 1.2, 1.2, 1.8, 1.8, 0.0],
-         [0.0, 1.0, 1.2, 1.8, 1.8, 0.0]]
+    applied = model.apply(1.0)
+    assert np.allclose(
+        model.drive_force["soft_mailer_blue"], (1.0, 1.2, 0.0)
     )
-    assert torch.allclose(model.drive_force, expected)
-    assert torch.allclose(
-        provider.arrays["ipc_external_forces"][..., 0], expected
+    assert np.allclose(
+        model.drive_force["soft_pouch_yellow"], (0.5, 1.0, 0.0)
     )
-    assert torch.count_nonzero(
-        provider.arrays["ipc_external_forces"][..., 1:]
-    ) == 0
+    assert [stable_id for stable_id, _ in context.deformable_force_calls] == [
+        101,
+        202,
+    ]
+    for name, (_, force) in zip(
+        model.body_names, context.deformable_force_calls, strict=True
+    ):
+        assert force.shape == (3, 3)
+        assert force.flags.c_contiguous
+        assert np.allclose(force, applied[name])
+
     model.clear()
-    assert torch.count_nonzero(provider.arrays["ipc_external_forces"]) == 0
+    assert [stable_id for stable_id, _ in context.deformable_force_calls[-2:]] == [
+        101,
+        202,
+    ]
+    assert all(
+        np.count_nonzero(force) == 0
+        for _, force in context.deformable_force_calls[-2:]
+    )
 
 
-def test_deformable_velocity_damping_is_mass_normalized_per_body() -> None:
-    provider = _FakeDeformableProvider()
-    provider.arrays["ipc_contact_forces"].zero_()
-    velocity = torch.tensor((1.0, -2.0, 0.5))
-    provider.arrays["ipc_velocities"].copy_(velocity)
-    entries = (
-        {"element_offset": 0, "element_count": 3},
-        {"element_offset": 3, "element_count": 3},
+def test_native_deformable_velocity_damping_is_mass_normalized() -> None:
+    velocity = np.asarray((1.0, -2.0, 0.5), dtype=np.float64)
+    context = _FakeNativeContext(
+        _native_deformable_state(tuple(float(value) for value in velocity))
     )
     model = _forces().DeformableConveyorForceModel(
-        provider,
-        entries,
+        context,
+        ("soft_mailer_blue", "soft_pouch_yellow"),
         (0.6, 0.9),
         friction_coefficient=0.5,
         fixed_dt=0.1,
@@ -2016,72 +2413,96 @@ def test_deformable_velocity_damping_is_mass_normalized_per_body() -> None:
         velocity_damping_rates=(2.0, 4.0),
     )
 
-    model.apply(0.0)
-    expected = torch.empty_like(provider.arrays["ipc_external_forces"])
-    expected[:, :3].copy_(velocity).mul_(-0.4)
-    expected[:, 3:].copy_(velocity).mul_(-1.2)
-    assert torch.allclose(provider.arrays["ipc_external_forces"], expected)
-    assert torch.count_nonzero(model.drive_force) == 0
+    applied = model.apply(1.0)
+    assert np.allclose(applied["soft_mailer_blue"], -0.4 * velocity)
+    assert np.allclose(applied["soft_pouch_yellow"], -1.2 * velocity)
+
+    scaled = model.apply(1.0, damping_scale=0.25)
+    assert np.allclose(scaled["soft_mailer_blue"], -0.1 * velocity)
+    assert np.allclose(scaled["soft_pouch_yellow"], -0.3 * velocity)
+    for invalid_scale in (-1.0, math.inf, math.nan):
+        with np.testing.assert_raises(ValueError):
+            model.apply(1.0, damping_scale=invalid_scale)
 
 
-def test_deformable_force_arrows_expose_horizontal_and_belt_resultants() -> None:
+def test_native_force_arrows_read_physics_scene_state() -> None:
     play = _play()
-    assert play._merge_contiguous_body_ranges(
-        ((0, 2), (2, 5), (5, 7), (7, 11)), ((0, 1), (2, 3))
-    ) == ((0, 5), (5, 11))
-    assert play.SOFT_PACKAGE_RESULTANT_BODY_GROUPS == ((0, 1), (2, 3))
-    positions = np.asarray(
-        (
-            (0.0, 0.0, 0.5),
-            (0.2, 0.0, 0.6),
-            (0.4, 0.0, 0.55),
-        ),
-        dtype=np.float64,
-    )
-    forces = np.asarray(
-        (
-            (0.0, 2.0, 20.0),
-            (0.0, 3.0, 10.0),
-            (0.0, 0.0, 5.0),
-        ),
-        dtype=np.float64,
-    )
-    arrows = play._body_resultant_force_arrows(
-        positions,
-        forces,
-        ((0, 2), (2, 3)),
-        ("push_target", "supported_only"),
-        horizontal_only=True,
-        color=play.CONTACT_HORIZONTAL_RESULTANT_COLOR,
-        label="horizontal IPC resultant",
+    arrows = play._contact_arrows(
+        {
+            "contacts": [
+                {
+                    "position": (0.1, 0.2, 0.3),
+                    "force": (0.0, 3.0, 4.0),
+                },
+                {
+                    "position": (0.0, 0.0, 0.0),
+                    "force": (0.0, 0.0, 0.0),
+                },
+            ]
+        },
         force_scale=0.08,
         max_force_length=0.8,
     )
 
     assert len(arrows) == 1
-    assert np.allclose(arrows[0].vector, (0.0, 1.0, 0.0))
-    assert np.allclose(arrows[0].start, (0.1, 0.0, 0.625))
-    assert arrows[0].color == play.CONTACT_HORIZONTAL_RESULTANT_COLOR
-    assert "push_target horizontal IPC resultant 5 N" == arrows[0].label
-
-    belt_arrows = play._body_resultant_force_arrows(
-        positions,
-        np.asarray((2.0, 3.0, 0.0), dtype=np.float64),
-        ((0, 2), (2, 3)),
-        ("push_target", "supported_only"),
-        horizontal_only=False,
-        force_axis=(1.0, 0.0, 0.0),
-        color=play.EXTERNAL_FORCE_RESULTANT_COLOR,
-        label="belt drive resultant",
-        force_scale=0.08,
-        max_force_length=0.8,
+    assert np.allclose(arrows[0].start, (0.1, 0.2, 0.3))
+    assert np.allclose(arrows[0].vector, (0.0, 0.6, 0.8))
+    assert arrows[0].color == play.CONTACT_FORCE_ARROW_COLOR
+    assert arrows[0].label == "contact 5 N"
+    assert math.isclose(
+        play._max_contact_penetration(
+            {
+                "contacts": [
+                    {"distance": -0.0004},
+                    {"distance": -0.0012},
+                    {"distance": 0.01},
+                ]
+            }
+        ),
+        0.0012,
     )
-    assert len(belt_arrows) == 1
-    assert np.allclose(belt_arrows[0].vector, (1.0, 0.0, 0.0))
-    assert "push_target belt drive resultant 5 N" == belt_arrows[0].label
 
 
-def test_runtime_uses_one_velocity_field_and_lazy_contact_output() -> None:
+def test_editor_preview_uses_runtime_only_coarse_superdex_meshes() -> None:
+    play = _play()
+    builder = _builder()
+
+    class PreviewBody:
+        pass
+
+    nodes = {
+        name: PreviewBody() for name in play.PREVIEW_SOFT_PACKAGE_CELLS
+    }
+    authored_cells = {
+        str(spec["name"]): tuple(spec["cells"])
+        for spec in builder.SOFT_PACKAGE_SPECS
+    }
+
+    total_nodes = play._apply_preview_deformable_meshes(nodes, builder)
+
+    assert total_nodes == 780
+    assert len(nodes["soft_mailer_blue"].surface_mesh.vertices) == 260
+    assert len(nodes["soft_mailer_blue_fill"].mesh.vertices) == 72
+    assert len(nodes["soft_pouch_yellow"].surface_mesh.vertices) == 308
+    assert len(nodes["soft_pouch_yellow_fill"].mesh.vertices) == 140
+    assert nodes["soft_mailer_blue"].self_collision_enabled is False
+    assert nodes["soft_pouch_yellow"].self_collision_enabled is False
+    assert {
+        str(spec["name"]): tuple(spec["cells"])
+        for spec in builder.SOFT_PACKAGE_SPECS
+    } == authored_cells == {
+        "soft_mailer_blue": (34, 25),
+        "soft_mailer_blue_fill": (12, 9, 5),
+        "soft_pouch_yellow": (36, 27),
+        "soft_pouch_yellow_fill": (14, 11, 8),
+    }
+    assert play.PREVIEW_NEWTON_ITERATIONS == 16
+    assert play.PREVIEW_LINE_SEARCH_ITERATIONS == 6
+    assert math.isclose(play.PREVIEW_PENETRATION_LIMIT_METERS, 1.0e-3)
+    assert play.PREVIEW_PENETRATION_HOLD_STEPS == 3
+
+
+def test_runtime_uses_native_superdex_state_and_external_forces() -> None:
     play_source = (EXAMPLE / "conveyor_packages_play.py").read_text(
         encoding="utf-8"
     )
@@ -2091,39 +2512,36 @@ def test_runtime_uses_one_velocity_field_and_lazy_contact_output() -> None:
     force_source = (EXAMPLE / "conveyor_forces.py").read_text(
         encoding="utf-8"
     )
-    assert "set_proxy_twist_override" in play_source
-    assert "ConveyorForceModel" in play_source
-    assert "DeformableConveyorForceModel" in play_source
-    assert "export_deformable_contact_forces=True" in play_source
-    assert "contact_refresh_interval" in play_source
-    assert "GOBOT_CONVEYOR_DROP_ONLY" in play_source
-    assert "hand_controls_at_tick" in play_source
-    assert "self.soft_force_model.drive_force[0]" in play_source
-    assert 'self.provider.arrays["ipc_external_forces"][0]' not in play_source
-    assert "profile_module.IPC_CONTACT_ACTIVATION_DISTANCE" in play_source
-    assert "profile_module.IPC_CONTACT_RESISTANCE" in play_source
-    assert "self.profile_module.IPC_CONTACT_FRICTION" not in play_source
-    assert "hand_controls_at_tick" in batch_source
-    assert "ConveyorForceModel" in batch_source
-    assert "DeformableConveyorForceModel" in batch_source
-    assert "--refresh-contact-forces" in batch_source
-    assert "--trace-force-flow" in batch_source
-    assert "basic_conveyor_forces" in force_source
-    assert "configure_mujoco_velocity_field_belt" in force_source
+    builder_source = (EXAMPLE / "build_scene.py").read_text(encoding="utf-8")
+
+    for source in (play_source, batch_source, force_source):
+        assert "torch" not in source.lower()
+        assert "provider" not in source.lower()
+        assert "set_runtime_vertices" not in source
+    assert "PhysicsCoupling3D" not in builder_source
+    assert "PhysicsBackendType.SuperDex" in play_source
+    assert "PhysicsBackendType.SuperDex" in batch_source
+    assert "record_deformable_contact_forces" in play_source
+    assert "record_deformable_contact_forces" in batch_source
+    assert "get_physics_state" in play_source
+    assert "get_physics_state" in batch_source
+    assert "get_physics_state" in force_source
+    assert "set_link_external_force" in force_source
+    assert "set_deformable_external_forces" in force_source
     assert ".item()" not in force_source
 
 
 def main() -> None:
     test_scene_is_reproducible()
-    test_scene_compiles_to_mixed_package_conveyor_contract()
+    test_scene_compiles_to_native_superdex_conveyor_contract()
     test_scene_has_play_script_and_leap_hands()
     test_quality_profiles_and_flip_push_schedule()
-    test_mujoco_belt_material_overrides_parcel_friction()
-    test_rigid_conveyor_force_is_coulomb_limited_and_composable()
-    test_deformable_conveyor_force_is_coulomb_limited_and_belt_local()
-    test_deformable_velocity_damping_is_mass_normalized_per_body()
-    test_deformable_force_arrows_expose_horizontal_and_belt_resultants()
-    test_runtime_uses_one_velocity_field_and_lazy_contact_output()
+    test_native_rigid_conveyor_force_is_coulomb_limited()
+    test_native_deformable_force_is_nodal_and_belt_local()
+    test_native_deformable_velocity_damping_is_mass_normalized()
+    test_native_force_arrows_read_physics_scene_state()
+    test_editor_preview_uses_runtime_only_coarse_superdex_meshes()
+    test_runtime_uses_native_superdex_state_and_external_forces()
 
 
 if __name__ == "__main__":

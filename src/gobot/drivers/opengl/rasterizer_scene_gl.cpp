@@ -45,6 +45,16 @@ namespace {
 
 void LuisaModuleAnchor() {}
 
+void UploadMatrix4(GLint location, const Matrix4& value) {
+    const Eigen::Matrix4f float_value = value.template cast<float>();
+    glUniformMatrix4fv(location, 1, GL_FALSE, float_value.data());
+}
+
+void UploadMatrix3(GLint location, const Matrix3& value) {
+    const Eigen::Matrix3f float_value = value.template cast<float>();
+    glUniformMatrix3fv(location, 1, GL_FALSE, float_value.data());
+}
+
 void AddModuleCandidateDirectory(std::vector<std::filesystem::path>* candidates,
                                  const std::filesystem::path& directory) {
     if (!directory.empty()) {
@@ -790,8 +800,8 @@ void GLRasterizerScene::UploadFrameUniforms(const RenderSceneSnapshot& scene,
                                             const RenderViewSnapshot& view) {
     const RenderCameraSnapshot& camera = view.camera;
     const RenderEnvironmentSnapshot& environment = scene.environment;
-    glUniformMatrix4fv(default_uniforms_.view_projection, 1, GL_FALSE, camera.view_projection.data());
-    glUniformMatrix4fv(default_uniforms_.view, 1, GL_FALSE, camera.view.data());
+    UploadMatrix4(default_uniforms_.view_projection, camera.view_projection);
+    UploadMatrix4(default_uniforms_.view, camera.view);
     glUniform3f(default_uniforms_.camera_position,
                 static_cast<float>(camera.world_position.x()),
                 static_cast<float>(camera.world_position.y()),
@@ -815,10 +825,8 @@ void GLRasterizerScene::UploadFrameUniforms(const RenderSceneSnapshot& scene,
                 environment.ground_color.blue());
     glUniform1f(default_uniforms_.ambient_intensity, static_cast<float>(environment.ambient_intensity));
     glUniform1f(default_uniforms_.exposure, static_cast<float>(environment.exposure));
-    glUniformMatrix3fv(default_uniforms_.environment_rotation,
-                       1,
-                       GL_FALSE,
-                       environment.environment_rotation.data());
+    UploadMatrix3(default_uniforms_.environment_rotation,
+                  environment.environment_rotation);
     glUniform1f(default_uniforms_.environment_intensity,
                 static_cast<float>(environment.environment_intensity));
     const GLuint environment_texture = GetOrCreateTexture(environment.environment_texture);
@@ -1019,8 +1027,8 @@ bool GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
     if (std::abs(linear.determinant()) > CMP_EPSILON) {
         normal_matrix = linear.inverse().transpose();
     }
-    glUniformMatrix4fv(default_uniforms_.model, 1, GL_FALSE, item.model.data());
-    glUniformMatrix3fv(default_uniforms_.normal_matrix, 1, GL_FALSE, normal_matrix.data());
+    UploadMatrix4(default_uniforms_.model, item.model);
+    UploadMatrix3(default_uniforms_.normal_matrix, normal_matrix);
     glUniform1ui(default_uniforms_.instance_id, item.instance_id);
     glUniform1ui(default_uniforms_.semantic_id, item.semantic_id);
     glUniform4f(default_uniforms_.color,

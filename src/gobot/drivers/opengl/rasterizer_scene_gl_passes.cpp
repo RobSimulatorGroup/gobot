@@ -16,6 +16,11 @@
 namespace gobot::opengl {
 namespace {
 
+void UploadMatrix4(GLint location, const Matrix4& value) {
+    const Eigen::Matrix4f float_value = value.template cast<float>();
+    glUniformMatrix4fv(location, 1, GL_FALSE, float_value.data());
+}
+
 GLuint CompilePassShader(GLenum type, const char* source, const char* name) {
     const GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
@@ -300,10 +305,8 @@ bool GLRasterizerScene::RenderDirectionalShadow(const RenderSceneSnapshot& scene
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     glClear(GL_DEPTH_BUFFER_BIT);
     glUseProgram(shadow_pass_.program);
-    glUniformMatrix4fv(shadow_pass_.light_view_projection,
-                       1,
-                       GL_FALSE,
-                       shadow_pass_.view_projection.data());
+    UploadMatrix4(shadow_pass_.light_view_projection,
+                  shadow_pass_.view_projection);
     for (const PreparedRenderItem& prepared : draw_lists.shadow_casters) {
         stats_.shadow_draw_calls += DrawShadowItem(*prepared.item) ? 1u : 0u;
     }
@@ -327,7 +330,7 @@ bool GLRasterizerScene::DrawShadowItem(const VisualMeshRenderItem& item) {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
     }
-    glUniformMatrix4fv(shadow_pass_.model, 1, GL_FALSE, item.model.data());
+    UploadMatrix4(shadow_pass_.model, item.model);
     glUniform1f(shadow_pass_.alpha, material.albedo.alpha());
     glUniform1f(shadow_pass_.alpha_cutoff,
                 material.alpha_mode == AlphaMode::Mask
@@ -350,10 +353,8 @@ void GLRasterizerScene::UploadShadowUniforms() {
     if (!shadow_pass_.active) return;
 
     glBindTextureUnit(6, shadow_pass_.depth_texture);
-    glUniformMatrix4fv(default_uniforms_.shadow_view_projection,
-                       1,
-                       GL_FALSE,
-                       shadow_pass_.view_projection.data());
+    UploadMatrix4(default_uniforms_.shadow_view_projection,
+                  shadow_pass_.view_projection);
     glUniform1f(default_uniforms_.shadow_bias, static_cast<float>(shadow_pass_.bias));
     glUniform1f(default_uniforms_.shadow_normal_bias,
                 static_cast<float>(shadow_pass_.normal_bias));

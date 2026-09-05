@@ -86,7 +86,18 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
     EXPECT_FALSE(mujoco_info.status.empty());
 #endif
 
-    EXPECT_EQ(physics_server.GetBackendInfos().size(), 2);
+    const gobot::PhysicsBackendInfo& superdex_info = physics_server.GetBackendInfo(
+            gobot::PhysicsBackendType::SuperDex);
+    EXPECT_EQ(superdex_info.name, "SuperDex");
+    EXPECT_TRUE(superdex_info.cpu);
+    EXPECT_FALSE(superdex_info.gpu);
+    EXPECT_TRUE(superdex_info.robotics_focused);
+#ifndef GOBOT_HAS_SUPERDEX
+    EXPECT_FALSE(superdex_info.available);
+    EXPECT_NE(superdex_info.status.find("Experimental"), std::string::npos);
+#endif
+
+    EXPECT_EQ(physics_server.GetBackendInfos().size(), 3);
 }
 
 TEST(TestPhysicsServer, creates_world_for_selected_backend) {

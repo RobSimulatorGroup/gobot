@@ -14,6 +14,7 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -71,6 +72,7 @@ struct ResolvedRobotSceneBinding {
 struct ResolvedSceneBindings {
     Node* scene_root{nullptr};
     std::vector<ResolvedRobotSceneBinding> robots;
+    std::vector<DeformableBody3D*> deformables;
 };
 
 bool IsOwnedBySceneRoot(const Node* scene_root, const Node* node) {
@@ -97,6 +99,10 @@ bool ResolveSceneBindings(const PhysicsSceneBindings& bindings,
     }
     if (bindings.robots.size() != snapshot.robots.size()) {
         *error = "Physics scene robot bindings do not match the compiled snapshot.";
+        return false;
+    }
+    if (bindings.deformable_ids.size() != snapshot.deformables.size()) {
+        *error = "Physics scene deformable bindings do not match the compiled snapshot.";
         return false;
     }
 
@@ -150,7 +156,29 @@ bool ResolveSceneBindings(const PhysicsSceneBindings& bindings,
         }
         resolved->robots.push_back(std::move(robot_binding));
     }
+
+    resolved->deformables.reserve(bindings.deformable_ids.size());
+    for (std::size_t index = 0; index < bindings.deformable_ids.size(); ++index) {
+        DeformableBody3D* deformable = ResolveBoundNode<DeformableBody3D>(
+                bindings.deformable_ids[index], resolved->scene_root);
+        if (deformable == nullptr) {
+            *error = fmt::format(
+                    "Physics scene deformable '{}' is no longer alive inside the compiled scene root.",
+                    snapshot.deformables[index].name);
+            return false;
+        }
+        resolved->deformables.push_back(deformable);
+    }
     return true;
+}
+
+void ClearDeformableRuntimeVertices(const PhysicsSceneBindings& bindings) {
+    for (const ObjectID deformable_id : bindings.deformable_ids) {
+        if (auto* deformable = Object::PointerCastTo<DeformableBody3D>(
+                    ObjectDB::GetInstance(deformable_id))) {
+            deformable->ClearRuntimeVertices();
+        }
+    }
 }
 
 ResolvedRobotSceneBinding* FindRobotSceneBinding(ResolvedSceneBindings& bindings,
@@ -199,6 +227,8 @@ const char* BackendName(PhysicsBackendType backend_type) {
             return "Null";
         case PhysicsBackendType::MuJoCoCpu:
             return "MuJoCo CPU";
+        case PhysicsBackendType::SuperDex:
+            return "SuperDex (Experimental)";
     }
 
     return "Unknown";
@@ -410,6 +440,7 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
         SetLastError("Physics scene root was deleted while closing the previous simulation session.");
         return false;
     }
+    ClearDeformableRuntimeVertices(scene_bindings_);
     runtime_scene_.Clear();
     scene_bindings_ = {};
     world_ = PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
@@ -463,6 +494,7 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
         previous_state = world_->GetSceneState();
     }
 
+    ClearDeformableRuntimeVertices(scene_bindings_);
     runtime_scene_.Clear();
     scene_bindings_ = {};
     world_ = PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
@@ -520,6 +552,7 @@ const Node* SimulationServer::GetSceneRoot() const {
 
 void SimulationServer::ClearWorld() {
     ClearExternalSession();
+    ClearDeformableRuntimeVertices(scene_bindings_);
     runtime_scene_.Clear();
     scene_bindings_ = {};
     world_.Reset();
@@ -1159,6 +1192,20 @@ bool SimulationServer::ApplyWorldStateToScene() {
                 ApplyLinkGlobalTransform(link, link_state.global_transform);
             }
         }
+    }
+
+    if (scene_state.deformables.size() != resolved_bindings.deformables.size()) {
+        SetLastError("Physics deformable runtime state does not match the compiled scene bindings.");
+        return false;
+    }
+    for (std::size_t index = 0; index < scene_state.deformables.size(); ++index) {
+        if (index >= scene_snapshot.deformables.size() ||
+            scene_state.deformables[index].stable_id != scene_snapshot.deformables[index].stable_id) {
+            SetLastError("Physics deformable runtime state has an incompatible stable ID ordering.");
+            return false;
+        }
+        resolved_bindings.deformables[index]->SetRuntimeVertices(
+                scene_state.deformables[index].local_vertices);
     }
 
     last_error_.clear();

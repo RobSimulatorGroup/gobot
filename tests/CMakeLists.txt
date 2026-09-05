@@ -186,6 +186,10 @@ gtest_discover_tests(test_scene_play_session
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
+package_add_test(test_superdex_physics_world physics/test_superdex_physics_world.cpp)
+if(GOB_BUILD_SUPERDEX)
+    target_compile_definitions(test_superdex_physics_world PRIVATE GOBOT_HAS_SUPERDEX=1)
+endif()
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_ipc_scene_compiler physics/test_ipc_scene_compiler.cpp)
 

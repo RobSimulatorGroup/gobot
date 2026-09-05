@@ -355,7 +355,7 @@ std::shared_ptr<RenderFrame> CameraSensor::Capture() {
     RenderSceneSnapshot scene = CaptureRenderSceneSnapshot(root);
     RenderViewSnapshot view = CaptureRenderViewSnapshot(*camera);
     const RenderProductDesc& desc = render_product_->GetDesc();
-    view.camera.projection = Matrix4f::Perspective(camera->GetFovy(),
+    view.camera.projection = Matrix4::Perspective(camera->GetFovy(),
                                                    static_cast<RealType>(desc.width) / desc.height,
                                                    camera->GetNear(),
                                                    camera->GetFar());

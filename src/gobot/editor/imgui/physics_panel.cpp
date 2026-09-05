@@ -28,6 +28,8 @@ const char* BackendTypeLabel(PhysicsBackendType backend_type) {
             return "Null";
         case PhysicsBackendType::MuJoCoCpu:
             return "MuJoCo CPU";
+        case PhysicsBackendType::SuperDex:
+            return "SuperDex (Experimental)";
     }
     return "Unknown";
 }
@@ -201,7 +203,13 @@ void PhysicsPanel::OnImGuiContent() {
         return;
     }
 
-    if (!simulation->HasActiveSession() && simulation->GetBackendType() != selected_backend_) {
+    const bool has_active_session = simulation->HasActiveSession();
+    const bool external_session = simulation->HasExternalSession();
+    if (has_active_session && !external_session) {
+        // Node scripts may select a backend while Play is starting. Reflect the
+        // world that was actually built instead of retaining the pre-Play UI choice.
+        selected_backend_ = simulation->GetBackendType();
+    } else if (!has_active_session && simulation->GetBackendType() != selected_backend_) {
         simulation->SetBackendType(selected_backend_);
     }
 
@@ -209,7 +217,6 @@ void PhysicsPanel::OnImGuiContent() {
     const PhysicsBackendInfo selected_info = GetBackendInfo(selected_backend_);
     Editor* editor = Editor::GetInstanceOrNull();
     const bool script_session_running = editor != nullptr && editor->IsScenePlaySessionRunning();
-    const bool external_session = simulation->HasExternalSession();
     const ExternalSessionDiagnostics& external = simulation->GetExternalSessionDiagnostics();
     const char* backend_label =
             external_session && !external.provider_name.empty()
@@ -260,7 +267,6 @@ void PhysicsPanel::OnImGuiContent() {
     ImGui::Separator();
 
     const bool has_world = simulation->HasWorld();
-    const bool has_active_session = simulation->HasActiveSession();
     DrawStatusText(has_active_session,
                    simulation->HasExternalSession() ? "External provider active" : "World built",
                    "No simulation session");

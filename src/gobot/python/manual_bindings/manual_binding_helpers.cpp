@@ -678,6 +678,9 @@ PhysicsBackendType ParseBackend(const std::string& backend) {
     if (backend == "mujoco" || backend == "mujoco_cpu") {
         return PhysicsBackendType::MuJoCoCpu;
     }
+    if (backend == "superdex") {
+        return PhysicsBackendType::SuperDex;
+    }
     throw std::invalid_argument("unknown Gobot physics backend '" + backend + "'");
 }
 
@@ -1115,11 +1118,28 @@ py::tuple ColorToPython(const Color& color) {
 }
 
 std::vector<Vector3> PythonToVector3List(const py::handle& object) {
-    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    if (py::isinstance<py::str>(object) || py::isinstance<py::bytes>(object)) {
+        throw std::invalid_argument("expected an N x 3 array of vectors");
+    }
+
+    py::array_t<double, py::array::c_style | py::array::forcecast> array =
+            py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(object);
+    if (!array) {
+        throw std::invalid_argument("expected an N x 3 array of vectors");
+    }
+    py::buffer_info info = array.request();
+    if (info.ndim != 2 || info.shape[1] != 3) {
+        throw std::invalid_argument("expected an N x 3 array of vectors");
+    }
+
+    const auto* data = static_cast<const double*>(info.ptr);
     std::vector<Vector3> values;
-    values.reserve(static_cast<std::size_t>(sequence.size()));
-    for (py::handle item : sequence) {
-        values.push_back(PythonToVector3(item));
+    values.reserve(static_cast<std::size_t>(info.shape[0]));
+    for (py::ssize_t row = 0; row < info.shape[0]; ++row) {
+        const py::ssize_t offset = row * 3;
+        values.emplace_back(static_cast<RealType>(data[offset]),
+                            static_cast<RealType>(data[offset + 1]),
+                            static_cast<RealType>(data[offset + 2]));
     }
     return values;
 }
@@ -1504,7 +1524,8 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     return result;
 }
 
-py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
+py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state,
+                                  const PhysicsSceneSnapshot* snapshot) {
     py::dict result;
     py::list robots;
     for (const PhysicsRobotState& robot : state.robots) {
@@ -1541,12 +1562,46 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
         sensors.append(SensorStateToPythonDict(sensor));
     }
 
+    py::list deformables;
+    for (const PhysicsDeformableState& deformable : state.deformables) {
+        py::dict value;
+        value["stable_id"] = deformable.stable_id;
+        value["local_vertices"] = Vector3ListToPython(deformable.local_vertices);
+        value["local_velocities"] = Vector3ListToPython(deformable.local_velocities);
+        value["contact_forces_world"] =
+                Vector3ListToPython(deformable.contact_forces_world);
+        if (snapshot != nullptr) {
+            const auto authored = std::find_if(
+                    snapshot->deformables.begin(),
+                    snapshot->deformables.end(),
+                    [&deformable](const PhysicsDeformableSnapshot& candidate) {
+                        return candidate.stable_id == deformable.stable_id;
+                    });
+            if (authored != snapshot->deformables.end()) {
+                value["name"] = authored->name;
+                value["scene_path"] = authored->scene_path;
+                value["global_transform"] =
+                        TransformToPythonDict(authored->global_transform);
+                std::vector<Vector3> world_vertices;
+                world_vertices.reserve(deformable.local_vertices.size());
+                for (const Vector3& local_vertex : deformable.local_vertices) {
+                    world_vertices.push_back(
+                            authored->global_transform * local_vertex);
+                }
+                value["world_vertices"] = Vector3ListToPython(world_vertices);
+            }
+        }
+        deformables.append(std::move(value));
+    }
+
     result["robots"] = robots;
+    result["deformables"] = deformables;
     result["contacts"] = contacts;
     result["sensors"] = sensors;
     result["total_link_count"] = state.total_link_count;
     result["total_joint_count"] = state.total_joint_count;
     result["total_sensor_count"] = state.total_sensor_count;
+    result["total_deformable_count"] = state.total_deformable_count;
     return result;
 }
 
@@ -1690,6 +1745,16 @@ SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle) {
                 "' is not part of the active runtime scene");
     }
     return runtime_scene;
+}
+
+Ref<PhysicsWorld> RuntimeWorldForNodeHandle(const PyNodeHandle& handle) {
+    SimulationServer* simulation = SimulationServerForNodeHandle(handle);
+    RuntimeSceneForNodeHandle(handle);
+    Ref<PhysicsWorld> world = simulation->GetWorld();
+    if (!world.IsValid()) {
+        throw std::runtime_error("simulation world has not been built from a scene");
+    }
+    return world;
 }
 
 Ref<PhysicsWorld> RuntimeWorldForRobotHandle(const PyRobot3DHandle& handle) {

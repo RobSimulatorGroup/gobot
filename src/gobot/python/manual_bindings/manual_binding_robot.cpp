@@ -127,6 +127,36 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                  [](const PyLink3DHandle& handle) {
                      RuntimeSceneForNodeHandle(handle);
                      return LinkStateToPythonDict(RequiredLinkStateForHandle(handle));
+                 })
+            .def("set_external_force",
+                 [](PyLink3DHandle& handle,
+                    const py::handle& point,
+                    const py::handle& force) {
+                     Link3D* link = handle.ResolveAs<Link3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->SetLinkExternalForce(
+                                 RuntimeRobotNameForHandle(handle),
+                                 link->GetName(),
+                                 PythonToVector3(point),
+                                 PythonToVector3(force))) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("point"),
+                 py::arg("force"))
+            .def("clear_external_force",
+                 [](PyLink3DHandle& handle) {
+                     Link3D* link = handle.ResolveAs<Link3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     const Vector3 point =
+                             RequiredLinkStateForHandle(handle).global_transform.translation();
+                     if (!runtime_scene->SetLinkExternalForce(
+                                 RuntimeRobotNameForHandle(handle),
+                                 link->GetName(),
+                                 point,
+                                 Vector3::Zero())) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
                  });
 
     joint3d_class

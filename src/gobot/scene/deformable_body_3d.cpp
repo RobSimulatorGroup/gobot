@@ -88,6 +88,14 @@ RealType DeformableBody3D::GetBendingStiffness() const {
     return bending_stiffness_;
 }
 
+void DeformableBody3D::SetPhysicsMaterial(const Ref<PhysicsMaterial3D>& material) {
+    physics_material_ = material;
+}
+
+const Ref<PhysicsMaterial3D>& DeformableBody3D::GetPhysicsMaterial() const {
+    return physics_material_;
+}
+
 void DeformableBody3D::SetKinematic(bool kinematic) {
     kinematic_ = kinematic;
 }
@@ -174,6 +182,9 @@ GOBOT_REGISTRATION {
             .property("bending_stiffness",
                       &gobot::DeformableBody3D::GetBendingStiffness,
                       &gobot::DeformableBody3D::SetBendingStiffness)
+            .property("physics_material",
+                      &gobot::DeformableBody3D::GetPhysicsMaterial,
+                      &gobot::DeformableBody3D::SetPhysicsMaterial)
             .property("kinematic", &gobot::DeformableBody3D::IsKinematic,
                       &gobot::DeformableBody3D::SetKinematic)
             .property("collision_layer", &gobot::DeformableBody3D::GetCollisionLayer,
