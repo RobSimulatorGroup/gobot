@@ -187,7 +187,7 @@ private:
 
 struct GeometryKey {
     std::uint64_t mesh_id = 0;
-    std::uint64_t revision = 0;
+    std::uint64_t topology_revision = 0;
     std::size_t surface = 0;
     bool operator==(const GeometryKey&) const = default;
 };
@@ -197,8 +197,6 @@ struct GeometryKeyHash {
 };
 
 struct TextureKey {
-    std::uint64_t texture_id = 0;
-    std::uint64_t texture_revision = 0;
     std::uint64_t image_id = 0;
     std::uint64_t image_revision = 0;
     bool operator==(const TextureKey&) const = default;
@@ -212,10 +210,16 @@ struct GeometryResource {
     Buffer<GpuVertex> vertices;
     Buffer<Triangle> triangles;
     luisa::compute::Mesh mesh;
+    std::uint64_t geometry_revision = 0;
+    // Upload sources live through the stream completion boundary in SyncScene.
+    std::vector<GpuVertex> staging_vertices;
+    std::vector<Triangle> staging_triangles;
 };
 
 struct TextureResource {
     luisa::compute::Image<float> image;
+    std::vector<float4> staging_pixels;
+    std::uint64_t resident_bytes = 0;
 };
 
 struct CudaRenderProductFrame {
@@ -271,6 +275,8 @@ public:
                                void* destination,
                                std::size_t destination_size,
                                std::string* error);
+
+    RenderResourceStats GetResourceStats() const;
 
 private:
     using TraceShader = Shader2D<luisa::compute::Image<float>,
@@ -338,6 +344,7 @@ private:
     bool RebuildTopology(const RenderSceneSnapshot& snapshot, std::string* error);
     void UpdateTransforms(const RenderSceneSnapshot& snapshot);
     void UpdateMaterialsAndLighting(const RenderSceneSnapshot& snapshot);
+    void PruneSceneCaches(const RenderSceneSnapshot& snapshot);
     bool SyncScene(const RenderSceneSnapshot& snapshot,
                    std::string* error,
                    bool allow_empty = false);
@@ -368,6 +375,8 @@ private:
     std::unordered_map<TextureKey, std::unique_ptr<TextureResource>, TextureKeyHash>
             texture_cache_;
     std::vector<GeometryResource*> active_geometry_;
+    std::unique_ptr<GeometryResource> empty_geometry_;
+    RenderResourceStats resource_stats_;
     Accel accel_;
     BindlessArray geometry_heap_;
     BindlessArray texture_heap_;

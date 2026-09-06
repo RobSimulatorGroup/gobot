@@ -36,7 +36,7 @@ public:
 
     void Reset() override;
 
-    void Step(RealType delta_time) override;
+    PhysicsStepResult Step(RealType delta_time) override;
 
     Ref<PhysicsRuntimeCheckpoint> CaptureCheckpoint() const override;
 

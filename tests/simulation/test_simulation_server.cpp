@@ -365,6 +365,9 @@ TEST(TestSimulationServer, scene_tree_physics_notifications_follow_fixed_substep
     tree.GetRoot()->AddChild(counter);
 
     gobot::SimulationServer simulation_server;
+    tree.SetPhysicsProcessDriver([&](double delta, const gobot::SceneTree::PhysicsNotification& notify) {
+        simulation_server.Step(static_cast<gobot::RealType>(delta), notify);
+    });
     simulation_server.SetFixedTimeStep(0.002);
     simulation_server.SetMaxSubSteps(8);
     simulation_server.SetPaused(false);
@@ -387,6 +390,43 @@ TEST(TestSimulationServer, scene_tree_physics_notifications_follow_fixed_substep
     EXPECT_EQ(simulation_server.GetFrameCount(), 8);
 
     simulation_server.ClearWorld();
+    tree.Finalize();
+}
+
+TEST(TestSimulationServer, scene_tree_without_driver_never_steps_another_context_world) {
+    gobot::SimulationServer server;
+    auto* robot = CreateRobotScene();
+    ASSERT_TRUE(server.BuildWorldFromScene(robot));
+    server.SetPaused(false);
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* counter = gobot::Object::New<gobot::CountingPhysicsNode>();
+    tree.GetRoot()->AddChild(counter);
+    tree.PhysicsProcess(0.016);
+    EXPECT_EQ(server.GetFrameCount(), 0);
+    EXPECT_EQ(counter->physics_process_count, 1);
+    EXPECT_NEAR(counter->physics_process_deltas[0], 0.016, 1e-8);
+    tree.Finalize();
+    server.ClearWorld();
+    gobot::Node::Delete(robot);
+}
+
+TEST(TestSimulationServer, scene_tree_driver_can_be_replaced_during_dispatch) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* counter = gobot::Object::New<gobot::CountingPhysicsNode>();
+    tree.GetRoot()->AddChild(counter);
+    tree.SetPhysicsProcessDriver([&](double, const gobot::SceneTree::PhysicsNotification& notify) {
+        tree.SetPhysicsProcessDriver({});
+        notify(0.002);
+        notify(0.002);
+    });
+    tree.PhysicsProcess(0.016);
+    tree.PhysicsProcess(0.016);
+    EXPECT_EQ(counter->physics_process_count, 3);
+    ASSERT_EQ(counter->physics_process_deltas.size(), 3);
+    EXPECT_NEAR(counter->physics_process_deltas[0], 0.002, 1e-8);
+    EXPECT_NEAR(counter->physics_process_deltas[2], 0.016, 1e-8);
     tree.Finalize();
 }
 
@@ -1498,8 +1538,15 @@ TEST(TestSimulationServer, mujoco_authored_position_actuator_respects_imported_l
     gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
     simulation_server.SetFixedTimeStep(1.0 / 240.0);
     simulation_server.SetPaused(false);
+    auto settings = simulation_server.GetPhysicsWorldSettings();
+    settings.default_joint_gains.velocity_damping = 0.0;
+    simulation_server.SetPhysicsWorldSettings(settings);
 
     gobot::Robot3D* robot = CreateActuatedLimitedHingeScene();
+    // Use the authored servo damping, without the separate fallback damping force.
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(0)->GetChild(0));
+    ASSERT_NE(joint, nullptr);
+    joint->SetDriveDamping(1.0);
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
     ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
     ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("limited", "calf", 0.0));
@@ -1514,6 +1561,23 @@ TEST(TestSimulationServer, mujoco_authored_position_actuator_respects_imported_l
     EXPECT_LE(joints[0].position, -0.888 + 1.0e-3);
     EXPECT_GT(joints[0].position, -2.0);
 
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestSimulationServer, mujoco_automatic_instability_reset_is_reported_as_failure) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer server(gobot::PhysicsBackendType::MuJoCoCpu);
+    server.SetFixedTimeStep(1.0 / 240.0);
+    auto* robot = CreateActuatedLimitedHingeScene();
+    ASSERT_TRUE(server.BuildWorldFromScene(robot)) << server.GetLastError();
+    ASSERT_TRUE(server.GetRuntimeScene()->SetJointPositionTarget("limited", "calf", 0.0));
+    for (int tick = 0; tick < 240 && !server.IsFaulted(); ++tick) {
+        server.StepOnce();
+    }
+    EXPECT_TRUE(server.IsFaulted());
+    EXPECT_FALSE(server.GetLastPhysicsStepResult().state_valid);
+    EXPECT_FALSE(server.GetLastError().empty());
     gobot::Object::Delete(robot);
 #endif
 }

@@ -19,6 +19,8 @@ class Camera3D;
 class Node;
 class PhysicsWorld;
 struct PhysicsSceneState;
+struct SceneDebugData;
+struct RenderViewSnapshot;
 
 struct DebugArrow {
     Vector3 start{Vector3::Zero()};
@@ -33,13 +35,11 @@ public:
     virtual ~RendererDebugDraw() = default;
 
     virtual void RenderEditorDebug(const RID& render_target,
-                                   const Camera3D* camera,
-                                   const Node* scene_root,
-                                   const PhysicsWorld* physics_world = nullptr,
-                                   bool show_collision_shapes = true) = 0;
+                                   const RenderViewSnapshot& view,
+                                   const SceneDebugData& data) = 0;
 
     virtual void RenderDebugArrows(const RID& render_target,
-                                   const Camera3D* camera,
+                                   const RenderViewSnapshot& view,
                                    const std::vector<DebugArrow>& arrows) = 0;
 };
 

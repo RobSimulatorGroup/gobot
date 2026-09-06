@@ -415,6 +415,27 @@ TEST(TestSuperDexPhysicsWorld, builds_supported_rigid_shapes_and_applies_link_fo
     }
 }
 
+TEST(TestSuperDexPhysicsWorld, rejects_static_link_forces_without_poisoning_next_step) {
+    auto rigid = MakeRigidDropSnapshot();
+    rigid.robots[0].links[0].mass = 0;
+    for (const auto& snapshot : {rigid, MakeDrivenHingeSnapshot()}) {
+        const auto& robot = snapshot.robots[0];
+        const auto& link = robot.links[0];
+        SCOPED_TRACE(robot.name);
+        gobot::PhysicsWorldSettings settings;
+        settings.gravity = gobot::Vector3::Zero();
+        auto world = gobot::PhysicsServer::CreateWorld(gobot::PhysicsBackendType::SuperDex, settings);
+        ASSERT_TRUE(world->Build(snapshot)) << world->GetLastError();
+        EXPECT_FALSE(world->SetLinkSpringForce(robot.name, link.name,
+                gobot::Vector3::Zero(), {0, 0, 2}, gobot::Vector3::Zero()));
+        EXPECT_NE(world->GetLastError().find(robot.name + "::" + link.name), std::string::npos);
+        EXPECT_FALSE(world->SetLinkExternalForce(robot.name, link.name, {0, 0, 1}, {1, 0, 0}));
+        const auto step = world->Step(0.002);
+        EXPECT_TRUE(step.completed) << step.error;
+        EXPECT_TRUE(step.state_valid);
+    }
+}
+
 TEST(TestSuperDexPhysicsWorld, resting_mesh_box_has_no_horizontal_sdf_drift) {
     gobot::PhysicsServer server;
     gobot::PhysicsWorldSettings settings;
@@ -692,6 +713,7 @@ TEST(TestSuperDexPhysicsWorld, refreshes_controller_state_between_solver_substep
     multi_settings.fixed_time_step = 0.002;
     multi_settings.gravity = gobot::Vector3::Zero();
     multi_settings.superdex_solver.substeps = 2;
+    multi_settings.superdex_solver.record_solver_timings = true;
     gobot::Ref<gobot::PhysicsWorld> multi =
             server.CreateWorld(gobot::PhysicsBackendType::SuperDex, multi_settings);
     ASSERT_TRUE(multi.IsValid());
@@ -711,6 +733,24 @@ TEST(TestSuperDexPhysicsWorld, refreshes_controller_state_between_solver_substep
     EXPECT_GE(diagnostics.newton_iterations, 0);
     EXPECT_GE(diagnostics.line_search_iterations, 0);
     EXPECT_TRUE(std::isfinite(diagnostics.residual_norm));
+    ASSERT_TRUE(diagnostics.timings_available);
+    ASSERT_EQ(diagnostics.stage_timings.size(), 14U);
+    double wall_sum = 0.0;
+    for (const auto& stage : diagnostics.stage_timings) {
+        EXPECT_TRUE(std::isfinite(stage.time_seconds)) << stage.name;
+        EXPECT_GE(stage.time_seconds, 0.0) << stage.name;
+        if (stage.name == "assembly") {
+            EXPECT_GT(stage.calls, 0U);
+        }
+        if (!stage.parallel_sum) {
+            EXPECT_EQ(stage.calls, 2U) << stage.name;
+            wall_sum += stage.time_seconds;
+        }
+    }
+    EXPECT_LE(wall_sum, diagnostics.total_step_time_seconds);
+    multi->Reset();
+    EXPECT_TRUE(multi->GetSolverDiagnostics().stage_timings.empty());
+    EXPECT_EQ(multi->GetSolverDiagnostics().linear_iterations, 0U);
     multi.Reset();
 
     gobot::PhysicsWorldSettings single_settings = multi_settings;
@@ -745,6 +785,42 @@ TEST(TestSuperDexPhysicsWorld, refreshes_controller_state_between_solver_substep
                 std::max(first_substep_diagnostics.residual_norm,
                          second_substep_diagnostics.residual_norm),
                 1.0e-7);
+    EXPECT_EQ(diagnostics.linear_iterations,
+              first_substep_diagnostics.linear_iterations + second_substep_diagnostics.linear_iterations);
+    for (std::size_t i = 0; i < diagnostics.stage_timings.size(); ++i) {
+        EXPECT_EQ(diagnostics.stage_timings[i].calls,
+                  first_substep_diagnostics.stage_timings[i].calls +
+                          second_substep_diagnostics.stage_timings[i].calls);
+    }
+    single.Reset();
+
+    single_settings.superdex_solver.record_solver_timings = false;
+    single = server.CreateWorld(gobot::PhysicsBackendType::SuperDex, single_settings);
+    ASSERT_TRUE(single->Build(MakeDrivenHingeSnapshot())) << single->GetLastError();
+    ASSERT_TRUE(single->SetJointControl(
+            "hinge", "hinge_joint", gobot::PhysicsJointControlMode::Position, 0.5));
+    ASSERT_TRUE(single->Step(0.001).completed);
+    ASSERT_TRUE(single->Step(0.001).completed);
+    const auto unprofiled = single->GetSceneState().robots[0].joints[0];
+    EXPECT_NEAR(multi_state.position, unprofiled.position, 1.0e-6);
+    EXPECT_NEAR(multi_state.velocity, unprofiled.velocity, 1.0e-6);
+    EXPECT_FALSE(single->GetSolverDiagnostics().timings_available);
+    EXPECT_TRUE(single->GetSolverDiagnostics().stage_timings.empty());
+    single_settings.superdex_solver.record_solver_timings = true;
+    single->SetSettings(single_settings);
+    ASSERT_TRUE(single->Step(0.001).completed);
+    EXPECT_TRUE(single->GetSolverDiagnostics().timings_available);
+    EXPECT_EQ(single->GetSolverDiagnostics().stage_timings.size(), 14U);
+    const auto checkpoint = single->CaptureCheckpoint();
+    ASSERT_TRUE(checkpoint.IsValid());
+    ASSERT_TRUE(single->Step(0.001).completed);
+    const auto replay_position = single->GetSceneState().robots[0].joints[0].position;
+    ASSERT_TRUE(single->RestoreCheckpoint(checkpoint));
+    EXPECT_TRUE(single->GetSolverDiagnostics().stage_timings.empty());
+    ASSERT_TRUE(single->Step(0.001).completed);
+    EXPECT_NEAR(replay_position, single->GetSceneState().robots[0].joints[0].position, 1.0e-7);
+    ASSERT_TRUE(single->Step(0.0).completed);
+    EXPECT_TRUE(single->GetSolverDiagnostics().stage_timings.empty());
 }
 
 TEST(TestSuperDexPhysicsWorld, preserves_nonzero_authored_joint_pose_on_build_and_reset) {

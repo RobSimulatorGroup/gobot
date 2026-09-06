@@ -10,6 +10,7 @@
 
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/types.hpp"
+#include "gobot/physics/physics_types.hpp"
 
 namespace gobot {
 
@@ -20,6 +21,15 @@ public:
     ~ExternalSimulationDriver() override = default;
 
     virtual bool Step(RealType fixed_delta) = 0;
+
+    // Legacy drivers promise all-or-nothing advancement. Drivers with substeps
+    // must override this contract to report partial progress on failure.
+    virtual PhysicsStepResult StepWithResult(RealType fixed_delta) {
+        const bool completed = Step(fixed_delta);
+        return {.completed = completed,
+                .advanced_time = completed ? fixed_delta : RealType(0),
+                .error = completed ? std::string{} : GetLastError()};
+    }
 
     virtual bool Reset() = 0;
 

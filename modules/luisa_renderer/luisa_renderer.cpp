@@ -374,7 +374,7 @@ Sampler ToSampler(const gobot::RenderTextureSnapshot& texture) {
 
 std::size_t GeometryKeyHash::operator()(const GeometryKey& key) const {
     std::size_t hash = std::hash<std::uint64_t>{}(key.mesh_id);
-    hash ^= std::hash<std::uint64_t>{}(key.revision) + 0x9e3779b9U + (hash << 6U) +
+    hash ^= std::hash<std::uint64_t>{}(key.topology_revision) + 0x9e3779b9U + (hash << 6U) +
             (hash >> 2U);
     hash ^= std::hash<std::size_t>{}(key.surface) + 0x9e3779b9U + (hash << 6U) +
             (hash >> 2U);
@@ -382,9 +382,7 @@ std::size_t GeometryKeyHash::operator()(const GeometryKey& key) const {
 }
 
 std::size_t TextureKeyHash::operator()(const TextureKey& key) const {
-    std::size_t hash = std::hash<std::uint64_t>{}(key.texture_id);
-    hash ^= std::hash<std::uint64_t>{}(key.texture_revision) + (hash << 6U) + (hash >> 2U);
-    hash ^= std::hash<std::uint64_t>{}(key.image_id) + (hash << 6U) + (hash >> 2U);
+    std::size_t hash = std::hash<std::uint64_t>{}(key.image_id);
     hash ^= std::hash<std::uint64_t>{}(key.image_revision) + (hash << 6U) + (hash >> 2U);
     return hash;
 }
@@ -557,6 +555,7 @@ gobot::LuisaRendererResult LuisaRenderer::Render(
         }
 
         if (stats != nullptr) {
+            stats->resources = GetResourceStats();
             stats->active_mode = active_mode;
             stats->accumulated_samples = accumulated_samples_;
             stats->scene_update_ms = std::chrono::duration<double, std::milli>(scene_end - scene_start).count();

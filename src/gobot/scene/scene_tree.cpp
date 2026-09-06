@@ -12,7 +12,6 @@
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot {
 
@@ -54,9 +53,11 @@ SceneTree::SceneTree(bool p_init_window) {
     root_ = Node::New<Window>(p_init_window);
     root_->SetName("root");
 
-    Event::Subscribe(EventType::WindowClose, [this](const Event& event){
-        this->RequestQuit();
-    });
+    if (p_init_window) {
+        window_close_connection_ = Event::SubscribeScoped(EventType::WindowClose, [this](const Event&) {
+            RequestQuit();
+        });
+    }
 }
 
 void SceneTree::OnWindowClose() {
@@ -78,21 +79,18 @@ void SceneTree::CancelQuit() {
 
 bool SceneTree::PhysicsProcess(double time) {
     GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcess");
-    if (SimulationServer::HasInstance()) {
-        SimulationServer* simulation = SimulationServer::GetInstance();
-        if (simulation->HasActiveSession() && !simulation->IsPaused()) {
-            simulation->Step(static_cast<RealType>(time),
-                             [this](RealType fixed_delta) {
-                                 GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcessCallbacks");
-                                 NotifyPhysicsProcess(static_cast<double>(fixed_delta));
-                             });
-            GOBOT_PROFILE_PLOT("physics_steps_per_frame", simulation->GetLastStepCount());
-            return quit_;
-        }
+    // Keep the current driver alive if a notification replaces it reentrantly.
+    const PhysicsProcessDriver driver = physics_process_driver_;
+    if (driver) {
+        driver(time, [this](double delta) { NotifyPhysicsProcess(delta); });
+    } else {
+        NotifyPhysicsProcess(time);
     }
-
-    NotifyPhysicsProcess(time);
     return quit_;
+}
+
+void SceneTree::SetPhysicsProcessDriver(PhysicsProcessDriver driver) {
+    physics_process_driver_ = std::move(driver);
 }
 
 bool SceneTree::Process(double time) {
@@ -123,6 +121,7 @@ void SceneTree::NotifyPhysicsProcess(double time) {
 
 
 SceneTree::~SceneTree() {
+    window_close_connection_.Disconnect();
     if (root_) {
         root_->SetTree(nullptr);
         root_->PropagateAfterExitTree();

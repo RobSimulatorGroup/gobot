@@ -107,23 +107,9 @@ RenderImageSnapshot CaptureImage(const Ref<Image>& image) {
         return snapshot;
     }
 
-    struct CachedImageStorage {
-        std::uint64_t revision = 0;
-        std::weak_ptr<const ImageStorageData> storage;
-    };
-    static std::mutex cache_mutex;
-    static std::unordered_map<ObjectID, CachedImageStorage> cache;
-
     snapshot.image_id = image->GetInstanceId();
     snapshot.revision = image->GetRevision();
-    std::lock_guard lock(cache_mutex);
-    CachedImageStorage& cached = cache[snapshot.image_id];
-    snapshot.storage = cached.storage.lock();
-    if (cached.revision != snapshot.revision || snapshot.storage == nullptr) {
-        snapshot.storage = std::make_shared<const ImageStorageData>(image->GetStorageData());
-        cached.revision = snapshot.revision;
-        cached.storage = snapshot.storage;
-    }
+    snapshot.storage = image->GetStorageSnapshot();
     return snapshot;
 }
 
@@ -236,7 +222,8 @@ void AppendMeshItems(SceneRenderItems& items,
         item.instance_path = instance_path;
         item.semantic_label = semantic_label;
         item.mesh_id = mesh->GetInstanceId();
-        item.mesh_revision = mesh->GetRevision();
+        item.mesh_revision = mesh->GetGeometryRevision();
+        item.mesh_topology_revision = mesh->GetTopologyRevision();
         item.surface_index = surface_index;
         item.surfaces = surfaces;
         item.model = model;
@@ -544,6 +531,7 @@ RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root) {
         snapshot.fingerprints.topology = HashCombine(
                 snapshot.fingerprints.topology, item.mesh_id.operator std::uint64_t());
         snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.surface_index);
+        snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.mesh_topology_revision);
         snapshot.fingerprints.topology = HashCombine(
                 snapshot.fingerprints.topology, item.visible_in_rgb ? 1ULL : 0ULL);
         snapshot.fingerprints.topology = HashCombine(

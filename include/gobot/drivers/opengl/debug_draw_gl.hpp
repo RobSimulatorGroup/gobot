@@ -9,6 +9,7 @@
 #include "glad/glad.h"
 #include "gobot/rendering/renderer_debug_draw.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
+#include "gobot/rendering/scene_debug_data.hpp"
 #include "gobot/core/math/matrix.hpp"
 
 namespace gobot::opengl {
@@ -26,13 +27,11 @@ public:
     ~GLRendererDebugDraw() override;
 
     void RenderEditorDebug(const RID& render_target,
-                           const Camera3D* camera,
-                           const Node* scene_root,
-                           const PhysicsWorld* physics_world = nullptr,
-                           bool show_collision_shapes = true) override;
+                           const RenderViewSnapshot& view,
+                           const SceneDebugData& data) override;
 
     void RenderDebugArrows(const RID& render_target,
-                           const Camera3D* camera,
+                           const RenderViewSnapshot& view,
                            const std::vector<DebugArrow>& arrows) override;
 
 private:
@@ -64,13 +63,13 @@ private:
 
     void DrawWorldAxes();
 
-    void DrawCollisionDebug(const SceneRenderItems& render_items);
+    void DrawCollisionDebug(const std::vector<float>& vertices);
 
-    void DrawDeformableDebug(const Node* scene_root);
+    void DrawDeformableDebug(const std::vector<DeformableDebugGeometry>& geometries);
 
-    void DrawHeightScannerDebug(const PhysicsSceneState* physics_state);
+    void DrawHeightScannerDebug(const std::vector<PhysicsSensorState>& sensors);
 
-    void DrawContactDebug(const PhysicsWorld* physics_world);
+    void DrawContactDebug(const SceneDebugData& data);
 };
 
 }

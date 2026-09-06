@@ -7,6 +7,7 @@
 
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
@@ -113,7 +114,7 @@ Ref<Resource> Resource::Clone(bool copy_subresource) const {
 Resource::~Resource() {
     if (path_cache_registered_) {
         ResourceCache::s_lock.lock();
-        ResourceCache::s_resources.erase(path_cache_);
+        ResourceCache::s_resources.erase(resolved_cache_key_);
         ResourceCache::s_lock.unlock();
     }
     if (!owners_.empty()) {
@@ -130,7 +131,8 @@ void Resource::SetPathTakeOver(const std::string &path) {
 }
 
 void Resource::SetPath(const std::string &path, bool take_over) {
-    if (path_cache_ == path) {
+    const std::string key = ResourceCache::ResolveKey(path);
+    if (path_cache_ == path && resolved_cache_key_ == key && path_cache_registered_) {
         return;
     }
 
@@ -141,10 +143,11 @@ void Resource::SetPath(const std::string &path, bool take_over) {
     ResourceCache::s_lock.lock();
 
     if (path_cache_registered_) {
-        ResourceCache::s_resources.erase(path_cache_);
+        ResourceCache::s_resources.erase(resolved_cache_key_);
     }
 
     path_cache_.clear();
+    resolved_cache_key_.clear();
     path_cache_registered_ = false;
 
     Ref<Resource> existing = ResourceCache::GetRef(path);
@@ -152,8 +155,9 @@ void Resource::SetPath(const std::string &path, bool take_over) {
     if (existing.UseCount()) {
         if (take_over) {
             existing->path_cache_ = "";
+            existing->resolved_cache_key_.clear();
             existing->path_cache_registered_ = false;
-            ResourceCache::s_resources.erase(path);
+            ResourceCache::s_resources.erase(key);
         } else {
             ResourceCache::s_lock.unlock();
             LOG_ERROR("Another resource is loaded from path {} (possible cyclic resource inclusion).", path);
@@ -162,9 +166,10 @@ void Resource::SetPath(const std::string &path, bool take_over) {
     }
 
     path_cache_ = path;
+    resolved_cache_key_ = key;
 
     if (!path_cache_.empty()) {
-        ResourceCache::s_resources[path_cache_] = this;
+        ResourceCache::s_resources[resolved_cache_key_] = this;
         path_cache_registered_ = true;
     }
     ResourceCache::s_lock.unlock();
@@ -177,17 +182,18 @@ std::string Resource::GetPath() const {
 }
 
 void Resource::SetPathWithoutCache(const std::string& path) {
-    if (path_cache_ == path) {
+    if (path_cache_ == path && !path_cache_registered_) {
         return;
     }
 
     if (path_cache_registered_) {
         ResourceCache::s_lock.lock();
-        ResourceCache::s_resources.erase(path_cache_);
+        ResourceCache::s_resources.erase(resolved_cache_key_);
         ResourceCache::s_lock.unlock();
     }
 
     path_cache_ = path;
+    resolved_cache_key_.clear();
     path_cache_registered_ = false;
     MarkChanged();
 }
@@ -244,7 +250,7 @@ bool Resource::IsResourceFile(std::string_view path) {
 }
 
 void Resource::ReloadFromFile() {
-    auto path = GetPath();
+    const auto path = resolved_cache_key_.empty() ? GetPath() : resolved_cache_key_;
 
     ERR_FAIL_COND(!IsResourceFile(path));
 
@@ -305,49 +311,50 @@ void Resource::MarkChanged() noexcept {
 std::unordered_map<std::string, Resource*> ResourceCache::s_resources;
 std::recursive_mutex ResourceCache::s_lock;
 
+std::string ResourceCache::ResolveKey(const std::string& path) {
+    if (path.empty()) {
+        return {};
+    }
+    std::string resolved = path;
+    if (ProjectSettings::HasInstance()) {
+        const auto* settings = ProjectSettings::GetInstance();
+        resolved = settings->GlobalizePath(settings->LocalizePath(path));
+    }
+    // Preserve non-file schemes, but canonicalize real file identities (including
+    // aliases through symlinks). Subresource suffixes remain part of the key.
+    if (resolved.find("://") != std::string::npos) {
+        return resolved;
+    }
+    const auto separator = resolved.find("::");
+    const auto filename = resolved.substr(0, separator);
+    std::error_code error;
+    const auto canonical = std::filesystem::weakly_canonical(
+        std::filesystem::absolute(filename, error), error);
+    if (error) {
+        return resolved;
+    }
+    return canonical.string() + (separator == std::string::npos ? "" : resolved.substr(separator));
+}
+
 bool ResourceCache::Has(const std::string &path) {
-    s_lock.lock();
-
-    auto it = s_resources.find(path);
-
-    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
-        // This resource is in the process of being deleted, ignore its existence.
-        it->second->path_cache_ = std::string();
-        it->second->path_cache_registered_ = false;
-        it->second = nullptr;
-        s_resources.erase(path);
-    }
-
-    s_lock.unlock();
-
-    if (it == s_resources.end()) {
-        return false;
-    }
-
-    return true;
+    return GetRef(path).IsValid();
 }
 
 Ref<Resource> ResourceCache::GetRef(const std::string &path) {
-    Ref<Resource> ref;
-    s_lock.lock();
-
-    auto it = s_resources.find(path);
-
-    if (it != s_resources.end()) {
-        ref = Ref<Resource>(it->second);
+    const std::string key = ResolveKey(path);
+    std::lock_guard lock(s_lock);
+    auto it = s_resources.find(key);
+    if (it == s_resources.end()) {
+        return {};
     }
-
-    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
-        // This resource is in the process of being deleted, ignore its existence
-        it->second->path_cache_ = std::string();
+    if (it->second->GetReferenceCount() == 0) {
+        // Destruction removes the entry using the identity captured on load,
+        // regardless of whichever project happens to be active at destruction.
         it->second->path_cache_registered_ = false;
-        it->second = nullptr;
-        s_resources.erase(path);
+        s_resources.erase(it);
+        return {};
     }
-
-    s_lock.unlock();
-
-    return ref;
+    return Ref<Resource>(it->second);
 }
 
 void ResourceCache::Clear() {

@@ -42,11 +42,16 @@ public:
 
     [[nodiscard]] std::size_t GetSurfaceCount() const;
 
+    [[nodiscard]] std::uint64_t GetGeometryRevision() const { return geometry_revision_; }
+    [[nodiscard]] std::uint64_t GetTopologyRevision() const { return topology_revision_; }
+
 protected:
     void ReplaceSurfaceData(MeshSurfaceList surfaces);
 
 private:
     std::shared_ptr<const MeshSurfaceList> surface_data_;
+    std::uint64_t geometry_revision_{1};
+    std::uint64_t topology_revision_{1};
 
 };
 

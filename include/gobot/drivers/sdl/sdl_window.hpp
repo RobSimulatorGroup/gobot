@@ -27,6 +27,8 @@ public:
 
     [[nodiscard]] Eigen::Vector2i GetWindowSize() const override;
 
+    void SetWindowSize(int width, int height) override;
+
     [[nodiscard]] bool SetWindowFullscreen() override;
 
     [[nodiscard]] bool IsFullscreen() override;
@@ -74,6 +76,8 @@ public:
     [[nodiscard]] SDL_Window* GetSDL2Window() const { return sdl2_window_; }
 
     void SwapBuffers() override;
+
+    bool SetVSyncEnabled(bool enabled) override;
 
 
 private:

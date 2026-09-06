@@ -148,6 +148,22 @@ def main() -> int:
                 f"includes Scene header {match.group(1)!r}"
             )
 
+    separated_services = {
+        "src/gobot/scene/scene_tree.cpp": ("gobot/simulation/",),
+        "src/gobot/main/engine_context.cpp": ("gobot/python/",),
+        "src/gobot/drivers/opengl/debug_draw_gl.cpp": (
+            "gobot/scene/", "gobot/simulation/", "gobot/physics/backends/",
+            "gobot/physics/physics_scene_compiler.hpp", "gobot/physics/physics_world.hpp",
+            "gobot/physics/physics_server.hpp",
+        ),
+        "src/gobot/simulation/simulation_worker.cpp": ("gobot/scene/", "gobot/editor/", "gobot/python/"),
+    }
+    for relative, forbidden in separated_services.items():
+        for line_number, line in enumerate((ROOT / relative).read_text().splitlines(), 1):
+            match = INCLUDE_RE.match(line)
+            if match and match.group(1).startswith(forbidden):
+                violations.append(f"{relative}:{line_number}: service boundary includes {match.group(1)!r}")
+
     for root in (ROOT / "include/gobot", ROOT / "src/gobot"):
         for path in source_files(root, {".cpp", ".cc", ".hpp", ".h"}):
             for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):

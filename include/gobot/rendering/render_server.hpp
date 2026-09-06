@@ -27,6 +27,7 @@ class Camera3D;
 class Node;
 class SceneTree;
 class PhysicsWorld;
+class PhysicsDebugPreview;
 struct DebugArrow;
 
 class GOBOT_EXPORT RenderServer : public Object {
@@ -185,6 +186,7 @@ private:
     static RenderServer* s_singleton;
 
     RendererType renderer_type_;
+    std::unique_ptr<PhysicsDebugPreview> debug_preview_;
 
 };
 

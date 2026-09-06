@@ -47,6 +47,11 @@ package_add_test(test_geometry core/math/test_geometry.cpp)
 package_add_test(test_pcg_random core/math/test_pcg_random.cpp)
 package_add_test(test_string_utils core/test_string_utils.cpp)
 package_add_test(test_input core/test_input.cpp)
+package_add_test(test_event core/test_event.cpp)
+package_add_test(test_engine_context main/test_engine_context.cpp)
+package_add_test(test_physics_debug_preview simulation/test_physics_debug_preview.cpp)
+package_add_test(test_physics_step_result simulation/test_physics_step_result.cpp)
+package_add_test(test_simulation_worker simulation/test_simulation_worker.cpp)
 package_add_test(test_object_db core/test_object_db.cpp)
 package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
 package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
@@ -73,6 +78,7 @@ package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
 package_add_test(test_render_product rendering/test_render_product.cpp)
+package_add_test(test_render_resource_lifetime rendering/test_render_resource_lifetime.cpp)
 package_add_test(test_render_scene_preparation rendering/test_render_scene_preparation.cpp)
 if(GOB_BUILD_LUISA_RENDERER)
     add_library(gobot_test_luisa_bad_abi MODULE
@@ -443,6 +449,18 @@ add_test(
 set_tests_properties(test_python_conveyor_packages_example
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_conveyor_mujoco_ipc
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_conveyor_mujoco_ipc.py
+)
+set_tests_properties(test_python_conveyor_mujoco_ipc
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            RESOURCE_LOCK gobot_cuda
             SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )

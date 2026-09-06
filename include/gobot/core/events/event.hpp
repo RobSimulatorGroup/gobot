@@ -10,6 +10,8 @@
 #include "gobot/core/types.hpp"
 #include "gobot/core/object.hpp"
 
+#include <memory>
+
 namespace gobot {
 
 enum class EventType
@@ -65,6 +67,23 @@ class GOBOT_EXPORT Event : public Object {
 public:
     using Subscriber = std::function<void(const Event&)>;
 
+    class GOBOT_EXPORT Connection {
+    public:
+        Connection() = default;
+        ~Connection();
+        Connection(Connection&&) noexcept;
+        Connection& operator=(Connection&&) noexcept;
+        Connection(const Connection&) = delete;
+        Connection& operator=(const Connection&) = delete;
+        void Disconnect();
+
+    private:
+        friend class Event;
+        struct Slot;
+        explicit Connection(std::shared_ptr<Slot> slot);
+        std::shared_ptr<Slot> slot_;
+    };
+
     [[nodiscard]] virtual EventType GetEventType() const = 0;
 
     [[nodiscard]] virtual const char* GetName() const = 0;
@@ -89,10 +108,17 @@ public:
 
     static void Subscribe(const EventType& event_type, Subscriber&& function);
 
+    // Event dispatch and subscription lifetime changes belong to the event thread.
+    [[nodiscard]] static Connection SubscribeScoped(EventType event_type, Subscriber function);
+
     static void Fire(const Event& event);
 
 protected:
     bool handled_ = false;
+
+private:
+    static std::array<std::vector<std::weak_ptr<Connection::Slot>>, 32> subscribers_;
+    static std::vector<Connection> permanent_connections_;
 };
 
 

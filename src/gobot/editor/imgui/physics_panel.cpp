@@ -267,9 +267,11 @@ void PhysicsPanel::OnImGuiContent() {
     ImGui::Separator();
 
     const bool has_world = simulation->HasWorld();
-    DrawStatusText(has_active_session,
+    DrawStatusText(external_session || simulation->IsWorldReady(),
                    simulation->HasExternalSession() ? "External provider active" : "World built",
-                   "No simulation session");
+                   simulation->IsFaulted() ? "Simulation failed" :
+                   simulation->IsWorkerRetiring() ? "Stopping simulation" :
+                   has_world ? "Building physics world" : "No simulation session");
     if (external_session) {
         ImGui::Text("Provider: %s", external.provider_name.empty() ? "External" : external.provider_name.c_str());
         ImGui::Text("Device: %s", external.device.empty() ? "-" : external.device.c_str());

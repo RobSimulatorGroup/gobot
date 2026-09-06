@@ -14,12 +14,14 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/physics/backends/null_physics_world.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/simulation/queued_physics_world.hpp"
 
 namespace gobot {
 namespace {
@@ -432,6 +434,10 @@ void SimulationServer::SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step) {
 }
 
 bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
+    if (IsWorkerRetiring() || (async_stepping_enabled_ && world_.IsValid())) {
+        SetLastError("Clear the current asynchronous world and let it retire before building another world.");
+        return false;
+    }
     const ObjectID requested_scene_root_id =
             scene_root != nullptr ? scene_root->GetInstanceId() : ObjectID{};
     ClearExternalSession();
@@ -443,17 +449,25 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
     ClearDeformableRuntimeVertices(scene_bindings_);
     runtime_scene_.Clear();
     scene_bindings_ = {};
-    world_ = PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
-    if (!world_.IsValid()) {
-        SetLastError("Failed to create physics world.");
-        return false;
-    }
-    if (world_->GetBackendType() != backend_type_) {
+    if (!PhysicsServer::IsBackendAvailable(backend_type_)) {
         SetLastError(fmt::format("Requested physics backend '{}' is not available or implemented.",
                                  BackendName(backend_type_)));
         world_.Reset();
         return false;
     }
+    world_ = async_stepping_enabled_ ? Ref<PhysicsWorld>(MakeRef<NullPhysicsWorld>())
+                                    : PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
+    if (!world_.IsValid()) {
+        SetLastError("Failed to create physics world.");
+        return false;
+    }
+    if (!async_stepping_enabled_ && world_->GetBackendType() != backend_type_) {
+        SetLastError(fmt::format("Requested physics backend '{}' is not available or implemented.",
+                                 BackendName(backend_type_)));
+        world_.Reset();
+        return false;
+    }
+    world_->SetSettings(physics_world_settings_);
 
     CompiledPhysicsScene compiled_scene;
     std::string compile_error;
@@ -469,18 +483,27 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
     }
     scene_bindings_ = std::move(compiled_scene.bindings);
 
-    if (!runtime_scene_.Initialize(world_, scene_root)) {
-        SetLastError(runtime_scene_.GetLastError());
+    ResetClock();
+    if (!AttachWorker()) {
         world_.Reset();
         return false;
     }
 
-    ResetClock();
+    if (!runtime_scene_.Initialize(world_, scene_root)) {
+        SetLastError(runtime_scene_.GetLastError());
+        ClearWorld();
+        return false;
+    }
+
     last_error_.clear();
     return true;
 }
 
 bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preserve_state) {
+    if (async_stepping_enabled_) {
+        SetLastError("Stop asynchronous playback before rebuilding the authored scene.");
+        return false;
+    }
     const ObjectID requested_scene_root_id =
             scene_root != nullptr ? scene_root->GetInstanceId() : ObjectID{};
     ClearExternalSession();
@@ -552,6 +575,9 @@ const Node* SimulationServer::GetSceneRoot() const {
 
 void SimulationServer::ClearWorld() {
     ClearExternalSession();
+    if (auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_)) queued->Retire();
+    if (worker_ && !worker_->CanInstall()) worker_->Retire();
+    completed_checkpoint_ = {};
     ClearDeformableRuntimeVertices(scene_bindings_);
     runtime_scene_.Clear();
     scene_bindings_ = {};
@@ -561,6 +587,12 @@ void SimulationServer::ClearWorld() {
 
 bool SimulationServer::HasWorld() const {
     return world_.IsValid();
+}
+
+bool SimulationServer::IsWorldReady() const {
+    if (!world_.IsValid() || faulted_) return false;
+    if (auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_)) return queued->IsBackendReady();
+    return world_->IsAvailable();
 }
 
 bool SimulationServer::HasExternalSession() const {
@@ -690,6 +722,15 @@ Ref<PhysicsWorld> SimulationServer::GetWorld() const {
     return world_;
 }
 
+std::shared_ptr<const SimulationStateFrame> SimulationServer::CaptureStateFrame() const {
+    if (!world_.IsValid()) {
+        return {};
+    }
+    if (auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_)) return queued->GetFrame();
+    return std::make_shared<const SimulationStateFrame>(SimulationStateFrame{
+            session_clock_epoch_, frame_count_, simulation_time_, last_physics_step_result_, world_->GetSceneState()});
+}
+
 SimulationScene* SimulationServer::GetRuntimeScene() {
     return runtime_scene_.IsValid() ? &runtime_scene_ : nullptr;
 }
@@ -707,6 +748,23 @@ bool SimulationServer::Reset() {
         return ResetExternalSession(external_session_token_);
     }
 
+    if (auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_)) {
+        SimulationWorker::Request request;
+        request.operation = SimulationWorker::Operation::Reset;
+        request.epoch = session_clock_epoch_ + 1;
+        if (request.epoch == 0) ++request.epoch;
+        request.settings = physics_world_settings_;
+        if (!worker_->RequestControl(std::move(request))) {
+            SetLastError("A simulation reset or restore is already pending.");
+            return false;
+        }
+        ResetClock();
+        queued->DiscardCommands();
+        completed_checkpoint_ = {};
+        last_error_.clear();
+        return true;
+    }
+
     world_->Reset();
     ResetClock();
     if (!ApplyWorldStateToScene()) {
@@ -722,6 +780,10 @@ bool SimulationServer::StepOnce() {
 }
 
 bool SimulationServer::StepOnce(const FixedStepCallback& fixed_step_callback) {
+    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) {
+        SetLastError("Use RequestStep for asynchronous playback; StepOnce remains a synchronous headless API.");
+        return false;
+    }
     if (faulted_) {
         last_step_count_ = 0;
         return false;
@@ -756,6 +818,9 @@ int SimulationServer::Step(RealType delta_time) {
 }
 
 int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_step_callback) {
+    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) {
+        return AdvanceRealtime(delta_time, fixed_step_callback);
+    }
     GOBOT_PROFILE_ZONE("SimulationServer::Step");
     if (!std::isfinite(delta_time)) {
         SetLastError("Simulation frame delta must be finite.");
@@ -829,6 +894,188 @@ bool SimulationServer::ConfigureEnvironmentBatch(std::size_t environment_count) 
     }
 
     last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::SetAsyncSteppingEnabled(bool enabled) {
+    if (enabled == async_stepping_enabled_) return true;
+    if (HasActiveSession() || IsWorkerRetiring()) {
+        SetLastError("Change scheduling mode only after the current simulation session has stopped.");
+        return false;
+    }
+    async_stepping_enabled_ = enabled;
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::IsWorkerRetiring() const {
+    return worker_ && !world_.IsValid() && !worker_->CanInstall();
+}
+
+bool SimulationServer::IsAsyncOperationPending() const {
+    return worker_ && dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid() && worker_->IsPending();
+}
+
+bool SimulationServer::AttachWorker() {
+    if (!async_stepping_enabled_) return true;
+    if (!worker_) worker_ = std::make_unique<SimulationWorker>();
+    if (!worker_->CanInstall()) {
+        SetLastError("The previous physics world is still retiring.");
+        return false;
+    }
+    auto frame = std::make_shared<const SimulationStateFrame>(SimulationStateFrame{
+            session_clock_epoch_, frame_count_, simulation_time_, {}, world_->GetSceneState()});
+    auto queued = MakeRef<QueuedPhysicsWorld>(backend_type_, *world_.Get(), frame);
+    SimulationWorker::Request request;
+    request.operation = SimulationWorker::Operation::Install;
+    request.epoch = session_clock_epoch_;
+    request.settings = physics_world_settings_;
+    request.backend = backend_type_;
+    request.install_snapshot = world_->GetSceneSnapshot();
+    if (!worker_->Submit(std::move(request))) {
+        SetLastError("Physics worker could not accept the compiled world.");
+        return false;
+    }
+    world_ = queued;
+    return true;
+}
+
+int SimulationServer::PollWorker() {
+    if (!worker_) return 0;
+    auto completion = worker_->Poll();
+    auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
+    if (!completion || !queued || completion->frame->epoch != session_clock_epoch_) return 0;
+    const auto& frame = completion->frame;
+    last_physics_step_result_ = frame->step;
+    simulation_time_ = frame->simulation_time;
+    frame_count_ = frame->tick;
+    const int advanced = completion->operation == SimulationWorker::Operation::Step &&
+            frame->step.completed && frame->step.state_valid ? 1 : 0;
+    const bool backend_initialized = frame->step.completed && frame->step.state_valid &&
+            (completion->operation == SimulationWorker::Operation::Install ||
+             completion->operation == SimulationWorker::Operation::Reset ||
+             completion->operation == SimulationWorker::Operation::RestoreCheckpoint);
+    if (backend_initialized) queued->SetBackendReady(completion->capabilities, std::move(completion->artifact));
+    if (frame->step.state_valid) {
+        queued->Publish(frame);
+        if (sync_scene_on_fixed_step_ || backend_initialized || !frame->step.completed) {
+            if (!SyncSceneFromWorld()) {
+                LatchFailure("scene synchronization");
+                return advanced;
+            }
+        }
+    }
+    if (!frame->step.completed || !frame->step.state_valid) {
+        SetLastError(frame->step.error.empty() ? "Asynchronous physics operation failed." : frame->step.error);
+        LatchFailure("asynchronous physics");
+        return advanced;
+    }
+    if (completion->operation == SimulationWorker::Operation::CaptureCheckpoint) {
+        completed_checkpoint_ = std::move(completion->checkpoint);
+    }
+    return advanced;
+}
+
+int SimulationServer::AdvanceRealtime(RealType delta_time, const FixedStepCallback& callback) {
+    if (!dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) return Step(delta_time, callback);
+    last_step_count_ = PollWorker();
+    if (!std::isfinite(delta_time)) {
+        SetLastError("Simulation frame delta must be finite.");
+        LatchFailure("frame step");
+        return last_step_count_;
+    }
+    if (paused_ || faulted_ || delta_time <= 0 || time_scale_ <= 0) return last_step_count_;
+    const RealType dt = physics_world_settings_.fixed_time_step;
+    // Bound wall-time debt. Overload slows simulation time, never changes the physics timestep.
+    accumulator_ = std::min(accumulator_ + delta_time * time_scale_, dt * RealType(max_sub_steps_));
+    if (accumulator_ + CMP_EPSILON >= dt && worker_->CanSubmit()) {
+        if (RequestStep(callback)) accumulator_ = std::max(RealType(0), accumulator_ - dt);
+    }
+    return last_step_count_;
+}
+
+bool SimulationServer::RequestStep(const FixedStepCallback& callback) {
+    auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
+    if (!queued) return StepOnce(callback);
+    if (faulted_ || !queued->IsBackendReady() || !worker_->CanSubmit()) return false;
+    const auto epoch = session_clock_epoch_;
+    if (callback) {
+        try {
+            callback(physics_world_settings_.fixed_time_step);
+        } catch (const std::exception& error) {
+            SetLastError(error.what());
+            LatchFailure("control callback");
+            return false;
+        } catch (...) {
+            SetLastError("Simulation control callback threw an unknown exception.");
+            LatchFailure("control callback");
+            return false;
+        }
+    }
+    if (session_clock_epoch_ != epoch || world_.Get() != queued.Get() || faulted_) return false;
+    SimulationWorker::Request request;
+    request.epoch = epoch;
+    request.tick = frame_count_;
+    request.simulation_time = simulation_time_;
+    request.settings = physics_world_settings_;
+    if (!queued->TakeCommands(&request.commands)) {
+        SetLastError(queued->GetLastError());
+        LatchFailure("command submission");
+        return false;
+    }
+    if (!worker_->Submit(std::move(request))) {
+        SetLastError("Physics worker refused a prepared tick.");
+        LatchFailure("command submission");
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::RequestCheckpoint() {
+    if (!world_.IsValid() || faulted_) return false;
+    auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
+    if (!queued) {
+        completed_checkpoint_ = {world_->CaptureCheckpoint(), frame_count_, simulation_time_};
+        return completed_checkpoint_.physics.IsValid();
+    }
+    if (!worker_->CanSubmit()) return false;
+    SimulationWorker::Request request;
+    request.operation = SimulationWorker::Operation::CaptureCheckpoint;
+    request.epoch = session_clock_epoch_;
+    request.tick = frame_count_;
+    request.simulation_time = simulation_time_;
+    request.settings = physics_world_settings_;
+    if (!queued->TakeCommands(&request.commands)) {
+        SetLastError(queued->GetLastError());
+        LatchFailure("checkpoint command submission");
+        return false;
+    }
+    completed_checkpoint_ = {};
+    return worker_->Submit(std::move(request));
+}
+
+bool SimulationServer::RequestRestoreCheckpoint(const SimulationCheckpoint& checkpoint) {
+    if (!world_.IsValid() || !checkpoint.physics.IsValid()) return false;
+    if (!dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) {
+        if (!world_->RestoreCheckpoint(checkpoint.physics)) {
+            SetLastError(world_->GetLastError());
+            return false;
+        }
+        ResetClock();
+        frame_count_ = checkpoint.tick;
+        simulation_time_ = checkpoint.simulation_time;
+        return ApplyWorldStateToScene();
+    }
+    SimulationWorker::Request request;
+    request.operation = SimulationWorker::Operation::RestoreCheckpoint;
+    request.epoch = session_clock_epoch_ + 1;
+    if (request.epoch == 0) ++request.epoch;
+    request.settings = physics_world_settings_;
+    request.checkpoint = checkpoint;
+    if (!worker_->RequestControl(std::move(request))) return false;
+    ResetClock();
+    dynamic_pointer_cast<QueuedPhysicsWorld>(world_)->DiscardCommands();
     return true;
 }
 
@@ -922,10 +1169,14 @@ bool SimulationServer::SyncSceneFromWorld() {
         return true;
     }
 
+    const auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
+    const auto frame = queued ? queued->GetFrame() : std::shared_ptr<const SimulationStateFrame>{};
+    if (frame && (frame->epoch != session_clock_epoch_ || last_applied_frame_.lock() == frame)) return true;
     if (!ApplyWorldStateToScene()) {
         LatchFailure("scene synchronization");
         return false;
     }
+    last_applied_frame_ = frame;
     return true;
 }
 
@@ -1041,11 +1292,13 @@ SimulationServer::FixedStepResult SimulationServer::StepFixed(
         }
     }
 
-    bool advanced = false;
+    PhysicsStepResult physics_result;
+    const auto physics_started = std::chrono::steady_clock::now();
+    try {
     if (active_external_driver.IsValid()) {
         GOBOT_PROFILE_ZONE("SimulationServer::ExternalDriverStep");
         const auto step_started_at = std::chrono::steady_clock::now();
-        const bool step_succeeded = active_external_driver->Step(fixed_delta);
+        physics_result = active_external_driver->StepWithResult(fixed_delta);
         const double step_latency_ms = std::chrono::duration<double, std::milli>(
                                                std::chrono::steady_clock::now() - step_started_at)
                                                .count();
@@ -1055,23 +1308,32 @@ SimulationServer::FixedStepResult SimulationServer::StepFixed(
         external_diagnostics_.average_step_latency_ms =
                 external_step_latency_sum_ms_ /
                 static_cast<double>(external_step_latency_count_);
-        advanced = step_succeeded;
-        if (fail_if_session_changed()) {
-            return {.advanced = advanced, .session_changed = true};
-        }
-        if (!step_succeeded) {
-            SetLastError(active_external_driver->GetLastError());
-            return {};
-        }
     } else {
         GOBOT_PROFILE_ZONE("SimulationServer::WorldStep");
-        active_world->Step(fixed_delta);
-        advanced = true;
-        if (fail_if_session_changed()) {
-            return {.advanced = true, .session_changed = true};
-        }
+        physics_result = active_world->Step(fixed_delta);
     }
-    simulation_time_ += fixed_delta;
+    } catch (const std::exception& error) {
+        physics_result = {.state_valid = false, .error = error.what()};
+    } catch (...) {
+        physics_result = {.state_valid = false, .error = "Physics step threw an unknown exception."};
+    }
+    physics_result.diagnostics.total_step_time_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - physics_started).count();
+    if (fail_if_session_changed()) {
+        return {.session_changed = true};
+    }
+    const RealType tolerance = std::max(RealType(1e-8), fixed_delta * RealType(1e-5));
+    if (!std::isfinite(physics_result.advanced_time) || physics_result.advanced_time < 0.0 ||
+        physics_result.advanced_time > fixed_delta + tolerance ||
+        (physics_result.completed && std::abs(physics_result.advanced_time - fixed_delta) > tolerance)) {
+        physics_result = {.state_valid = false, .error = "Physics backend returned an invalid step advancement."};
+    }
+    last_physics_step_result_ = physics_result;
+    simulation_time_ += physics_result.advanced_time;
+    if (!physics_result.completed || !physics_result.state_valid) {
+        SetLastError(physics_result.error.empty() ? "Physics step did not complete." : physics_result.error);
+        return {};
+    }
     ++frame_count_;
     if (sync_scene_on_fixed_step_) {
         GOBOT_PROFILE_ZONE("SimulationServer::ApplyWorldStateToScene");
@@ -1208,7 +1470,7 @@ bool SimulationServer::ApplyWorldStateToScene() {
                 scene_state.deformables[index].local_vertices);
     }
 
-    last_error_.clear();
+    if (!faulted_) last_error_.clear();
     return true;
 }
 
@@ -1222,6 +1484,7 @@ void SimulationServer::ResetClock() {
     frame_count_ = 0;
     last_step_count_ = 0;
     faulted_ = false;
+    last_physics_step_result_ = {};
 }
 
 void SimulationServer::LatchFailure(const char* operation) {

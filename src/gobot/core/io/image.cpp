@@ -745,6 +745,15 @@ void Image::InitializeData(int width, int height, bool use_mipmaps, ImageFormat 
 
 }
 
+std::shared_ptr<const ImageStorageData> Image::GetStorageSnapshot() const {
+    std::lock_guard lock(snapshot_mutex_);
+    if (!storage_snapshot_ || snapshot_revision_ != GetRevision()) {
+        storage_snapshot_ = std::make_shared<const ImageStorageData>(GetStorageData());
+        snapshot_revision_ = GetRevision();
+    }
+    return storage_snapshot_;
+}
+
 ImageStorageData Image::GetStorageData() const {
     return {width_, height_, use_mipmaps_, format_, data_};
 }

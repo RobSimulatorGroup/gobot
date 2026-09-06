@@ -30,13 +30,25 @@ class GOBOT_EXPORT ProjectSettings : public Object {
 public:
     static ProjectSettings* s_singleton;
 
-    ProjectSettings();
+    explicit ProjectSettings(bool register_singleton = true);
 
     ~ProjectSettings() override;
 
     static ProjectSettings* GetInstance();
 
     static bool HasInstance();
+
+    // Nested resource loads inherit an explicit context without changing the
+    // process-wide default. The owner must outlive every scope using it.
+    class GOBOT_EXPORT Scope {
+    public:
+        explicit Scope(ProjectSettings* settings);
+        ~Scope();
+        Scope(const Scope&) = delete;
+        Scope& operator=(const Scope&) = delete;
+    private:
+        ProjectSettings* previous_;
+    };
 
     [[nodiscard]] std::string LocalizePath(std::string_view path) const;
 
@@ -71,6 +83,7 @@ public:
     bool SaveProjectConfig() const;
 
 private:
+    static thread_local ProjectSettings* thread_settings_;
     void LoadProjectConfig();
 
     [[nodiscard]] std::string GetProjectConfigPath() const;

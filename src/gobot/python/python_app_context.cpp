@@ -10,6 +10,7 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/simulation/simulation_server.hpp"
+#include "gobot/python/python_script_runner.hpp"
 
 namespace gobot::python {
 namespace {
@@ -27,10 +28,22 @@ void RegisterAppContext(EngineContext* context) {
     auto& contexts = AppContexts();
     if (std::find(contexts.begin(), contexts.end(), context) == contexts.end()) {
         contexts.push_back(context);
+        context->SetSceneBindingCallback([context](Node* root, std::uint64_t epoch) {
+            if (root != nullptr) {
+                PythonScriptRunner::SetSceneScriptContext(context);
+                PythonScriptRunner::SetSceneScriptRoot(root, epoch);
+            } else {
+                PythonScriptRunner::ClearSceneScriptContext(context);
+            }
+        });
     }
 }
 
 void UnregisterAppContext(EngineContext* context) {
+    if (context != nullptr) {
+        PythonScriptRunner::ClearSceneScriptContext(context);
+        context->SetSceneBindingCallback({});
+    }
     if (s_active_app_context == context) {
         s_active_app_context = nullptr;
     }
@@ -52,7 +65,7 @@ struct OwnedAppContext {
     std::unique_ptr<EngineContext> context;
 
     OwnedAppContext() {
-        project_settings = ProjectSettings::GetInstance();
+        project_settings = Object::New<ProjectSettings>(false);
         simulation_server = Object::New<SimulationServer>(PhysicsBackendType::Null, false);
         context = std::make_unique<EngineContext>(project_settings, simulation_server);
         RegisterAppContext(context.get());
@@ -68,6 +81,7 @@ struct OwnedAppContext {
             Object::Delete(simulation_server);
             simulation_server = nullptr;
         }
+        Object::Delete(project_settings);
     }
 };
 

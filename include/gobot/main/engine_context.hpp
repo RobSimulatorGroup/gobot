@@ -23,6 +23,7 @@ class GOBOT_EXPORT EngineContext {
 public:
     using SceneChangedCallback = std::function<void()>;
     using LoadSceneCallback = std::function<bool(const std::string& path)>;
+    using SceneBindingCallback = std::function<void(Node* root, std::uint64_t epoch)>;
 
     EngineContext(ProjectSettings* project_settings,
                   SimulationServer* simulation_server);
@@ -34,6 +35,7 @@ public:
 
     bool SetProjectPath(const std::string& project_path);
     const std::string& GetProjectPath() const;
+    ProjectSettings* GetProjectSettings() const { return project_settings_; }
 
     bool LoadScene(const std::string& scene_path);
     void SetSceneRoot(Node* scene_root,
@@ -82,6 +84,8 @@ public:
 
     void SetSceneChangedCallback(SceneChangedCallback callback);
     void SetLoadSceneCallback(LoadSceneCallback callback);
+    // App-layer services observe replacement/clear without becoming an engine dependency.
+    void SetSceneBindingCallback(SceneBindingCallback callback);
     void NotifySceneChanged();
     void NotifySceneMutated();
     bool ExecuteSceneCommand(std::unique_ptr<SceneCommand> command);
@@ -119,6 +123,7 @@ private:
     std::vector<DebugArrow> debug_arrows_;
     SceneChangedCallback scene_changed_callback_;
     LoadSceneCallback load_scene_callback_;
+    SceneBindingCallback scene_binding_callback_;
     SceneCommandStack scene_command_stack_;
 };
 

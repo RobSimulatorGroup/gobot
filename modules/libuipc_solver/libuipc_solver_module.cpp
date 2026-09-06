@@ -1322,7 +1322,10 @@ private:
             velocity.block<3, 1>(0, 3) = linear;
             velocity_values[body] = velocity;
         }
-        affine_accessor_->copy_from(*affine_state_);
+        // Only velocities changed; a transform write invalidates SDK friction history.
+        SimplicialComplex velocity_state = *affine_state_;
+        velocity_state.instances().destroy(uipc::builtin::transform);
+        affine_accessor_->copy_from(velocity_state);
     }
 
     void WriteDeviceState(std::uint32_t output_flags) {

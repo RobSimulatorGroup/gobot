@@ -17,6 +17,8 @@
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/simulation/external_simulation_driver.hpp"
 #include "gobot/simulation/simulation_scene.hpp"
+#include "gobot/simulation/simulation_state_frame.hpp"
+#include "gobot/simulation/simulation_worker.hpp"
 
 namespace gobot {
 
@@ -93,6 +95,8 @@ public:
 
     bool HasWorld() const;
 
+    bool IsWorldReady() const;
+
     bool HasExternalSession() const;
 
     bool HasActiveSession() const;
@@ -115,6 +119,8 @@ public:
 
     Ref<PhysicsWorld> GetWorld() const;
 
+    [[nodiscard]] std::shared_ptr<const SimulationStateFrame> CaptureStateFrame() const;
+
     SimulationScene* GetRuntimeScene();
 
     const SimulationScene* GetRuntimeScene() const;
@@ -124,6 +130,17 @@ public:
     bool StepOnce();
 
     bool StepOnce(const FixedStepCallback& fixed_step_callback);
+
+    // Editor scheduling. All calls and callbacks stay on the owner thread.
+    bool SetAsyncSteppingEnabled(bool enabled);
+    bool IsAsyncSteppingEnabled() const { return async_stepping_enabled_; }
+    bool IsWorkerRetiring() const;
+    bool IsAsyncOperationPending() const;
+    int AdvanceRealtime(RealType delta_time, const FixedStepCallback& callback = {});
+    bool RequestStep(const FixedStepCallback& callback = {});
+    bool RequestCheckpoint();
+    const SimulationCheckpoint& GetCompletedCheckpoint() const { return completed_checkpoint_; }
+    bool RequestRestoreCheckpoint(const SimulationCheckpoint& checkpoint);
 
     int Step(RealType delta_time);
 
@@ -155,6 +172,8 @@ public:
 
     const std::string& GetLastError() const;
 
+    const PhysicsStepResult& GetLastPhysicsStepResult() const { return last_physics_step_result_; }
+
 private:
     struct FixedStepResult {
         bool succeeded{false};
@@ -174,6 +193,9 @@ private:
     FixedStepResult StepFixed(const FixedStepCallback* fixed_step_callback = nullptr);
 
     bool ApplyWorldStateToScene();
+
+    bool AttachWorker();
+    int PollWorker();
 
     void ResetClock();
 
@@ -211,6 +233,11 @@ private:
     std::uint64_t frame_count_{0};
     std::uint64_t session_clock_epoch_{1};
     std::string last_error_;
+    PhysicsStepResult last_physics_step_result_;
+    bool async_stepping_enabled_{false};
+    std::unique_ptr<SimulationWorker> worker_;
+    SimulationCheckpoint completed_checkpoint_;
+    std::weak_ptr<const SimulationStateFrame> last_applied_frame_;
 };
 
 } // namespace gobot

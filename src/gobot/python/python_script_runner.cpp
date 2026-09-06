@@ -231,7 +231,8 @@ public:
         : previous_script_context_(SceneScriptContext()),
           previous_script_root_(SceneScriptRoot()),
           previous_script_epoch_(SceneScriptEpoch()),
-          previous_active_context_(GetActiveAppContextOrNull()) {
+          previous_active_context_(GetActiveAppContextOrNull()),
+          project_scope_(context == nullptr ? nullptr : context->GetProjectSettings()) {
         SceneScriptContext() = context;
         SceneScriptRoot() = root;
         SceneScriptEpoch() = scene_epoch;
@@ -250,6 +251,7 @@ private:
     Node* previous_script_root_{nullptr};
     std::uint64_t previous_script_epoch_{0};
     EngineContext* previous_active_context_{nullptr};
+    ProjectSettings::Scope project_scope_;
 };
 
 struct SceneScriptInstance {
@@ -423,6 +425,7 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
                                           EngineContext* context,
                                           const std::string& filename) {
     PythonExecutionResult result;
+    ProjectSettings::Scope project_scope(context == nullptr ? nullptr : context->GetProjectSettings());
     EngineContext* previous_context = nullptr;
 
     try {
@@ -556,6 +559,8 @@ PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
         previous_context = GetActiveAppContextOrNull();
         SetActiveAppContext(SceneScriptContext());
         py::module_::import("gobot");
+        ProjectSettings::Scope project_scope(SceneScriptContext() == nullptr ? nullptr :
+                                             SceneScriptContext()->GetProjectSettings());
         AddProjectPathToSysPath(SceneScriptContext());
 
         ScopedPythonOutputCapture output_capture(
@@ -630,6 +635,8 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
         previous_context = GetActiveAppContextOrNull();
         SetActiveAppContext(SceneScriptContext());
         AddProjectPathToSysPath(SceneScriptContext());
+        ProjectSettings::Scope project_scope(SceneScriptContext() == nullptr ? nullptr :
+                                             SceneScriptContext()->GetProjectSettings());
 
         py::object& instance = instance_iter->second.instance;
         ScopedPythonOutputCapture output_capture(instance_iter->second.path.empty()

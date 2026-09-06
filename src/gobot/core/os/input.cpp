@@ -39,30 +39,37 @@ Input::Input()
     s_singleton = this;
     Reset();
 
-    Event::Subscribe(EventType::KeyPressed, [this](const Event& event) {
+    event_connections_.push_back(Event::SubscribeScoped(EventType::KeyPressed, [this](const Event& event) {
         this->OnKeyPressed(dynamic_cast<const KeyPressedEvent&>(event));
-    });
-    Event::Subscribe(EventType::KeyReleased, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::KeyReleased, [this](const Event& event) {
         this->OnKeyReleased(dynamic_cast<const KeyReleasedEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseButtonPressed, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseButtonPressed, [this](const Event& event) {
         this->OnMousePressed(dynamic_cast<const MouseButtonPressedEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseButtonReleased, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseButtonReleased, [this](const Event& event) {
         this->OnMouseReleased(dynamic_cast<const MouseButtonReleasedEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseScrolled, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseScrolled, [this](const Event& event) {
         this->OnMouseScrolled(dynamic_cast<const MouseScrolledEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseMoved, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseMoved, [this](const Event& event) {
         this->OnMouseMoved(dynamic_cast<const MouseMovedEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseEnter, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseEnter, [this](const Event& event) {
         this->OnMouseEnter(dynamic_cast<const MouseEnterEvent&>(event));
-    });
-    Event::Subscribe(EventType::MouseLeave, [this](const Event& event) {
+    }));
+    event_connections_.push_back(Event::SubscribeScoped(EventType::MouseLeave, [this](const Event& event) {
         this->OnMouseLeave(dynamic_cast<const MouseLeaveEvent&>(event));
-    });
+    }));
+}
+
+Input::~Input() {
+    event_connections_.clear();
+    if (s_singleton == this) {
+        s_singleton = nullptr;
+    }
 }
 
 void Input::Reset()

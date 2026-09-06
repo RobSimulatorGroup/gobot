@@ -1036,6 +1036,93 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
 
 } // namespace
 
+std::uint64_t PhysicsSceneCompiler::GetSensorPreviewFingerprint(const Node* scene_root) {
+    std::uint64_t hash = scene_root == nullptr ? 0 : std::uint64_t(scene_root->GetInstanceId());
+    const auto scalar = [&](auto value) {
+        hash ^= std::hash<decltype(value)>{}(value) + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
+    };
+    const auto matrix = [&](const auto& value) {
+        for (Eigen::Index i = 0; i < value.size(); ++i) {
+            scalar(value.data()[i]);
+        }
+    };
+    const auto visit = [&](const auto& self, const Node* node, const Affine3& parent, bool parent_visible) -> void {
+        if (node == nullptr) {
+            return;
+        }
+        const auto* node3d = Object::PointerCastTo<Node3D>(node);
+        const Affine3 transform = ResolveNodeGlobalTransform(node3d, parent);
+        const bool visible = parent_visible && (node3d == nullptr || node3d->IsVisible());
+        if (const auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
+            scalar(std::uint64_t(node->GetInstanceId()));
+            matrix(transform.matrix());
+            scalar(visible);
+            scalar(sensor->IsEnabled());
+            scalar(sensor->ShouldVisualizeDebug());
+            scalar(sensor->GetDebugMarkerRadius());
+            scalar(sensor->GetNoiseStddev());
+            scalar(sensor->GetSensorPeriod());
+            const auto& noise = sensor->GetNoiseModel();
+            scalar(noise.IsValid() ? std::uint64_t(noise->GetInstanceId()) : 0);
+            scalar(noise.IsValid() ? noise->GetRevision() : 0);
+            if (const auto* ray = Object::PointerCastTo<RayCastSensor3D>(sensor)) {
+                scalar(ray->GetPatternMode());
+                matrix(ray->GetGridSize());
+                scalar(ray->GetGridResolution());
+                scalar(ray->GetRayAlignment());
+                matrix(ray->GetRayDirection());
+                scalar(ray->IsRayDirectionWorldSpace());
+                scalar(ray->GetMaxDistance());
+                scalar(ray->GetSampleOffsets().size());
+                for (const auto& offset : ray->GetSampleOffsets()) {
+                    matrix(offset);
+                }
+                if (const auto* height = Object::PointerCastTo<TerrainHeightSensor3D>(ray)) {
+                    scalar(height->GetReductionMode());
+                }
+            }
+        } else if (const auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
+            scalar(std::uint64_t(node->GetInstanceId()));
+            matrix(transform.matrix());
+            scalar(terrain->GetGeometryRevision());
+            scalar(terrain->GetCollisionLayer());
+            scalar(terrain->GetCollisionMask());
+        }
+        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+            self(self, node->GetChild(static_cast<int>(i)), transform, visible);
+        }
+    };
+    visit(visit, scene_root, Affine3::Identity(), true);
+    return hash;
+}
+
+PhysicsSceneSnapshot PhysicsSceneCompiler::CaptureSensorPreview(const Node* scene_root) {
+    PhysicsSceneSnapshot snapshot;
+    const auto visit = [&](const auto& self, const Node* node, const Affine3& parent, bool parent_visible) -> void {
+        if (node == nullptr) {
+            return;
+        }
+        const auto* node3d = Object::PointerCastTo<Node3D>(node);
+        const Affine3 transform = ResolveNodeGlobalTransform(node3d, parent);
+        const bool visible = parent_visible && (node3d == nullptr || node3d->IsVisible());
+        if (const auto* sensor = Object::PointerCastTo<RayCastSensor3D>(node)) {
+            if (visible && sensor->IsEnabled() && sensor->ShouldVisualizeDebug()) {
+                snapshot.loose_sensors.push_back(CaptureSensorSnapshot(sensor, {}, transform));
+            }
+        } else if (const auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
+            snapshot.terrains.push_back(CaptureTerrainSnapshot(terrain, transform));
+        }
+        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+            self(self, node->GetChild(static_cast<int>(i)), transform, visible);
+        }
+    };
+    visit(visit, scene_root, Affine3::Identity(), true);
+    snapshot.total_sensor_count = snapshot.loose_sensors.size();
+    snapshot.total_terrain_count = snapshot.terrains.size();
+    AssignStableIds(&snapshot);
+    return snapshot;
+}
+
 bool PhysicsSceneCompiler::Compile(const Node* scene_root,
                                    CompiledPhysicsScene* compiled_scene,
                                    std::string* error) {

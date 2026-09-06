@@ -18,6 +18,7 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/core/robotics_types.hpp"
+#include "gobot/physics/physics_commands.hpp"
 #include "gobot/physics/physics_sensor_utils.hpp"
 
 namespace gobot {
@@ -813,9 +814,14 @@ void PhysicsWorld::Reset() {
     ClearExternalForces();
 }
 
-void PhysicsWorld::Step(RealType delta_time) {
-    GOB_UNUSED(delta_time);
+PhysicsStepResult PhysicsWorld::Step(RealType delta_time) {
+    if (!std::isfinite(delta_time) || delta_time < 0.0) {
+        SetLastError("Physics step duration must be finite and nonnegative.");
+        return {.error = last_error_};
+    }
     UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
+    last_error_.clear();
+    return {.completed = true, .advanced_time = delta_time};
 }
 
 bool PhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
@@ -862,9 +868,11 @@ bool PhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta
         return false;
     }
 
-    Step(delta_time);
-    last_error_.clear();
-    return true;
+    const PhysicsStepResult result = Step(delta_time);
+    if (!result.completed) {
+        SetLastError(result.error);
+    }
+    return result.completed;
 }
 
 bool PhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
@@ -1347,6 +1355,9 @@ bool PhysicsWorld::SetLinkExternalForce(const std::string& robot_name,
                                         const std::string& link_name,
                                         const Vector3& point,
                                         const Vector3& force) {
+    if (!ValidatePhysicsLinkForceTarget(scene_snapshot_, robot_name, link_name, &last_error_)) {
+        return false;
+    }
     if (FindMutableLinkState(robot_name, link_name) == nullptr) {
         SetLastError(fmt::format("Cannot apply external force to missing link '{}::{}'.",
                                  robot_name,
@@ -1384,6 +1395,9 @@ bool PhysicsWorld::SetLinkSpringForce(const std::string& robot_name,
                                       const Vector3& local_point,
                                       const Vector3& target_point,
                                       const Vector3& force_hint) {
+    if (!ValidatePhysicsLinkForceTarget(scene_snapshot_, robot_name, link_name, &last_error_)) {
+        return false;
+    }
     PhysicsLinkState* link_state = FindMutableLinkState(robot_name, link_name);
     if (link_state == nullptr) {
         SetLastError(fmt::format("Cannot apply external force to missing link '{}::{}'.",
@@ -2093,7 +2107,9 @@ GOBOT_REGISTRATION {
             .property("linear_iterations", &SuperDexSolverSettings::linear_iterations)
             .property("substeps", &SuperDexSolverSettings::substeps)
             .property("record_deformable_contact_forces",
-                      &SuperDexSolverSettings::record_deformable_contact_forces);
+                      &SuperDexSolverSettings::record_deformable_contact_forces)
+            .property("record_solver_timings",
+                      &SuperDexSolverSettings::record_solver_timings);
 
     Class_<PhysicsWorld>("PhysicsWorld")
             .method("is_available", &PhysicsWorld::IsAvailable)

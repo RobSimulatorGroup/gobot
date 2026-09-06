@@ -62,7 +62,7 @@ jobs:
 
       - name: Install complete Gobot environment
         env:
-          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF"
+          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF -DGOB_BUILD_SUPERDEX=OFF"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: uv sync
 
@@ -74,6 +74,7 @@ jobs:
             -DGOB_BUILD_TESTS=ON \
             -DGOB_BUILD_ASSIMP=OFF \
             -DGOB_BUILD_MUJOCO=OFF \
+            -DGOB_BUILD_SUPERDEX=OFF \
             -DGOB_BUILD_LUISA_RENDERER=ON \
             -DGOB_BUILD_LIBUIPC=OFF \
             -DGOB_LUISA_COMPUTE_ROOT="$PWD/build/luisa_compute/install" \

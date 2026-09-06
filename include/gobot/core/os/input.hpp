@@ -45,6 +45,8 @@ public:
 
     Input();
 
+    ~Input() override;
+
     void Reset();
 
     void ResetPressed();
@@ -123,6 +125,7 @@ private:
     bool control_focus_{false};
 
     Vector2i mouse_position_{0.0, 0.0};
+    std::vector<Event::Connection> event_connections_;
 };
 
 }

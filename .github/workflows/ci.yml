@@ -33,6 +33,7 @@ jobs:
           3rdparty/googletest \
           3rdparty/imgui \
           3rdparty/meshoptimizer \
+          3rdparty/project_superdex \
           3rdparty/pybind11 \
           3rdparty/rttr \
           3rdparty/stb
@@ -140,6 +141,7 @@ jobs:
           -DGOB_OPENUSD_ROOT="$PWD/build/openusd/install" \
           -DGOB_BUILD_ASSIMP=OFF \
           -DGOB_BUILD_MUJOCO=OFF \
+          -DGOB_BUILD_SUPERDEX=OFF \
           -DGOB_BUILD_EGL=OFF \
           -DGOB_BUILD_LUISA_RENDERER=OFF \
           -DGOB_BUILD_LIBUIPC=OFF \

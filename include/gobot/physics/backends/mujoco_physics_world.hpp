@@ -78,7 +78,7 @@ public:
 
     void Reset() override;
 
-    void Step(RealType delta_time) override;
+    PhysicsStepResult Step(RealType delta_time) override;
 
     bool ConfigureEnvironmentBatch(std::size_t environment_count) override;
 
@@ -213,7 +213,7 @@ private:
 
     void* DataForEnvironment(std::size_t environment_index) const;
 
-    void StepEnvironmentTick(std::size_t environment_index, RealType delta_time);
+    PhysicsStepResult StepEnvironmentTick(std::size_t environment_index, RealType delta_time);
 
     void ApplyControlsToMuJoCo(std::size_t environment_index, RealType delta_time);
 

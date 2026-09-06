@@ -83,7 +83,7 @@ class ConveyorForceModel:
         if not math.isfinite(speed):
             raise ValueError("conveyor target speed must be finite")
         if state is None:
-            state = self.context.get_physics_state()
+            state = self.context.get_physics_state_view()
         robots = _robot_table(state)
         contacts = state["contacts"]
 
@@ -111,7 +111,7 @@ class ConveyorForceModel:
 
     def clear(self, state: dict[str, Any] | None = None) -> None:
         if state is None:
-            state = self.context.get_physics_state()
+            state = self.context.get_physics_state_view()
         robots = _robot_table(state)
         for name in self.body_names:
             link = _link_table(robots[name])[name]
@@ -218,7 +218,7 @@ class DeformableConveyorForceModel:
         if not math.isfinite(speed):
             raise ValueError("conveyor target speed must be finite")
         if state is None:
-            state = self.context.get_physics_state()
+            state = self.context.get_physics_state_view()
         bodies = self._body_table(state)
 
         for name, mass, damping_rate in zip(
@@ -291,7 +291,7 @@ class DeformableConveyorForceModel:
 
     def clear(self, state: dict[str, Any] | None = None) -> None:
         if state is None:
-            state = self.context.get_physics_state()
+            state = self.context.get_physics_state_view()
         for name, body in self._body_table(state).items():
             count = len(body["local_vertices"])
             self.context.set_deformable_external_forces(

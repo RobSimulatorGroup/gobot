@@ -73,6 +73,18 @@ struct SceneRendererCapabilities {
     std::string status;
 };
 
+struct RenderResourceStats {
+    std::uint64_t mesh_entries = 0;
+    std::uint64_t texture_entries = 0;
+    // Buffer/image storage only; SDK acceleration structures and total process memory are separate.
+    std::uint64_t resident_bytes = 0;
+    std::uint64_t uploaded_bytes = 0;
+    std::uint64_t geometry_uploads = 0;
+    std::uint64_t index_uploads = 0;
+    std::uint64_t image_uploads = 0;
+    double upload_ms = 0.0;
+};
+
 struct SceneRendererStats {
     SceneRendererMode active_mode = SceneRendererMode::Raster;
     std::uint64_t accumulated_samples = 0;
@@ -89,6 +101,7 @@ struct SceneRendererStats {
     std::uint64_t culled_items = 0;
     std::uint64_t draw_calls = 0;
     std::uint64_t shadow_draw_calls = 0;
+    RenderResourceStats resources;
     std::string status;
 };
 

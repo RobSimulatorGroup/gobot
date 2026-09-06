@@ -97,7 +97,6 @@ private:
 
     struct MeshCacheKey {
         std::uint64_t mesh_id = 0;
-        std::uint64_t revision = 0;
         std::size_t surface_index = 0;
 
         bool operator==(const MeshCacheKey&) const = default;
@@ -117,13 +116,14 @@ private:
         GLuint index_buffer = 0;
         GLsizei index_count = 0;
         std::uint64_t last_used_frame = 0;
+        std::uint64_t geometry_revision = 0;
+        std::uint64_t topology_revision = 0;
+        std::size_t vertex_count = 0;
+        std::uint64_t resident_bytes = 0;
     };
 
     struct TextureCacheKey {
         std::uint64_t texture_id = 0;
-        std::uint64_t texture_revision = 0;
-        std::uint64_t image_id = 0;
-        std::uint64_t image_revision = 0;
 
         bool operator==(const TextureCacheKey&) const = default;
     };
@@ -135,6 +135,13 @@ private:
     struct TextureCacheEntry {
         GLuint texture = 0;
         std::uint64_t last_used_frame = 0;
+        std::uint64_t texture_revision = 0;
+        ObjectID image_id;
+        std::uint64_t image_revision = 0;
+        int width = 0;
+        int height = 0;
+        GLenum internal_format = 0;
+        std::uint64_t resident_bytes = 0;
     };
 
     struct ShadowPassState {
@@ -173,6 +180,7 @@ private:
     FxaaPassState fxaa_pass_;
     std::uint64_t frame_index_ = 0;
     SceneRendererStats stats_;
+    RenderResourceStats resource_stats_;
     void* luisa_module_library_ = nullptr;
     void* luisa_renderer_ = nullptr;
     const LuisaRendererModuleApi* luisa_api_ = nullptr;

@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -1475,6 +1476,61 @@ TEST(TestPhysicsServer, mujoco_exposes_backend_neutral_batch_robot_state) {
     }
 
     gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_batch_paths_reject_invalid_dt_and_report_native_reset) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* body = gobot::Node::New<gobot::RigidBody3D>();
+    body->SetName("body");
+    body->SetMass(1);
+    body->SetInertiaDiagonal({0.01, 0.01, 0.01});
+    auto world = gobot::PhysicsServer::CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
+    ASSERT_TRUE(BuildWorldFromScene(world, body)) << world->GetLastError();
+    ASSERT_TRUE(world->ConfigureEnvironmentBatch(2));
+    gobot::PhysicsRobotBatchStepRequest request;
+    request.robot_name = "body";
+    request.base_link = "body";
+    request.link_names = {"body"};
+    request.ticks = 4;
+    request.worker_count = 2;
+    gobot::PhysicsRobotBatchStepResult arrays;
+    const auto settings = world->GetSettings();
+    for (gobot::RealType dt : {gobot::RealType(0), gobot::RealType(-1),
+            std::numeric_limits<gobot::RealType>::quiet_NaN(),
+            std::numeric_limits<gobot::RealType>::infinity()}) {
+        EXPECT_FALSE(world->StepEnvironment(0, dt));
+        EXPECT_FALSE(world->StepEnvironmentBatch(dt, 4, 2));
+        auto invalid_settings = settings;
+        invalid_settings.fixed_time_step = dt;
+        world->SetSettings(invalid_settings);
+        EXPECT_FALSE(world->StepRobotBatch(request, arrays));
+        EXPECT_NE(world->GetLastError().find("finite and positive"), std::string::npos);
+        world->SetSettings(settings);
+    }
+    for (int path = 0; path < 3; ++path) {
+        world->Reset();
+        world->ClearExternalForces();
+        if (path < 2) {
+            ASSERT_TRUE(world->SetLinkExternalForce("body", "body", gobot::Vector3::Zero(),
+                    gobot::Vector3::Constant(1e30)));
+            if (path == 0) {
+                EXPECT_FALSE(world->StepEnvironment(0, settings.fixed_time_step));
+            } else {
+                EXPECT_FALSE(world->StepEnvironmentBatch(settings.fixed_time_step, 4, 2));
+            }
+        } else {
+            request.external_wrench_link = "body";
+            request.external_force.assign(6, 1e30);
+            EXPECT_FALSE(world->StepRobotBatch(request, arrays));
+        }
+        EXPECT_NE(world->GetLastError().find("reset or produced invalid state"), std::string::npos);
+    }
+    world->ClearExternalForces();
+    world->Reset();
+    request.external_force.clear();
+    ASSERT_TRUE(world->StepRobotBatch(request, arrays)) << world->GetLastError();
+    gobot::Node::Delete(body);
 #endif
 }
 

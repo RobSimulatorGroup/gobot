@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from statistics import median
 import time
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import numpy as np
 
@@ -74,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--trace-force-flow", action="store_true")
     parser.add_argument("--phase-diagnostics", action="store_true")
+    parser.add_argument("--solver-timings", action="store_true")
     return parser
 
 
@@ -320,7 +321,40 @@ def _reset_error(
     return error
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
+def _step_with_diagnostics(
+    context: Any,
+    tick: int,
+    control_tick: int,
+    failure_observer: Callable[[dict[str, Any]], None] | None,
+) -> float:
+    started = time.perf_counter()
+    try:
+        context.step_once()
+    except Exception as exc:
+        if failure_observer is not None:
+            # Capture before run() clears the failed world; never read invalid vertices.
+            failure = {
+                "tick": tick,
+                "control_tick": control_tick,
+                "phase": cycle_phase(control_tick),
+                "step_once_seconds": time.perf_counter() - started,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            try:
+                failure["solver"] = context.get_solver_diagnostics()
+            except Exception as diagnostic_error:
+                failure["diagnostic_error"] = str(diagnostic_error)
+            failure_observer(failure)
+        raise
+    return time.perf_counter() - started
+
+
+def run(
+    args: argparse.Namespace,
+    *,
+    tick_observer: Callable[[dict[str, Any]], bool] | None = None,
+    failure_observer: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     _validate_args(args)
     scene_path = args.scene.expanduser().resolve()
     if args.rebuild_scene:
@@ -345,6 +379,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "linear_iterations": -1,
                 "substeps": 1,
                 "record_deformable_contact_forces": True,
+                "record_solver_timings": (
+                    tick_observer is not None or getattr(args, "solver_timings", False)
+                ),
             }
         )
         context.set_superdex_solver_settings(settings)
@@ -387,7 +424,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
         for _ in range(args.warmup_steps):
-            state = context.get_physics_state()
+            state = context.get_physics_state_view()
             _apply_hand_targets(hand_joints, 0)
             rigid_forces.apply(0.0, state)
             soft_forces.apply(0.0, state=state)
@@ -395,7 +432,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         context.clear_external_forces()
         context.reset_simulation()
 
-        initial_state = context.get_physics_state()
+        initial_state = context.get_physics_state_view()
         _assert_finite_state(initial_state)
         initial_bodies = _deformable_table(initial_state)
         initial_shell_axes = {
@@ -463,9 +500,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         phase_end_ticks = _phase_end_ticks()
 
         final_state = initial_state
+        centers = initial_centers
         for tick in range(args.steps):
+            tick_started = time.perf_counter()
             control_tick = min(tick, CYCLE_TICKS - 1)
-            state = context.get_physics_state()
+            state = context.get_physics_state_view()
+            state_view_seconds = time.perf_counter() - tick_started
             speed = float(belt_speed_at_tick(control_tick))
             _apply_hand_targets(hand_joints, control_tick)
             rigid_drive = rigid_forces.apply(speed, state)
@@ -475,10 +515,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 state=state,
             )
             started = time.perf_counter()
-            context.step_once()
-            latency_samples.append(time.perf_counter() - started)
+            command_seconds = started - tick_started - state_view_seconds
+            latency_samples.append(_step_with_diagnostics(
+                context, tick + 1, control_tick, failure_observer
+            ))
             belt_travel += speed * FIXED_DT
-            final_state = context.get_physics_state()
+            read_started = time.perf_counter()
+            final_state = context.get_physics_state_view()
+            state_view_seconds += time.perf_counter() - read_started
             _assert_finite_state(final_state)
             for contact in final_state["contacts"]:
                 penetration = max(0.0, -float(contact["distance"]))
@@ -626,6 +670,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     }
                 )
 
+            # Observers consume completed physics ticks, never render frames or authored poses.
+            if tick_observer is not None:
+                sample = {
+                    "tick": tick + 1,
+                    "control_tick": control_tick,
+                    "phase": cycle_phase(control_tick),
+                    "simulation_time_seconds": float(final_state["simulation_time"]),
+                    "step_once_seconds": latency_samples[-1],
+                    "command_seconds": command_seconds,
+                    "state_view_seconds": state_view_seconds,
+                    "observed_tick_seconds": time.perf_counter() - tick_started,
+                    "solver": context.get_solver_diagnostics(),
+                    "contacting_hands": {
+                        name: list(hands) for name, hands in current_contacting_hands.items()
+                    },
+                    "directed_contact_count": len(final_state["contacts"]),
+                    "max_penetration_meters": _max_penetration(final_state["contacts"]),
+                    "flip_degrees": current_flip.copy(),
+                }
+                if tick == 0:
+                    sample["scene_complexity"] = {
+                        "robots": len(final_state["robots"]),
+                        "links": sum(len(robot["links"]) for robot in final_state["robots"]),
+                        "joints": sum(len(robot["joints"]) for robot in final_state["robots"]),
+                        "deformable_vertices": {
+                            name: len(body["local_vertices"]) for name, body in bodies.items()
+                        },
+                    }
+                if not tick_observer(sample):
+                    break
+
+        completed_steps = len(latency_samples)
         final_bodies = _deformable_table(final_state)
         final_flip = {
             "blue_mailer": math.degrees(
@@ -665,7 +741,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         diagnostics = context.get_solver_diagnostics()
         context.clear_external_forces()
         context.reset_simulation()
-        restored_state = context.get_physics_state()
+        restored_state = context.get_physics_state_view()
         reset_max_error = _reset_error(initial_state, restored_state)
         latency_sorted = sorted(latency_samples)
         p95_index = max(
@@ -683,10 +759,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "environment_batch": False,
             "masked_reset": False,
             "environments": 1,
-            "steps": args.steps,
+            "steps": completed_steps,
             "warmup_steps": args.warmup_steps,
             "elapsed_seconds": elapsed,
-            "steps_per_second": args.steps / elapsed if elapsed else 0.0,
+            "steps_per_second": completed_steps / elapsed if elapsed else 0.0,
             "median_step_latency_seconds": (
                 median(latency_samples) if latency_samples else 0.0
             ),
@@ -728,7 +804,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             },
             "peak_soft_nodal_drive_force_newtons": peak_soft_drive,
             "final_finger_close_fraction": float(
-                finger_close_fraction_at_tick(min(args.steps - 1, CYCLE_TICKS - 1))
+                finger_close_fraction_at_tick(min(completed_steps - 1, CYCLE_TICKS - 1))
             ),
             "solver": diagnostics,
             "reset_max_error": reset_max_error,

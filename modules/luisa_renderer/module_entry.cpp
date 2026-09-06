@@ -143,8 +143,14 @@ bool ReadbackRenderProduct(void* renderer,
     }
 }
 
+RenderResourceStats GetResourceStats(void* renderer) {
+    return renderer != nullptr ? static_cast<LuisaRenderer*>(renderer)->GetResourceStats()
+                               : RenderResourceStats{};
+}
+
 const gobot::LuisaRendererModuleApi kApi{
         gobot::GOBOT_LUISA_RENDERER_ABI_VERSION,
+        gobot::LuisaRendererDataLayout(),
         &CreateRenderer,
         &DestroyRenderer,
         &GetCapabilities,
@@ -153,7 +159,8 @@ const gobot::LuisaRendererModuleApi kApi{
         &ResetAccumulation,
         &CaptureRenderProduct,
         &ReleaseRenderProduct,
-        &ReadbackRenderProduct};
+        &ReadbackRenderProduct,
+        &GetResourceStats};
 
 } // namespace
 

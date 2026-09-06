@@ -9,25 +9,12 @@
 #include "gobot/core/math/math_defs.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
-#include "gobot/rendering/render_server.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 
 namespace gobot {
-
-PrimitiveMesh::PrimitiveMesh() {
-    if (RenderServer::HasInstance()) {
-        mesh_ = RenderServer::GetInstance()->MeshCreate();
-    }
-}
-
-PrimitiveMesh::~PrimitiveMesh() {
-    if (RenderServer::HasInstance() && mesh_.IsValid()) {
-        RS::GetInstance()->Free(mesh_);
-    }
-}
 
 void PrimitiveMesh::SetMaterial(const Ref<Material>& material) {
     if (material_.Get() == material.Get()) {
@@ -45,51 +32,13 @@ const Ref<Material>& PrimitiveMesh::GetMaterial() const {
     return material_;
 }
 
-RID PrimitiveMesh::GetRid() const {
-    if (mesh_.IsNull() && RenderServer::HasInstance()) {
-        UploadSurface();
-    }
-    return mesh_;
-}
-
-RID PrimitiveMesh::EnsureRid() const {
-    if (mesh_.IsNull() && RenderServer::HasInstance()) {
-        mesh_ = RenderServer::GetInstance()->MeshCreate();
-    }
-    return mesh_;
-}
-
 void PrimitiveMesh::SetGeneratedSurface(MeshSurfaceData surface) const {
     surface.material = material_;
     const_cast<PrimitiveMesh*>(this)->ReplaceSurfaceData({std::move(surface)});
-    UploadSurface();
-}
-
-void PrimitiveMesh::UploadSurface() const {
-    if (!RenderServer::HasInstance()) {
-        return;
-    }
-    const auto surfaces = GetSurfaceData();
-    if (!surfaces || surfaces->empty()) {
-        return;
-    }
-    const MeshSurfaceData& surface = surfaces->front();
-    RS::GetInstance()->MeshSetSurface(EnsureRid(),
-                                      surface.vertices,
-                                      surface.indices,
-                                      surface.normals,
-                                      surface.colors);
 }
 
 BoxMesh::BoxMesh() {
     UpdateMesh();
-}
-
-RID BoxMesh::GetRid() const {
-    if (PrimitiveMesh::GetRid().IsNull()) {
-        UpdateMesh();
-    }
-    return PrimitiveMesh::GetRid();
 }
 
 void BoxMesh::SetWidth(RealType width) {
@@ -161,13 +110,6 @@ void BoxMesh::UpdateMesh() const {
 
 CylinderMesh::CylinderMesh() {
     UpdateMesh();
-}
-
-RID CylinderMesh::GetRid() const {
-    if (PrimitiveMesh::GetRid().IsNull()) {
-        UpdateMesh();
-    }
-    return PrimitiveMesh::GetRid();
 }
 
 void CylinderMesh::SetRadius(RealType radius) {
@@ -275,13 +217,6 @@ PlaneMesh::PlaneMesh() {
     UpdateMesh();
 }
 
-RID PlaneMesh::GetRid() const {
-    if (PrimitiveMesh::GetRid().IsNull()) {
-        UpdateMesh();
-    }
-    return PrimitiveMesh::GetRid();
-}
-
 void PlaneMesh::SetSize(Vector2 size) {
     size = size.cwiseMax(Vector2::Zero());
     if (!size_.isApprox(size, CMP_EPSILON)) {
@@ -307,13 +242,6 @@ void PlaneMesh::UpdateMesh() const {
 
 SphereMesh::SphereMesh() {
     UpdateMesh();
-}
-
-RID SphereMesh::GetRid() const {
-    if (PrimitiveMesh::GetRid().IsNull()) {
-        UpdateMesh();
-    }
-    return PrimitiveMesh::GetRid();
 }
 
 void SphereMesh::SetRadius(RealType radius) {

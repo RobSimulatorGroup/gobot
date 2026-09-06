@@ -54,7 +54,7 @@ option(GOB_BUNDLE_OPENUSD_RUNTIME
        ON)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
-option(GOB_BUILD_SUPERDEX "build the experimental unified SuperDex physics backend" OFF)
+option(GOB_BUILD_SUPERDEX "build the experimental unified SuperDex physics backend" ON)
 option(GOB_SUPERDEX_ENABLE_CUDA "enable the experimental SuperDex CUDA linear solver" OFF)
 option(GOB_REAL_T_IS_DOUBLE "build Gobot and optional physics SDKs with double precision" OFF)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
@@ -716,6 +716,18 @@ set(SOURCE_EDITOR_SCENE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/scene/imgui_window.cpp")
 list(REMOVE_ITEM SOURCE_SCENE ${SOURCE_EDITOR_SCENE})
 
+add_library(gobot_public_abi INTERFACE)
+target_compile_features(gobot_public_abi INTERFACE cxx_std_20)
+target_link_libraries(gobot_public_abi INTERFACE Eigen3::Eigen)
+if(GOB_REAL_T_IS_DOUBLE)
+    target_compile_definitions(gobot_public_abi INTERFACE REAL_T_IS_DOUBLE=1)
+endif()
+if(GOB_BUILD_SUPERDEX)
+    # Eigen alignment must agree across the engine and independently linked modules.
+    target_compile_options(gobot_public_abi INTERFACE
+        "$<TARGET_PROPERTY:SuperDex::MochiPhysics,INTERFACE_COMPILE_OPTIONS>")
+endif()
+
 function(gobot_configure_engine_object_target TARGET_NAME)
     target_compile_options(${TARGET_NAME} PRIVATE
             "-fno-gnu-unique"
@@ -728,6 +740,7 @@ function(gobot_configure_engine_object_target TARGET_NAME)
                 ${PROJECT_BINARY_DIR}/generated)
     target_link_libraries(${TARGET_NAME}
             PRIVATE
+                gobot_public_abi
                 RTTR::Core
                 stb
                 gli
@@ -744,9 +757,6 @@ function(gobot_configure_engine_object_target TARGET_NAME)
                 GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
                 GOBOT_VERSION="${PROJECT_VERSION}"
                 GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
-    if(GOB_REAL_T_IS_DOUBLE)
-        target_compile_definitions(${TARGET_NAME} PRIVATE REAL_T_IS_DOUBLE=1)
-    endif()
 endfunction()
 
 add_library(gobot_physics_core OBJECT ${SOURCE_PHYSICS})
@@ -822,6 +832,7 @@ target_include_directories(gobot
 
 target_link_libraries(gobot
     PUBLIC
+        gobot_public_abi
         RTTR::Core
         stb
         gli
@@ -838,9 +849,6 @@ target_compile_definitions(gobot PUBLIC
         GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         GOBOT_VERSION="${PROJECT_VERSION}"
         GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
-if(GOB_REAL_T_IS_DOUBLE)
-    target_compile_definitions(gobot PUBLIC REAL_T_IS_DOUBLE=1)
-endif()
 
 if(GOB_ENABLE_TRACY AND GOBOT_TRACY_TARGET)
     target_compile_definitions(gobot PUBLIC GOBOT_ENABLE_TRACY=1 TRACY_ENABLE=1)

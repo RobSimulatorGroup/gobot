@@ -513,6 +513,7 @@ jobs:
             -DCUDAToolkit_ROOT="$GOBOT_CUDA_BUILD_SDK_ROOT" \
             -DGOB_BUILD_ASSIMP=OFF \
             -DGOB_BUILD_MUJOCO=OFF \
+            -DGOB_BUILD_SUPERDEX=OFF \
             -DGOB_BUILD_EGL=OFF \
             -DGOB_BUILD_LUISA_RENDERER=OFF \
             -DGOB_BUILD_OPENUSD=OFF \
@@ -608,8 +609,8 @@ jobs:
             ca-certificates \
             ccache \
             curl \
-            gcc-11 \
-            g++-11 \
+            gcc-12 \
+            g++-12 \
             git \
             gzip \
             libegl-dev \
@@ -654,6 +655,7 @@ jobs:
             3rdparty/imgui \
             3rdparty/luisa_compute \
             3rdparty/meshoptimizer \
+            3rdparty/project_superdex \
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb
@@ -763,9 +765,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/gobot-wheel-ccache
-          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
+          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc12-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
           restore-keys: |
-            gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-
+            gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc12-py${{ matrix.python-version }}-
 
       - name: Check CUDA build SDK
         run: |
@@ -777,6 +779,8 @@ jobs:
 
       - name: Build wheel
         env:
+          CC: gcc-12
+          CXX: g++-12
           CMAKE_BUILD_PARALLEL_LEVEL: "3"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
@@ -800,7 +804,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/gobot-wheel-ccache
-          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
+          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc12-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
 
       - name: Repair wheel
         run: |

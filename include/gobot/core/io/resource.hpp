@@ -82,6 +82,7 @@ private:
 
     std::string name_;
     std::string path_cache_;
+    std::string resolved_cache_key_;
     bool path_cache_registered_{false};
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
@@ -94,6 +95,7 @@ private:
 
 class GOBOT_EXPORT ResourceCache {
 public:
+    static std::string ResolveKey(const std::string& path);
     static bool Has(const std::string &path);
 
     static Ref<Resource> GetRef(const std::string &path);

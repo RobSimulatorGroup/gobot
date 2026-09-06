@@ -296,6 +296,12 @@ Eigen::Vector2i SDLWindow::GetWindowSize() const
     return {width, height};
 }
 
+void SDLWindow::SetWindowSize(int width, int height) {
+    if (width > 0 && height > 0) {
+        SDL_SetWindowSize(sdl2_window_, width, height);
+    }
+}
+
 bool SDLWindow::SetWindowFullscreen()
 {
     auto ret = SDL_SetWindowFullscreen(sdl2_window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
@@ -557,6 +563,10 @@ void SDLWindow::ProcessEvents() {
         }
     }
 
+}
+
+bool SDLWindow::SetVSyncEnabled(bool enabled) {
+    return SDL_GL_SetSwapInterval(enabled ? 1 : 0) == 0;
 }
 
 void SDLWindow::SwapBuffers() {

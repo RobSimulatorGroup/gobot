@@ -11,6 +11,9 @@
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/color.hpp"
 
+#include <memory>
+#include <mutex>
+
 namespace gobot {
 
 enum class ImageFormat {
@@ -126,6 +129,9 @@ public:
 
     ImageStorageData GetStorageData() const;
 
+    // Capture on the resource owner thread; readers may retain an immutable version.
+    std::shared_ptr<const ImageStorageData> GetStorageSnapshot() const;
+
     void SetStorageData(const ImageStorageData& storage);
 
 
@@ -208,6 +214,9 @@ private:
     int width_{0};
     int height_{0};
     bool use_mipmaps_{false};
+    mutable std::mutex snapshot_mutex_;
+    mutable std::uint64_t snapshot_revision_{0};
+    mutable std::shared_ptr<const ImageStorageData> storage_snapshot_;
 };
 
 }

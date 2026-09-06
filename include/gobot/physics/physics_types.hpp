@@ -138,6 +138,15 @@ struct SuperDexSolverSettings {
     int linear_iterations{-1};
     int substeps{1};
     bool record_deformable_contact_forces{false};
+    bool record_solver_timings{false};
+};
+
+struct PhysicsSolverStageTiming {
+    std::string name;
+    double time_seconds{0.0};
+    std::uint64_t calls{0};
+    // Inclusive scope time summed across parallel tasks, not exclusive wall time.
+    bool parallel_sum{false};
 };
 
 struct PhysicsSolverDiagnostics {
@@ -150,6 +159,17 @@ struct PhysicsSolverDiagnostics {
     std::string execution_device{"cpu"};
     bool device_native{false};
     bool graph_capture{false};
+    bool timings_available{false};
+    std::uint64_t linear_iterations{0};
+    std::vector<PhysicsSolverStageTiming> stage_timings;
+};
+
+struct PhysicsStepResult {
+    bool completed{false};
+    RealType advanced_time{0.0};
+    bool state_valid{true};
+    PhysicsSolverDiagnostics diagnostics;
+    std::string error;
 };
 
 struct PhysicsWorldSettings {

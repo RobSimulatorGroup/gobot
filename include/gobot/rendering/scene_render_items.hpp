@@ -83,6 +83,7 @@ struct VisualMeshRenderItem {
     std::string semantic_label;
     ObjectID mesh_id;
     std::uint64_t mesh_revision = 0;
+    std::uint64_t mesh_topology_revision = 0;
     std::size_t surface_index = 0;
     std::shared_ptr<const MeshSurfaceList> surfaces;
     Matrix4 model = Matrix4::Identity();

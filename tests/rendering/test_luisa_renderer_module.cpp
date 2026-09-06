@@ -8,6 +8,7 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/material.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/scene_tree.hpp"
@@ -37,6 +38,7 @@ TEST(LuisaRendererModule, ExportsMatchingBackendNeutralAbi) {
     const LuisaRendererModuleApi* api = get_api();
     ASSERT_NE(api, nullptr);
     EXPECT_EQ(api->abi_version, GOBOT_LUISA_RENDERER_ABI_VERSION);
+    EXPECT_EQ(api->data_layout, LuisaRendererDataLayout());
     ASSERT_NE(api->create, nullptr);
     ASSERT_NE(api->destroy, nullptr);
     ASSERT_NE(api->capabilities, nullptr);
@@ -184,6 +186,70 @@ TEST(LuisaRendererGpu, RendersCudaRenderProductAovs) {
     EXPECT_FLOAT_EQ(normal[0], 0.0f);
     EXPECT_FLOAT_EQ(normal[1], 0.0f);
     EXPECT_FLOAT_EQ(normal[2], 0.0f);
+}
+
+TEST(LuisaRendererGpu, ReusesDeformingGeometryAndRetiresOldSceneVersions) {
+    if (std::getenv("GOBOT_RUN_LUISA_GPU_TEST") == nullptr) {
+        GTEST_SKIP() << "Set GOBOT_RUN_LUISA_GPU_TEST=1 on a CUDA runner.";
+    }
+    ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 1), 0);
+    HeadlessRenderContext context;
+    ASSERT_TRUE(context.Initialize()) << context.GetLastError();
+    Node3D root;
+    auto* node = Object::New<MeshInstance3D>();
+    auto mesh = MakeRef<ArrayMesh>();
+    auto box = MakeRef<BoxMesh>();
+    mesh->SetSurfaces(*box->GetSurfaceData());
+    node->SetMesh(mesh);
+    root.AddChild(node);
+    Camera3D camera;
+    camera.SetViewMatrix({0, -3, 1}, {0, 0, 0}, {0, 0, 1});
+    RenderProductDesc desc;
+    desc.width = 32;
+    desc.height = 32;
+    desc.device = RenderDevice::Cuda;
+    RenderProduct product(desc);
+    const auto capture = [&] {
+        return product.Capture(CaptureRenderSceneSnapshot(&root), CaptureRenderViewSnapshot(camera));
+    };
+    auto retained = capture();
+    ASSERT_NE(retained, nullptr);
+    const auto initial = RenderServer::GetInstance()->GetSceneRendererStats().resources;
+    ASSERT_EQ(initial.mesh_entries, 1);
+    for (int frame = 0; frame < 100; ++frame) {
+        auto surfaces = mesh->GetSurfaces();
+        surfaces[0].vertices[0].z() += 0.0001;
+        mesh->SetSurfaces(std::move(surfaces));
+        ASSERT_NE(capture(), nullptr);
+    }
+    const auto deformed = RenderServer::GetInstance()->GetSceneRendererStats().resources;
+    EXPECT_EQ(deformed.mesh_entries, 1);
+    EXPECT_EQ(deformed.geometry_uploads, initial.geometry_uploads + 100);
+    EXPECT_EQ(deformed.index_uploads, initial.index_uploads);
+    EXPECT_EQ(deformed.resident_bytes, initial.resident_bytes);
+    auto image = MakeRef<Image>(2, 2, false, ImageFormat::RGBA8);
+    auto texture = MakeRef<Texture2D>(image);
+    auto material = MakeRef<PBRMaterial3D>();
+    material->SetAlbedoTexture(texture);
+    node->SetMaterial(material);
+    for (int frame = 0; frame < 10; ++frame) {
+        image->SetPixel(0, 0, Color{frame * 0.1f, 0.0f, 0.0f, 1.0f});
+        ASSERT_NE(capture(), nullptr);
+        EXPECT_EQ(RenderServer::GetInstance()->GetSceneRendererStats().resources.texture_entries, 1);
+    }
+    const auto textured = RenderServer::GetInstance()->GetSceneRendererStats().resources;
+    texture->SetWrapU(TextureWrap::ClampToEdge);
+    ASSERT_NE(capture(), nullptr);
+    EXPECT_EQ(RenderServer::GetInstance()->GetSceneRendererStats().resources.image_uploads, textured.image_uploads);
+    root.RemoveChild(node);
+    Object::Delete(node);
+    ASSERT_NE(capture(), nullptr);
+    const auto cleared = RenderServer::GetInstance()->GetSceneRendererStats().resources;
+    EXPECT_EQ(cleared.mesh_entries, 0);
+    EXPECT_EQ(cleared.texture_entries, 0);
+    EXPECT_EQ(cleared.resident_bytes, 0);
+    // A retained output frame is independent of the scene resource cache.
+    EXPECT_NE(retained->Get(RenderOutputType::Rgb), nullptr);
 }
 
 TEST(LuisaRendererGpu, CompositesGaussianBackgroundBehindProxyAovs) {

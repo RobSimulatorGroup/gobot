@@ -457,6 +457,7 @@ void RegisterManualModuleFunctions(py::module_& module) {
 
     module.def("load_resource", [](const std::string& path, const std::string& type_hint) {
         EnsureRuntimeContext();
+        ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
         return ResourceToPythonDict(ResourceLoader::Load(path, type_hint));
     }, py::arg("path"), py::arg("type_hint") = "");
 

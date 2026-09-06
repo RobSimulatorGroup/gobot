@@ -136,12 +136,7 @@ class Texture : public Resource {
 public:
     Texture() = default;
 
-    ~Texture();
-
-    RID GetRID() const;
-
-protected:
-    RID texture_rid_{};
+    ~Texture() override = default;
 };
 
 class Texture2D : public Texture {

@@ -2193,7 +2193,7 @@ class _FakeNativeContext:
         ] = []
         self.deformable_force_calls: list[tuple[int, np.ndarray]] = []
 
-    def get_physics_state(self) -> dict[str, object]:
+    def get_physics_state_view(self) -> dict[str, object]:
         return self.state
 
     def set_link_external_force(

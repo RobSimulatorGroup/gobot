@@ -17,6 +17,8 @@
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/rendering/scene_debug_data.hpp"
+#include "gobot/simulation/physics_debug_preview.hpp"
 
 
 namespace gobot {
@@ -37,6 +39,7 @@ RenderServer::RenderServer(RendererType p_renderer_type)
     RSG::scene = RSG::rasterizer->GetScene();
     RSG::debug_draw = RSG::rasterizer->GetDebugDraw();
     RSG::utilities = RSG::rasterizer->GetUtilities();
+    debug_preview_ = std::make_unique<PhysicsDebugPreview>();
 
 }
 
@@ -217,7 +220,12 @@ void RenderServer::RenderEditorDebugToViewport(const RID& viewport,
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::debug_draw->RenderEditorDebug(render_target, camera, scene_root, physics_world, show_collision_shapes);
+    ERR_FAIL_COND(camera == nullptr);
+    const auto* state = physics_world != nullptr ? &physics_world->GetSceneState() :
+                                                  debug_preview_->Update(scene_root);
+    const auto settings = physics_world != nullptr ? physics_world->GetSettings() : PhysicsWorldSettings{};
+    const auto data = CaptureSceneDebugData(scene_root, state, settings, show_collision_shapes);
+    RSG::debug_draw->RenderEditorDebug(render_target, CaptureRenderViewSnapshot(*camera), data);
 }
 
 void RenderServer::RenderDebugArrowsToViewport(const RID& viewport,
@@ -233,7 +241,8 @@ void RenderServer::RenderDebugArrowsToViewport(const RID& viewport,
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::debug_draw->RenderDebugArrows(render_target, camera, arrows);
+    ERR_FAIL_COND(camera == nullptr);
+    RSG::debug_draw->RenderDebugArrows(render_target, CaptureRenderViewSnapshot(*camera), arrows);
 }
 
 

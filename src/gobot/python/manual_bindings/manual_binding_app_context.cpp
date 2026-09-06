@@ -1813,6 +1813,23 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 return RuntimeStateToPythonDict(
                         world->GetSceneState(), &world->GetSceneSnapshot());
             })
+            .def("get_physics_state_view", [](EngineContext& context) {
+                auto* simulation = context.GetSimulationServer();
+                auto frame = simulation != nullptr ? simulation->CaptureStateFrame() : nullptr;
+                if (!frame) {
+                    throw std::runtime_error("simulation world has not been built from a scene");
+                }
+                auto* retained = new std::shared_ptr<const SimulationStateFrame>(std::move(frame));
+                py::capsule owner(retained, [](void* pointer) {
+                    delete static_cast<std::shared_ptr<const SimulationStateFrame>*>(pointer);
+                });
+                auto result = RuntimeStateToPythonDict((*retained)->state,
+                        &simulation->GetWorld()->GetSceneSnapshot(), owner);
+                result["epoch"] = (*retained)->epoch;
+                result["tick"] = (*retained)->tick;
+                result["simulation_time"] = (*retained)->simulation_time;
+                return result;
+            })
             .def("get_solver_diagnostics", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -1852,6 +1869,18 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 result["execution_device"] = diagnostics.execution_device;
                 result["device_native"] = diagnostics.device_native;
                 result["graph_capture"] = diagnostics.graph_capture;
+                result["timings_available"] = diagnostics.timings_available;
+                result["linear_iterations"] = diagnostics.linear_iterations;
+                py::list timings;
+                for (const auto& stage : diagnostics.stage_timings) {
+                    py::dict timing;
+                    timing["name"] = stage.name;
+                    timing["time_seconds"] = stage.time_seconds;
+                    timing["calls"] = stage.calls;
+                    timing["parallel_sum"] = stage.parallel_sum;
+                    timings.append(std::move(timing));
+                }
+                result["stage_timings"] = std::move(timings);
                 return result;
             })
             .def("set_link_external_force", [](EngineContext& context,

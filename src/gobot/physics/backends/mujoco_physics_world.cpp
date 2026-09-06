@@ -13,6 +13,7 @@
 #include <memory>
 #include <set>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
@@ -55,6 +56,31 @@ const bool s_mujoco_backend_registered = PhysicsServer::RegisterBackend(
 constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;
 constexpr int kGobotTerrainGeomGroup = 5;
 constexpr std::size_t kMuJoCoErrorBufferSize = 1024;
+
+PhysicsStepResult AdvanceMuJoCo(mjModel* model, mjData* data, RealType delta_time) {
+    const double previous_time = data->time;
+    const std::array<int, 3> warnings{data->warning[mjWARN_BADQPOS].number,
+            data->warning[mjWARN_BADQVEL].number, data->warning[mjWARN_BADQACC].number};
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
+        mj_step(model, data);
+    }
+    const double elapsed = data->time - previous_time;
+    const auto finite_value = [](mjtNum value) { return std::isfinite(value); };
+    const bool finite = std::isfinite(elapsed) &&
+            std::all_of(data->qpos, data->qpos + model->nq, finite_value) &&
+            std::all_of(data->qvel, data->qvel + model->nv, finite_value) &&
+            std::all_of(data->qacc, data->qacc + model->nv, finite_value);
+    // SDK automatic reset can leave finite arrays and time == dt on the very first tick.
+    const bool reset = warnings != std::array<int, 3>{data->warning[mjWARN_BADQPOS].number,
+            data->warning[mjWARN_BADQVEL].number, data->warning[mjWARN_BADQACC].number};
+    if (!finite || reset || std::abs(elapsed - delta_time) > std::max(1e-9, double(delta_time) * 1e-5)) {
+        return {.advanced_time = std::isfinite(elapsed) && elapsed > 0 && elapsed <= delta_time
+                        ? static_cast<RealType>(elapsed) : RealType(0),
+                .state_valid = false, .error = "MuJoCo step reset or produced invalid state; reset is required."};
+    }
+    return {.completed = true, .advanced_time = static_cast<RealType>(elapsed)};
+}
 
 std::string ArtifactDigest(std::string_view content) {
     std::uint64_t digest = 14695981039346656037ULL;
@@ -1342,26 +1368,39 @@ bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previou
     return true;
 }
 
-void MuJoCoPhysicsWorld::Step(RealType delta_time) {
+PhysicsStepResult MuJoCoPhysicsWorld::Step(RealType delta_time) {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::Step");
     if (!available_) {
-        return;
+        SetLastError(GetUnavailableReason());
+        return {.error = last_error_};
+    }
+    if (!std::isfinite(delta_time) || delta_time <= 0.0) {
+        SetLastError("MuJoCo step duration must be positive and finite.");
+        return {.error = last_error_};
     }
 
 #ifdef GOBOT_HAS_MUJOCO
     auto* model = static_cast<mjModel*>(ModelForEnvironment(0));
     auto* data = static_cast<mjData*>(DataForEnvironment(0));
     if (!model || !data) {
-        return;
+        SetLastError("MuJoCo world has not been built.");
+        return {.error = last_error_};
     }
 
-    StepEnvironmentTick(0, delta_time);
+    auto result = StepEnvironmentTick(0, delta_time);
+    if (!result.completed) {
+        SetLastError(result.error);
+        return result;
+    }
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
         SyncStateFromMuJoCo(0);
     }
+    last_error_.clear();
+    return result;
 #else
     GOB_UNUSED(delta_time);
+    return {.error = GetUnavailableReason()};
 #endif
 }
 
@@ -1630,7 +1669,11 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
         return false;
     }
 
-    StepEnvironmentTick(environment_index, delta_time);
+    const auto result = StepEnvironmentTick(environment_index, delta_time);
+    if (!result.completed) {
+        SetLastError(result.error);
+        return false;
+    }
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
         SyncStateFromMuJoCo(environment_index);
@@ -1857,6 +1900,10 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
                                                       std::uint64_t ticks,
                                                       std::size_t worker_count) {
 #ifdef GOBOT_HAS_MUJOCO
+    if (!std::isfinite(delta_time) || delta_time <= 0) {
+        SetLastError("MuJoCo timestep must be finite and positive.");
+        return false;
+    }
     if (ticks == 0) {
         last_error_.clear();
         return true;
@@ -1885,7 +1932,8 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
             worker_count,
             [this, delta_time, ticks](std::size_t environment_index) {
                 for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                    StepEnvironmentTick(environment_index, delta_time);
+                    const auto result = StepEnvironmentTick(environment_index, delta_time);
+                    if (!result.completed) throw std::runtime_error(result.error);
                 }
                 SyncStateFromMuJoCo(environment_index);
             });
@@ -2300,6 +2348,10 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControls(const std::string& robot_na
 bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
                                        PhysicsRobotBatchStepResult& arrays) {
 #ifdef GOBOT_HAS_MUJOCO
+    if (!std::isfinite(settings_.fixed_time_step) || settings_.fixed_time_step <= 0) {
+        SetLastError("MuJoCo timestep must be finite and positive.");
+        return false;
+    }
     const std::size_t environment_count = GetEnvironmentCount();
     if (environment_count == 0) {
         SetLastError("MuJoCo environment batch has not been configured.");
@@ -2821,7 +2873,8 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
                 }
 
                 for (std::uint64_t tick = 0; tick < request.ticks; ++tick) {
-                    mj_step(env_model, data);
+                    const auto result = AdvanceMuJoCo(env_model, data, settings_.fixed_time_step);
+                    if (!result.completed) throw std::runtime_error(result.error);
                     if (!request.collect_contact_history) {
                         continue;
                     }
@@ -4267,28 +4320,27 @@ void* MuJoCoPhysicsWorld::DataForEnvironment(std::size_t environment_index) cons
     return nullptr;
 }
 
-void MuJoCoPhysicsWorld::StepEnvironmentTick(std::size_t environment_index, RealType delta_time) {
+PhysicsStepResult MuJoCoPhysicsWorld::StepEnvironmentTick(std::size_t environment_index, RealType delta_time) {
+    if (!std::isfinite(delta_time) || delta_time <= 0) {
+        return {.state_valid = false, .error = "MuJoCo timestep must be finite and positive."};
+    }
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (model == nullptr || data == nullptr) {
-        return;
+        return {.state_valid = false, .error = "MuJoCo environment data is unavailable."};
     }
 
-    const RealType resolved_delta_time = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
     ApplyMuJoCoOptions(&model->opt, settings_);
-    model->opt.timestep = resolved_delta_time;
+    model->opt.timestep = delta_time;
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
-        ApplyControlsToMuJoCo(environment_index, resolved_delta_time);
+        ApplyControlsToMuJoCo(environment_index, delta_time);
     }
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
         ApplyExternalForcesToMuJoCo(environment_index);
     }
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
-        mj_step(model, data);
-    }
+    return AdvanceMuJoCo(model, data, delta_time);
 }
 
 void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, RealType delta_time) {

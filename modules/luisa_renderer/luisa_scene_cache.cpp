@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace gobot::luisa_renderer {
 
@@ -13,12 +14,19 @@ GeometryResource* LuisaRenderer::EnsureGeometry(const gobot::VisualMeshRenderIte
             return nullptr;
         }
         const GeometryKey key{
-                item.mesh_id.operator std::uint64_t(), item.mesh_revision, item.surface_index};
-        if (const auto found = geometry_cache_.find(key); found != geometry_cache_.end()) {
-            return found->second.get();
+                item.mesh_id.operator std::uint64_t(), item.mesh_topology_revision, item.surface_index};
+        auto [found, inserted] = geometry_cache_.try_emplace(key);
+        if (inserted) {
+            found->second = std::make_unique<GeometryResource>();
         }
+        auto* resource = found->second.get();
+        if (!inserted && resource->geometry_revision == item.mesh_revision) {
+            return resource;
+        }
+        const auto upload_start = std::chrono::steady_clock::now();
 
-        std::vector<GpuVertex> vertices;
+        auto& vertices = resource->staging_vertices;
+        vertices.clear();
         vertices.reserve(surface->vertices.size());
         for (std::size_t i = 0; i < surface->vertices.size(); ++i) {
             const gobot::Vector3 normal = surface->normals.size() == surface->vertices.size()
@@ -40,26 +48,32 @@ GeometryResource* LuisaRenderer::EnsureGeometry(const gobot::VisualMeshRenderIte
                     make_float2(uv.x(), uv.y()),
                     ToFloat4(color)});
         }
-        std::vector<Triangle> triangles;
-        triangles.reserve(surface->indices.size() / 3);
-        for (std::size_t i = 0; i + 2 < surface->indices.size(); i += 3) {
-            triangles.push_back({surface->indices[i], surface->indices[i + 1], surface->indices[i + 2]});
-        }
-        if (vertices.empty() || triangles.empty()) {
+        if (vertices.empty() || surface->indices.empty() || surface->indices.size() % 3 != 0) {
             *error = "Render snapshot contains empty geometry.";
+            geometry_cache_.erase(found);
             return nullptr;
         }
-
-        auto resource = std::make_unique<GeometryResource>();
-        resource->vertices = device_->create_buffer<GpuVertex>(vertices.size());
-        resource->triangles = device_->create_buffer<Triangle>(triangles.size());
-        resource->mesh = device_->create_mesh(resource->vertices, resource->triangles);
+        if (inserted) {
+            auto& triangles = resource->staging_triangles;
+            triangles.reserve(surface->indices.size() / 3);
+            for (std::size_t i = 0; i < surface->indices.size(); i += 3) {
+                triangles.push_back({surface->indices[i], surface->indices[i + 1], surface->indices[i + 2]});
+            }
+            resource->vertices = device_->create_buffer<GpuVertex>(vertices.size());
+            resource->triangles = device_->create_buffer<Triangle>(triangles.size());
+            resource->mesh = device_->create_mesh(resource->vertices, resource->triangles, {.allow_update = true});
+            *stream_ << resource->triangles.copy_from(luisa::span{triangles});
+            resource_stats_.uploaded_bytes += triangles.size() * sizeof(Triangle);
+            ++resource_stats_.index_uploads;
+        }
         *stream_ << resource->vertices.copy_from(luisa::span{vertices})
-                 << resource->triangles.copy_from(luisa::span{triangles})
                  << resource->mesh.build();
-        GeometryResource* result = resource.get();
-        geometry_cache_.emplace(key, std::move(resource));
-        return result;
+        resource->geometry_revision = item.mesh_revision;
+        resource_stats_.uploaded_bytes += vertices.size() * sizeof(GpuVertex);
+        ++resource_stats_.geometry_uploads;
+        resource_stats_.upload_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - upload_start).count();
+        return resource;
     }
 
 std::uint32_t LuisaRenderer::BindTexture(const gobot::RenderTextureSnapshot& texture) {
@@ -67,24 +81,29 @@ std::uint32_t LuisaRenderer::BindTexture(const gobot::RenderTextureSnapshot& tex
             return kInvalidTexture;
         }
         const TextureKey key{
-                texture.texture_id.operator std::uint64_t(),
-                texture.revision,
                 texture.image.image_id.operator std::uint64_t(),
                 texture.image.revision};
         TextureResource* resource = nullptr;
         if (const auto found = texture_cache_.find(key); found != texture_cache_.end()) {
             resource = found->second.get();
         } else {
-            std::vector<float4> pixels = ConvertImage(*texture.image.storage);
+            const auto upload_start = std::chrono::steady_clock::now();
+            auto created = std::make_unique<TextureResource>();
+            auto& pixels = created->staging_pixels;
+            pixels = ConvertImage(*texture.image.storage);
             if (pixels.empty()) {
                 return kInvalidTexture;
             }
-            auto created = std::make_unique<TextureResource>();
             created->image = device_->create_image<float>(
                     PixelStorage::FLOAT4,
                     make_uint2(static_cast<uint>(texture.image.storage->width),
                                static_cast<uint>(texture.image.storage->height)));
             *stream_ << created->image.copy_from(luisa::span{pixels});
+            created->resident_bytes = pixels.size() * sizeof(float4);
+            resource_stats_.uploaded_bytes += created->resident_bytes;
+            ++resource_stats_.image_uploads;
+            resource_stats_.upload_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - upload_start).count();
             resource = created.get();
             texture_cache_.emplace(key, std::move(created));
         }
@@ -121,9 +140,31 @@ GpuMaterial LuisaRenderer::MakeMaterial(const gobot::RenderMaterialSnapshot& mat
 bool LuisaRenderer::RebuildTopology(const gobot::RenderSceneSnapshot& snapshot,
                                     std::string* error) {
         active_geometry_.clear();
-        accel_ = device_->create_accel({});
+        accel_ = device_->create_accel({.allow_update = true});
         geometry_heap_ = device_->create_bindless_array(
-                std::max<std::size_t>(1, snapshot.visual_meshes.size() * 2));
+                std::max<std::size_t>(2, snapshot.visual_meshes.size() * 2));
+        if (snapshot.visual_meshes.empty()) {
+            // OptiX requires a nonempty acceleration structure even for a background-only frame.
+            // The internal triangle is masked out for every ray and is not a scene asset.
+            if (!empty_geometry_) {
+                empty_geometry_ = std::make_unique<GeometryResource>();
+                auto& placeholder = *empty_geometry_;
+                placeholder.staging_vertices.resize(3);
+                placeholder.staging_vertices[0].position = make_float3(0.0f, 0.0f, 0.0f);
+                placeholder.staging_vertices[1].position = make_float3(1.0f, 0.0f, 0.0f);
+                placeholder.staging_vertices[2].position = make_float3(0.0f, 1.0f, 0.0f);
+                placeholder.staging_triangles.push_back({0, 1, 2});
+                placeholder.vertices = device_->create_buffer<GpuVertex>(3);
+                placeholder.triangles = device_->create_buffer<Triangle>(1);
+                placeholder.mesh = device_->create_mesh(placeholder.vertices, placeholder.triangles);
+                *stream_ << placeholder.vertices.copy_from(luisa::span{placeholder.staging_vertices})
+                         << placeholder.triangles.copy_from(luisa::span{placeholder.staging_triangles})
+                         << placeholder.mesh.build();
+            }
+            geometry_heap_.emplace_on_update(0, empty_geometry_->vertices);
+            geometry_heap_.emplace_on_update(1, empty_geometry_->triangles);
+            accel_.emplace_back(empty_geometry_->mesh, make_float4x4(1.0f), 0u, true, 0u);
+        }
         for (std::size_t i = 0; i < snapshot.visual_meshes.size(); ++i) {
             GeometryResource* geometry = EnsureGeometry(snapshot.visual_meshes[i], error);
             if (geometry == nullptr) {
@@ -217,28 +258,92 @@ void LuisaRenderer::UpdateMaterialsAndLighting(const gobot::RenderSceneSnapshot&
 bool LuisaRenderer::SyncScene(const gobot::RenderSceneSnapshot& snapshot,
                               std::string* error,
                               bool allow_empty) {
-        if (snapshot.visual_meshes.empty() && !allow_empty) {
-            *error = "Scene has no renderable mesh; using raster fallback.";
-            return false;
+        const bool topology_changed = last_topology_ != snapshot.fingerprints.topology;
+        const bool geometry_changed = last_geometry_ != snapshot.fingerprints.geometry;
+        const bool materials_changed = last_materials_ != snapshot.fingerprints.materials ||
+                                       last_lighting_ != snapshot.fingerprints.lighting;
+        if (topology_changed || geometry_changed || materials_changed) {
+            *stream_ << synchronize();
         }
-        const bool topology_changed = last_topology_ != snapshot.fingerprints.topology ||
-                                      last_geometry_ != snapshot.fingerprints.geometry;
         if (topology_changed && !RebuildTopology(snapshot, error)) {
+            *stream_ << synchronize();
+            active_geometry_.clear();
+            accel_ = {};
+            geometry_heap_ = {};
+            geometry_cache_.clear();
+            last_topology_ = 0;
             return false;
         }
-        if (!topology_changed && last_transforms_ != snapshot.fingerprints.transforms) {
+        if (!topology_changed && geometry_changed) {
+            for (const auto& item : snapshot.visual_meshes) {
+                if (EnsureGeometry(item, error) == nullptr) {
+                    *stream_ << synchronize();
+                    last_topology_ = 0;
+                    return false;
+                }
+            }
+        }
+        if (!topology_changed && (geometry_changed || last_transforms_ != snapshot.fingerprints.transforms)) {
             UpdateTransforms(snapshot);
         }
-        if (topology_changed || last_materials_ != snapshot.fingerprints.materials ||
-            last_lighting_ != snapshot.fingerprints.lighting) {
+        if (topology_changed || materials_changed) {
             UpdateMaterialsAndLighting(snapshot);
+        }
+        if (topology_changed || geometry_changed || materials_changed) {
+            PruneSceneCaches(snapshot);
         }
         last_topology_ = snapshot.fingerprints.topology;
         last_geometry_ = snapshot.fingerprints.geometry;
         last_transforms_ = snapshot.fingerprints.transforms;
         last_materials_ = snapshot.fingerprints.materials;
         last_lighting_ = snapshot.fingerprints.lighting;
+        if (snapshot.visual_meshes.empty() && !allow_empty) {
+            *error = "Scene has no renderable mesh; using raster fallback.";
+            return false;
+        }
         return true;
+}
+
+void LuisaRenderer::PruneSceneCaches(const RenderSceneSnapshot& snapshot) {
+    // Every update above has completed. Old heaps/accels no longer refer to these resources.
+    std::unordered_set<GeometryKey, GeometryKeyHash> meshes;
+    std::unordered_set<TextureKey, TextureKeyHash> images;
+    const auto retain_texture = [&](const RenderTextureSnapshot& texture) {
+        if (texture.IsValid()) {
+            images.insert({texture.image.image_id.operator std::uint64_t(), texture.image.revision});
+        }
+    };
+    for (const auto& item : snapshot.visual_meshes) {
+        meshes.insert({item.mesh_id.operator std::uint64_t(), item.mesh_topology_revision, item.surface_index});
+        retain_texture(item.material.albedo_texture);
+        retain_texture(item.material.metallic_roughness_texture);
+        retain_texture(item.material.normal_texture);
+        retain_texture(item.material.occlusion_texture);
+        retain_texture(item.material.emissive_texture);
+    }
+    retain_texture(snapshot.environment.environment_texture);
+    std::erase_if(geometry_cache_, [&](const auto& entry) { return !meshes.contains(entry.first); });
+    std::erase_if(texture_cache_, [&](const auto& entry) { return !images.contains(entry.first); });
+    for (auto& [key, resource] : geometry_cache_) {
+        resource->staging_vertices.clear();
+        resource->staging_triangles.clear();
+    }
+    for (auto& [key, resource] : texture_cache_) {
+        resource->staging_pixels.clear();
+    }
+}
+
+RenderResourceStats LuisaRenderer::GetResourceStats() const {
+    auto stats = resource_stats_;
+    stats.mesh_entries = geometry_cache_.size();
+    stats.texture_entries = texture_cache_.size();
+    for (const auto& [key, resource] : geometry_cache_) {
+        stats.resident_bytes += resource->vertices.size_bytes() + resource->triangles.size_bytes();
+    }
+    for (const auto& [key, resource] : texture_cache_) {
+        stats.resident_bytes += resource->resident_bytes;
+    }
+    return stats;
 }
 
 } // namespace gobot::luisa_renderer

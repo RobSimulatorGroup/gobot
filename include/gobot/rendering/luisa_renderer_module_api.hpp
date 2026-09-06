@@ -13,7 +13,19 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 4;
+inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 5;
+
+constexpr std::uint64_t LuisaRendererDataLayout() {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const std::size_t value : {
+            sizeof(RealType), alignof(Matrix4), sizeof(RenderSceneSnapshot),
+            sizeof(RenderViewSnapshot), sizeof(VisualMeshRenderItem),
+            sizeof(RenderMaterialSnapshot), sizeof(MeshSurfaceData),
+            sizeof(RenderLightSnapshot), sizeof(SceneRendererSettings), sizeof(SceneRendererStats)}) {
+        hash = (hash ^ value) * 1099511628211ULL;
+    }
+    return hash;
+}
 
 struct LuisaRendererTarget {
     std::uint32_t gl_color_texture = 0;
@@ -50,6 +62,7 @@ enum class LuisaRendererResult : std::uint32_t {
 
 struct LuisaRendererModuleApi {
     std::uint32_t abi_version = 0;
+    std::uint64_t data_layout = 0;
     void* (*create)(const char* module_directory, char* error, std::size_t error_size) = nullptr;
     void (*destroy)(void* renderer) = nullptr;
     SceneRendererCapabilities (*capabilities)(void* renderer) = nullptr;
@@ -84,6 +97,7 @@ struct LuisaRendererModuleApi {
                                     std::size_t destination_size,
                                     char* error,
                                     std::size_t error_size) = nullptr;
+    RenderResourceStats (*resource_stats)(void* renderer) = nullptr;
 };
 
 using GetLuisaRendererModuleApi = const LuisaRendererModuleApi* (*)();

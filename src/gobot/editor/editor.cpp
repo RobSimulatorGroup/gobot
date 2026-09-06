@@ -788,6 +788,10 @@ bool Editor::PlayScene() {
         RequestPlayError("Cannot play without an edited scene and Simulation Server.");
         return false;
     }
+    if (simulation->IsWorkerRetiring()) {
+        RequestPlayError("The previous physics world is still stopping. Play is available after its current step finishes.");
+        return false;
+    }
 
     SelectEditorPlayBackend(simulation);
 
@@ -860,7 +864,7 @@ bool Editor::StepScene() {
     }
     simulation->SetPaused(true);
     simulation->SetSyncSceneOnFixedStep(true);
-    return simulation->StepOnce([this](RealType fixed_delta) {
+    return simulation->RequestStep([this](RealType fixed_delta) {
         if (scene_play_session_ != nullptr && scene_play_session_->IsRunning()) {
             scene_play_session_->NotifyPhysicsProcess(static_cast<double>(fixed_delta));
         }

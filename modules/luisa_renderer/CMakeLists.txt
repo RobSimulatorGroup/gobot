@@ -39,6 +39,7 @@ target_compile_definitions(gobot_luisa_renderer PRIVATE
         GOBOT_DISABLE_MATRIX_FMT=1
         GOBOT_LUISA_CUDA_TOOLKIT_VERSION="${CUDAToolkit_VERSION}")
 target_link_libraries(gobot_luisa_renderer PRIVATE
+        gobot_public_abi
         luisa::compute
         CUDA::cuda_driver
         Eigen3::Eigen

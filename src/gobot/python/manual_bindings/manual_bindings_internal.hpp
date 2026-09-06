@@ -483,7 +483,8 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
 
 py::dict RuntimeStateToPythonDict(
         const PhysicsSceneState& state,
-        const PhysicsSceneSnapshot* snapshot = nullptr);
+        const PhysicsSceneSnapshot* snapshot = nullptr,
+        const py::object& array_owner = py::none());
 const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot, const std::string& link_name);
 const PhysicsJointState* FindJointState(const PhysicsRobotState& robot, const std::string& joint_name);
 const PhysicsSensorState* FindSensorState(const PhysicsRobotState& robot, const std::string& sensor_name);

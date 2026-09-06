@@ -179,15 +179,11 @@ void PackVector3(const std::vector<Vector3>& source, std::vector<float>* destina
 
 std::size_t GLRasterizerScene::MeshCacheKeyHash::operator()(const MeshCacheKey& key) const {
     std::size_t hash = CombineHash(0, key.mesh_id);
-    hash = CombineHash(hash, key.revision);
     return CombineHash(hash, key.surface_index);
 }
 
 std::size_t GLRasterizerScene::TextureCacheKeyHash::operator()(const TextureCacheKey& key) const {
-    std::size_t hash = CombineHash(0, key.texture_id);
-    hash = CombineHash(hash, key.texture_revision);
-    hash = CombineHash(hash, key.image_id);
-    return CombineHash(hash, key.image_revision);
+    return CombineHash(0, key.texture_id);
 }
 
 void GLRasterizerScene::DestroyMeshEntry(MeshCacheEntry& entry) {
@@ -248,7 +244,28 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
 }
 
 SceneRendererStats GLRasterizerScene::GetStats() const {
-    return stats_;
+    auto result = stats_;
+    result.resources = resource_stats_;
+    result.resources.mesh_entries = mesh_cache_.size();
+    result.resources.texture_entries = texture_cache_.size();
+    for (const auto& [key, entry] : mesh_cache_) {
+        result.resources.resident_bytes += entry.resident_bytes;
+    }
+    for (const auto& [key, entry] : texture_cache_) {
+        result.resources.resident_bytes += entry.resident_bytes;
+    }
+    if (luisa_renderer_ != nullptr && luisa_api_ != nullptr && luisa_api_->resource_stats != nullptr) {
+        const auto luisa = luisa_api_->resource_stats(luisa_renderer_);
+        result.resources.mesh_entries += luisa.mesh_entries;
+        result.resources.texture_entries += luisa.texture_entries;
+        result.resources.resident_bytes += luisa.resident_bytes;
+        result.resources.uploaded_bytes += luisa.uploaded_bytes;
+        result.resources.geometry_uploads += luisa.geometry_uploads;
+        result.resources.index_uploads += luisa.index_uploads;
+        result.resources.image_uploads += luisa.image_uploads;
+        result.resources.upload_ms += luisa.upload_ms;
+    }
+    return result;
 }
 
 bool GLRasterizerScene::CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
@@ -550,8 +567,9 @@ bool GLRasterizerScene::TryLoadLuisaModule() {
     }
     luisa_api_ = get_api();
     if (luisa_api_ == nullptr || luisa_api_->abi_version != GOBOT_LUISA_RENDERER_ABI_VERSION ||
+        luisa_api_->data_layout != LuisaRendererDataLayout() ||
         luisa_api_->create == nullptr || luisa_api_->destroy == nullptr || luisa_api_->render == nullptr) {
-        luisa_status_ = "LuisaCompute module ABI does not match this Gobot build.";
+        luisa_status_ = "LuisaCompute module ABI/data layout does not match this Gobot build.";
         UnloadLuisaModule();
         luisa_load_attempted_ = true;
         return false;
@@ -865,13 +883,17 @@ GLRasterizerScene::MeshCacheEntry* GLRasterizerScene::GetOrCreateMesh(const Visu
     if (surface == nullptr || surface->vertices.empty() || surface->indices.empty()) {
         return nullptr;
     }
-    const MeshCacheKey key{item.mesh_id.operator std::uint64_t(), item.mesh_revision, item.surface_index};
+    const MeshCacheKey key{item.mesh_id.operator std::uint64_t(), item.surface_index};
     auto [it, inserted] = mesh_cache_.try_emplace(key);
     MeshCacheEntry& entry = it->second;
     entry.last_used_frame = frame_index_;
-    if (!inserted) {
+    if (!inserted && entry.geometry_revision == item.mesh_revision) {
         return &entry;
     }
+
+    const auto upload_start = std::chrono::steady_clock::now();
+    const bool resize_vertices = inserted || entry.vertex_count != surface->vertices.size();
+    const bool update_indices = inserted || entry.topology_revision != item.mesh_topology_revision;
 
     std::vector<float> vertices;
     std::vector<float> normals;
@@ -909,22 +931,37 @@ GLRasterizerScene::MeshCacheEntry* GLRasterizerScene::GetOrCreateMesh(const Visu
         uv.insert(uv.end(), {static_cast<float>(value.x()), static_cast<float>(value.y())});
     }
 
-    glCreateVertexArrays(1, &entry.vao);
-    glCreateBuffers(1, &entry.vertex_buffer);
-    glCreateBuffers(1, &entry.normal_buffer);
-    glCreateBuffers(1, &entry.color_buffer);
-    glCreateBuffers(1, &entry.tangent_buffer);
-    glCreateBuffers(1, &entry.uv_buffer);
-    glCreateBuffers(1, &entry.index_buffer);
-    glNamedBufferData(entry.vertex_buffer, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    glNamedBufferData(entry.normal_buffer, normals.size() * sizeof(float), normals.data(), GL_STATIC_DRAW);
-    glNamedBufferData(entry.color_buffer, colors.size() * sizeof(float), colors.data(), GL_STATIC_DRAW);
-    glNamedBufferData(entry.tangent_buffer, tangents.size() * sizeof(float), tangents.data(), GL_STATIC_DRAW);
-    glNamedBufferData(entry.uv_buffer, uv.size() * sizeof(float), uv.data(), GL_STATIC_DRAW);
-    glNamedBufferData(entry.index_buffer,
-                      surface->indices.size() * sizeof(std::uint32_t),
-                      surface->indices.data(),
-                      GL_STATIC_DRAW);
+    if (inserted) {
+        glCreateVertexArrays(1, &entry.vao);
+        glCreateBuffers(1, &entry.vertex_buffer);
+        glCreateBuffers(1, &entry.normal_buffer);
+        glCreateBuffers(1, &entry.color_buffer);
+        glCreateBuffers(1, &entry.tangent_buffer);
+        glCreateBuffers(1, &entry.uv_buffer);
+        glCreateBuffers(1, &entry.index_buffer);
+    }
+    const auto upload = [&](GLuint buffer, const std::vector<float>& values) {
+        const auto bytes = values.size() * sizeof(float);
+        // Ordered GL updates preserve earlier draws that still reference this allocation.
+        if (resize_vertices) {
+            glNamedBufferData(buffer, bytes, values.data(), GL_DYNAMIC_DRAW);
+        } else {
+            glNamedBufferSubData(buffer, 0, bytes, values.data());
+        }
+        resource_stats_.uploaded_bytes += bytes;
+    };
+    upload(entry.vertex_buffer, vertices);
+    upload(entry.normal_buffer, normals);
+    upload(entry.color_buffer, colors);
+    upload(entry.tangent_buffer, tangents);
+    upload(entry.uv_buffer, uv);
+    ++resource_stats_.geometry_uploads;
+    if (update_indices) {
+        const auto bytes = surface->indices.size() * sizeof(std::uint32_t);
+        glNamedBufferData(entry.index_buffer, bytes, surface->indices.data(), GL_STATIC_DRAW);
+        resource_stats_.uploaded_bytes += bytes;
+        ++resource_stats_.index_uploads;
+    }
 
     const std::array<std::pair<GLuint, GLuint>, 5> attributes = {
             std::pair{entry.vertex_buffer, 3U},
@@ -941,6 +978,13 @@ GLRasterizerScene::MeshCacheEntry* GLRasterizerScene::GetOrCreateMesh(const Visu
     }
     glVertexArrayElementBuffer(entry.vao, entry.index_buffer);
     entry.index_count = static_cast<GLsizei>(surface->indices.size());
+    entry.vertex_count = surface->vertices.size();
+    entry.geometry_revision = item.mesh_revision;
+    entry.topology_revision = item.mesh_topology_revision;
+    entry.resident_bytes = (vertices.size() + normals.size() + colors.size() + tangents.size() + uv.size()) *
+                                  sizeof(float) + surface->indices.size() * sizeof(std::uint32_t);
+    resource_stats_.upload_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - upload_start).count();
     return &entry;
 }
 
@@ -948,17 +992,17 @@ GLuint GLRasterizerScene::GetOrCreateTexture(const RenderTextureSnapshot& textur
     if (!texture.IsValid()) {
         return 0;
     }
-    const TextureCacheKey key{
-            texture.texture_id.operator std::uint64_t(),
-            texture.revision,
-            texture.image.image_id.operator std::uint64_t(),
-            texture.image.revision};
+    const TextureCacheKey key{texture.texture_id.operator std::uint64_t()};
     auto [it, inserted] = texture_cache_.try_emplace(key);
     TextureCacheEntry& entry = it->second;
     entry.last_used_frame = frame_index_;
-    if (!inserted) {
+    const bool image_changed = inserted || entry.image_id != texture.image.image_id ||
+                               entry.image_revision != texture.image.revision;
+    if (!image_changed && entry.texture_revision == texture.revision) {
         return entry.texture;
     }
+
+    const auto upload_start = std::chrono::steady_clock::now();
 
     const ImageStorageData& image = *texture.image.storage;
     GLenum internal_format = 0;
@@ -967,12 +1011,22 @@ GLuint GLRasterizerScene::GetOrCreateTexture(const RenderTextureSnapshot& textur
     if (image.data.empty() ||
         !ResolveImageFormat(image.format, &internal_format, &pixel_format, &pixel_type)) {
         LOG_WARN("OpenGL PBR texture format '{}' is not supported.", Image::GetFormatName(image.format));
+        if (entry.texture != 0) {
+            glDeleteTextures(1, &entry.texture);
+        }
         texture_cache_.erase(it);
         return 0;
     }
 
-    glCreateTextures(GL_TEXTURE_2D, 1, &entry.texture);
-    glTextureStorage2D(entry.texture, 1, internal_format, image.width, image.height);
+    if (inserted || entry.width != image.width || entry.height != image.height ||
+        entry.internal_format != internal_format) {
+        if (entry.texture != 0) {
+            glDeleteTextures(1, &entry.texture);
+        }
+        glCreateTextures(GL_TEXTURE_2D, 1, &entry.texture);
+        glTextureStorage2D(entry.texture, 1, internal_format, image.width, image.height);
+    }
+    if (image_changed) {
     GLint old_unpack_alignment = 0;
     glGetIntegerv(GL_UNPACK_ALIGNMENT, &old_unpack_alignment);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -986,6 +1040,10 @@ GLuint GLRasterizerScene::GetOrCreateTexture(const RenderTextureSnapshot& textur
                         pixel_type,
                         image.data.data());
     glPixelStorei(GL_UNPACK_ALIGNMENT, old_unpack_alignment);
+        entry.resident_bytes = Image::GetImageDataSize(image.width, image.height, image.format, false);
+        resource_stats_.uploaded_bytes += entry.resident_bytes;
+        ++resource_stats_.image_uploads;
+    }
     glTextureParameteri(entry.texture,
                         GL_TEXTURE_MIN_FILTER,
                         texture.min_filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR);
@@ -994,6 +1052,14 @@ GLuint GLRasterizerScene::GetOrCreateTexture(const RenderTextureSnapshot& textur
                         texture.mag_filter == TextureFilter::Nearest ? GL_NEAREST : GL_LINEAR);
     glTextureParameteri(entry.texture, GL_TEXTURE_WRAP_S, ToGLWrap(texture.wrap_u));
     glTextureParameteri(entry.texture, GL_TEXTURE_WRAP_T, ToGLWrap(texture.wrap_v));
+    entry.image_id = texture.image.image_id;
+    entry.image_revision = texture.image.revision;
+    entry.texture_revision = texture.revision;
+    entry.width = image.width;
+    entry.height = image.height;
+    entry.internal_format = internal_format;
+    resource_stats_.upload_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - upload_start).count();
     return entry.texture;
 }
 
@@ -1071,10 +1137,7 @@ bool GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
 }
 
 void GLRasterizerScene::PruneCaches() {
-    if (frame_index_ % 120 != 0) {
-        return;
-    }
-    constexpr std::uint64_t keep_frames = 360;
+    constexpr std::uint64_t keep_frames = 2;
     for (auto it = mesh_cache_.begin(); it != mesh_cache_.end();) {
         if (it->second.last_used_frame + keep_frames < frame_index_) {
             DestroyMeshEntry(it->second);

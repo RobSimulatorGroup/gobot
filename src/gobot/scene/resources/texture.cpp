@@ -7,20 +7,8 @@
 
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/core/registration.hpp"
-#include "gobot/rendering/render_server.hpp"
 
 namespace gobot {
-
-Texture::~Texture() {
-    if (RenderServer::HasInstance() && texture_rid_.IsValid()) {
-        RS::GetInstance()->Free(texture_rid_);
-    }
-    texture_rid_ = RID();
-}
-
-RID Texture::GetRID() const {
-    return texture_rid_;
-}
 
 Texture2D::Texture2D(const Ref<Image>& image) {
     SetImage(image);
@@ -32,14 +20,6 @@ void Texture2D::SetImage(const Ref<Image>& image) {
     }
 
     image_ = image;
-    if (RenderServer::HasInstance() && image_.IsValid()) {
-        if (texture_rid_.IsNull()) {
-            texture_rid_ = RS::GetInstance()->TextureCreate();
-            RS::GetInstance()->Texture2DInitialize(texture_rid_, image_);
-        } else {
-            RS::GetInstance()->TextureSetData(texture_rid_, image_);
-        }
-    }
     MarkChanged();
 }
 

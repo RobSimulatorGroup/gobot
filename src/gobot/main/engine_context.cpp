@@ -6,7 +6,6 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/main/runtime_scene_owner.hpp"
 #include "gobot/physics/physics_scene_compiler.hpp"
-#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -20,7 +19,7 @@ EngineContext::EngineContext(ProjectSettings* project_settings,
 }
 
 EngineContext::~EngineContext() {
-    python::PythonScriptRunner::ClearSceneScriptContext(this);
+    if (scene_binding_callback_) scene_binding_callback_(nullptr, scene_epoch_);
     ClearDebugArrows();
     ClearWorld();
     ClearOwnedScene();
@@ -47,6 +46,7 @@ const std::string& EngineContext::GetProjectPath() const {
 }
 
 bool EngineContext::LoadScene(const std::string& scene_path) {
+    ProjectSettings::Scope project_scope(project_settings_);
     if (load_scene_callback_) {
         if (!load_scene_callback_(scene_path)) {
             SetLastError("Failed to load scene through active runtime context from '" + scene_path + "'.");
@@ -88,8 +88,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         scene_command_stack_.Clear();
         scene_command_stack_.MarkClean();
         AdvanceSceneEpoch();
-        python::PythonScriptRunner::SetSceneScriptContext(this);
-        python::PythonScriptRunner::SetSceneScriptRoot(scene_root_, scene_epoch_);
+        if (scene_binding_callback_) scene_binding_callback_(scene_root_, scene_epoch_);
         return;
     }
 
@@ -104,8 +103,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         AttachOwnedSceneToRuntimeTree();
     }
     scene_path_ = scene_path;
-    python::PythonScriptRunner::SetSceneScriptContext(this);
-    python::PythonScriptRunner::SetSceneScriptRoot(scene_root_, scene_epoch_);
+    if (scene_binding_callback_) scene_binding_callback_(scene_root_, scene_epoch_);
 }
 
 Node* EngineContext::GetSceneRoot() const {
@@ -134,7 +132,7 @@ void EngineContext::ClearScene() {
     scene_root_ = nullptr;
     owns_scene_root_ = false;
     scene_path_.clear();
-    python::PythonScriptRunner::ClearSceneScriptContext(this);
+    if (scene_binding_callback_) scene_binding_callback_(nullptr, scene_epoch_);
 }
 
 PhysicsBackendType EngineContext::GetBackendType() const {
@@ -377,6 +375,10 @@ void EngineContext::SetLoadSceneCallback(LoadSceneCallback callback) {
     load_scene_callback_ = std::move(callback);
 }
 
+void EngineContext::SetSceneBindingCallback(SceneBindingCallback callback) {
+    scene_binding_callback_ = std::move(callback);
+}
+
 void EngineContext::NotifySceneChanged() {
     NotifySceneMutated();
 }
@@ -388,6 +390,7 @@ void EngineContext::NotifySceneMutated() {
 }
 
 bool EngineContext::ExecuteSceneCommand(std::unique_ptr<SceneCommand> command) {
+    ProjectSettings::Scope project_scope(project_settings_);
     if (!scene_command_stack_.Execute(std::move(command))) {
         return false;
     }
@@ -396,6 +399,7 @@ bool EngineContext::ExecuteSceneCommand(std::unique_ptr<SceneCommand> command) {
 }
 
 bool EngineContext::UndoSceneCommand() {
+    ProjectSettings::Scope project_scope(project_settings_);
     if (!scene_command_stack_.Undo()) {
         return false;
     }
@@ -404,6 +408,7 @@ bool EngineContext::UndoSceneCommand() {
 }
 
 bool EngineContext::RedoSceneCommand() {
+    ProjectSettings::Scope project_scope(project_settings_);
     if (!scene_command_stack_.Redo()) {
         return false;
     }
@@ -424,6 +429,7 @@ bool EngineContext::CommitSceneTransaction() {
 }
 
 bool EngineContext::CancelSceneTransaction() {
+    ProjectSettings::Scope project_scope(project_settings_);
     if (!scene_command_stack_.CancelTransaction()) {
         return false;
     }

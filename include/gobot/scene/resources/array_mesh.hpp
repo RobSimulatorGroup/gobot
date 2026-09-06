@@ -10,7 +10,6 @@
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
-#include "gobot/core/rid.hpp"
 
 #include <vector>
 
@@ -19,9 +18,9 @@ namespace gobot {
 class GOBOT_EXPORT ArrayMesh : public Mesh {
     GOBCLASS(ArrayMesh, Mesh)
 public:
-    ArrayMesh();
+    ArrayMesh() = default;
 
-    ~ArrayMesh() override;
+    ~ArrayMesh() override = default;
 
     void SetSurface(std::vector<Vector3> vertices,
                     std::vector<uint32_t> indices,
@@ -46,12 +45,7 @@ public:
 
     const Ref<Material>& GetMaterial() const;
 
-    RID GetRid() const override;
-
 private:
-    void UploadSurface() const;
-
-    mutable RID mesh_;
     Ref<Material> material_{nullptr};
 };
 

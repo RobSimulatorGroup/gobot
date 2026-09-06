@@ -456,7 +456,7 @@ class Script(gobot.NodeScript):
             control_tick = min(
                 control_tick, self.profile_module.DROP_SETTLE_TICKS - 1
             )
-        state = self.context.get_physics_state()
+        state = self.context.get_physics_state_view()
         penetration = _max_contact_penetration(state)
         self.peak_contact_penetration = max(
             self.peak_contact_penetration, penetration

@@ -285,6 +285,7 @@ MeshInstance3D* CreateBoxVisual(const std::string& name,
 }
 
 Node* LoadSceneRoot(const std::string& scene_path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     Ref<Resource> resource =
             ResourceLoader::Load(scene_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
     Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
@@ -301,6 +302,8 @@ Node* LoadSceneRoot(const std::string& scene_path) {
 }
 
 bool SaveSceneRoot(Node* root, const std::string& path) {
+    EngineContext* context = FindAppContextForSceneRoot(root);
+    ProjectSettings::Scope project_scope((context == nullptr ? GetActiveAppContext() : *context).GetProjectSettings());
     if (root == nullptr) {
         throw std::invalid_argument("cannot save a null Gobot scene root");
     }
@@ -322,10 +325,12 @@ bool SaveSceneRoot(Node* root, const std::string& path) {
 }
 
 std::string LocalizeResourcePath(const std::string& path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     return ProjectSettings::GetInstance()->LocalizePath(path);
 }
 
 std::string GlobalizeResourcePath(const std::string& path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     return ProjectSettings::GetInstance()->GlobalizePath(LocalizeResourcePath(path));
 }
 
@@ -485,6 +490,7 @@ void AddMJCFScenePlaneGeoms(Node3D* scene_root, const std::string& xml_path) {
 }
 
 Ref<PythonScript> LoadPythonScriptResource(const std::string& script_path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(
             ResourceLoader::Load(script_path, "PythonScript", ResourceFormatLoader::CacheMode::Reuse));
     if (!script.IsValid()) {
@@ -548,6 +554,7 @@ void CopyMJCFDynamicProperties(Node* target, const Node* source) {
 }
 
 Node* InstantiateMJCFRoot(const std::string& xml_path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     Ref<Resource> resource =
             ResourceLoader::Load(xml_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
     Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
@@ -595,6 +602,7 @@ bool TrySaveSplitMJCFScene(const std::string& xml_path,
                            const std::string& scene_path,
                            const std::optional<std::string>& name,
                            const std::optional<std::string>& script_path) {
+    ProjectSettings::Scope project_scope(GetActiveAppContext().GetProjectSettings());
     std::optional<std::string> included_xml_path = ResolveFirstMJCFIncludeResourcePath(xml_path);
     if (!included_xml_path.has_value()) {
         return false;
@@ -1525,7 +1533,21 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
 }
 
 py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state,
-                                  const PhysicsSceneSnapshot* snapshot) {
+                                  const PhysicsSceneSnapshot* snapshot,
+                                  const py::object& array_owner) {
+    const bool use_arrays = !array_owner.is_none();
+    const auto vectors = [&](const std::vector<Vector3>& values) -> py::object {
+        if (!use_arrays) {
+            return Vector3ListToPython(values);
+        }
+        static const RealType empty = 0;
+        py::array result(py::dtype::of<RealType>(),
+                         {static_cast<py::ssize_t>(values.size()), py::ssize_t(3)},
+                         {static_cast<py::ssize_t>(sizeof(Vector3)), static_cast<py::ssize_t>(sizeof(RealType))},
+                         values.empty() ? &empty : values.front().data(), array_owner);
+        result.attr("setflags")(py::arg("write") = false);
+        return result;
+    };
     py::dict result;
     py::list robots;
     for (const PhysicsRobotState& robot : state.robots) {
@@ -1543,6 +1565,20 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state,
             joints.append(JointStateToPythonDict(joint));
         }
         robot_dict["joints"] = joints;
+        if (use_arrays) {
+            const auto joint_values = [&](RealType PhysicsJointState::*member) {
+                static const RealType empty = 0;
+                py::array values(py::dtype::of<RealType>(),
+                                 {static_cast<py::ssize_t>(robot.joints.size())},
+                                 {static_cast<py::ssize_t>(sizeof(PhysicsJointState))},
+                                 robot.joints.empty() ? &empty : &(robot.joints.front().*member), array_owner);
+                values.attr("setflags")(py::arg("write") = false);
+                return values;
+            };
+            robot_dict["joint_position"] = joint_values(&PhysicsJointState::position);
+            robot_dict["joint_velocity"] = joint_values(&PhysicsJointState::velocity);
+            robot_dict["joint_effort"] = joint_values(&PhysicsJointState::effort);
+        }
 
         py::list sensors;
         for (const PhysicsSensorState& sensor : robot.sensors) {
@@ -1566,10 +1602,10 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state,
     for (const PhysicsDeformableState& deformable : state.deformables) {
         py::dict value;
         value["stable_id"] = deformable.stable_id;
-        value["local_vertices"] = Vector3ListToPython(deformable.local_vertices);
-        value["local_velocities"] = Vector3ListToPython(deformable.local_velocities);
+        value["local_vertices"] = vectors(deformable.local_vertices);
+        value["local_velocities"] = vectors(deformable.local_velocities);
         value["contact_forces_world"] =
-                Vector3ListToPython(deformable.contact_forces_world);
+                vectors(deformable.contact_forces_world);
         if (snapshot != nullptr) {
             const auto authored = std::find_if(
                     snapshot->deformables.begin(),
@@ -1588,7 +1624,19 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state,
                     world_vertices.push_back(
                             authored->global_transform * local_vertex);
                 }
-                value["world_vertices"] = Vector3ListToPython(world_vertices);
+                if (use_arrays) {
+                    py::array_t<RealType> array({static_cast<py::ssize_t>(world_vertices.size()), py::ssize_t(3)});
+                    auto output = array.mutable_unchecked<2>();
+                    for (std::size_t i = 0; i < world_vertices.size(); ++i) {
+                        for (int axis = 0; axis < 3; ++axis) {
+                            output(i, axis) = world_vertices[i][axis];
+                        }
+                    }
+                    array.attr("setflags")(py::arg("write") = false);
+                    value["world_vertices"] = std::move(array);
+                } else {
+                    value["world_vertices"] = Vector3ListToPython(world_vertices);
+                }
             }
         }
         deformables.append(std::move(value));

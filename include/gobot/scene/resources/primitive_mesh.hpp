@@ -9,7 +9,6 @@
 
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
-#include "gobot/core/rid.hpp"
 #include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
@@ -17,25 +16,18 @@ namespace gobot {
 class GOBOT_EXPORT PrimitiveMesh : public Mesh {
     GOBCLASS(PrimitiveMesh, Mesh)
 public:
-    PrimitiveMesh();
+    PrimitiveMesh() = default;
 
-    ~PrimitiveMesh();
+    ~PrimitiveMesh() override = default;
 
     void SetMaterial(const Ref<Material>& material);
 
     const Ref<Material>& GetMaterial() const;
 
-    RID GetRid() const override;
-
 protected:
-    RID EnsureRid() const;
-
     void SetGeneratedSurface(MeshSurfaceData surface) const;
 
-    void UploadSurface() const;
-
 private:
-    mutable RID mesh_;
     Ref<Material> material_{nullptr};
 };
 
@@ -44,8 +36,6 @@ class GOBOT_EXPORT BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
     BoxMesh();
-
-    RID GetRid() const override;
 
     void SetWidth(RealType p_width);
 
@@ -65,8 +55,6 @@ class GOBOT_EXPORT CylinderMesh : public PrimitiveMesh {
     GOBCLASS(CylinderMesh, PrimitiveMesh)
 public:
     CylinderMesh();
-
-    RID GetRid() const override;
 
     void SetRadius(RealType radius);
 
@@ -93,8 +81,6 @@ class GOBOT_EXPORT PlaneMesh : public PrimitiveMesh {
 public:
     PlaneMesh();
 
-    RID GetRid() const override;
-
     void SetSize(Vector2 size);
 
     const Vector2& GetSize() const;
@@ -109,8 +95,6 @@ class GOBOT_EXPORT SphereMesh : public PrimitiveMesh {
     GOBCLASS(SphereMesh, PrimitiveMesh)
 public:
     SphereMesh();
-
-    RID GetRid() const override;
 
     void SetRadius(RealType radius);
 

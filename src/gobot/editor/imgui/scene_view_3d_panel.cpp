@@ -662,13 +662,12 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                     drag_force_world_axis_ = Vector3::UnitX();
                 }
                 drag_last_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
-                drag_force_active_ = true;
-                drag_force_point_locked_ = true;
                 drag_force_vector_ = Vector3::Zero();
-                ApplyRuntimeSpringForce(dragged_force_link_,
-                                        drag_force_local_point_,
-                                        drag_force_target_point_,
-                                        drag_force_vector_);
+                drag_force_active_ = ApplyRuntimeSpringForce(dragged_force_link_,
+                                                             drag_force_local_point_,
+                                                             drag_force_target_point_,
+                                                             drag_force_vector_);
+                drag_force_point_locked_ = drag_force_active_;
             }
         }
     }
@@ -747,10 +746,11 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         }
         drag_force_point_ = dragged_force_link_->GetGlobalTransform() * drag_force_local_point_;
         drag_force_vector_ = drag_force_target_point_ - drag_force_point_;
-        ApplyRuntimeSpringForce(dragged_force_link_,
-                                drag_force_local_point_,
-                                drag_force_target_point_,
-                                drag_force_axis_valid_ ? drag_force_world_axis_ : Vector3::Zero());
+        drag_force_active_ = ApplyRuntimeSpringForce(dragged_force_link_,
+                                                     drag_force_local_point_,
+                                                     drag_force_target_point_,
+                                                     drag_force_axis_valid_ ? drag_force_world_axis_ : Vector3::Zero());
+        drag_force_point_locked_ = drag_force_active_;
         drag_last_mouse_ = mouse_position;
     }
 

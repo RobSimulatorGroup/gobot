@@ -63,6 +63,10 @@ uv run gobot_editor --path examples/go1
 The first `uv run` initializes the required Git submodules and builds the
 cached LuisaCompute, gsplat, and OpenUSD SDKs before installing Gobot editable.
 It requires the source-build toolchain, including a CUDA toolkit with `nvcc`.
+SuperDex CPU support is enabled by default in both CMake and Python builds;
+its pinned SDK is built in isolation and requires GCC 12+ or a supported Clang.
+The default simulation backend remains MuJoCo. SuperDex must still be selected
+by the scene script or application, as in `examples/conveyor_packages`.
 Later runs are incremental. Python files import directly from the checkout,
 while `_core`, `libgobot`, and `gobot_editor` come from the same build installed
 in `.venv`. The editable `gobot_editor` launcher runs an incremental CMake/Ninja
@@ -100,6 +104,12 @@ Alternatively, run `source .venv/bin/activate` once and then use
 `gobot_editor` or `python` directly. At runtime,
 `GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides automatic
 libpython discovery.
+
+To omit the experimental SuperDex backend, configure CMake with
+`-DGOB_BUILD_SUPERDEX=OFF`, or install Python with
+`uv sync --reinstall-package gobot -C cmake.define.GOB_BUILD_SUPERDEX=OFF`.
+Existing standalone CMake caches preserve an explicit `OFF`; reconfigure them
+with `-DGOB_BUILD_SUPERDEX=ON` to enable the backend. SuperDex CUDA remains off.
 
 For a standalone CMake build used by C++ tests, use a separate build directory
 and the Python selected by `uv`:

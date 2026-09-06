@@ -51,7 +51,8 @@ implemented through Gobot's backend-neutral force APIs:
 
 ## Build
 
-Initialize the pinned SDK fork and enable the optional backend explicitly:
+SuperDex CPU is built by default. Initialize the pinned SDK fork for standalone
+CMake builds (Python installation prepares the required submodules):
 
 ```bash
 git submodule update --init --recursive 3rdparty/project_superdex
@@ -70,10 +71,18 @@ silently creates a CPU world for a CUDA request.
 
 ## Editor Play Mode
 
-Build Gobot with `GOB_BUILD_SUPERDEX=ON`, open the example, and press Play:
+Open the example from the installed Python environment and press Play:
 
 ```bash
 uv run gobot_editor --path examples/conveyor_packages
+```
+
+After upgrading an older installation that omitted SuperDex, rebuild the
+installed package, not just a separate standalone CMake build:
+
+```bash
+uv sync --reinstall-package gobot --no-build-isolation-package gobot \
+  -C cmake.define.GOB_BUILD_SUPERDEX=ON
 ```
 
 The script selects experimental `PhysicsBackendType.SuperDex`, CPU execution,
@@ -92,15 +101,34 @@ The default `interactive` profile allows 16 Newton iterations.
 `GOBOT_CONVEYOR_QUALITY=accurate` raises the cap to 48 iterations for dense
 hand/film contact diagnostics; both profiles still exit early on convergence.
 
-For a faster editor-only inspection, launch Play Mode with
-`GOBOT_CONVEYOR_PREVIEW=1`. Preview mode changes only the runtime clone: it
+For a faster editor-only inspection, launch Play Mode explicitly in preview mode:
+
+```bash
+GOBOT_CONVEYOR_PREVIEW=1 uv run gobot_editor --path examples/conveyor_packages
+```
+
+The startup log reports `preview` or `validation`; plain `uv run gobot_editor`
+uses validation mode. Preview mode changes only the runtime clone: it
 uses 780 deformable nodes, disables thin-shell self-contact, caps Newton at
-12 iterations, and begins at the first hand approach. During soft-package
+16 iterations with six line-search trials, and begins at the first hand approach. During soft-package
 contact it pauses a command for up to three steps when measured penetration
 exceeds 1 mm. The authored scene and headless validation profile retain the
 full 6,292-node meshes and shell self-contact.
 
 ## Headless Run
+
+For per-stage CPU timings over actual hand contact, run from the repository root:
+
+```bash
+uv run python benchmark/superdex_contact_benchmark.py \
+  --output build/benchmarks/conveyor-contact-cpu
+```
+
+This keeps the full meshes and existing physics settings, waits for actual
+bilateral hand contact, then records 100 warmup and 500 consecutive measured
+physics ticks. Contact loss is reported rather than discarded. It requires the
+profiling-enabled SDK fork; see [timing semantics and build instructions](../../doc/superdex_performance_diagnostics.md).
+The normal runner can also opt into final-tick diagnostics with `--solver-timings`.
 
 Regenerate the scene and run the same `SimulationServer` path without an editor:
 
@@ -128,3 +156,73 @@ machine without the required CUDA path fails instead of silently falling back.
 CUDA remains experimental and reports `device_native=false` and
 `graph_capture=false` because only the linear solve is intended for initial
 acceleration.
+
+## MuJoCo Warp + libuipc Grasp Acceptance
+
+An opt-in headless trial reuses the existing two-way coupled provider. It is
+separate from the default SuperDex Play session and currently **does not pass
+physical grasp/flip acceptance**. Changing solvers alone does not make the
+authored trajectory a successful grasp.
+
+With a CUDA-capable MuJoCo Warp installation and Gobot's native libuipc module:
+
+```bash
+uv run --no-sync python examples/conveyor_packages/conveyor_mujoco_ipc.py \
+  --report build/benchmarks/conveyor-ipc-acceptance/blue.json
+```
+
+The default contact controller requires 3,020 motion ticks plus up to 1,000
+extra physics ticks waiting for a confirmed grasp. It stops early on acquisition
+timeout or loss of grasp. `--controller open-loop` reproduces the original
+3,020-tick trajectory without that safety gate.
+It privately selects the blue film/fill, both hands, the worktable and the
+stationary outfeed conveyor from this `.jscn`. It retains 2,600 soft nodes and
+shell self-contact, adds explicit two-way couplings for all 34 hand collision
+links, and uses one-way couplings for the stationary supports. No changes are
+saved to the scene. There are no attachments, runtime vertex/pose writes,
+conveyor traction, or extra package-driving forces.
+
+`--compile-only` checks scene compilation and fingertip kinematics without
+running CUDA. `--steps 2` checks the real GPU integration, but an incomplete
+cycle always has `passed=false`. The process exits with code 1 on a physical
+acceptance failure, incomplete trial, or solver error; inspect `failed_gates`,
+`task_failure` and `error` separately. Compile-only success exits 0 but is not
+physical success.
+
+The original SuperDex pose leaves a 20.5 mm nominal gap for that solver's
+contact radius. The contact controller aligns the thumb with all three regular
+fingers in the air, descends toward a measured crest on the settled upper sheet,
+then closes from a 50 mm opening toward a 2.5 mm unloaded gap. Grasp-point
+tracking is limited to 50 mm/s and 60 mm total correction. Each hand stops
+closing when it carries opposing loads; lifting requires both hands to maintain
+at least 0.15 N on every fingertip for 100 ms, with proxy tracking within 1 mm
+and fingertip forces below 20 N. Wrist rotation remains zero. These are
+candidate joint commands, not a validated grasp; no film vertices are attached.
+`--grasp-height-offset` and `--grasp-wait-steps` control acquisition placement
+and timeout. `--controller open-loop --pinch-gap 0.0205` tests the original pose.
+
+The report includes per-finger reaction vectors, airborne pinch duration,
+authored-face orientation, release/settling, proxy displacement bounds,
+solver diagnostics, per-phase median/p95 step times, and sampled whole-device
+memory use. See [acceptance criteria and results](../../doc/conveyor_ipc_acceptance.md)
+for measurement limits and the next physical validation requirements. The
+current runner does not validate cartons, multiple environments, or independent
+batch resets.
+
+`--snapshot-dir build/benchmarks/conveyor-ipc-acceptance/states` additionally
+saves measured vertices, velocities, hand/proxy transforms, wrenches and joint
+positions as compressed NPZ files at the report trace boundaries.
+
+The libuipc SDK must include the velocity-only state-update fix: older builds
+discard friction history on every coupled step, even with friction enabled in
+the scene. Rebuild/install both the native module and CUDA SDK after updating
+the fork; the regression below tests device and host staging with and without
+checkpoint rewind.
+
+```bash
+uv run --no-sync python -m pytest tests/python/test_conveyor_mujoco_ipc.py -q
+GOBOT_RUN_CONVEYOR_IPC_GPU_TEST=1 uv run --no-sync python -m pytest \
+  tests/python/test_conveyor_mujoco_ipc.py -q
+GOBOT_RUN_LIBUIPC_BATCH_GPU_TEST=1 uv run --no-sync python -m pytest \
+  tests/python/test_libuipc_batch_gpu.py -q -k velocity_staging
+```

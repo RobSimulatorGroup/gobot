@@ -140,6 +140,24 @@ void Mesh::ReplaceSurfaceData(MeshSurfaceList surfaces) {
     for (MeshSurfaceData& surface : surfaces) {
         CompleteMeshSurface(surface);
     }
+    bool topology_changed = !surface_data_ || surface_data_->size() != surfaces.size();
+    bool geometry_changed = topology_changed;
+    if (!topology_changed) {
+        for (std::size_t i = 0; i < surfaces.size(); ++i) {
+            const auto& before = (*surface_data_)[i];
+            const auto& after = surfaces[i];
+            topology_changed |= before.indices != after.indices || before.vertices.size() != after.vertices.size();
+            geometry_changed |= topology_changed || before.vertices != after.vertices ||
+                                before.normals != after.normals || before.tangents != after.tangents ||
+                                before.uv0 != after.uv0 || before.colors != after.colors;
+        }
+    }
+    if (topology_changed) {
+        ++topology_revision_;
+    }
+    if (geometry_changed) {
+        ++geometry_revision_;
+    }
     surface_data_ = std::make_shared<const MeshSurfaceList>(std::move(surfaces));
     MarkChanged();
 

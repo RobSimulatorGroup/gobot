@@ -42,6 +42,7 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     for define in (
         "GOB_BUILD_ASSIMP",
         "GOB_BUILD_MUJOCO",
+        "GOB_BUILD_SUPERDEX",
         "GOB_BUILD_EGL",
         "GOB_BUILD_LUISA_RENDERER",
         "GOB_BUILD_LIBUIPC",
@@ -64,6 +65,13 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     ):
         assert requirement in pyproject
     assert "[project.optional-dependencies]" not in pyproject
+
+
+def test_superdex_build_defaults_include_cpu_sdk_sources() -> None:
+    cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert re.search(r'option\(GOB_BUILD_SUPERDEX\s+"[^"]*"\s+ON\)', cmake)
+    assert re.search(r'option\(GOB_SUPERDEX_ENABLE_CUDA\s+"[^"]*"\s+OFF\)', cmake)
+    assert backend._SUBMODULE_MARKERS["3rdparty/project_superdex"] == "CMakeLists.txt"
 
 
 def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> None:
@@ -154,6 +162,12 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "py${{ matrix.python-version }}" in wheels
     assert "-DCMAKE_C_COMPILER_LAUNCHER=ccache" in wheels
     assert "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" in wheels
+    assert "3rdparty/project_superdex" in wheels
+    assert "gcc-12" in wheels
+    assert "g++-12" in wheels
+    assert "CC: gcc-12" in wheels
+    assert "CXX: g++-12" in wheels
+    assert "-DGOB_BUILD_SUPERDEX=OFF" in libuipc
     assert wheels.count('          - "3.1') == 5
 
     assert "cuda-profiler-api-12-8=12.8.90-1" in workflow
@@ -560,6 +574,7 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
     assert "3rdparty/assimp" in update
     assert "3rdparty/luisa_compute" in update
     assert "3rdparty/openusd" in update
+    assert "3rdparty/project_superdex" in update
     assert "--depth=1" in update
     libuipc_update = run.call_args_list[3].args[0]
     assert "--recursive" in libuipc_update
@@ -643,6 +658,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
+    test_superdex_build_defaults_include_cpu_sdk_sources()
     test_release_wheel_provisions_libuipc_sources_and_native_dependencies()
     test_libuipc_runtime_bundle_has_a_strict_cmake_contract()
     test_libuipc_runtime_bundle_survives_removing_its_input()

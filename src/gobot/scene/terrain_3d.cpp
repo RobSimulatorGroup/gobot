@@ -578,6 +578,7 @@ void Terrain3D::EnsureGenerated() const {
     generated_config_hash_ = content_hash;
     generated_config_hash_valid_ = true;
     render_mesh_dirty_ = true;
+    ++geometry_revision_;
 }
 
 void Terrain3D::InvalidateGeneratedTerrain() {
@@ -591,6 +592,12 @@ void Terrain3D::InvalidateGeneratedTerrain() {
 
 void Terrain3D::MarkMeshDirty() {
     render_mesh_dirty_ = true;
+    ++geometry_revision_;
+}
+
+std::uint64_t Terrain3D::GetGeometryRevision() const {
+    EnsureGenerated();
+    return geometry_revision_;
 }
 
 void Terrain3D::RebuildRenderMesh() const {

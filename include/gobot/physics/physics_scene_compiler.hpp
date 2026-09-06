@@ -50,6 +50,9 @@ struct CompiledPhysicsScene {
 
 class GOBOT_EXPORT PhysicsSceneCompiler {
 public:
+    static std::uint64_t GetSensorPreviewFingerprint(const Node* scene_root);
+    static PhysicsSceneSnapshot CaptureSensorPreview(const Node* scene_root);
+
     static bool Compile(const Node* scene_root,
                         CompiledPhysicsScene* compiled_scene,
                         std::string* error = nullptr);

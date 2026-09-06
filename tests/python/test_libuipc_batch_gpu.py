@@ -229,6 +229,63 @@ def test_real_libuipc_batch_device_buffers() -> None:
             del context
 
 
+@pytest.mark.parametrize("rewind", [False, True])
+@pytest.mark.parametrize("device_native", [False, True])
+def test_real_libuipc_velocity_staging_preserves_friction(
+    tmp_path, monkeypatch, record_property, rewind, device_native,
+) -> None:
+    monkeypatch.setenv("GOBOT_LIBUIPC_DEVICE_NATIVE_COUPLING", "1" if device_native else "0")
+    scene_path = build_libuipc_test_scene(tmp_path, "soft_cube_press.jscn")
+    context = gobot.app.create_context()
+    context.set_project_path(str(tmp_path))
+    context.load_scene("res://" + scene_path.name)
+    solver = None
+    try:
+        solver = LibuipcBatchSolver(
+            context.compile_ipc_scene_artifact(), num_envs=1, device="cuda:0",
+            config=LibuipcBatchConfig(
+                solver=LibuipcConfig(
+                    fixed_time_step=.005, gravity=(1., 0., -9.81),
+                    friction_coefficient=.8, module_path=MODULE_PATH,
+                    workspace=str(tmp_path / "workspace"),
+                ),
+                environments_per_shard=1, newton_max_iterations=48,
+                strict_convergence=True,
+            ),
+        )
+        ground = next(index for index, body in enumerate(solver.affine_bodies)
+                      if str(body["path"]).endswith("/ground"))
+        solver.set_affine_targets(solver.arrays["affine_transforms"])
+        initial = solver.arrays["positions"].clone()
+        support_loads = []
+        # Every step stages the (zero) affine velocities through the SDK.
+        # Horizontal gravity must still be balanced by ground friction.
+        for _ in range(120):
+            if rewind:
+                solver.capture_checkpoint()
+                solver.step()
+                solver.rewind_checkpoint()
+            solver.step()
+            if rewind:
+                solver.commit_checkpoint()
+            support_loads.append(float(solver.arrays["affine_contact_wrenches"][0, ground, 0]))
+        solver.synchronize()
+        positions = solver.arrays["positions"]
+        displacement = float((positions - initial).mean(dim=1)[0, 0])
+        reaction = sum(support_loads[-20:]) / 20.
+        record_property("horizontal_displacement_meters", displacement)
+        record_property("ground_tangential_reaction_newtons", reaction)
+        assert torch.isfinite(positions).all().item()
+        assert solver.diagnostics["valid"]
+        assert solver.diagnostics["device_native_coupling"] == device_native
+        assert reaction > .5, {"ground_tangential_reaction": reaction, "displacement": displacement}
+        assert abs(displacement) < .02, {"displacement": displacement}
+    finally:
+        if solver is not None:
+            solver.close()
+        context.clear_scene()
+
+
 def test_real_libuipc_strict_failure_rewinds_memory_checkpoint() -> None:
     with tempfile.TemporaryDirectory(
         prefix="gobot-libuipc-strict-recovery-gpu-"

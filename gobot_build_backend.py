@@ -29,6 +29,7 @@ _SUBMODULE_MARKERS = {
     "3rdparty/meshoptimizer": "CMakeLists.txt",
     "3rdparty/onetbb": "CMakeLists.txt",
     "3rdparty/openusd": "pxr/pxrConfig.cmake.in",
+    "3rdparty/project_superdex": "CMakeLists.txt",
     "3rdparty/pybind11": "CMakeLists.txt",
     "3rdparty/rttr": "CMakeLists.txt",
     "3rdparty/stb": "stb_image.h",

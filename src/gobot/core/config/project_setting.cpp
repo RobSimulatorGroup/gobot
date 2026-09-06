@@ -15,6 +15,7 @@
 namespace gobot {
 
 ProjectSettings *ProjectSettings::s_singleton = nullptr;
+thread_local ProjectSettings* ProjectSettings::thread_settings_ = nullptr;
 
 namespace {
 
@@ -87,21 +88,36 @@ Json SceneViewStateToJson(const EditorSceneViewState& state) {
 
 } // namespace
 
-ProjectSettings::ProjectSettings() {
-    s_singleton = this;
+ProjectSettings::ProjectSettings(bool register_singleton) {
+    if (register_singleton) {
+        s_singleton = this;
+    }
 }
 
 ProjectSettings::~ProjectSettings() {
-    s_singleton = nullptr;
+    if (s_singleton == this) {
+        s_singleton = nullptr;
+    }
+}
+
+ProjectSettings::Scope::Scope(ProjectSettings* settings) : previous_(thread_settings_) {
+    thread_settings_ = settings;
+}
+
+ProjectSettings::Scope::~Scope() {
+    thread_settings_ = previous_;
 }
 
 ProjectSettings* ProjectSettings::GetInstance() {
+    if (thread_settings_ != nullptr) {
+        return thread_settings_;
+    }
     ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ProjectSettings");
     return s_singleton;
 }
 
 bool ProjectSettings::HasInstance() {
-    return s_singleton != nullptr;
+    return thread_settings_ != nullptr || s_singleton != nullptr;
 }
 
 bool ProjectSettings::SetProjectPath(const std::string& project_path) {
@@ -142,7 +158,7 @@ std::string ProjectSettings::LocalizePath(std::string_view path) const {
     // Check if we have a special path (like res://) or a protocol identifier.
     auto p = path.find("://");
     bool found = false;
-    if (p > 0) {
+    if (p != std::string_view::npos && p > 0) {
         found = true;
         for (int i = 0; i < p; i++) {
             if (!isalnum(path[i])) {

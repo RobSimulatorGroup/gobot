@@ -22,6 +22,12 @@
 
 #include <superdex_physics.h>
 #include <mochi_physics/mochi_physics_experimental.h>
+#if __has_include(<mochi_physics/utils/step_profiling.h>)
+#include <mochi_physics/utils/step_profiling.h>
+#define GOBOT_SUPERDEX_HAS_STEP_PROFILING 1
+#else
+#define GOBOT_SUPERDEX_HAS_STEP_PROFILING 0
+#endif
 
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
@@ -758,6 +764,12 @@ bool SuperDexPhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
         return false;
     }
     const SuperDexSolverSettings& solver_settings = settings_.superdex_solver;
+#if !GOBOT_SUPERDEX_HAS_STEP_PROFILING
+    if (solver_settings.record_solver_timings) {
+        SetLastError("SuperDex stage profiling requires rebuilding/installing the SDK with step_profiling.h support.");
+        return false;
+    }
+#endif
     if (solver_settings.execution_mode == SuperDexExecutionMode::Cuda) {
 #if !GOBOT_SUPERDEX_HAS_CUDA
         SetLastError("SuperDex CUDA execution was requested, but this build contains only the CPU solver.");
@@ -811,6 +823,9 @@ bool SuperDexPhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
         return false;
     }
     impl_->scene->SetGravity(ToMochi(settings_.gravity));
+#if GOBOT_SUPERDEX_HAS_STEP_PROFILING
+    mochi::SetStepProfilingEnabled(*impl_->scene, solver_settings.record_solver_timings);
+#endif
     mochi::SolverParams mochi_solver = impl_->scene->GetSolverParams();
     mochi_solver.nonLinearSolver.maxIter = solver_settings.newton_iterations;
     mochi_solver.nonLinearSolver.lineSearchMaxIter = solver_settings.line_search_iterations;
@@ -1540,7 +1555,8 @@ bool SuperDexPhysicsWorld::ApplyForces(RealType delta_time) {
         Impl::RobotBinding& robot_binding = impl_->robots[robot_index];
         mochi::Actor* link_actor = robot_binding.links[link_index].actor;
         if (link_actor == nullptr || link_actor->IsStatic()) {
-            SetLastError("SuperDex cannot apply an external force to a static or missing link.");
+            SetLastError("SuperDex cannot apply an external force to static or missing link '" +
+                         external_force.robot_name + "::" + external_force.link_name + "'.");
             return false;
         }
         const PhysicsLinkSnapshot& link_snapshot =
@@ -2040,6 +2056,10 @@ void SuperDexPhysicsWorld::UpdateDiagnostics() {
                     : "cpu";
     impl_->diagnostics.device_native = false;
     impl_->diagnostics.graph_capture = false;
+    impl_->diagnostics.timings_available =
+            GOBOT_SUPERDEX_HAS_STEP_PROFILING && settings_.superdex_solver.record_solver_timings;
+    impl_->diagnostics.linear_iterations = 0;
+    impl_->diagnostics.stage_timings.clear();
 }
 
 bool SuperDexPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_state) {
@@ -2084,34 +2104,56 @@ void SuperDexPhysicsWorld::Reset() {
     last_error_.clear();
 }
 
-void SuperDexPhysicsWorld::Step(RealType delta_time) {
+PhysicsStepResult SuperDexPhysicsWorld::Step(RealType delta_time) {
     if (impl_->scene == nullptr) {
         SetLastError("SuperDex world has not been built.");
-        return;
+        return {.error = last_error_};
     }
+#if GOBOT_SUPERDEX_HAS_STEP_PROFILING
+    if (mochi::GetStepProfile(*impl_->scene).enabled != settings_.superdex_solver.record_solver_timings) {
+        mochi::SetStepProfilingEnabled(*impl_->scene, settings_.superdex_solver.record_solver_timings);
+    }
+#else
+    if (settings_.superdex_solver.record_solver_timings) {
+        SetLastError("SuperDex stage profiling requires rebuilding/installing the SDK with step_profiling.h support.");
+        return {.error = last_error_};
+    }
+#endif
     if (delta_time == 0.0) {
         impl_->scene->Step(0.0);
         UpdateDiagnostics();
         if (SyncStateFromSuperDex(0.0)) {
             last_error_.clear();
         }
-        return;
+        return {.completed = last_error_.empty(), .diagnostics = GetSolverDiagnostics(), .error = last_error_};
     }
-    const RealType resolved_delta_time = delta_time > 0.0
-            ? delta_time
-            : settings_.fixed_time_step;
+    const RealType resolved_delta_time = delta_time;
     if (!(resolved_delta_time > 0.0) || !std::isfinite(resolved_delta_time)) {
         SetLastError("SuperDex step duration must be positive and finite.");
-        return;
+        return {.error = last_error_};
     }
     const int substeps = settings_.superdex_solver.substeps;
+    if (substeps <= 0) {
+        SetLastError("SuperDex substep count must be positive.");
+        return {.error = last_error_};
+    }
     const RealType substep_time = resolved_delta_time / static_cast<RealType>(substeps);
     const auto step_start = std::chrono::steady_clock::now();
+    const bool record_timings = settings_.superdex_solver.record_solver_timings;
+    double force_time_seconds = 0.0;
+    double sync_time_seconds = 0.0;
+    std::uint64_t force_calls = 0;
+    std::uint64_t sync_calls = 0;
+#if GOBOT_SUPERDEX_HAS_STEP_PROFILING
+    mochi::StepProfile step_profile;
+#endif
     double solve_time_seconds = 0.0;
     int newton_iterations = 0;
     int line_search_iterations = 0;
     RealType residual_norm = 0.0;
     bool has_residual = false;
+    PhysicsStepResult result;
+    last_error_.clear();
     PhysicsSolverConvergenceStatus convergence =
             PhysicsSolverConvergenceStatus::Converged;
     const auto merge_convergence = [&convergence](PhysicsSolverConvergenceStatus status) {
@@ -2127,10 +2169,31 @@ void SuperDexPhysicsWorld::Step(RealType delta_time) {
         }
     };
     for (int substep = 0; substep < substeps; ++substep) {
-        if (!ApplyForces(substep_time)) {
-            return;
+        auto stage_start = record_timings ? std::chrono::steady_clock::now()
+                                         : std::chrono::steady_clock::time_point{};
+        const bool forces_applied = ApplyForces(substep_time);
+        if (record_timings) {
+            force_time_seconds += std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - stage_start).count();
+            ++force_calls;
+        }
+        if (!forces_applied) {
+            break;
         }
         impl_->scene->Step(static_cast<double>(substep_time));
+#if GOBOT_SUPERDEX_HAS_STEP_PROFILING
+        if (record_timings) {
+            const auto profile = mochi::GetStepProfile(*impl_->scene);
+            for (std::size_t i = 0; i < profile.stages.size(); ++i) {
+                step_profile.stages[i].seconds += profile.stages[i].seconds;
+                step_profile.stages[i].calls += profile.stages[i].calls;
+            }
+            step_profile.linearIterations += profile.linearIterations;
+        }
+#endif
+        // Mochi advances its clock even when an island diverges and restores
+        // that island's previous deformation. Report that time, then stop.
+        result.advanced_time += substep_time;
         const mochi::PerformanceStats performance = impl_->scene->GetPerformanceStats();
         const mochi::SolverStats solver = impl_->scene->GetSolverStats();
         solve_time_seconds += performance.solveStepDurationSec;
@@ -2148,8 +2211,22 @@ void SuperDexPhysicsWorld::Step(RealType delta_time) {
         // consume the state produced by this one. This also leaves nodal
         // velocities as the final substep velocity instead of a stale
         // full-step finite difference.
-        if (!SyncStateFromSuperDex(substep_time)) {
-            return;
+        if (record_timings) {
+            stage_start = std::chrono::steady_clock::now();
+        }
+        const bool state_synced = SyncStateFromSuperDex(substep_time);
+        if (record_timings) {
+            sync_time_seconds += std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - stage_start).count();
+            ++sync_calls;
+        }
+        if (!state_synced) {
+            result.state_valid = false;
+            break;
+        }
+        if (convergence == PhysicsSolverConvergenceStatus::Diverged) {
+            SetLastError("SuperDex solver diverged; simulation paused and reset is required.");
+            break;
         }
     }
     UpdateDiagnostics();
@@ -2160,7 +2237,28 @@ void SuperDexPhysicsWorld::Step(RealType delta_time) {
     impl_->diagnostics.line_search_iterations = line_search_iterations;
     impl_->diagnostics.residual_norm = residual_norm;
     impl_->diagnostics.convergence = convergence;
-    last_error_.clear();
+#if GOBOT_SUPERDEX_HAS_STEP_PROFILING
+    if (record_timings) {
+        constexpr std::array stage_names{
+                "sdk_pre_step", "sdk_islands", "sdk_post_step", "island_prepare",
+                "island_newton", "island_queries", "collision_detection",
+                "contact_jacobians", "assembly", "linear_setup", "linear_solve", "line_search"};
+        static_assert(stage_names.size() == static_cast<std::size_t>(mochi::StepProfileStage::Count));
+        auto& timings = impl_->diagnostics.stage_timings;
+        timings.reserve(stage_names.size() + 2);
+        timings.push_back({"apply_forces", force_time_seconds, force_calls, false});
+        timings.push_back({"state_sync", sync_time_seconds, sync_calls, false});
+        for (std::size_t i = 0; i < stage_names.size(); ++i) {
+            timings.push_back({stage_names[i], step_profile.stages[i].seconds,
+                               step_profile.stages[i].calls, i >= 3});
+        }
+        impl_->diagnostics.linear_iterations = step_profile.linearIterations;
+    }
+#endif
+    result.completed = last_error_.empty();
+    result.diagnostics = impl_->diagnostics;
+    result.error = last_error_;
+    return result;
 }
 
 Ref<PhysicsRuntimeCheckpoint> SuperDexPhysicsWorld::CaptureCheckpoint() const {

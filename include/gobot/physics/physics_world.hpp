@@ -36,7 +36,7 @@ public:
 
     virtual void Reset();
 
-    virtual void Step(RealType delta_time);
+    virtual PhysicsStepResult Step(RealType delta_time);
 
     virtual bool ConfigureEnvironmentBatch(std::size_t environment_count);
 
@@ -98,7 +98,7 @@ public:
 
     virtual bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states);
 
-    bool SetJointControl(const std::string& robot_name,
+    virtual bool SetJointControl(const std::string& robot_name,
                          const std::string& joint_name,
                          PhysicsJointControlMode control_mode,
                          RealType target);
@@ -115,6 +115,7 @@ public:
                                              const std::vector<RealType>& targets,
                                              std::size_t environment_count);
 
+    // Static or missing targets are rejected without changing pending forces.
     virtual bool SetLinkExternalForce(const std::string& robot_name,
                                       const std::string& link_name,
                                       const Vector3& point,
@@ -139,7 +140,7 @@ public:
 
     virtual const PhysicsSceneArtifact* GetSceneArtifact() const;
 
-    const PhysicsSceneState& GetSceneState() const;
+    virtual const PhysicsSceneState& GetSceneState() const;
 
     virtual PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const;
 

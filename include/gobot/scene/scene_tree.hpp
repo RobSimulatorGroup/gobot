@@ -21,6 +21,9 @@ class Node;
 class GOBOT_EXPORT SceneTree : public MainLoop {
     GOBCLASS(SceneTree, MainLoop)
 public:
+    using PhysicsNotification = std::function<void(double)>;
+    using PhysicsProcessDriver = std::function<void(double, const PhysicsNotification&)>;
+
     SceneTree(bool p_init_window = true);
 
     ~SceneTree() override;
@@ -36,6 +39,8 @@ public:
     void Finalize() override;
 
     bool PhysicsProcess(double time) override;
+
+    void SetPhysicsProcessDriver(PhysicsProcessDriver driver);
 
     bool Process(double time) override;
 
@@ -70,6 +75,8 @@ private:
 
     double physics_process_time_ = 0.0;
     double process_time_ = 0.0;
+    Event::Connection window_close_connection_;
+    PhysicsProcessDriver physics_process_driver_;
 };
 
 }

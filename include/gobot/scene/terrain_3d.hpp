@@ -142,7 +142,10 @@ public:
 
     Ref<ArrayMesh> GetRenderMesh() const;
 
+    std::uint64_t GetGeometryRevision() const;
+
 private:
+    mutable std::uint64_t geometry_revision_{1};
     void EnsureGenerated() const;
 
     void InvalidateGeneratedTerrain();
