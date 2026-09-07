@@ -215,6 +215,7 @@ def _controller(runner, **settings):
     controller = runner.ContactPinchController(
         poses, points, faces, runner.BLUE_SEGMENTS, runner.FIXED_DT,
         runner.PinchControlSettings(**settings),
+        fingertip_normals=np.stack([_pinch() / np.linalg.norm(_pinch(), axis=1)[:, None]] * 2),
     )
     return controller, points
 
@@ -288,10 +289,112 @@ def test_grasp_point_tracking_is_bounded_and_freezes_for_a_loaded_hand(runner):
     assert np.linalg.norm(controller.centers[1] - initial[1]) < .06
 
 
+def test_each_finger_adjusts_independently_during_carry_without_moving_wrist(runner):
+    controller, points = _controller(runner, force_filter_seconds=.0001)
+    controller.tick = controller.boundaries["blue_flip_stabilize"][0]
+    controller.closure[:] = .5
+    before = controller.command(points)
+    forces = np.stack([_pinch(), _pinch()])
+    forces[0, 1] *= .2
+    forces[0, 2] *= 2.
+    controller.observe(forces, 0.)
+    assert controller.finger_corrections[0, 1] > 0.
+    assert controller.finger_corrections[0, 2] < 0.
+    assert controller.finger_corrections[0, 1] != controller.finger_corrections[1, 1]
+    controller.tick -= 1
+    after = controller.command(points)
+    np.testing.assert_array_equal(after[:, :6], before[:, :6])
+    assert after[0, 6] > before[0, 6]
+    assert after[0, 10] < before[0, 10]
+
+
+def test_finger_feedback_holds_motion_during_transient_loss_then_resumes(runner):
+    controller, _ = _controller(runner)
+    controller.tick = controller.boundaries["blue_flip_stabilize"][0]
+    controller.closure[:] = .5
+    initial = controller.tick
+    for _ in range(3):
+        controller.observe(np.zeros((2, 4, 3)), 0.)
+    assert controller.tick == initial
+    assert controller.motion_hold_steps == 3
+    assert np.all(controller.finger_corrections > 0.)
+    controller.observe(np.stack([_pinch(), _pinch()]), 0.)
+    assert controller.tick == initial + 1
+    assert controller.failure is None
+
+
+def test_per_finger_feedback_is_rate_limited_and_cannot_wind_up(runner):
+    controller, _ = _controller(runner)
+    controller.tick = controller.boundaries["blue_flip_grip"][0]
+    controller.closure[:] = .9
+    forces = np.zeros((2, 4, 3))
+    for _ in range(500):
+        previous = controller.finger_corrections.copy()
+        controller._update_finger_feedback(forces, True)
+        assert np.max(np.abs(controller.finger_corrections - previous)) <= .6 * runner.FIXED_DT + 1.e-12
+    np.testing.assert_allclose(controller.finger_corrections, .1)
+    controller._update_finger_feedback(np.stack([_pinch(), _pinch()]) * 100., True)
+    assert np.all(controller.finger_corrections < .1)
+    frozen = controller.finger_corrections.copy()
+    controller._update_finger_feedback(forces, False)
+    np.testing.assert_array_equal(controller.finger_corrections, frozen)
+
+
+def test_fixed_feedback_preserves_previous_carry_commands(runner):
+    controller, _ = _controller(runner, continuous_finger_feedback=False)
+    controller.tick = controller.boundaries["blue_flip_stabilize"][0]
+    controller.closure[:] = .5
+    controller.observe(np.stack([_pinch(), _pinch()]), 0.)
+    np.testing.assert_array_equal(controller.finger_corrections, 0.)
+    np.testing.assert_array_equal(controller.closure, .5)
+    assert controller.feedback_updates == 0
+
+
+def test_independent_feedback_does_not_compete_with_grasp_acquisition(runner):
+    controller, _ = _controller(runner)
+    controller.tick = controller.boundaries["blue_flip_grip"][0]
+    controller.observe(np.stack([_pinch(), _pinch()]), 0.)
+    assert controller.feedback_updates == 0
+    np.testing.assert_array_equal(controller.finger_corrections, 0.)
+
+
+def test_contact_control_releases_all_feedback_offsets(runner):
+    controller, _ = _controller(runner)
+    controller.closure[:] = .5
+    controller.finger_corrections[:] = .1
+    controller.tick = controller.boundaries["blue_flip_release"][1] - 1
+    np.testing.assert_allclose(controller._pose(np.zeros(2)), controller.poses[0])
+    controller.tick = controller.boundaries["blue_flip_clear"][0]
+    np.testing.assert_allclose(controller._pose(np.zeros(2)), controller.poses[0])
+
+
+@pytest.mark.parametrize("normals", [None, np.zeros((2, 4, 3)), np.ones((2, 4, 3)),
+                                     np.full((2, 4, 3), np.nan), np.zeros((4, 3))])
+def test_finger_feedback_rejects_missing_or_invalid_normals(runner, normals):
+    controller, points = _controller(runner)
+    with pytest.raises(ValueError, match="normals"):
+        runner.ContactPinchController(controller.poses, points, np.arange(24).reshape(-1, 3),
+                                      runner.BLUE_SEGMENTS, runner.FIXED_DT,
+                                      fingertip_normals=normals)
+
+
+def test_finger_feedback_uses_normal_projection_and_force_deadband(runner):
+    controller, _ = _controller(runner)
+    controller.closure[:] = .5
+    controller.normal_forces[:] = controller.force_targets
+    forces = controller.fingertip_normals * (controller.force_targets + .05)[..., None]
+    forces[..., 0] += .2
+    controller._update_finger_feedback(forces, True)
+    np.testing.assert_array_equal(controller.finger_corrections, 0.)
+
+
 @pytest.mark.parametrize("settings", [
     {"closing_seconds": 0.}, {"maximum_wait_steps": 1.5}, {"maximum_wait_steps": True},
     {"crest_height_offset_meters": float("nan")},
     {"maximum_fingertip_force_newtons": .1},
+    {"continuous_finger_feedback": 1}, {"force_filter_seconds": 0.},
+    {"normal_force_target_newtons": 10.}, {"force_deadband_newtons": .75},
+    {"finger_correction_rate": float("inf")}, {"maximum_finger_correction": .5},
 ])
 def test_invalid_contact_control_settings_are_rejected(runner, settings):
     with pytest.raises(ValueError):

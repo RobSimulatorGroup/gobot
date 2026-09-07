@@ -201,6 +201,13 @@ candidate joint commands, not a validated grasp; no film vertices are attached.
 `--grasp-height-offset` and `--grasp-wait-steps` control acquisition placement
 and timeout. `--controller open-loop --pinch-gap 0.0205` tests the original pose.
 
+`--grip-feedback continuous` (default) adds bounded, independently filtered
+force feedback for all four fingers after acquisition and throughout carrying.
+Short contact loss pauses the trajectory while the fingers keep regulating;
+20 ms sustained loss still fails. `--grip-feedback fixed` retains the previous
+post-acquisition commands for comparison. The current candidate still loses
+the grasp during lift; this is not yet a validated bag-flip controller.
+
 The report includes per-finger reaction vectors, airborne pinch duration,
 authored-face orientation, release/settling, proxy displacement bounds,
 solver diagnostics, per-phase median/p95 step times, and sampled whole-device
@@ -208,6 +215,8 @@ memory use. See [acceptance criteria and results](../../doc/conveyor_ipc_accepta
 for measurement limits and the next physical validation requirements. The
 current runner does not validate cartons, multiple environments, or independent
 batch resets.
+The separate [coupling and 1/2/4/8 contact-stage benchmarks](../../doc/ipc_manipulation_benchmarks.md)
+measure diagnostic workloads, not completed grasp throughput.
 
 `--snapshot-dir build/benchmarks/conveyor-ipc-acceptance/states` additionally
 saves measured vertices, velocities, hand/proxy transforms, wrenches and joint

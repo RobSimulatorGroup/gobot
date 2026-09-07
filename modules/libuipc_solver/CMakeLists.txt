@@ -25,6 +25,16 @@ set_target_properties(gobot_libuipc_solver PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/libuipc/$<CONFIG>/bin")
 add_dependencies(gobot_editor gobot_libuipc_solver)
 
+# Explicitly built, non-installed coupling experiment. No public provider ABI.
+add_library(gobot_ipc_articulation_probe MODULE EXCLUDE_FROM_ALL
+        ${PROJECT_SOURCE_DIR}/benchmark/native/ipc_articulation_probe.cpp)
+target_compile_features(gobot_ipc_articulation_probe PRIVATE cxx_std_20)
+target_link_libraries(gobot_ipc_articulation_probe PRIVATE uipc::uipc CUDA::cudart)
+add_dependencies(gobot_ipc_articulation_probe uipc_backends)
+set_target_properties(gobot_ipc_articulation_probe PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/benchmark"
+        BUILD_RPATH "${CMAKE_BINARY_DIR}/$<CONFIG>/bin")
+
 foreach(GOBOT_LIBUIPC_INSTALL_COMPONENT python libuipc_runtime)
     install(TARGETS gobot_libuipc_solver
             LIBRARY DESTINATION "gobot"

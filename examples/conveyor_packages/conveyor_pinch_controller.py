@@ -28,6 +28,13 @@ class PinchControlSettings:
     target_tracking_speed_mps: float = .05
     maximum_target_correction_meters: float = .06
     maximum_wait_steps: int = 1000
+    continuous_finger_feedback: bool = True
+    normal_force_target_newtons: float = .75
+    force_deadband_newtons: float = .15
+    force_filter_seconds: float = .02
+    finger_feedback_gain: float = .6
+    finger_correction_rate: float = .6
+    maximum_finger_correction: float = .15
 
     def __post_init__(self):
         try:
@@ -37,18 +44,26 @@ class PinchControlSettings:
         for value in (self.closing_seconds, self.confirmed_pinch_seconds, self.lost_pinch_seconds,
                       self.fingertip_force_newtons, self.maximum_fingertip_force_newtons,
                       self.maximum_proxy_error_meters, self.approach_clearance_meters,
-                      self.target_tracking_speed_mps, self.maximum_target_correction_meters):
+                      self.target_tracking_speed_mps, self.maximum_target_correction_meters,
+                      self.normal_force_target_newtons, self.force_deadband_newtons,
+                      self.force_filter_seconds, self.finger_feedback_gain,
+                      self.finger_correction_rate, self.maximum_finger_correction):
             if not math.isfinite(value) or value <= 0.:
                 raise ValueError("pinch durations, force limits and clearances must be finite and positive")
         if (not math.isfinite(self.crest_height_offset_meters) or wait_steps < 1
                 or isinstance(self.maximum_wait_steps, bool)
                 or self.maximum_fingertip_force_newtons <= self.fingertip_force_newtons):
             raise ValueError("invalid pinch acquisition limits")
+        if (not isinstance(self.continuous_finger_feedback, bool)
+                or self.force_deadband_newtons >= self.normal_force_target_newtons
+                or 3. * self.normal_force_target_newtons >= self.maximum_fingertip_force_newtons
+                or self.maximum_finger_correction > .25):
+            raise ValueError("invalid per-finger feedback limits")
 
 
 class ContactPinchController:
     def __init__(self, poses, initial_shell, face_triangles, segments, fixed_dt,
-                 settings: PinchControlSettings | None = None):
+                 settings: PinchControlSettings | None = None, *, fingertip_normals=None):
         self.settings = settings or PinchControlSettings()
         self.poses = np.array(poses, dtype=float, copy=True)
         if self.poses.ndim != 3 or self.poses.shape[1:] != (2, 22) or len(self.poses) < 2:
@@ -60,6 +75,15 @@ class ContactPinchController:
         if not math.isfinite(fixed_dt) or fixed_dt <= 0.:
             raise ValueError("pinch fixed time step must be finite and positive")
         self.fixed_dt = fixed_dt
+        self.fingertip_normals = None
+        if fingertip_normals is not None:
+            normals = np.array(fingertip_normals, dtype=float, copy=True)
+            if (normals.shape != (2, 4, 3) or not np.isfinite(normals).all()
+                    or not np.allclose(np.linalg.norm(normals, axis=2), 1., atol=1.e-5)):
+                raise ValueError("fingertip normals must be two hands of four unit world vectors")
+            self.fingertip_normals = normals
+        elif self.settings.continuous_finger_feedback:
+            raise ValueError("per-finger feedback requires geometry-derived fingertip normals")
         self.boundaries = {}
         end = 0
         for segment in segments:
@@ -87,6 +111,10 @@ class ContactPinchController:
         self.anchors = []
         self.last_pinches = [False, False]
         self.closure = np.zeros(2)
+        self.finger_corrections = np.zeros((2, 4))
+        self.normal_forces = np.zeros((2, 4))
+        self.force_targets = np.tile(self.settings.normal_force_target_newtons * np.array([3., 1., 1., 1.]), (2, 1))
+        self.feedback_updates = self.motion_hold_steps = 0
         self.tick = self.steps = self.wait_steps = 0
         self.confirmed_steps = self.lost_steps = 0
         self.lift_started_step = None
@@ -105,10 +133,51 @@ class ContactPinchController:
         low = np.floor(indices).astype(int)
         high = np.minimum(low + 1, len(self.poses) - 1)
         fraction = indices - low
-        return np.stack([
+        pose = np.stack([
             self.poses[low[side], side] * (1. - fraction[side])
             + self.poses[high[side], side] * fraction[side] for side in range(2)
         ])
+        if self.settings.continuous_finger_feedback:
+            offsets = self.finger_corrections.copy()
+            if self.phase in ("drop_settle", "blue_flip_approach", "blue_flip_contact",
+                              "blue_flip_clear", "blue_flip_settle"):
+                offsets[:] = 0.
+            elif self.phase == "blue_flip_release":
+                start, end = self.boundaries[self.phase]
+                offsets *= 1. - smoothstep((self.tick - start + 1) / (end - start))
+            finger_indices = np.clip(np.asarray(closure)[:, None] + offsets, 0., 1.) * (len(self.poses) - 1)
+            # Keep the fitted wrist compensation at the shared aperture. Only the
+            # four disjoint finger joint blocks receive force-feedback corrections.
+            for side in range(2):
+                for finger, block in enumerate((slice(18, 22), slice(6, 10), slice(10, 14), slice(14, 18))):
+                    value = finger_indices[side, finger]
+                    lower = int(np.floor(value))
+                    upper = min(lower + 1, len(self.poses) - 1)
+                    mix = value - lower
+                    pose[side, block] = (self.poses[lower, side, block] * (1. - mix)
+                                        + self.poses[upper, side, block] * mix)
+        return pose
+
+    def _update_finger_feedback(self, forces, tracked):
+        limits = self.settings
+        measured = np.maximum(0., np.sum(forces * self.fingertip_normals, axis=2))
+        alpha = -math.expm1(-self.fixed_dt / limits.force_filter_seconds)
+        self.normal_forces += alpha * (measured - self.normal_forces)
+        error = self.force_targets - self.normal_forces
+        error = np.sign(error) * np.maximum(0., np.abs(error) - limits.force_deadband_newtons)
+        rate = np.clip(limits.finger_feedback_gain * error,
+                       -limits.finger_correction_rate, limits.finger_correction_rate)
+        if not tracked:
+            rate[:] = 0.
+        overloaded = np.linalg.norm(forces, axis=2) > limits.maximum_fingertip_force_newtons
+        rate[overloaded] = -limits.finger_correction_rate
+        offsets = self.finger_corrections + self.fixed_dt * rate
+        # Clamp the controller state as well as the command, preventing wind-up
+        # when a finger reaches either end of the calibrated pose family.
+        lower = np.maximum(-limits.maximum_finger_correction, -self.closure[:, None])
+        upper = np.minimum(limits.maximum_finger_correction, 1. - self.closure[:, None])
+        self.finger_corrections = np.clip(offsets, lower, upper)
+        self.feedback_updates += 1
 
     def command(self, shell):
         if self.failure is not None or self.completed:
@@ -175,6 +244,12 @@ class ContactPinchController:
                    for side, hand in enumerate(forces)]
         tracked = proxy_error <= limits.maximum_proxy_error_meters
         self.last_pinches = [pinch and tracked for pinch in pinches]
+        carrying = (self.boundaries["blue_flip_stabilize"][0] <= self.tick
+                    < self.boundaries["blue_flip_release"][0])
+        # Acquisition has its own aperture search. Arm independent force control
+        # only once that search has established a sustained bilateral pinch.
+        if self.settings.continuous_finger_feedback and carrying:
+            self._update_finger_feedback(forces, tracked)
         if self.phase == "blue_flip_grip":
             self.confirmed_steps = self.confirmed_steps + 1 if all(pinches) and tracked else 0
             for side in range(2):
@@ -189,20 +264,27 @@ class ContactPinchController:
                         self.failure = "pinch acquisition timed out without sustained bilateral opposing load"
                     return
                 self.lift_started_step = self.steps + 1
-        elif (self.boundaries["blue_flip_stabilize"][0] <= self.tick
-              < self.boundaries["blue_flip_release"][0]):
+        elif carrying:
             self.lost_steps = 0 if all(pinches) and tracked else self.lost_steps + 1
             if self.lost_steps * self.fixed_dt >= limits.lost_pinch_seconds:
                 self.failure = "bilateral pinch lost during lift/carry; trajectory halted"
+                return
+            if self.settings.continuous_finger_feedback and self.lost_steps:
+                self.motion_hold_steps += 1
                 return
         self.tick += 1
 
     def diagnostics(self):
         return {
-            "type": "contact_gated", "sequence_tick": self.tick,
+            "type": ("per_finger_force_feedback" if self.settings.continuous_finger_feedback
+                     else "contact_gated"), "sequence_tick": self.tick,
             "sequence_completed": self.completed, "physical_steps": self.steps,
             "wait_steps": self.wait_steps, "lift_started_step": self.lift_started_step,
             "confirmed_pinch_seconds": self.confirmed_steps * self.fixed_dt,
             "closure": self.closure.tolist(), "failure": self.failure,
+            "finger_corrections": self.finger_corrections.tolist(),
+            "normal_forces_newtons": self.normal_forces.tolist(),
+            "normal_force_targets_newtons": self.force_targets.tolist(),
+            "feedback_updates": self.feedback_updates, "motion_hold_steps": self.motion_hold_steps,
             "measured_grasp_centers": None if self.centers is None else self.centers.tolist(),
         }

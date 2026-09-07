@@ -43,8 +43,8 @@ physics and is explicitly labelled `compiled_not_simulated`.
 
 The default candidate fits a family of bounded joint poses with opposed,
 parallel fingertip pads from a 50 mm opening to a 2.5 mm nominal collision-box
-gap. The thumb is aligned before descending. All three regular fingers share
-parallel joint targets. Wrist translations place the pinch centers at measured
+gap. The thumb is aligned before descending. During acquisition all three
+regular fingers share parallel joint targets. Wrist translations place the pinch centers at measured
 crests on the settled upper sheet; wrist rotation is not added.
 
 During descent and acquisition, material-patch tracking is limited to 50 mm/s
@@ -55,6 +55,23 @@ to relax. Both hands must hold continuously for 100 ms with proxy error below
 1 mm before the lift trajectory can advance. A lost pinch for 20 ms halts
 carrying. Acquisition timeout is recorded as `task_failure`, separately from
 solver `error`. Extra waiting ticks cannot count as sequence completion.
+
+After acquisition, the default `--grip-feedback continuous` mode adjusts thumb,
+index, middle and ring fingers independently throughout stabilization/lift/carry.
+It projects distal-link reaction vectors onto the fitted world pinch axis,
+filters them with a 20 ms time constant and regulates toward 2.25 N at the thumb
+and 0.75 N at each other finger. These are resultant-force proxies, not contact
+patch pressure or a slip-velocity sensor. Corrections have a 0.15 N deadband,
+0.6 aperture-fraction/s rate limit and +/-0.15 aperture range, clamped at the
+calibrated joint-pose limits with anti-windup. Wrist rotation/translation do not
+receive these per-finger corrections. Bad proxy tracking freezes tightening;
+overload relaxes it. Release fades the corrections to zero.
+
+A transient lost pinch holds the trajectory tick while physical stepping and
+feedback continue. Recovery resumes motion; 20 ms of continuous loss still
+fails the task. Independent feedback is armed only after grasp confirmation,
+so it does not compete with the acquisition aperture search. Use
+`--grip-feedback fixed` to reproduce the previous post-acquisition controller.
 
 `--controller open-loop` retains the original ungated trajectory, and adding
 `--pinch-gap 0.0205` checks its original SuperDex gap. Grasp fitting/tracking
@@ -211,6 +228,23 @@ overlapped its early phases. Do not compare them as a speedup/slowdown against
 the earlier full trajectory with broken friction history.
 
 After a successful single-bag grasp, still verify actual hand/bag intersections
-and whole-package turnover, then run the carton and batch-throughput trials.
+and whole-package turnover, then run carton and batch task-success trials.
 Neither the friction regression nor successful safety gating admits the demo
 as a working flip controller.
+
+## Continuous feedback trial: 2026-09-07
+
+`continuous-v2.json` is the first run with feedback armed after acquisition.
+It reached the 100 ms bilateral acquisition gate and began lifting at physical
+step 1270. The controller performed 59 per-finger feedback updates and held
+motion for 21 transient-loss ticks, including recoveries. At step 1328 the
+right ring finger again fell below the grasp load gate and the task stopped.
+There was no solver error; no sustained airborne pinch or flip was accepted.
+Both shared apertures had reached their calibrated closed limit. This is an
+implemented, exercised feedback candidate, not evidence of a robust grasp or
+a speedup over the earlier controller. The preceding `continuous-v1.json`
+applied feedback during acquisition and is retained as a failed diagnostic.
+
+See [coupling and batch experiments](ipc_manipulation_benchmarks.md) for the
+separate joint-space coupling prototype and contact-stage throughput test.
+Those tests do not claim batch flip success or change editor playback.

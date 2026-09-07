@@ -101,6 +101,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--scene", type=Path, default=HERE / SCENE_NAME)
     parser.add_argument("--steps", type=int)
     parser.add_argument("--controller", choices=("contact", "open-loop"), default="contact")
+    parser.add_argument("--grip-feedback", choices=("continuous", "fixed"), default="continuous")
     parser.add_argument("--grasp-height-offset", type=float, default=.006)
     parser.add_argument("--grasp-wait-steps", type=int, default=1000)
     parser.add_argument("--coupling-iterations", type=int, default=2)
@@ -190,6 +191,8 @@ def fit_pinch_targets(artifact: CompiledMuJoCoIpcArtifact, gap: float, *,
             "fitted_gap_meters": geometry()[2], "maximum_fit_error_meters": float(np.max(np.abs(error[:3]))) / 1000.,
             "pad_alignment_error": float(np.max(np.abs(error[3:]), initial=0.)) / 10.,
             "parallel_pads": parallel_pads,
+            "fingertip_normals_world": (np.array([-1., 1., 1., 1.])[:, None]
+                * (geometry()[1] / np.linalg.norm(geometry()[1]))).tolist(),
             "finger_targets_radians": pose.tolist(), "wrist_offset_meters": offset.tolist()})
     return targets, offsets, diagnostics
 
@@ -397,10 +400,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 control_settings = PinchControlSettings(
                     maximum_wait_steps=args.grasp_wait_steps,
                     crest_height_offset_meters=args.grasp_height_offset,
+                    continuous_finger_feedback=args.grip_feedback == "continuous",
                 )
                 report["control_settings"] = asdict(control_settings)
                 controller = ContactPinchController(
-                    control_poses, shell, face_triangles, BLUE_SEGMENTS, FIXED_DT, control_settings
+                    control_poses, shell, face_triangles, BLUE_SEGMENTS, FIXED_DT, control_settings,
+                    fingertip_normals=np.asarray([fit["fingertip_normals_world"]
+                                                 for fit in report["contact_pose_fits"][-1]]),
                 )
             hand_indices = [mapping.ipc_body_index for mapping in artifact.coupled_bodies
                             if mapping.robot_name in LEAP_ROBOT_NAMES]
