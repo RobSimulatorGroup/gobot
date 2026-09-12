@@ -9,6 +9,8 @@ import math
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Sequence
 
+from .warp_cache import prepare_warp_kernel_cache
+
 from .base import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
@@ -418,6 +420,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise ProviderUnavailableError("MuJoCo Warp requested but Torch cannot access a CUDA device.")
 
         self._wp.init()
+        prepare_warp_kernel_cache(self._wp)
         self._wp_device = self._wp.get_device(self._device_name)
         if not bool(getattr(self._wp_device, "is_cuda", False)):
             raise ProviderUnavailableError(f"Warp device {self._device_name!r} is not CUDA-capable.")

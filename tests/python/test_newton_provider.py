@@ -591,12 +591,13 @@ class _FakeMuJoCo:
         mjJNT_HINGE=3,
     )
 
-    def __init__(self, *, jnt_type=None, actuator_trnid=None, name_ids=None):
+    def __init__(self, *, jnt_type=None, actuator_trnid=None, name_ids=None, nsensor=0):
         if jnt_type is None:
             jnt_type = [3, 3]
         if actuator_trnid is None:
             actuator_trnid = [[0, 0], [1, 0]]
         self.metadata_model = SimpleNamespace(
+            nsensor=nsensor,
             body_jntadr=np.asarray([0, 0, 1], dtype=np.int32),
             body_jntnum=np.asarray([0, 1, 1], dtype=np.int32),
             jnt_type=np.asarray(jnt_type, dtype=np.int32),
@@ -745,6 +746,18 @@ def _bindings(*, newton_options=None, mujoco_options=None):
     )
 
 
+def test_provider_keeps_authored_sensors_enabled():
+    provider = NewtonProvider(
+        _artifact(),
+        num_envs=1,
+        _bindings=_bindings(mujoco_options={"nsensor": 1}),
+    )
+    try:
+        assert _FakeSolver.last_instance.options["disable_sensors"] is False
+    finally:
+        provider.close()
+
+
 def test_fake_provider_lifecycle_and_masked_reset():
     assert gobot.sim.NewtonProvider is NewtonProvider
     bindings = _bindings()
@@ -790,6 +803,7 @@ def test_fake_provider_lifecycle_and_masked_reset():
             "use_mujoco_cpu": False,
             "solver": "newton",
             "use_mujoco_contacts": True,
+            "disable_sensors": True,
             "nconmax": 32,
             "njmax": 64,
             "iterations": 8,
@@ -1572,7 +1586,11 @@ def test_optional_real_gpu_smoke():
     if not torch.cuda.is_available():
         raise RuntimeError("Newton GPU smoke requested but Torch cannot access CUDA")
 
-    artifact = _artifact(nq=1, nv=1, nu=1)
+    import mujoco
+
+    artifact = replace(
+        _artifact(nq=1, nv=1, nu=1), producer_version=mujoco.mj_versionString()
+    )
     content = (
         "<mujoco><worldbody><body name='body'><joint name='joint' type='slide'/>"
         "<geom type='sphere' size='0.1' mass='1'/></body></worldbody>"
@@ -1604,7 +1622,13 @@ def test_optional_real_gpu_smoke():
         assert slider is not None and hinge is not None
         slider.drive_mode = gobot.JointDriveMode.Position
         hinge.drive_mode = gobot.JointDriveMode.Position
-        gobot.save_scene(root, "res://newton_cartpole.jscn")
+        # A drive-mode label with zero gains produces an inert general actuator,
+        # not a position servo for Newton's importer to map.
+        slider.drive_stiffness = 40.0
+        slider.drive_damping = 2.0
+        hinge.drive_stiffness = 20.0
+        hinge.drive_damping = 1.0
+        gobot.save_scene(root, str(Path(temporary_directory.name) / "newton_cartpole.jscn"))
         context.load_scene("res://newton_cartpole.jscn")
         compiled = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
         for dimension in ("nq", "nv", "nu", "nbody", "njoint", "ngeom", "nhfield"):

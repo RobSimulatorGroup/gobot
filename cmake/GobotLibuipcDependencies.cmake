@@ -155,12 +155,17 @@ gobot_install_license_files("${gobot_libuipc_octree_SOURCE_DIR}" "Octree"
     python libuipc_runtime)
 gobot_install_license_files("${cpptrace_SOURCE_DIR}" "cpptrace"
     python libuipc_runtime)
-gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/GKlib" "GKlib"
-    python libuipc_runtime)
-gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/METIS" "METIS"
-    python libuipc_runtime)
-gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/muda" "muda"
-    python libuipc_runtime)
+foreach(GOBOT_LIBUIPC_LICENSE_COMPONENT python libuipc_runtime)
+    install(FILES "${GOBOT_LIBUIPC_SOURCE_DIR}/src/geometry/metis/LICENSE-GKlib"
+        DESTINATION gobot/licenses/GKlib RENAME LICENSE.txt
+        COMPONENT ${GOBOT_LIBUIPC_LICENSE_COMPONENT})
+    install(FILES "${GOBOT_LIBUIPC_SOURCE_DIR}/src/geometry/metis/LICENSE-METIS"
+        DESTINATION gobot/licenses/METIS RENAME LICENSE
+        COMPONENT ${GOBOT_LIBUIPC_LICENSE_COMPONENT})
+    install(FILES "${GOBOT_LIBUIPC_SOURCE_DIR}/src/backends/cuda/cuda_tool/LICENSE-muda"
+        DESTINATION gobot/licenses/muda RENAME LICENSE
+        COMPONENT ${GOBOT_LIBUIPC_LICENSE_COMPONENT})
+endforeach()
 
 # These Gobot dependencies are linked statically or instantiated into the
 # libuipc shared objects. Their normal Python-component rules remain above;

@@ -19,7 +19,8 @@ def _compiled_cartpole_artifact():
     assert slider is not None and hinge is not None
     slider.drive_mode = gobot.JointDriveMode.Position
     hinge.drive_mode = gobot.JointDriveMode.Position
-    gobot.save_scene(root, "res://warp_cartpole.jscn")
+    # The global save helper does not activate this independent AppContext.
+    gobot.save_scene(root, str(project_path / "warp_cartpole.jscn"))
     context.load_scene("res://warp_cartpole.jscn")
     artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
     assert context.has_world is False

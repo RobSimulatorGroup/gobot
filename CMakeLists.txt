@@ -81,7 +81,7 @@ set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING
         "Comma-separated NVCC diagnostic IDs suppressed only for the optional libuipc CUDA target")
 set(GOB_GSPLAT_INFERENCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/gsplat_inference/install" CACHE PATH
         "Prebuilt gsplat CUDA inference library install prefix")
-set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
+set(GOB_MUJOCO_GIT_TAG "3.12.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
 if(NOT UNIX OR APPLE)
@@ -367,7 +367,7 @@ if(GOB_BUILD_MUJOCO)
             endforeach()
 
             # PyPI's mujoco package intentionally ships only its SONAME file,
-            # for example libmujoco.so.3.10.0, without a development symlink.
+            # for example libmujoco.so.3.12.0, without a development symlink.
             foreach(GOBOT_MUJOCO_LIBRARY_HINT IN LISTS GOBOT_MUJOCO_LIBRARY_HINTS)
                 set(GOBOT_MUJOCO_VERSIONED_LIBRARY
                     "${GOBOT_MUJOCO_LIBRARY_HINT}/libmujoco.so.${GOB_MUJOCO_GIT_TAG}")

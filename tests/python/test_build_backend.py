@@ -52,16 +52,16 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     ):
         assert f'{define} = "ON"' in pyproject
     for requirement in (
-        '"mujoco==3.10.0;',
-        '"mujoco-warp==3.10.0.2;',
-        '"newton[onnx,sim]==1.4.0;',
+        '"mujoco==3.12.0;',
+        '"mujoco-warp==3.12.0;',
+        '"newton[sim,onnx]==1.6.0;',
         '"nvidia-cublas-cu12>=12.8,<13;',
         '"nvidia-cuda-runtime-cu12>=12.8,<13;',
         '"nvidia-cusolver-cu12>=11.7,<12;',
         '"nvidia-cusparse-cu12>=12.5,<13;',
         '"nvidia-nvjitlink-cu12>=12.8,<13;',
         '"torch>=2.7;',
-        '"warp-lang==1.15.0;',
+        '"warp-lang==1.17.0;',
     ):
         assert requirement in pyproject
     assert "[project.optional-dependencies]" not in pyproject
@@ -558,8 +558,8 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
                 side_effect=[
                     ("-abc 3rdparty/openusd",),
                     (" abc 3rdparty/openusd",),
-                    ("-def external/muda",),
-                    (" def external/muda",),
+                    ("-def scripts/SymEigen",),
+                    (" def scripts/SymEigen",),
                     ("-123 src/ext/reproc",),
                     (" 123 src/ext/reproc",),
                 ],

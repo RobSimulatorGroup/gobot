@@ -39,7 +39,6 @@ _LUISA_NESTED_MARKERS = (
     "src/ext/spdlog/CMakeLists.txt",
 )
 _LIBUIPC_NESTED_MARKERS = (
-    "external/muda/CMakeLists.txt",
     "scripts/SymEigen/SymEigen.py",
 )
 _SDK_ARTIFACTS = (

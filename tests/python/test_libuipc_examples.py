@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -200,6 +201,21 @@ def test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider() -> None:
     assert "SceneSnapshotSync" in source
     assert "_create_display_scenes" in source
     assert "NUM_ENVS = 4" in source
+
+
+def test_play_uses_installed_solver_unless_explicitly_overridden() -> None:
+    module = _load_mujoco_libuipc_play_script()
+    with tempfile.TemporaryDirectory() as directory:
+        repository = Path(directory)
+        (repository / "CMakeLists.txt").touch()
+        (repository / "python/gobot").mkdir(parents=True)
+        stale = repository / "build/libuipc-novcpkg/python/gobot/libgobot_libuipc_solver.so"
+        stale.parent.mkdir(parents=True)
+        stale.touch()
+        with patch.dict(os.environ, {"GOBOT_LIBUIPC_SOLVER_MODULE": ""}):
+            assert module._solver_module_path(str(repository)) == ""
+        with patch.dict(os.environ, {"GOBOT_LIBUIPC_SOLVER_MODULE": str(stale)}):
+            assert module._solver_module_path(str(repository)) == str(stale)
 
 
 def test_mujoco_libuipc_display_copies_are_runtime_only_and_unique() -> None:

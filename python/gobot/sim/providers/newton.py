@@ -24,6 +24,7 @@ from .base import (
     validate_compiled_artifact,
 )
 from .cache import ContentAddressedCache
+from .warp_cache import prepare_warp_kernel_cache
 
 
 _MJCF_ADAPTER_VERSION = "1"
@@ -659,10 +660,11 @@ class NewtonProvider(BatchPhysicsProvider):
         solver_type = getattr(getattr(self._newton, "solvers", None), "SolverMuJoCo", None)
         if not callable(getattr(self._newton, "ModelBuilder", None)) or solver_type is None:
             raise ProviderUnavailableError(
-                "The installed Newton package does not provide the required Newton 1.4 public API."
+                "The installed Newton package does not provide the required ModelBuilder/SolverMuJoCo API."
             )
 
         self._wp.init()
+        prepare_warp_kernel_cache(self._wp)
         self._wp_device = self._wp.get_device(self._device_name)
         if not bool(getattr(self._wp_device, "is_cuda", False)):
             raise ProviderUnavailableError(f"Warp device {self._device_name!r} is not CUDA-capable.")
@@ -702,6 +704,10 @@ class NewtonProvider(BatchPhysicsProvider):
                 "use_mujoco_cpu": False,
                 "solver": "newton",
                 "use_mujoco_contacts": self._use_mujoco_contacts,
+                # MJWarp 3.12 otherwise runs tactile preprocessing even when
+                # there are no sensors. Besides unnecessary allocations, its
+                # mixed-reduction kernel cannot compile in deterministic mode.
+                "disable_sensors": self._metadata_model.nsensor == 0,
             }
             if nconmax is not None:
                 solver_kwargs["nconmax"] = int(nconmax)

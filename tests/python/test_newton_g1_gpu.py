@@ -11,6 +11,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "examples" / "newton_g1"
+REPLAY_POSITION_ATOL_M = 1.0e-5
+REPLAY_ANGLE_ATOL_RAD = 1.0e-5
 
 
 def _walk_nodes(root):
@@ -91,7 +93,9 @@ def test_real_newton_g1_policy_smoke() -> None:
         limit_stiffness = np.asarray(model.joint_limit_ke.numpy())
         limit_damping = np.asarray(model.joint_limit_kd.numpy())
         active_limits = limit_stiffness > 0.0
-        assert int(np.count_nonzero(active_limits)) == 43
+        # Newton 1.6 stores model DOF parameters for every replicated world.
+        limits_per_world = active_limits.reshape(provider.num_envs, -1)
+        np.testing.assert_array_equal(np.count_nonzero(limits_per_world, axis=1), 43)
         np.testing.assert_allclose(limit_stiffness[active_limits], 100.0)
         np.testing.assert_allclose(limit_damping[active_limits], 1.0)
         np.testing.assert_allclose(model.joint_friction.numpy(), 0.0)
@@ -204,8 +208,45 @@ def test_real_newton_g1_policy_smoke() -> None:
         reset_all()
         view.set_position_targets(default_batch)
         provider.step(nsteps=20)
-        torch.testing.assert_close(view.read_state().base_pose, first_replay, rtol=0.0, atol=0.0)
-        torch.testing.assert_close(view.read_state().joint_position, first_joints, rtol=0.0, atol=0.0)
+        # Normal GPU reductions allow small floating-point differences. Check
+        # physical distances/angles with absolute tolerances, not bit equality.
+        replay = view.read_state()
+        position_error = torch.linalg.vector_norm(
+            replay.base_pose[:, :3] - first_replay[:, :3], dim=-1,
+        )
+        torch.testing.assert_close(
+            position_error, torch.zeros_like(position_error),
+            rtol=0.0, atol=REPLAY_POSITION_ATOL_M,
+        )
+        torch.testing.assert_close(
+            replay.joint_position, first_joints,
+            rtol=0.0, atol=REPLAY_ANGLE_ATOL_RAD,
+        )
+
+        # Compare rotations in radians; q and -q represent the same rotation.
+        # The chord/atan2 formula stays accurate for tiny angles, unlike acos.
+        quaternions = torch.stack((replay.base_pose[:, 3:7], first_replay[:, 3:7])).double()
+        norms = torch.linalg.vector_norm(quaternions, dim=-1, keepdim=True)
+        torch.testing.assert_close(norms, torch.ones_like(norms), rtol=0.0, atol=1.0e-5)
+        actual_q, expected_q = quaternions / norms
+        expected_q = torch.where(
+            (actual_q * expected_q).sum(dim=-1, keepdim=True) < 0,
+            -expected_q, expected_q,
+        )
+        orientation_error = 4.0 * torch.atan2(
+            torch.linalg.vector_norm(actual_q - expected_q, dim=-1),
+            torch.linalg.vector_norm(actual_q + expected_q, dim=-1),
+        )
+        torch.testing.assert_close(
+            orientation_error, torch.zeros_like(orientation_error),
+            rtol=0.0, atol=REPLAY_ANGLE_ATOL_RAD,
+        )
+        print(
+            "G1 reset replay max errors: "
+            f"position={position_error.max().item():.3e} m, "
+            f"orientation={orientation_error.max().item():.3e} rad, "
+            f"joints={(replay.joint_position - first_joints).abs().max().item():.3e} rad"
+        )
 
         before_masked_reset = view.read_state().base_pose.clone()
         mask = torch.tensor([False, False, True, False], dtype=torch.bool, device=device)

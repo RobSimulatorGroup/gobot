@@ -3,8 +3,11 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import sys
 import tempfile
+import time
 
+import numpy as np
 import pytest
 
 
@@ -664,6 +667,9 @@ def test_real_mujoco_libuipc_solver_coupled_proxy_step() -> None:
 
 
 def test_mujoco_libuipc_editor_play_session() -> None:
+    # ScenePlaySession normally exposes the active project's script directory.
+    previous_sys_path = sys.path.copy()
+    sys.path.insert(0, str(MUJOCO_LIBUIPC_EXAMPLE))
     previous_module = os.environ.get("GOBOT_LIBUIPC_SOLVER_MODULE")
     if MODULE_PATH:
         os.environ["GOBOT_LIBUIPC_SOLVER_MODULE"] = MODULE_PATH
@@ -676,15 +682,47 @@ def test_mujoco_libuipc_editor_play_session() -> None:
         script = module.Script()
         script._attach(root, root, context)
         script._ready()
-        context.step(180)
-        script._sync_scene()
+        script.runtime.subscribe(
+            ("robot.press.link_pose", "deformable.local_vertices"),
+            environments=range(module.NUM_ENVS), max_hz=1e9,
+        )
 
-        state = script.press_view.read_state()
-        positions = script.provider.arrays["ipc_positions"]
-        heights = positions[..., 2].amax(dim=1) - positions[..., 2].amin(dim=1)
-        assert script.provider.num_envs == module.NUM_ENVS == 4
+        # Exercise the asynchronous Play callbacks; the native loop's clock
+        # commits are covered by PythonSimulationRuntime's C++ bridge test.
+        def complete():
+            deadline = time.monotonic() + 180
+            while time.monotonic() < deadline:
+                result = script.play_session._poll()
+                if result is not None:
+                    assert not result.error, result.error
+                    assert not result.presentation_error, result.presentation_error
+                    assert result.snapshot is not None
+                    script.play_session.sync_scene()
+                    return result
+                time.sleep(.001)
+            raise AssertionError("editor provider completion timed out")
+
+        initial = complete()
+        initial_pose = np.asarray(initial.snapshot.buffer("robot.press.link_pose")).copy()
+        initial_display_z = [nodes["press_head"].position[2] for nodes in script.display_nodes]
+        assert complete().operation == "subscribe"
+        for tick in range(1, 181):
+            deadline = time.monotonic() + 10
+            while not script.play_session._step(module.FIXED_DT):
+                assert time.monotonic() < deadline, "editor provider did not become ready"
+                time.sleep(.001)
+            result = complete()
+            assert result.step.completed
+            assert all(clock.tick == tick for clock in result.clocks)
+
+        pose = np.asarray(result.snapshot.buffer("robot.press.link_pose"))
+        vertices = np.asarray(result.snapshot.buffer("deformable.local_vertices"))
+        positions = vertices[:, 0, :script.scene_sync.vertex_counts[0]]
+        heights = np.ptp(positions[..., 2], axis=1)
+        assert np.isfinite(pose).all() and np.isfinite(positions).all()
+        assert script.runtime.info.environment_count == module.NUM_ENVS == 4
         assert len(script.display_roots) == 4
-        assert len(script.display_deformable_bodies) == 4
+        assert len(script.scene_sync.deformables) == 4
         grid_positions = {
             tuple(round(float(value), 6) for value in root.position)
             for root in script.display_roots
@@ -692,40 +730,28 @@ def test_mujoco_libuipc_editor_play_session() -> None:
         assert len(grid_positions) == 4
         scripts = tuple(root.get_property("script") for root in script.display_roots)
         assert bool(scripts[0]) and all(not value for value in scripts[1:])
-        assert script.tick == 180
-        joint_positions = state.joint_position[:, 0]
-        assert joint_positions[-1].item() < -0.1
-        assert torch.all(joint_positions[1:] < joint_positions[:-1]).item()
+        displacement = pose[:, 0, 2] - initial_pose[:, 0, 2]
+        assert displacement[-1] < -0.1
+        assert np.all(displacement[1:] < displacement[:-1])
         compression = 0.16 - heights
         assert compression[-1].item() > 0.005
         assert (compression.max() - compression.min()).item() > 0.001
-        mappings = {
-            mapping.link_name: mapping
-            for mapping in script.provider.artifact.coupled_bodies
-        }
-        ground_id, press_id = script.provider.rigid_solver.resolve_object_ids(
-            "body",
-            (
-                mappings["ground"].mujoco_body_name,
-                mappings["press_head"].mujoco_body_name,
-            ),
+        for env, nodes in enumerate(script.display_nodes):
+            assert nodes["press_head"].position[2] - initial_display_z[env] == pytest.approx(
+                displacement[env], abs=1e-5,
+            )
+        script.play_session.reset()
+        reset = complete()
+        assert all(clock.tick == 0 for clock in reset.clocks)
+        np.testing.assert_allclose(
+            np.asarray(reset.snapshot.buffer("robot.press.link_pose")), initial_pose,
+            atol=1e-6,
         )
-        applied = script.provider.arrays["xfrc_applied"]
-        assert torch.count_nonzero(applied[:, ground_id]) == 0
-        assert torch.isfinite(applied[:, press_id]).all().item()
-        assert torch.linalg.vector_norm(applied[:, press_id, :3]).max().item() > 0.0
-        assert script.provider.rigid_solver.capabilities.graph_capture
-        assert (
-            script.provider.diagnostics["feedback_source"]
-            == "native_contact_wrench"
-        )
-        assert script.provider.capabilities.exact_contact_wrench
-        assert script.provider.capabilities.reset_scope == "full_batch_only"
-        assert script.provider.diagnostics["graph_captured"] is False
     finally:
         if script is not None:
             script._exit_tree()
         context.clear_scene()
+        sys.path[:] = previous_sys_path
         if previous_module is None:
             os.environ.pop("GOBOT_LIBUIPC_SOLVER_MODULE", None)
         else:

@@ -208,7 +208,7 @@ def test_playback_module_imports_from_the_project_root() -> None:
 
 def test_default_dependency_installs_warp_nn_without_newton_examples() -> None:
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    dependency = '"newton[onnx,sim]==1.4.0; sys_platform == \'linux\''
+    dependency = '"newton[sim,onnx]==1.6.0; sys_platform == \'linux\''
     assert dependency in project
     assert '"newton[examples]' not in project
 

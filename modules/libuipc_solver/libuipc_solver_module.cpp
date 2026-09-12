@@ -786,6 +786,11 @@ public:
         // iterations resolving driven affine joints.  These are the same
         // tolerances used by its interactive affine-body examples.
         scene_config["newton"]["max_iter"] = newton_max_iterations;
+        // Preserve Gobot's fully implicit integration and at least one
+        // reassembly after the first displacement. Upstream now defaults to
+        // min_iter=0, which can export pre-displacement (zero) friction forces.
+        scene_config["newton"]["min_iter"] = 1;
+        scene_config["newton"]["semi_implicit"]["enable"] = false;
         scene_config["newton"]["velocity_tol"] = 0.1;
         scene_config["newton"]["transrate_tol"] = 10.0;
         scene_config["newton"]["ccd_tol"] = 5.0e-4;

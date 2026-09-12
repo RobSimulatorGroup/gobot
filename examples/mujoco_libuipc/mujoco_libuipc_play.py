@@ -31,7 +31,6 @@ PRESS_TICKS = 128
 HOLD_TICKS = 64
 RELEASE_TICKS = 96
 CYCLE_TICKS = SETTLE_TICKS + PRESS_TICKS + HOLD_TICKS + RELEASE_TICKS
-SOLVER_MODULE_NAME = "libgobot_libuipc_solver.so"
 
 
 def _nodes_by_name(root: Any) -> dict[str, Any]:
@@ -48,42 +47,14 @@ def _nodes_by_name(root: Any) -> dict[str, Any]:
     return result
 
 
-def _repository_root(project_path: str) -> Path | None:
-    current = Path(project_path).expanduser().resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / "CMakeLists.txt").is_file() and (
-            candidate / "python" / "gobot"
-        ).is_dir():
-            return candidate
-    return None
-
-
 def _solver_module_path(project_path: str) -> str:
+    del project_path
     configured = os.environ.get("GOBOT_LIBUIPC_SOLVER_MODULE", "").strip()
     if configured:
         return str(Path(configured).expanduser().resolve())
 
-    repository = _repository_root(project_path)
-    if repository is None:
-        return ""
-    candidates = [
-        repository
-        / "build"
-        / "libuipc-novcpkg"
-        / "python"
-        / "gobot"
-        / SOLVER_MODULE_NAME
-    ]
-    candidates.extend(
-        sorted(
-            (repository / "build").glob(
-                "*/python/gobot/" + SOLVER_MODULE_NAME
-            )
-        )
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
+    # The installed package resolves its matching solver module. An unrelated
+    # old build directory may have a different ABI or already-loaded SDK SONAME.
     return ""
 
 

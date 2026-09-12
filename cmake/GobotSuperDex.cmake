@@ -85,6 +85,8 @@ function(gobot_configure_superdex)
             BINARY_DIR "${GOBOT_SUPERDEX_BINARY_DIR}"
             INSTALL_DIR "${GOBOT_SUPERDEX_INSTALL_DIR}"
             UPDATE_COMMAND ""
+            # Re-enter the SDK's incremental build after a submodule update.
+            BUILD_ALWAYS TRUE
             CMAKE_ARGS
                 "-DCMAKE_BUILD_TYPE=Release"
                 "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
