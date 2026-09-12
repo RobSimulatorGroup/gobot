@@ -131,7 +131,7 @@ products remain native adapter work and are not currently exposed by
 
 ## MuJoCo + libuipc Batch Co-simulation
 
-`gobot.rl.MuJoCoIpcProvider` composes MuJoCo Warp rigid/articulation dynamics
+`gobot.sim.MuJoCoIpcProvider` composes MuJoCo Warp rigid/articulation dynamics
 with native libuipc FEM and IPC contact. The authored `.jscn` remains the only
 source of truth. `CompiledMuJoCoIpcArtifact` stores the two compiled runtime
 artifacts plus an explicit, validated mapping from each Gobot link path to its

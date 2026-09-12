@@ -1,4 +1,4 @@
-"""Backend provider contracts for device-native batched simulation."""
+"""Simulation provider contracts, independent of reinforcement-learning tasks."""
 
 from __future__ import annotations
 

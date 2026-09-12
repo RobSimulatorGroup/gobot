@@ -51,6 +51,13 @@ package_add_test(test_event core/test_event.cpp)
 package_add_test(test_engine_context main/test_engine_context.cpp)
 package_add_test(test_physics_debug_preview simulation/test_physics_debug_preview.cpp)
 package_add_test(test_physics_step_result simulation/test_physics_step_result.cpp)
+# The session contract is independently testable without Gobot, SDKs or Python.
+add_executable(test_simulation_session simulation/test_simulation_session.cpp
+        simulation/test_simulation_data_worker.cpp)
+target_compile_features(test_simulation_session PRIVATE cxx_std_20)
+target_include_directories(test_simulation_session PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries(test_simulation_session PRIVATE gtest_main)
+gtest_discover_tests(test_simulation_session)
 package_add_test(test_simulation_worker simulation/test_simulation_worker.cpp)
 package_add_test(test_object_db core/test_object_db.cpp)
 package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
@@ -191,6 +198,11 @@ gtest_discover_tests(test_scene_play_session
         EXTRA_ARGS --gtest_color=yes
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
+package_add_test(test_python_simulation_runtime simulation/test_python_simulation_runtime.cpp)
+target_compile_definitions(test_python_simulation_runtime PRIVATE
+        GOBOT_TEST_PYTHON_PATH="${GOBOT_TEST_EMBEDDED_PYTHON_PATH}"
+        GOBOT_TEST_PYTHON_EXECUTABLE="${GOBOT_TEST_BASE_PYTHON_EXECUTABLE}")
+add_dependencies(test_python_simulation_runtime gobot_python)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_superdex_physics_world physics/test_superdex_physics_world.cpp)
 if(GOB_BUILD_SUPERDEX)
@@ -227,6 +239,7 @@ add_dependencies(test_ipc_solver
         gobot_test_ipc_solver_bad_abi)
 
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
+package_add_test(test_simulation_scene_sync simulation/test_simulation_scene_sync.cpp)
 package_add_test(test_locomotion_command_runtime simulation/test_locomotion_command_runtime.cpp)
 package_add_test(test_locomotion_batch_runtime simulation/test_locomotion_batch_runtime.cpp)
 

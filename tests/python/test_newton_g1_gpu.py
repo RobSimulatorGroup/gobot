@@ -52,7 +52,7 @@ def test_real_newton_g1_policy_smoke() -> None:
         sys.path.remove(str(EXAMPLE))
 
     import gobot
-    from gobot.rl.providers import NewtonProvider
+    from gobot.sim.providers import NewtonProvider
 
     context = gobot.app.create_context()
     provider = None

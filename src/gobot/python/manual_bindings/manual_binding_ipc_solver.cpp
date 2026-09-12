@@ -264,9 +264,12 @@ public:
                        const py::dict& config,
                        const std::string& module_path) {
         std::string error;
-        session_ = IpcSolverSession::Create(
-                ArtifactFromPython(artifact), ConfigFromPython(config),
-                module_path, &error);
+        const auto compiled = ArtifactFromPython(artifact);
+        const auto settings = ConfigFromPython(config);
+        {
+            py::gil_scoped_release release;
+            session_ = IpcSolverSession::Create(compiled, settings, module_path, &error);
+        }
         if (session_ == nullptr) {
             throw std::runtime_error(error.empty()
                                              ? "IPC solver session creation failed"
@@ -362,7 +365,10 @@ public:
     }
 
     void Close() {
+        if (closed_) return;
         closed_ = true;
+        py::gil_scoped_release release;
+        if (session_) session_->Close();
     }
 
 private:
@@ -383,9 +389,12 @@ public:
                             const py::dict& config,
                             const std::string& module_path) {
         std::string error;
-        session_ = IpcBatchSolverSession::Create(
-                ArtifactFromPython(artifact), BatchConfigFromPython(config),
-                module_path, &error);
+        const auto compiled = ArtifactFromPython(artifact);
+        const auto settings = BatchConfigFromPython(config);
+        {
+            py::gil_scoped_release release;
+            session_ = IpcBatchSolverSession::Create(compiled, settings, module_path, &error);
+        }
         if (session_ == nullptr) {
             throw std::runtime_error(
                     error.empty() ? "IPC batch solver session creation failed"
@@ -536,7 +545,12 @@ public:
         return DiagnosticsToPython(RequireSession().GetDiagnostics());
     }
 
-    void Close() { closed_ = true; }
+    void Close() {
+        if (closed_) return;
+        closed_ = true;
+        py::gil_scoped_release release;
+        session_.reset();
+    }
 
 private:
     IpcBatchSolverSession& RequireSession() const {

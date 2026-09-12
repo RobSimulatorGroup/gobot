@@ -9,6 +9,13 @@ Open the project and press Play:
 uv run gobot_editor --path examples/libuipc
 ```
 
+Play compiles the authored scene and passes its binary artifact to
+`libuipc_runtime.py`. A worker owns the solver and joint controller, while the
+editor applies completed snapshots at up to 60 Hz. Stop remains responsive
+during a solve. Reset restarts the controller and physics together, and stale
+results from the previous cycle are discarded. Contact-force presentation is
+subscribed only while the debug arrows are enabled.
+
 The project contains one focused robot scene:
 
 - `fr3_brick_grasp.jscn`: the Franka Research 3 and Franka Hand used by

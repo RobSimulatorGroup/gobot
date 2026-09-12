@@ -20,7 +20,7 @@ from gobot.ipc import (
     LibuipcBatchSolver,
     LibuipcConfig,
 )
-from gobot.rl import (
+from gobot.sim.providers import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConvergencePolicy,
     MuJoCoIpcConfig,
@@ -791,7 +791,7 @@ def test_mujoco_ipc_step_order_wrench_ownership_and_full_reset() -> None:
     provider = MuJoCoIpcProvider(
         artifact, config=config, rigid_solver=rigid, ipc_solver=ipc
     )
-    assert isinstance(provider, gobot.rl.BatchPhysicsProvider)
+    assert isinstance(provider, gobot.sim.BatchPhysicsProvider)
     assert provider.capabilities.graph_capture is False
     assert provider.capabilities.masked_reset is False
     assert provider.capacities["shards"] == 2

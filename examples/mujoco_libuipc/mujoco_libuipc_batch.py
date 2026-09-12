@@ -16,7 +16,7 @@ import torch
 
 import gobot
 from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
-from gobot.rl import (
+from gobot.sim.providers import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
     MuJoCoIpcProvider,

@@ -4,6 +4,10 @@ from typing import Any, Mapping, Sequence
 
 from gobot.sim import ProviderCapabilities
 
+class LibuipcSceneOutput:
+    def __init__(self, provider: LibuipcProvider, *, affine_paths: Sequence[str]) -> None: ...
+    def snapshot(self, fields: Sequence[str], environments: Sequence[int]) -> dict[str, Any]: ...
+
 
 class CompiledIpcSceneArtifact:
     schema_version: int

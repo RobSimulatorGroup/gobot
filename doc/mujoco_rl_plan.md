@@ -331,7 +331,7 @@ SceneTree / .jscn
   -> PhysicsSceneCompiler
   -> stateless PhysicsServer registry/compiler
   -> PhysicsSceneArtifact schema v3
-  -> gobot.rl.MuJoCoWarpProvider
+  -> gobot.sim.MuJoCoWarpProvider
   -> MuJoCo Warp model/data and Torch CUDA views
 ```
 

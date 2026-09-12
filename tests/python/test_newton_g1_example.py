@@ -158,7 +158,7 @@ def test_playback_uses_stable_provider_and_warp_nn_without_newton_viewer() -> No
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
     )
-    assert "gobot.rl.providers" in imports
+    assert "gobot.sim.providers" in imports
     assert "warp_nn.runtime" in imports
     assert not any(name.startswith("newton.viewer") for name in imports)
     assert "onnxruntime" not in imports

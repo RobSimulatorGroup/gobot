@@ -29,7 +29,7 @@ def benchmark(environment_counts: tuple[int, ...], ticks: int) -> dict[str, obje
         sys.path.remove(str(EXAMPLE))
 
     import gobot
-    from gobot.rl.providers import NewtonModelConfig, NewtonProvider
+    from gobot.sim.providers import NewtonModelConfig, NewtonProvider
 
     context = gobot.app.create_context()
     results = []

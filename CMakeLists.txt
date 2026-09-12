@@ -888,6 +888,8 @@ target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBE
 set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/python_manual_bindings.cpp
         src/gobot/python/manual_bindings/manual_binding_api.cpp
+        src/gobot/python/manual_bindings/manual_binding_simulation_session.cpp
+        src/gobot/python/manual_bindings/manual_binding_simulation_worker.cpp
         src/gobot/python/manual_bindings/manual_binding_app_context.cpp
         src/gobot/python/manual_bindings/manual_binding_common.cpp
         src/gobot/python/manual_bindings/manual_binding_helpers.cpp
@@ -933,6 +935,11 @@ set_target_properties(gobot PROPERTIES INSTALL_RPATH "${GOBOT_INSTALL_RPATH}")
 set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
 set(GOBOT_PYTHON_CLI_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_cli")
 add_custom_target(gobot_python_package
+        COMMAND ${CMAKE_COMMAND} -E rm -f
+                "${CMAKE_BINARY_DIR}/python/gobot/sim.py"
+                "${CMAKE_BINARY_DIR}/python/gobot/sim.pyi"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "${CMAKE_BINARY_DIR}/python/gobot/sim"
         COMMAND ${CMAKE_COMMAND} -E rm -rf
                 "${CMAKE_BINARY_DIR}/python/gobot/rl"
         COMMAND ${CMAKE_COMMAND} -E rm -rf

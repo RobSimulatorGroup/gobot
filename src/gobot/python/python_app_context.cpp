@@ -15,7 +15,7 @@
 namespace gobot::python {
 namespace {
 
-EngineContext* s_active_app_context = nullptr;
+thread_local EngineContext* s_active_app_context = nullptr;
 std::vector<EngineContext*>& AppContexts() {
     static auto* contexts = new std::vector<EngineContext*>();
     return *contexts;

@@ -5,6 +5,7 @@
  */
 
 #include "gobot/simulation/simulation_server.hpp"
+#include "gobot/simulation/physics_world_executor.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -599,6 +600,15 @@ bool SimulationServer::HasExternalSession() const {
     return external_driver_.IsValid();
 }
 
+bool SimulationServer::IsSessionReady() const {
+    return external_driver_.IsValid() ? external_session_ready_ && !faulted_ : IsWorldReady();
+}
+
+bool SimulationServer::IsSessionAsynchronous() const {
+    return external_driver_.IsValid() ? external_driver_->IsAsynchronous() :
+            dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid();
+}
+
 bool SimulationServer::HasActiveSession() const {
     return world_.IsValid() || external_driver_.IsValid();
 }
@@ -639,6 +649,7 @@ std::uint64_t SimulationServer::BeginExternalSession(Ref<ExternalSimulationDrive
     physics_world_settings_.fixed_time_step = fixed_time_step;
     max_sub_steps_ = max_sub_steps;
     external_driver_ = std::move(driver);
+    external_session_ready_ = !external_driver_->IsAsynchronous();
     external_scene_root_id_ = requested_scene_root_id;
     external_session_token_ = next_session_token_++;
     if (external_session_token_ == 0) {
@@ -677,6 +688,11 @@ bool SimulationServer::ResetExternalSession(std::uint64_t session_token) {
         return false;
     }
     ResetClock();
+    if (driver->IsAsynchronous()) {
+        external_session_ready_ = false;
+        last_error_.clear();
+        return true;
+    }
     const bool sync_succeeded = driver->SyncScene();
     if (!IsExternalSessionCurrent(driver, session_token)) {
         SetLastError("Simulation session changed during an external scene sync callback.");
@@ -766,6 +782,11 @@ bool SimulationServer::Reset() {
     }
 
     world_->Reset();
+    if (!world_->GetLastError().empty()) {
+        SetLastError(world_->GetLastError());
+        LatchFailure("reset");
+        return false;
+    }
     ResetClock();
     if (!ApplyWorldStateToScene()) {
         LatchFailure("reset synchronization");
@@ -780,7 +801,8 @@ bool SimulationServer::StepOnce() {
 }
 
 bool SimulationServer::StepOnce(const FixedStepCallback& fixed_step_callback) {
-    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) {
+    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid() ||
+        (external_driver_.IsValid() && external_driver_->IsAsynchronous())) {
         SetLastError("Use RequestStep for asynchronous playback; StepOnce remains a synchronous headless API.");
         return false;
     }
@@ -818,7 +840,8 @@ int SimulationServer::Step(RealType delta_time) {
 }
 
 int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_step_callback) {
-    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) {
+    if (dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid() ||
+        (external_driver_.IsValid() && external_driver_->IsAsynchronous())) {
         return AdvanceRealtime(delta_time, fixed_step_callback);
     }
     GOBOT_PROFILE_ZONE("SimulationServer::Step");
@@ -913,6 +936,9 @@ bool SimulationServer::IsWorkerRetiring() const {
 }
 
 bool SimulationServer::IsAsyncOperationPending() const {
+    if (external_driver_.IsValid() && external_driver_->IsAsynchronous()) {
+        try { return !external_driver_->CanRequestStep(); } catch (...) { return false; }
+    }
     return worker_ && dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid() && worker_->IsPending();
 }
 
@@ -941,6 +967,7 @@ bool SimulationServer::AttachWorker() {
 }
 
 int SimulationServer::PollWorker() {
+    if (external_driver_.IsValid() && external_driver_->IsAsynchronous()) return PollExternalWorker();
     if (!worker_) return 0;
     auto completion = worker_->Poll();
     auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
@@ -976,9 +1003,80 @@ int SimulationServer::PollWorker() {
     return advanced;
 }
 
+int SimulationServer::PollExternalWorker() {
+    const auto driver = external_driver_;
+    const auto token = external_session_token_;
+    const auto epoch = session_clock_epoch_;
+    std::optional<ExternalSimulationCompletion> result;
+    try {
+        result = driver->PollCompletion();
+    } catch (const std::exception& error) {
+        if (IsExternalSessionCurrent(driver, token) && session_clock_epoch_ == epoch) {
+            SetLastError(error.what());
+            LatchFailure("provider completion");
+        }
+        return 0;
+    } catch (...) {
+        if (IsExternalSessionCurrent(driver, token) && session_clock_epoch_ == epoch) {
+            SetLastError("Provider completion threw an unknown exception.");
+            LatchFailure("provider completion");
+        }
+        return 0;
+    }
+    if (!result || !IsExternalSessionCurrent(driver, token) || session_clock_epoch_ != epoch) return 0;
+    const auto& step = result->step;
+    const auto dt = physics_world_settings_.fixed_time_step;
+    const auto tolerance = std::max(RealType(1e-8), dt * RealType(1e-5));
+    const auto clock_tolerance = std::max(tolerance, std::numeric_limits<RealType>::epsilon() *
+            std::max(std::abs(result->simulation_time), std::abs(simulation_time_)) * RealType(4));
+    if (!std::isfinite(result->simulation_time) || result->simulation_time < 0 ||
+        !std::isfinite(step.advanced_time) || step.advanced_time < 0 ||
+        step.advanced_time > dt + tolerance ||
+        (result->physics_step && (result->tick < frame_count_ || result->tick > frame_count_ + 1 ||
+         std::abs(result->simulation_time - simulation_time_ - step.advanced_time) > clock_tolerance ||
+         (step.completed && (!step.state_valid || result->tick != frame_count_ + 1 ||
+                            std::abs(step.advanced_time - dt) > tolerance))))) {
+        SetLastError("Provider returned an invalid asynchronous clock or advancement.");
+        LatchFailure("provider completion");
+        return 0;
+    }
+    last_physics_step_result_ = step;
+    if (!result->physics_step && step.completed && step.state_valid) external_session_ready_ = true;
+    simulation_time_ = result->simulation_time;
+    frame_count_ = result->tick;
+    const int advanced = result->physics_step && step.completed && step.state_valid ? 1 : 0;
+    external_diagnostics_.last_step_latency_ms = step.diagnostics.total_step_time_seconds * 1000;
+    if (result->physics_step) {
+        external_step_latency_sum_ms_ += external_diagnostics_.last_step_latency_ms;
+        ++external_step_latency_count_;
+        external_diagnostics_.average_step_latency_ms = external_step_latency_sum_ms_ / external_step_latency_count_;
+    }
+    if (step.state_valid && (sync_scene_on_fixed_step_ || !result->physics_step || !step.completed)) {
+        bool synchronized = false;
+        std::string synchronization_error;
+        try { synchronized = driver->SyncScene(); }
+        catch (const std::exception& error) { synchronization_error = error.what(); }
+        catch (...) { synchronization_error = "Provider scene synchronization threw an unknown exception."; }
+        if (!IsExternalSessionCurrent(driver, token) || session_clock_epoch_ != epoch) return advanced;
+        if (!synchronized) {
+            SetLastError(synchronization_error.empty() ? driver->GetLastError() : synchronization_error);
+            LatchFailure("provider scene synchronization");
+            return advanced;
+        }
+    }
+    if (!step.completed || !step.state_valid) {
+        SetLastError(step.error.empty() ? "Asynchronous provider failed." : step.error);
+        LatchFailure("asynchronous provider");
+    }
+    return advanced;
+}
+
 int SimulationServer::AdvanceRealtime(RealType delta_time, const FixedStepCallback& callback) {
-    if (!dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid()) return Step(delta_time, callback);
+    const bool external_async = external_driver_.IsValid() && external_driver_->IsAsynchronous();
+    if (!dynamic_pointer_cast<QueuedPhysicsWorld>(world_).IsValid() && !external_async) return Step(delta_time, callback);
+    const auto epoch = session_clock_epoch_;
     last_step_count_ = PollWorker();
+    if (epoch != session_clock_epoch_) return last_step_count_;
     if (!std::isfinite(delta_time)) {
         SetLastError("Simulation frame delta must be finite.");
         LatchFailure("frame step");
@@ -988,13 +1086,42 @@ int SimulationServer::AdvanceRealtime(RealType delta_time, const FixedStepCallba
     const RealType dt = physics_world_settings_.fixed_time_step;
     // Bound wall-time debt. Overload slows simulation time, never changes the physics timestep.
     accumulator_ = std::min(accumulator_ + delta_time * time_scale_, dt * RealType(max_sub_steps_));
-    if (accumulator_ + CMP_EPSILON >= dt && worker_->CanSubmit()) {
+    if (accumulator_ + CMP_EPSILON >= dt) {
         if (RequestStep(callback)) accumulator_ = std::max(RealType(0), accumulator_ - dt);
     }
     return last_step_count_;
 }
 
 bool SimulationServer::RequestStep(const FixedStepCallback& callback) {
+    if (external_driver_.IsValid() && external_driver_->IsAsynchronous()) {
+        const auto driver = external_driver_;
+        const auto token = external_session_token_;
+        const auto epoch = session_clock_epoch_;
+        try {
+            if (faulted_ || !driver->CanRequestStep() || !EnsureActiveSessionReady()) return false;
+            if (callback) callback(physics_world_settings_.fixed_time_step);
+            if (!IsExternalSessionCurrent(driver, token) || session_clock_epoch_ != epoch || faulted_) return false;
+            const bool accepted = driver->Step(physics_world_settings_.fixed_time_step);
+            if (!IsExternalSessionCurrent(driver, token) || session_clock_epoch_ != epoch) return false;
+            if (!accepted) {
+                SetLastError(driver->GetLastError());
+                LatchFailure("provider command submission");
+            }
+            return accepted;
+        } catch (const std::exception& error) {
+            if (IsExternalSessionCurrent(driver, token) && session_clock_epoch_ == epoch) {
+                SetLastError(error.what());
+                LatchFailure("provider command submission");
+            }
+            return false;
+        } catch (...) {
+            if (IsExternalSessionCurrent(driver, token) && session_clock_epoch_ == epoch) {
+                SetLastError("Provider command submission threw an unknown exception.");
+                LatchFailure("provider command submission");
+            }
+            return false;
+        }
+    }
     auto queued = dynamic_pointer_cast<QueuedPhysicsWorld>(world_);
     if (!queued) return StepOnce(callback);
     if (faulted_ || !queued->IsBackendReady() || !worker_->CanSubmit()) return false;
@@ -1232,6 +1359,7 @@ void SimulationServer::ClearExternalSession() {
     Ref<ExternalSimulationDriver> driver = std::move(external_driver_);
     external_scene_root_id_ = ObjectID{};
     external_session_token_ = 0;
+    external_session_ready_ = false;
     external_diagnostics_ = {};
     external_step_latency_sum_ms_ = 0.0;
     external_step_latency_count_ = 0;
@@ -1310,7 +1438,19 @@ SimulationServer::FixedStepResult SimulationServer::StepFixed(
                 static_cast<double>(external_step_latency_count_);
     } else {
         GOBOT_PROFILE_ZONE("SimulationServer::WorldStep");
-        physics_result = active_world->Step(fixed_delta);
+        if (!native_session_ || native_executor_->GetWorld() != active_world ||
+            native_session_->GetFixedTimeStep() != fixed_delta) {
+            native_session_.reset();
+            native_executor_ = std::make_shared<PhysicsWorldExecutor>(active_world);
+            native_session_ = std::make_shared<SimulationSession>(native_executor_, 1, fixed_delta);
+            native_session_->SetRestoredClocks({{.tick = frame_count_, .microstep = frame_count_,
+                                                .time = simulation_time_}});
+        }
+        // A backend callback can retire the server's active session. Keep the
+        // in-flight executor alive until Step returns and the epoch is checked.
+        const auto session = native_session_;
+        const auto executor = native_executor_;
+        physics_result = executor->Resolve(session->Step());
     }
     } catch (const std::exception& error) {
         physics_result = {.state_valid = false, .error = error.what()};
@@ -1475,6 +1615,8 @@ bool SimulationServer::ApplyWorldStateToScene() {
 }
 
 void SimulationServer::ResetClock() {
+    native_session_.reset();
+    native_executor_.reset();
     ++session_clock_epoch_;
     if (session_clock_epoch_ == 0) {
         ++session_clock_epoch_;

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import math
 from pathlib import Path
@@ -172,24 +173,14 @@ def _libuipc_config() -> LibuipcConfig:
     )
 
 
-def _scene_provider(
-    context: Any,
-) -> LibuipcProvider:
-    return LibuipcProvider.from_context(
-        context,
-        config=_libuipc_config(),
-    )
-
-
 class Script(gobot.NodeScript):
     """Editor Play entry point for the native libuipc FR3 scene."""
 
     def _ready(self) -> None:
-        self.provider = None
+        self.runtime = None
         self.play_session = None
-        self.tick = 0
         self.loop_ticks = max(1, round(LOOP_SECONDS / FIXED_DT))
-        self.joint_targets = {}
+        self.output_fields = ("affine.link_pose", "deformable.local_vertices")
         clear_debug_arrows()
         try:
             root = self.get_root()
@@ -198,116 +189,84 @@ class Script(gobot.NodeScript):
             if root.name != SCENE_ROOT_NAME:
                 raise RuntimeError(f"unexpected libuipc demo scene {root.name!r}")
 
-            self.provider = _scene_provider(self.context)
+            artifact = CompiledIpcSceneArtifact.from_mapping(self.context.compile_ipc_scene_artifact())
             nodes_by_name = _nodes_by_name(root)
             bodies = []
-            for entry in self.provider.deformable_bodies:
+            for entry in artifact.deformable_bodies:
                 name = str(entry["path"]).rsplit("/", 1)[-1]
                 body = nodes_by_name.get(name)
                 if body is None or body.type_name != "DeformableBody3D":
                     raise RuntimeError(f"libuipc demo is missing deformable body {name!r}")
                 bodies.append(body)
             affine_links = []
-            for entry in self.provider.affine_bodies:
+            affine_entries = [link for robot in artifact.robots for link in robot["links"]
+                    if any(not shape.get("disabled", False) for shape in link["collision_shapes"])]
+            for entry in affine_entries:
                 name = str(entry["path"]).rsplit("/", 1)[-1]
                 link = nodes_by_name.get(name)
                 if link is None or link.type_name != "Link3D":
                     raise RuntimeError(f"libuipc demo is missing affine link {name!r}")
                 affine_links.append(link)
-            self.provider.bind_scene(self.context, bodies, affine_links)
-
-            for name in FR3_JOINT_NAMES:
-                matches = [
-                    str(entry["path"])
-                    for entry in self.provider.joints
-                    if str(entry["path"]).endswith("/" + name)
-                ]
-                if len(matches) != 1:
-                    raise RuntimeError(
-                        f"FR3 grasp demo has no unique {name} joint"
-                    )
-                initial = (
-                    FR3_INITIAL_ARM[name]
-                    if name in FR3_INITIAL_ARM
-                    else FR3_OPEN_FINGER
-                )
-                self.joint_targets[name] = (matches[0], initial)
-
-            self.provider.sync_scene()
+            self.scene_sync = gobot.sim.SceneSnapshotSync(self.context,
+                links={"affine.link_pose": [affine_links]}, deformables=[bodies],
+                vertex_counts=[int(entry["vertex_count"]) for entry in artifact.deformable_bodies])
+            recipe = gobot.sim.SimulationRuntimeSpec("libuipc_runtime:create", {
+                "artifact": artifact.to_mapping(), "config": asdict(_libuipc_config()),
+                "affine_paths": [entry["path"] for entry in affine_entries]})
+            self.runtime = gobot.sim.AsyncSimulationSession(recipe, fields=self.output_fields)
             self.play_session = gobot.sim.ProviderPlaySession(
                 self.context,
-                self.provider,
+                self.runtime,
                 fixed_dt=FIXED_DT,
                 max_sub_steps=1,
-                before_step=self._before_step,
-                reset=self._reset,
                 sync_scene=self._sync_scene,
             ).start()
             self.play_session.set_status("Running native libuipc FEM")
             print(
                 f"libuipc demo started: scene={root.name} "
-                f"deformables={len(self.provider.deformable_bodies)} "
-                f"affine_bodies={len(self.provider.affine_bodies)}"
+                f"deformables={len(bodies)} "
+                f"affine_bodies={len(affine_links)}"
             )
         except Exception:
             self._close_play_session()
             raise
 
-    def _before_step(self, fixed_dt: float) -> None:
-        if self.provider is None:
-            return
-        for name, target in _fr3_motion_targets(self.tick * fixed_dt).items():
-            self.provider.set_joint_target(self.joint_targets[name][0], target)
-        self.tick += 1
-
     def _physics_process(self, delta: float) -> None:
         del delta
-        if self.provider is None or self.play_session is None:
+        if self.runtime is None or self.play_session is None:
             return
         input_state = getattr(self.context, "input", None)
         if input_state is not None and input_state.is_key_pressed("P"):
             self.play_session.reset()
             return
-        if self.tick >= self.loop_ticks:
+        if self.context.frame_count >= self.loop_ticks:
             self.play_session.reset()
             return
-        if self.tick % 10 == 0:
-            diagnostics = self.provider.diagnostics
-            self.play_session.set_status(
-                f"Native libuipc | frame {int(diagnostics.get('frame', 0))} | "
-                f"{float(diagnostics.get('last_step_latency_ms', 0.0)):.1f} ms"
-            )
-
     def _process(self, delta: float) -> None:
         del delta
-
-    def _reset(self) -> None:
-        if self.provider is None:
+        if self.runtime is None:
             return
-        self.provider.reset()
-        self.tick = 0
-        clear_debug_arrows()
-        for path, initial in self.joint_targets.values():
-            self.provider.set_joint_target(path, initial)
+        fields = ("affine.link_pose", "deformable.local_vertices")
+        if self.context.get_physics_debug_settings()["draw_contact_forces"]:
+            fields += ("positions", "contact_forces")
+        else:
+            clear_debug_arrows()
+        if fields != self.output_fields and self.runtime.subscribe(fields):
+            self.output_fields = fields
 
-    def _sync_scene(self) -> None:
-        if self.provider is not None:
-            self.provider.sync_scene()
-            settings = self.context.get_physics_debug_settings()
-            draw_contact_forces = bool(settings["draw_contact_forces"])
-            force_scale = float(settings["contact_force_scale"])
-            max_force_length = float(settings["contact_force_max_length"])
-            if not draw_contact_forces:
-                clear_debug_arrows()
-                return
-            set_debug_arrows(
-                _contact_force_arrows(
-                    self.provider.arrays["positions"],
-                    self.provider.arrays["contact_forces"],
-                    force_scale=force_scale,
-                    max_force_length=max_force_length,
-                )
-            )
+    def _sync_scene(self, snapshot) -> None:
+        import numpy as np
+
+        self.scene_sync(snapshot)
+        settings = self.context.get_physics_debug_settings()
+        if not settings["draw_contact_forces"] or "contact_forces" not in snapshot.fields:
+            clear_debug_arrows()
+            return
+        set_debug_arrows(_contact_force_arrows(
+            np.asarray(snapshot.buffer("positions"))[0],
+            np.asarray(snapshot.buffer("contact_forces"))[0],
+            force_scale=float(settings["contact_force_scale"]),
+            max_force_length=float(settings["contact_force_max_length"])))
 
     def _exit_tree(self) -> None:
         self._close_play_session()
@@ -318,10 +277,9 @@ class Script(gobot.NodeScript):
         self.play_session = None
         if play_session is not None:
             play_session.close()
-        provider = self.provider
-        self.provider = None
-        if provider is not None and play_session is None:
-            provider.close()
+        runtime, self.runtime = self.runtime, None
+        if runtime is not None and play_session is None:
+            runtime.close()
 
 
 def _load_scene(scene_path: Path) -> tuple[Any, CompiledIpcSceneArtifact]:

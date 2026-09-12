@@ -23,6 +23,8 @@
 namespace gobot {
 
 class Node;
+class SimulationSession;
+class PhysicsWorldExecutor;
 
 struct GOBOT_EXPORT ExternalSessionDiagnostics {
     std::string provider_name;
@@ -96,6 +98,8 @@ public:
     bool HasWorld() const;
 
     bool IsWorldReady() const;
+    bool IsSessionReady() const;
+    bool IsSessionAsynchronous() const;
 
     bool HasExternalSession() const;
 
@@ -196,6 +200,7 @@ private:
 
     bool AttachWorker();
     int PollWorker();
+    int PollExternalWorker();
 
     void ResetClock();
 
@@ -205,6 +210,9 @@ private:
 
     static SimulationServer* s_singleton;
 
+    std::shared_ptr<PhysicsWorldExecutor> native_executor_;
+    std::shared_ptr<SimulationSession> native_session_;
+
     PhysicsBackendType backend_type_{PhysicsBackendType::Null};
     bool registered_singleton_{false};
     PhysicsWorldSettings physics_world_settings_;
@@ -212,6 +220,7 @@ private:
     Ref<ExternalSimulationDriver> external_driver_;
     ObjectID external_scene_root_id_{};
     std::uint64_t external_session_token_{0};
+    bool external_session_ready_{false};
     std::uint64_t next_session_token_{1};
     bool external_session_transitioning_{false};
     RealType saved_fixed_time_step_{1.0 / 60.0};

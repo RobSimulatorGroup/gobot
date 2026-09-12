@@ -78,9 +78,9 @@ def main():
     assert "BatchEnvState" in gobot.rl.__all__
     assert "BatchSimulationRuntime" in gobot.rl.__all__
     assert "CpuBatchEnv" in gobot.rl.__all__
-    assert "RobotBatchSpec" in gobot.rl.__all__
-    assert "RobotBatchState" in gobot.rl.__all__
-    assert "RobotBatchView" in gobot.rl.__all__
+    assert "RobotBatchSpec" in gobot.sim.providers.__all__
+    assert "RobotBatchState" in gobot.sim.providers.__all__
+    assert "RobotBatchView" in gobot.sim.providers.__all__
     assert "ManagerBasedEnv" not in gobot.rl.__all__
     assert "VectorEnv" not in gobot.rl.__all__
     assert "velocity_actor_observation_schema" in gobot.rl.locomotion.__all__

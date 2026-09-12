@@ -19,7 +19,7 @@ import torch
 
 import gobot
 from gobot.ipc import LibuipcBatchConfig, LibuipcConfig
-from gobot.rl import CompiledMuJoCoIpcArtifact, MuJoCoIpcConfig, MuJoCoIpcProvider
+from gobot.sim.providers import CompiledMuJoCoIpcArtifact, MuJoCoIpcConfig, MuJoCoIpcProvider
 
 from build_scene import (
     HAND_BASE_LINK_NAMES, HAND_JOINT_NAMES_BY_SIDE, HERE,

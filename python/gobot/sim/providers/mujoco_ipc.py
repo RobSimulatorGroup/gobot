@@ -1,4 +1,4 @@
-"""Batched MuJoCo Warp and libuipc co-simulation provider."""
+"""MuJoCo Warp and libuipc co-simulation implementation."""
 
 from __future__ import annotations
 
@@ -1637,6 +1637,7 @@ class SolverCoupledProxy:
         relaxation_mode: str,
     ) -> None:
         self._prepare_coupling_attempt()
+        self._last_rollback_succeeded = False
         for iteration in range(coupling_iterations):
             if iteration > 0:
                 self._phase = "RewindCheckpoint"
@@ -1679,9 +1680,11 @@ class SolverCoupledProxy:
         self._last_coupling_iterations = coupling_iterations
 
     def _rewind_transaction(self) -> None:
+        self._last_rollback_succeeded = False
         self._phase = "RewindCheckpoint"
         self._timed("rigid_checkpoint", self._rewind_rigid_checkpoint)
         self._timed("ipc_checkpoint", self.ipc_solver.rewind_checkpoint)
+        self._last_rollback_succeeded = True
         self._solver_restore_count += 1
 
     def _set_runtime_solver_options(self, values: Mapping[str, Any]) -> None:
@@ -1729,6 +1732,8 @@ class SolverCoupledProxy:
         """Advance one atomic MuJoCo/libuipc proxy-coupled microstep."""
 
         self._require_phase("Idle")
+        self._last_rollback_succeeded = False
+        self._last_failure_stage = ""
         self._phase_latency_ms = {}
         if self._uses_rollback:
             self._phase = "CaptureCheckpoint"
@@ -1760,6 +1765,7 @@ class SolverCoupledProxy:
             )
         except Exception as first_error:
             failure_phase = self._phase
+            self._last_failure_stage = failure_phase
             diagnostics = self._ipc_diagnostics()
             failure_kind = int(diagnostics.get("solver_failure", 0))
             retryable = (
@@ -2476,6 +2482,47 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         self._step_count += count
         return self._arrays
 
+    @property
+    def session_substeps(self) -> int:
+        return self.config.rigid_substeps
+
+    def advance_microstep(self, dt: float, actions: Any | None = None):
+        """Session executor entry: a committed coupled microstep or a rollback.
+
+        Unlike the historical multi-step entry this preserves progress at each
+        microstep boundary, including failure after an earlier successful step.
+        """
+        from ..._core import SimulationMicrostepResult
+
+        self._require_operational()
+        if not math.isclose(dt, self._rigid_fixed_time_step(), rel_tol=0., abs_tol=1e-12):
+            raise ValueError("session and MuJoCo+IPC microstep durations differ")
+        values = [SimulationMicrostepResult() for _ in range(self.num_envs)]
+        try:
+            self.coupler.step(actions)
+        except Exception as error:
+            self._faulted = True
+            self._fault_reason = str(error)
+            for value in values:
+                value.state_valid = bool(getattr(self.coupler, "_last_rollback_succeeded", False))
+                value.error = str(error)
+                value.failure_stage = getattr(self.coupler, "_last_failure_stage", "") or self.coupler.phase
+            try:
+                self.coupler.abort()
+            except Exception as abort_error:
+                for value in values:
+                    value.state_valid = False
+                    value.error += f"; abort failed: {abort_error}"
+            return values
+        count = getattr(self, "_session_microstep_count", 0) + 1
+        self._session_microstep_count = count
+        if count % self.config.rigid_substeps == 0:
+            self._step_count += 1
+        for value in values:
+            value.completed = True
+            value.advanced_time = dt
+        return values
+
     def _require_full_reset(self, reset_mask: Any) -> Any:
         torch = getattr(self.rigid_solver, "_torch", None)
         if torch is None:
@@ -2513,6 +2560,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         self._faulted = False
         self._fault_reason = ""
         self._step_count = 0
+        self._session_microstep_count = 0
         return result
 
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:

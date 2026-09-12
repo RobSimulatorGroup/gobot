@@ -7,7 +7,7 @@ import os
 import time
 
 import gobot
-from gobot.rl.providers import NewtonModelConfig, NewtonProvider
+from gobot.sim.providers import NewtonModelConfig, NewtonProvider
 
 from scripts.g1_policy_contract import (
     ACTION_DIM,

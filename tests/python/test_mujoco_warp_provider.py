@@ -29,14 +29,14 @@ def _compiled_cartpole_artifact():
 def main() -> None:
     context, temporary_directory, artifact = _compiled_cartpole_artifact()
     try:
-        compiled = gobot.rl.CompiledSceneArtifact.from_compiler_mapping(artifact)
+        compiled = gobot.sim.CompiledSceneArtifact.from_compiler_mapping(artifact)
         assert compiled.format == "mjcf"
         assert compiled.robot_prefix("warp_cartpole") == "warp_cartpole_"
         assert compiled.dimensions["nq"] == 2
         assert compiled.content_digest == artifact["content_digest"]
         assert "<mujoco" in compiled.content
 
-        availability = gobot.rl.MuJoCoWarpProvider.availability()
+        availability = gobot.sim.MuJoCoWarpProvider.availability()
         if not availability.available:
             print(f"MuJoCo Warp optional smoke skipped: {availability.reason}")
             return
@@ -47,7 +47,7 @@ def main() -> None:
             print("MuJoCo Warp CUDA smoke skipped: Torch cannot access CUDA")
             return
 
-        provider = gobot.rl.MuJoCoWarpProvider(
+        provider = gobot.sim.MuJoCoWarpProvider(
             artifact,
             num_envs=4,
             device="cuda:0",

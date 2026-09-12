@@ -64,6 +64,9 @@ public:
 
     bool Step(std::uint32_t steps = 1);
     bool Reset();
+    // Release SDK/device resources now; existing read-only host views remain
+    // valid until this session object is destroyed.
+    void Close();
     bool SetAffineTarget(const std::string& path,
                          const double* transform_row_major_4x4);
     bool SetJointTarget(const std::string& path, double position);

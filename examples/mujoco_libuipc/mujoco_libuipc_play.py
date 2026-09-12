@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import asdict
 import os
 from pathlib import Path
 import tempfile
 from typing import Any
 
 import gobot
-from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
-from gobot.rl import (
-    CompiledMuJoCoIpcArtifact,
-    MuJoCoIpcConfig,
-    MuJoCoIpcProvider,
-    MuJoCoWarpProvider,
-)
+from gobot.ipc import LibuipcBatchConfig, LibuipcConfig
+from gobot.sim.providers import CompiledMuJoCoIpcArtifact
 
 
 SCENE_ROOT_NAME = "mujoco_libuipc_soft_press"
@@ -50,24 +46,6 @@ def _nodes_by_name(root: Any) -> dict[str, Any]:
         result[node.name] = node
         pending.extend(node.children)
     return result
-
-
-def _smoothstep(value: float) -> float:
-    value = max(0.0, min(1.0, float(value)))
-    return value * value * (3.0 - 2.0 * value)
-
-
-def _press_progress(tick: int) -> float:
-    if tick < SETTLE_TICKS:
-        return 0.0
-    tick -= SETTLE_TICKS
-    if tick < PRESS_TICKS:
-        return _smoothstep(float(tick + 1) / float(PRESS_TICKS))
-    tick -= PRESS_TICKS
-    if tick < HOLD_TICKS:
-        return 1.0
-    tick -= HOLD_TICKS
-    return 1.0 - _smoothstep(float(tick + 1) / float(RELEASE_TICKS))
 
 
 def _repository_root(project_path: str) -> Path | None:
@@ -163,75 +141,25 @@ class Script(gobot.NodeScript):
     """Run the GPU batch and render all four environments in Play Mode."""
 
     def _ready(self) -> None:
-        # Load Torch's CUDA runtime before the native libuipc solver module.
-        import torch
-
-        self.provider = None
+        self.runtime = None
         self.play_session = None
-        self.press_view = None
-        self.display_roots = ()
-        self.display_nodes = ()
-        self.display_press_heads = ()
-        self.display_deformable_bodies = ()
-        self.display_deformable_counts = ()
-        self.deformable_buffer = None
-        self.link_pose_buffer = None
-        self.command = None
-        self.depth_scale = None
-        self.reset_mask = None
-        self.tick = 0
         try:
             root = self.get_root()
             if root is None or root.name != SCENE_ROOT_NAME:
                 raise RuntimeError("unexpected MuJoCo+libuipc demo scene root")
 
-            solver_config = _batch_config(self.context)
-            rigid_availability = MuJoCoWarpProvider.availability()
-            if not rigid_availability.available:
-                raise RuntimeError(rigid_availability.reason)
-            ipc_availability = LibuipcBatchSolver.availability(solver_config)
-            if not ipc_availability.available:
-                raise RuntimeError(
-                    ipc_availability.reason
-                    + "; set GOBOT_LIBUIPC_SOLVER_MODULE to the built solver module"
-                )
-
+            # Compile the authored template before creating display copies.
+            # Only this immutable artifact crosses into the runtime worker.
             artifact = CompiledMuJoCoIpcArtifact.from_context(self.context)
-            self.provider = MuJoCoIpcProvider(
-                artifact,
-                config=MuJoCoIpcConfig(
-                    num_envs=NUM_ENVS,
-                    device="cuda:0",
-                    environments_per_shard=ENVIRONMENTS_PER_SHARD,
-                    capture_mujoco_graphs=True,
-                ),
-                libuipc_config=solver_config,
-                mujoco_options={
-                    "nconmax": 32,
-                    "njmax": 64,
-                    "overflow_check_interval": 0,
-                },
-            )
-            self.press_view = self.provider.create_robot_view(
-                robot_name="press",
-                base_link="press_head",
-                joint_names=("press_slide",),
-                link_names=("press_head",),
-            )
-
             display_roots, display_nodes = _create_display_scenes(
                 root, self.context.project_path
             )
             self.display_roots = display_roots
             self.display_nodes = display_nodes
-            self.display_press_heads = tuple(
-                nodes["press_head"] for nodes in display_nodes
-            )
-
-            deformable_entries = tuple(self.provider.ipc_solver.deformable_bodies)
+            deformable_entries = artifact.ipc.deformable_bodies
             bodies = []
-            counts = []
             for nodes in display_nodes:
+                row = []
                 for entry in deformable_entries:
                     name = str(entry["path"]).rsplit("/", 1)[-1]
                     body = nodes.get(name)
@@ -239,38 +167,31 @@ class Script(gobot.NodeScript):
                         raise RuntimeError(
                             f"MuJoCo+libuipc demo is missing deformable body {name!r}"
                         )
-                    bodies.append(body)
-                    counts.append(int(entry["element_count"]))
-            self.display_deformable_bodies = tuple(bodies)
-            self.display_deformable_counts = tuple(counts)
-
-            import numpy as np
-
-            self.deformable_buffer = np.zeros(
-                (len(bodies), max(counts), 3), dtype=np.float32
-            )
-            self.link_pose_buffer = np.zeros((NUM_ENVS, 7), dtype=np.float32)
-            control = self.provider.arrays["ctrl"]
-            self.depth_scale = torch.tensor(
-                DEPTH_SCALES,
-                dtype=control.dtype,
-                device=control.device,
-            ).unsqueeze(1)
-            self.command = torch.zeros_like(self.depth_scale)
-            self.reset_mask = torch.ones(
-                NUM_ENVS, dtype=torch.bool, device=control.device
-            )
-
-            self._reset_provider()
-            self._sync_scene()
+                    row.append(body)
+                bodies.append(row)
+            self.scene_sync = gobot.sim.SceneSnapshotSync(self.context,
+                    links={"robot.press.link_pose": [(nodes["press_head"],) for nodes in display_nodes]},
+                    deformables=bodies,
+                    vertex_counts=[int(entry["vertex_count"]) for entry in deformable_entries],
+                    display_offsets=GRID_OFFSETS)
+            recipe = gobot.sim.SimulationRuntimeSpec("mujoco_libuipc_runtime:create", {
+                "artifact": artifact.to_mapping(),
+                "solver_config": asdict(_batch_config(self.context)),
+                "num_envs": NUM_ENVS,
+                "environments_per_shard": ENVIRONMENTS_PER_SHARD,
+                "trajectory": {"depth_scales": DEPTH_SCALES, "press_depth": PRESS_DEPTH,
+                    "settle_ticks": SETTLE_TICKS, "press_ticks": PRESS_TICKS,
+                    "hold_ticks": HOLD_TICKS, "release_ticks": RELEASE_TICKS},
+            })
+            self.runtime = gobot.sim.AsyncSimulationSession(recipe,
+                    fields=("robot.press.link_pose", "deformable.local_vertices"),
+                    environments=range(NUM_ENVS))
             self.play_session = gobot.sim.ProviderPlaySession(
                 self.context,
-                self.provider,
+                self.runtime,
                 fixed_dt=FIXED_DT,
                 max_sub_steps=1,
-                before_step=self._before_step,
-                reset=self._reset_provider,
-                sync_scene=self._sync_scene,
+                sync_scene=self.scene_sync,
             ).start()
             self.play_session.set_status(
                 "GPU soft press batch | 4 environments | 2x2 display"
@@ -283,72 +204,20 @@ class Script(gobot.NodeScript):
             self._close_play_session()
             raise
 
-    def _before_step(self, fixed_dt: float) -> None:
-        del fixed_dt
-        progress = _press_progress(self.tick)
-        self.command.copy_(self.depth_scale).mul_(-PRESS_DEPTH * progress)
-        self.press_view.set_position_targets(self.command)
-        self.tick += 1
-
     def _physics_process(self, delta: float) -> None:
         del delta
-        if self.provider is None or self.play_session is None:
+        if self.runtime is None or self.play_session is None:
             return
         input_state = getattr(self.context, "input", None)
         if input_state is not None and input_state.is_key_pressed("P"):
             self.play_session.reset()
             return
-        if self.tick >= CYCLE_TICKS:
+        if self.context.frame_count >= CYCLE_TICKS:
             self.play_session.reset()
             return
-        if self.tick and self.tick % 32 == 0:
-            minimum = float(self.link_pose_buffer[:, 2].min())
-            maximum = float(self.link_pose_buffer[:, 2].max())
-            self.play_session.set_status(
-                "GPU soft press batch | 4 environments | "
-                f"press height {minimum:.3f}..{maximum:.3f} m"
-            )
 
     def _process(self, delta: float) -> None:
         del delta
-
-    def _reset_provider(self) -> None:
-        if self.provider is None:
-            return
-        self.provider.reset(self.reset_mask)
-        self.command.zero_()
-        self.press_view.set_position_targets(self.command)
-        self.tick = 0
-
-    def _sync_scene(self) -> None:
-        if self.provider is None:
-            return
-        self.provider.synchronize()
-        positions = self.provider.arrays["ipc_positions"].detach().cpu().numpy()
-        state = self.press_view.read_state()
-        self.link_pose_buffer[:] = state.link_pose[:, 0].detach().cpu().numpy()
-
-        deformable_entries = tuple(self.provider.ipc_solver.deformable_bodies)
-        body_index = 0
-        for environment, grid_offset in enumerate(GRID_OFFSETS):
-            for entry in deformable_entries:
-                count = int(entry["element_count"])
-                offset = int(entry["element_offset"])
-                self.deformable_buffer[body_index, :count] = positions[
-                    environment, offset : offset + count
-                ]
-                self.deformable_buffer[body_index, :count] += grid_offset
-                body_index += 1
-        self.context.apply_deformable_vertices(
-            self.display_deformable_bodies,
-            self.deformable_buffer,
-            self.display_deformable_counts,
-        )
-        for environment in range(NUM_ENVS):
-            self.link_pose_buffer[environment, :3] += GRID_OFFSETS[environment]
-        self.context.apply_link_poses(
-            self.display_press_heads, self.link_pose_buffer
-        )
 
     def _exit_tree(self) -> None:
         self._close_play_session()
@@ -358,7 +227,6 @@ class Script(gobot.NodeScript):
         self.play_session = None
         if play_session is not None:
             play_session.close()
-        provider = self.provider
-        self.provider = None
-        if provider is not None and play_session is None:
-            provider.close()
+        runtime, self.runtime = self.runtime, None
+        if runtime is not None and play_session is None:
+            runtime.close()

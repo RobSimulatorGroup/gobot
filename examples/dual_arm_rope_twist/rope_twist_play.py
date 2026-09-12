@@ -17,7 +17,7 @@ import gobot
 import torch
 from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
 from gobot.render import DebugArrow, clear_debug_arrows, set_debug_arrows
-from gobot.rl import (
+from gobot.sim.providers import (
     CompiledMuJoCoIpcArtifact,
     MuJoCoIpcConfig,
     MuJoCoIpcConvergencePolicy,

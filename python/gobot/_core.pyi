@@ -251,6 +251,8 @@ class AppContext:
         close: Callable[[], None],
         fixed_time_step: float,
         max_sub_steps: int = 8,
+        poll: Callable[[], Any] | None = None,
+        ready: Callable[[], bool] | None = None,
     ) -> int: ...
     def _end_external_simulation(self, token: int) -> bool: ...
     def _reset_external_simulation(self, token: int) -> bool: ...
@@ -266,6 +268,7 @@ class AppContext:
         bodies: Sequence[DeformableBody3D],
         positions: npt.NDArray[np.float32],
         vertex_counts: Sequence[int],
+        space: str = "world",
     ) -> None: ...
     def _apply_deformable_vertex_batch(
         self,
@@ -739,6 +742,96 @@ def load_resource(path: str, type_hint: str = "") -> dict[str, Any]: ...
 def _node_from_id(id: int, context: AppContext | None = None) -> Node | None: ...
 def create_test_scene() -> Scene: ...
 def backend_infos() -> list[dict[str, Any]]: ...
+
+class SimulationMicrostepResult:
+    completed: bool
+    advanced_time: float
+    state_valid: bool
+    requires_reset: bool
+    error: str
+    failure_stage: str
+    failing_shard: int
+    def __init__(self) -> None: ...
+
+class SimulationEnvironmentProgress:
+    completed_microsteps: int
+    completed_ticks: int
+    advanced_time: float
+    completed: bool
+    state_valid: bool
+    requires_reset: bool
+    error: str
+    failure_stage: str
+    failing_shard: int
+
+class SimulationStepResult:
+    completed: bool
+    environments: list[SimulationEnvironmentProgress]
+
+class SimulationEnvironmentClock:
+    episode: int
+    tick: int
+    microstep: int
+    time: float
+    faulted: bool
+
+class SimulationRuntimeInfo:
+    provider_name: str
+    device: str
+    graph_status: str
+    environment_count: int
+    fixed_time_step: float
+    controlled_joint_count: int
+    capacities: dict[str, int]
+
+class SimulationSnapshot:
+    epoch: int
+    environments: list[int]
+    clocks: list[SimulationEnvironmentClock]
+    fields: list[str]
+    def buffer(self, name: str) -> Any: ...
+
+class SimulationCompletion:
+    operation: str
+    epoch: int
+    step: SimulationStepResult
+    clocks: list[SimulationEnvironmentClock]
+    info: SimulationRuntimeInfo
+    snapshot: SimulationSnapshot | None
+    error: str
+    presentation_error: str
+    elapsed_seconds: float
+    snapshot_skipped: bool
+
+class _SimulationExecutor:
+    def __init__(self) -> None: ...
+    def advance(self, dt: float) -> list[SimulationMicrostepResult]: ...
+    def reset(self, environments: Sequence[int]) -> None: ...
+    def close(self) -> None: ...
+
+class _SimulationSession:
+    def __init__(self, executor: _SimulationExecutor, environment_count: int,
+                 microstep_dt: float, substeps: int = 1) -> None: ...
+    def step(self, ticks: int = 1) -> SimulationStepResult: ...
+    def reset(self, environments: Sequence[int] = ...) -> None: ...
+    def close(self) -> None: ...
+    clocks: list[SimulationEnvironmentClock]
+    fixed_time_step: float
+    closed: bool
+
+class _SimulationDataWorker:
+    def __init__(self) -> None: ...
+    def install(self, recipe: str, epoch: int, fields: Sequence[str],
+                environments: Sequence[int], interval: float) -> bool: ...
+    def step(self, commands: dict[str, Any], ticks: int, epoch: int) -> bool: ...
+    def reset(self, environments: Sequence[int], epoch: int) -> bool: ...
+    def subscribe(self, fields: Sequence[str], environments: Sequence[int],
+                  interval: float, epoch: int) -> bool: ...
+    def poll(self) -> SimulationCompletion | None: ...
+    def retire(self) -> None: ...
+    def shutdown(self) -> None: ...
+    ready: bool
+    pending: bool
 
 app: ModuleType
 physics: ModuleType

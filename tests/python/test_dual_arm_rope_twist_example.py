@@ -32,7 +32,7 @@ except ModuleNotFoundError as error:
     raise SystemExit(OPTIONAL_DEPENDENCY_SKIP_CODE) from error
 
 import gobot
-from gobot.rl import CompiledMuJoCoIpcArtifact
+from gobot.sim.providers import CompiledMuJoCoIpcArtifact
 
 
 ROOT = Path(__file__).resolve().parents[2]

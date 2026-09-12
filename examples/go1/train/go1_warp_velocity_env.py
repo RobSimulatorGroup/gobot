@@ -14,12 +14,14 @@ import gobot
 from gobot.rl import (
     ActionSpec,
     BatchEnvState,
+    SpecField,
+    TaskRuntimeMetadata,
+)
+from gobot.sim.providers import (
     CompiledSceneArtifact,
     MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
     MuJoCoWarpRaycastSensorSpec,
-    SpecField,
-    TaskRuntimeMetadata,
 )
 from gobot.rl.locomotion import (
     velocity_actor_observation_schema,

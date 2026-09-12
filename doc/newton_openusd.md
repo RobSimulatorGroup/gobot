@@ -71,7 +71,7 @@ app.set_project_path("/path/to/project")
 app.load_scene("res://world.jscn")
 artifact = app.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
 
-with gobot.rl.NewtonProvider(
+with gobot.sim.NewtonProvider(
     artifact,
     num_envs=256,
     device="cuda:0",

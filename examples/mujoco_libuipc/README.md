@@ -15,7 +15,7 @@ uv run gobot_editor --path examples/mujoco_libuipc
 ```
 
 The attached `mujoco_libuipc_play.py` starts four GPU environments through an
-external `ProviderPlaySession`. It compiles the authored scene once, then adds
+asynchronous `ProviderPlaySession`. It compiles the authored scene once, then adds
 three display-only runtime copies after compilation. The viewport shows all
 four environments in a 2x2 grid with different press depths and deformation.
 The copies do not run scripts, enter the physics artifact, or modify the
@@ -32,8 +32,12 @@ GOBOT_LIBUIPC_SOLVER_MODULE=/absolute/path/libgobot_libuipc_solver.so \
 ```
 
 Press `P` or the Physics panel Reset button to restart the compression cycle.
-The first launch may pause while Warp compiles CUDA kernels; progress is shown
-in the Console, and subsequent launches reuse the cache.
+The runtime factory in `mujoco_libuipc_runtime.py` owns solver construction,
+control, stepping and teardown on a worker. The editor remains interactive while
+CUDA kernels warm up and consumes completed state snapshots at up to 60 Hz.
+All four displayed environments are explicitly subscribed; ordinary runtime
+sessions default to environment 0. Stop retires the worker without waiting for
+an in-flight solve. Reset discards old results before publishing the reset state.
 
 ## Headless Batch
 

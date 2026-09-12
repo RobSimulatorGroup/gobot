@@ -42,7 +42,7 @@ def main() -> int:
             + stack_mismatch
         )
 
-    availability = gobot.rl.MuJoCoWarpProvider.availability()
+    availability = gobot.sim.MuJoCoWarpProvider.availability()
     if not availability.available:
         return _skip(availability.reason)
 

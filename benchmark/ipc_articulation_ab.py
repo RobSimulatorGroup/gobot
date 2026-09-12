@@ -20,7 +20,7 @@ import mujoco
 
 import gobot
 from gobot.ipc import LibuipcBatchConfig, LibuipcConfig
-from gobot.rl import CompiledMuJoCoIpcArtifact, MuJoCoIpcConfig, MuJoCoIpcProvider, MuJoCoWarpProvider
+from gobot.sim.providers import CompiledMuJoCoIpcArtifact, MuJoCoIpcConfig, MuJoCoIpcProvider, MuJoCoWarpProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 DT = .002

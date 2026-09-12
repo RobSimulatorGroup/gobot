@@ -823,6 +823,7 @@ def _stage_demo_project(output_dir: Path) -> None:
     if output_dir == HERE:
         return
     shutil.copy2(HERE / "libuipc_demo.py", output_dir / "libuipc_demo.py")
+    shutil.copy2(HERE / "libuipc_runtime.py", output_dir / "libuipc_runtime.py")
     shutil.copy2(HERE / "project.gobot", output_dir / "project.gobot")
     shutil.copytree(HERE / "assets", output_dir / "assets", dirs_exist_ok=True)
 

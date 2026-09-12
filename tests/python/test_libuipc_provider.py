@@ -11,6 +11,7 @@ import numpy as np
 
 import gobot
 from gobot.ipc import LibuipcConfig, LibuipcProvider
+from gobot.ipc import LibuipcSceneOutput
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -108,6 +109,27 @@ class _SceneContext:
         self.link_update = (links, poses.copy())
 
 
+def test_snapshot_output_uses_authored_order_and_only_requested_fields():
+    artifact = _artifact()
+    session = _FakeSession(artifact)
+    provider = LibuipcProvider(artifact, _session=session)
+    try:
+        paths = [entry["path"] for entry in reversed(provider.affine_bodies)]
+        session.affine_transforms[:, 0, 3] = np.arange(len(paths))
+        output = LibuipcSceneOutput(provider, affine_paths=paths)
+        fields = output.snapshot(["affine.link_pose", "deformable.local_vertices"], [0])
+        assert set(fields) == {"affine.link_pose", "deformable.local_vertices"}
+        np.testing.assert_array_equal(fields["affine.link_pose"][0, :, 0], np.arange(len(paths))[::-1])
+        entry = provider.artifact.deformable_bodies[0]
+        inverse = np.linalg.inv(np.array(entry["transform"]["matrix_row_major"]).reshape(4, 4))
+        np.testing.assert_allclose(fields["deformable.local_vertices"][0, 0, 0], inverse[:3, 3])
+        contact = output.snapshot(["contact_forces"], [0])
+        assert set(contact) == {"contact_forces"}
+        assert contact["contact_forces"].shape == (1, len(session.positions), 3)
+    finally:
+        provider.close()
+
+
 def _raises(expected, callback):
     try:
         callback()
@@ -141,6 +163,7 @@ def test_libuipc_public_api_is_native_only() -> None:
         "LibuipcConfig",
         "LibuipcProvider",
         "LibuipcProviderAvailability",
+        "LibuipcSceneOutput",
     ]
     for removed_name in (
         "DeformableBatchView",
@@ -149,10 +172,11 @@ def test_libuipc_public_api_is_native_only() -> None:
     ):
         assert not hasattr(gobot.ipc, removed_name)
         assert not hasattr(gobot.rl, removed_name)
-    assert gobot.rl.BatchProviderCapabilities is gobot.sim.ProviderCapabilities
-    assert gobot.rl.ProviderUnavailableError is gobot.sim.ProviderUnavailableError
-    assert not issubclass(LibuipcProvider, gobot.rl.BatchPhysicsProvider)
-    assert hasattr(gobot.rl, "MuJoCoIpcProvider")
+    assert gobot.sim.BatchProviderCapabilities is gobot.sim.ProviderCapabilities
+    assert gobot.sim.providers.ProviderUnavailableError is gobot.sim.ProviderUnavailableError
+    assert not issubclass(LibuipcProvider, gobot.sim.BatchPhysicsProvider)
+    assert hasattr(gobot.sim, "MuJoCoIpcProvider")
+    assert not hasattr(gobot.rl, "MuJoCoIpcProvider")
 
 
 def test_libuipc_cuda_dependencies_are_preloaded_in_dependency_order() -> None:

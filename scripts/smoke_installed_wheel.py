@@ -140,7 +140,7 @@ def main() -> int:
         )
 
         _preload_libuipc_cuda_libraries()
-        availability = gobot.rl.NewtonProvider.availability()
+        availability = gobot.sim.NewtonProvider.availability()
         if not availability.available:
             raise RuntimeError(
                 "default pip install cannot resolve Newton provider dependencies: "

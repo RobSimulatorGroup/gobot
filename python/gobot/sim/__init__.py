@@ -7,9 +7,14 @@ from dataclasses import dataclass
 import json
 import math
 import operator
+import importlib
 from typing import Any
 
-from ._core import JointControllerGains
+from .._core import (
+    JointControllerGains, SimulationCompletion, SimulationEnvironmentClock,
+    SimulationEnvironmentProgress, SimulationMicrostepResult, SimulationRuntimeInfo,
+    SimulationSnapshot, SimulationStepResult,
+)
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -44,9 +49,9 @@ class ProviderPlaySession:
         *,
         fixed_dt: float,
         max_sub_steps: int = 8,
-        before_step: Callable[[float], None] | None = None,
+        before_step: Callable[[float], Any] | None = None,
         reset: Callable[[], None] | None = None,
-        sync_scene: Callable[[], None] | None = None,
+        sync_scene: Callable[..., None] | None = None,
         close_provider: bool = True,
     ) -> None:
         normalized_fixed_dt = float(fixed_dt)
@@ -58,8 +63,12 @@ class ProviderPlaySession:
             raise TypeError("max_sub_steps must be an integer") from error
         if isinstance(max_sub_steps, bool) or normalized_max_sub_steps <= 0:
             raise ValueError("max_sub_steps must be a positive integer")
-        if not callable(getattr(provider, "step", None)):
+        from .runtime import AsyncSimulationSession
+        self._asynchronous = isinstance(provider, AsyncSimulationSession)
+        if not self._asynchronous and not callable(getattr(provider, "step", None)):
             raise TypeError("provider must define step(...)")
+        if self._asynchronous and reset is not None:
+            raise TypeError("asynchronous reset belongs to the runtime controller")
         self.context = context
         self.provider = provider
         self.fixed_dt = normalized_fixed_dt
@@ -72,6 +81,7 @@ class ProviderPlaySession:
         self._closed = False
         self._provider_closed = False
         self._status = "Starting"
+        self._snapshot = None
 
     @property
     def running(self) -> bool:
@@ -85,6 +95,7 @@ class ProviderPlaySession:
         begin = getattr(self.context, "_begin_external_simulation", None)
         if not callable(begin):
             raise RuntimeError("this Gobot build does not support external simulation sessions")
+        async_callbacks = {"poll": self._poll, "ready": self._ready} if self._asynchronous else {}
         self._token = int(
             begin(
                 self._step,
@@ -93,6 +104,7 @@ class ProviderPlaySession:
                 self._close_from_engine,
                 self.fixed_dt,
                 self.max_sub_steps,
+                **async_callbacks,
             )
         )
         self._publish_diagnostics()
@@ -111,6 +123,19 @@ class ProviderPlaySession:
     def _publish_diagnostics(self) -> None:
         publish = getattr(self.context, "_set_external_simulation_diagnostics", None)
         if not callable(publish) or self._token is None:
+            return
+        if self._asynchronous:
+            info = self.provider.info
+            values = {
+                "provider_name": info.provider_name if info else "Initializing",
+                "device": info.device if info else "",
+                "environment_count": info.environment_count if info else 0,
+                "controlled_joint_count": info.controlled_joint_count if info else 0,
+                "capacities": json.dumps(dict(info.capacities) if info else {}, sort_keys=True),
+                "graph_status": info.graph_status if info else "Pending",
+                "status": self._status,
+            }
+            publish(self._token, values)
             return
         capabilities = getattr(self.provider, "capabilities", None)
         capacities = getattr(self.provider, "capacities", {})
@@ -172,21 +197,45 @@ class ProviderPlaySession:
         self.close()
         return False
 
-    def _step(self, fixed_dt: float) -> None:
+    def _step(self, fixed_dt: float) -> bool | None:
         if self._closed:
             raise RuntimeError("provider play session is closed")
+        if self._asynchronous:
+            commands = self.before_step(float(fixed_dt)) if self.before_step else None
+            return self.provider.submit(commands)
         if self.before_step is not None:
             self.before_step(float(fixed_dt))
         self.provider.step(nsteps=1)
 
-    def _reset(self) -> None:
+    def _reset(self) -> bool | None:
+        if self._asynchronous:
+            self._snapshot = None
+            return self.provider.reset()
         if self.reset_callback is None:
             raise RuntimeError("provider play session has no reset callback")
         self.reset_callback()
 
     def _sync_scene(self) -> None:
+        if self._asynchronous:
+            snapshot, self._snapshot = self._snapshot, None
+            if self.sync_callback is not None and snapshot is not None:
+                self.sync_callback(snapshot)
+            return
         if self.sync_callback is not None:
             self.sync_callback()
+
+    def _ready(self) -> bool:
+        return self.provider.ready
+
+    def _poll(self):
+        completion = self.provider.poll()
+        if completion is not None:
+            self._snapshot = completion.snapshot
+            if completion.operation == "install" and not completion.error:
+                if not math.isclose(completion.info.fixed_time_step, self.fixed_dt, rel_tol=1e-7, abs_tol=1e-12):
+                    raise ValueError("Play timestep differs from the installed simulation runtime")
+                self.set_status("Running")
+        return completion
 
     def _close_from_engine(self) -> None:
         if self._provider_closed:
@@ -195,6 +244,7 @@ class ProviderPlaySession:
             return
         self._closed = True
         self._token = None
+        self._snapshot = None
         if self.close_provider:
             self._provider_closed = True
             self.provider.close()
@@ -205,4 +255,33 @@ __all__ = [
     "ProviderCapabilities",
     "ProviderPlaySession",
     "ProviderUnavailableError",
+    "SimulationSession",
+    "SimulationStepError",
+    "AsyncSimulationSession",
+    "SimulationRuntimeSpec",
+    "RuntimeComponents",
+    "SceneStateOutput",
+    "SceneSnapshotSync",
+    "SimulationCompletion",
+    "SimulationEnvironmentClock",
+    "SimulationEnvironmentProgress",
+    "SimulationMicrostepResult",
+    "SimulationRuntimeInfo",
+    "SimulationSnapshot",
+    "SimulationStepResult",
 ]
+
+
+def __getattr__(name):
+    if name in ("SceneStateOutput", "SceneSnapshotSync"):
+        return getattr(importlib.import_module(__name__ + ".scene_snapshot"), name)
+    if name in ("AsyncSimulationSession", "SimulationRuntimeSpec", "RuntimeComponents"):
+        return getattr(importlib.import_module(__name__ + ".runtime"), name)
+    if name in ("SimulationSession", "SimulationStepError"):
+        return getattr(importlib.import_module(__name__ + ".session"), name)
+    if name == "providers":
+        return importlib.import_module(__name__ + ".providers")
+    providers = importlib.import_module(__name__ + ".providers")
+    if name in providers.__all__:
+        return getattr(providers, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

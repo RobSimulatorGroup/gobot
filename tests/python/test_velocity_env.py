@@ -26,11 +26,10 @@ from examples.go1.train.go1_training_state import (
 import gobot
 from gobot.rl import (
     BatchEnvState,
-    CompiledSceneArtifact,
     CpuBatchEnv,
-    MuJoCoWarpProvider,
     TaskRuntimeMetadata,
 )
+from gobot.sim.providers import CompiledSceneArtifact, MuJoCoWarpProvider
 from gobot.rl.locomotion import (
     velocity_actor_observation_schema,
     velocity_critic_observation_schema,

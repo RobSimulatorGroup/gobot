@@ -7,12 +7,20 @@
 #pragma once
 
 #include <string>
+#include <optional>
 
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/physics/physics_types.hpp"
 
 namespace gobot {
+
+struct ExternalSimulationCompletion {
+    PhysicsStepResult step;
+    std::uint64_t tick{0};
+    RealType simulation_time{0};
+    bool physics_step{false};
+};
 
 class GOBOT_EXPORT ExternalSimulationDriver : public RefCounted {
     GOBCLASS(ExternalSimulationDriver, RefCounted)
@@ -32,6 +40,12 @@ public:
     }
 
     virtual bool Reset() = 0;
+
+    // Asynchronous drivers only submit/poll on the scene owner thread. SDK
+    // execution belongs to their runtime worker. No result means still busy.
+    virtual bool IsAsynchronous() const { return false; }
+    virtual bool CanRequestStep() { return false; }
+    virtual std::optional<ExternalSimulationCompletion> PollCompletion() { return std::nullopt; }
 
     virtual bool SyncScene() = 0;
 

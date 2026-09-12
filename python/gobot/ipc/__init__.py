@@ -7,6 +7,7 @@ from ._libuipc_provider import (
     LibuipcProvider,
     LibuipcProviderAvailability,
 )
+from ._scene_output import LibuipcSceneOutput
 __all__ = [
     "CompiledIpcSceneArtifact",
     "LibuipcBatchConfig",
@@ -14,4 +15,5 @@ __all__ = [
     "LibuipcConfig",
     "LibuipcProvider",
     "LibuipcProviderAvailability",
+    "LibuipcSceneOutput",
 ]

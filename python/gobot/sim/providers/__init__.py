@@ -1,4 +1,4 @@
-"""Optional batched simulation providers."""
+"""Optional physics providers below the simulation API."""
 
 from .base import (
     BatchPhysicsProvider,

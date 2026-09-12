@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from gobot.rl.providers import (
+from gobot.sim.providers import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
     GraphInvalidatedError,

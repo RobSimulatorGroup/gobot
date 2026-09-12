@@ -1,4 +1,6 @@
 #include "manual_bindings_internal.hpp"
+#include "gobot/simulation/simulation_data_runtime.hpp"
+#include "gobot/simulation/simulation_scene_sync.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -178,14 +180,19 @@ public:
                                py::object step,
                                py::object reset,
                                py::object sync_scene,
-                               py::object close)
+                               py::object close,
+                               py::object poll,
+                               py::object ready)
         : context_(context),
           scene_root_id_(scene_root_id),
           scene_epoch_(scene_epoch),
           step_(std::move(step)),
           reset_(std::move(reset)),
           sync_scene_(std::move(sync_scene)),
-          close_(std::move(close)) {}
+          close_(std::move(close)),
+          poll_(std::move(poll)),
+          ready_(std::move(ready)),
+          asynchronous_(!poll_.is_none()) {}
 
     ~PyExternalSimulationDriver() override {
         if (!Py_IsInitialized()) {
@@ -193,6 +200,8 @@ public:
             reset_.release();
             sync_scene_.release();
             close_.release();
+            poll_.release();
+            ready_.release();
             return;
         }
         py::gil_scoped_acquire acquire;
@@ -200,14 +209,68 @@ public:
     }
 
     bool Step(RealType fixed_delta) override {
+        if (asynchronous_) {
+            py::gil_scoped_acquire gil;
+            py::object result;
+            if (!InvokeReturning(step_, result, fixed_delta)) return false;
+            return py::cast<bool>(result);
+        }
         return Invoke(step_, fixed_delta);
     }
 
     bool Reset() override {
+        if (asynchronous_) {
+            py::gil_scoped_acquire gil;
+            py::object result;
+            if (!InvokeReturning(reset_, result)) return false;
+            return py::cast<bool>(result);
+        }
         return Invoke(reset_);
     }
 
+    bool IsAsynchronous() const override { return asynchronous_; }
+    bool CanRequestStep() override {
+        if (!asynchronous_) return false;
+        py::gil_scoped_acquire gil;
+        py::object result;
+        if (!InvokeReturning(ready_, result)) throw std::runtime_error(last_error_);
+        return py::cast<bool>(result);
+    }
+    std::optional<ExternalSimulationCompletion> PollCompletion() override {
+        py::gil_scoped_acquire gil;
+        py::object result;
+        if (!InvokeReturning(poll_, result)) throw std::runtime_error(last_error_);
+        if (result.is_none()) return std::nullopt;
+        const auto& completion = result.cast<const SimulationDataRuntime::Completion&>();
+        ExternalSimulationCompletion output;
+        output.physics_step = completion.operation == SimulationDataRuntime::Operation::Step;
+        output.step.completed = completion.error.empty() &&
+                (!output.physics_step || completion.step.Completed());
+        output.step.state_valid = completion.error.empty();
+        output.step.error = completion.error;
+        if (!completion.clocks.empty()) {
+            output.tick = completion.clocks.front().tick;
+            output.simulation_time = completion.clocks.front().time;
+        }
+        if (output.physics_step && !completion.step.environments.empty()) {
+            output.step.advanced_time = completion.step.environments.front().advanced_time;
+            for (const auto& env : completion.step.environments) {
+                output.step.state_valid = output.step.state_valid && env.state_valid;
+                if (output.step.error.empty() && !env.error.empty()) output.step.error = env.error;
+            }
+        }
+        // Presentation failure must not erase a committed physics tick. Report
+        // it through scene synchronization, after the server commits the clock.
+        presentation_error_ = completion.presentation_error;
+        output.step.diagnostics.total_step_time_seconds = completion.elapsed_seconds;
+        return output;
+    }
+
     bool SyncScene() override {
+        if (!presentation_error_.empty()) {
+            last_error_ = "Provider snapshot failed: " + presentation_error_;
+            return false;
+        }
         return Invoke(sync_scene_);
     }
 
@@ -217,6 +280,8 @@ public:
             reset_.release();
             sync_scene_.release();
             close_.release();
+            poll_.release();
+            ready_.release();
             return;
         }
         py::gil_scoped_acquire acquire;
@@ -236,6 +301,13 @@ public:
 private:
     template <bool RequireScene = true, typename... Args>
     bool Invoke(const py::object& callback, Args&&... args) {
+        py::gil_scoped_acquire acquire;
+        py::object ignored;
+        return InvokeReturning<RequireScene>(callback, ignored, std::forward<Args>(args)...);
+    }
+
+    template <bool RequireScene = true, typename... Args>
+    bool InvokeReturning(const py::object& callback, py::object& result, Args&&... args) {
         py::gil_scoped_acquire acquire;
         py::object retained_callback = callback;
         if (!retained_callback || retained_callback.is_none()) {
@@ -260,10 +332,10 @@ private:
             if (context_is_live && scene_root != nullptr) {
                 PythonScriptRunner::ExecuteInSceneScriptContext(
                         context_, scene_root, scene_epoch_, [&]() {
-                            retained_callback(std::forward<Args>(args)...);
+                            result = retained_callback(std::forward<Args>(args)...);
                         });
             } else {
-                retained_callback(std::forward<Args>(args)...);
+                result = retained_callback(std::forward<Args>(args)...);
             }
             last_error_.clear();
             return true;
@@ -283,6 +355,8 @@ private:
         reset_ = py::object{};
         sync_scene_ = py::object{};
         close_ = py::object{};
+        poll_ = py::object{};
+        ready_ = py::object{};
     }
 
     EngineContext* context_{nullptr};
@@ -292,6 +366,10 @@ private:
     py::object reset_;
     py::object sync_scene_;
     py::object close_;
+    py::object poll_;
+    std::string presentation_error_;
+    py::object ready_;
+    bool asynchronous_{false};
     std::string last_error_;
 };
 
@@ -1511,7 +1589,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                    py::object sync_scene,
                                                    py::object close,
                                                    RealType fixed_time_step,
-                                                   int max_sub_steps) {
+                                                   int max_sub_steps,
+                                                   py::object poll,
+                                                   py::object ready) {
+                if (poll.is_none() != ready.is_none())
+                    throw std::invalid_argument("Asynchronous provider requires both poll and ready callbacks");
                 SimulationServer* simulation = context.GetSimulationServer();
                 Node* root = SceneRootForContext(context);
                 if (simulation == nullptr || root == nullptr) {
@@ -1525,7 +1607,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                             std::move(step),
                                                             std::move(reset),
                                                             std::move(sync_scene),
-                                                            std::move(close));
+                                                            std::move(close),
+                                                            std::move(poll),
+                                                            std::move(ready));
                 const std::uint64_t token = simulation->BeginExternalSession(
                         std::move(driver), root, fixed_time_step, max_sub_steps);
                 if (token == 0) {
@@ -1538,7 +1622,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
             py::arg("sync_scene"),
             py::arg("close"),
             py::arg("fixed_time_step"),
-            py::arg("max_sub_steps") = 8)
+            py::arg("max_sub_steps") = 8,
+            py::arg("poll") = py::none(),
+            py::arg("ready") = py::none())
             .def("_end_external_simulation", [](EngineContext& context, std::uint64_t token) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -1675,10 +1761,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
             }, py::arg("links"), py::arg("poses"))
             .def("apply_deformable_vertices", [](EngineContext& context,
                                                   const std::vector<PyDeformableBody3DHandle>& bodies,
-                                                  py::array_t<float,
+                                                  py::array_t<RealType,
                                                               py::array::c_style |
                                                               py::array::forcecast> positions,
-                                                  const std::vector<std::size_t>& vertex_counts) {
+                                                  const std::vector<std::size_t>& vertex_counts,
+                                                  const std::string& space) {
                 const py::buffer_info buffer = positions.request();
                 if (buffer.ndim != 3 || buffer.shape[2] != 3 ||
                     static_cast<std::size_t>(buffer.shape[0]) != bodies.size() ||
@@ -1693,70 +1780,18 @@ void RegisterManualAppContextBindings(py::module_& module) {
                             "deformable vertex batch requires an active scene root");
                 }
                 const std::size_t max_vertices = static_cast<std::size_t>(buffer.shape[1]);
-                const auto* values = static_cast<const float*>(buffer.ptr);
-                std::unordered_set<DeformableBody3D*> unique_bodies;
+                if (space != "world" && space != "local")
+                    throw std::invalid_argument("deformable vertex space must be 'world' or 'local'");
+                std::vector<DeformableBody3D*> resolved;
+                resolved.reserve(bodies.size());
                 for (std::size_t body_index = 0; body_index < bodies.size(); ++body_index) {
-                    DeformableBody3D* body = bodies[body_index].ResolveAs<DeformableBody3D>();
-                    if (body != scene_root && !scene_root->IsAncestorOf(body)) {
-                        throw std::invalid_argument(
-                                "deformable vertex batch contains a body outside the active scene");
-                    }
-                    if (!unique_bodies.insert(body).second) {
-                        throw std::invalid_argument(
-                                "deformable vertex batch contains a duplicate body");
-                    }
-                    const std::size_t vertex_count = vertex_counts[body_index];
-                    if (vertex_count > max_vertices) {
-                        throw std::invalid_argument(
-                                "deformable vertex count exceeds the padded tensor width");
-                    }
-                    std::size_t authored_vertex_count = 0;
-                    bool has_mesh = false;
-                    if (body->GetModel() == DeformableBodyModel::ThinShell) {
-                        const Ref<SurfaceMesh>& mesh = body->GetSurfaceMesh();
-                        has_mesh = mesh.IsValid();
-                        authored_vertex_count = has_mesh ? mesh->GetVertexCount() : 0;
-                    } else {
-                        const Ref<TetrahedralMesh>& mesh = body->GetMesh();
-                        has_mesh = mesh.IsValid();
-                        authored_vertex_count = has_mesh ? mesh->GetVertexCount() : 0;
-                    }
-                    if (!has_mesh || vertex_count != authored_vertex_count) {
-                        throw std::invalid_argument(
-                                "deformable vertex count does not match the authored mesh topology");
-                    }
-                    const Affine3 global_transform = body->GetGlobalTransform();
-                    const RealType determinant = global_transform.linear().determinant();
-                    const RealType column_scale =
-                            global_transform.linear().col(0).norm() *
-                            global_transform.linear().col(1).norm() *
-                            global_transform.linear().col(2).norm();
-                    const RealType relative_tolerance =
-                            std::numeric_limits<RealType>::epsilon() * 128.0 * column_scale;
-                    if (!global_transform.matrix().allFinite() ||
-                        !std::isfinite(determinant) ||
-                        !std::isfinite(column_scale) || column_scale <= 0.0 ||
-                        determinant <= relative_tolerance) {
-                        throw std::invalid_argument(
-                                "deformable body has a non-invertible runtime transform");
-                    }
-                    const Affine3 inverse_transform = global_transform.inverse();
-                    std::vector<Vector3> local_vertices;
-                    local_vertices.reserve(vertex_count);
-                    for (std::size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-                        const std::size_t offset =
-                                (body_index * max_vertices + vertex_index) * 3;
-                        const Vector3 world_position(
-                                values[offset], values[offset + 1], values[offset + 2]);
-                        if (!world_position.allFinite()) {
-                            throw std::invalid_argument(
-                                    "deformable vertex batch contains a non-finite position");
-                        }
-                        local_vertices.push_back(inverse_transform * world_position);
-                    }
-                    body->SetRuntimeVertices(local_vertices);
+                    resolved.push_back(bodies[body_index].ResolveAs<DeformableBody3D>());
                 }
-            }, py::arg("bodies"), py::arg("positions"), py::arg("vertex_counts"))
+                SimulationSceneSync::ApplyDeformableVertices(scene_root, resolved,
+                        {static_cast<const RealType*>(buffer.ptr), static_cast<std::size_t>(buffer.size)},
+                        max_vertices, vertex_counts,
+                        space == "local" ? SimulationVertexSpace::Local : SimulationVertexSpace::World);
+            }, py::arg("bodies"), py::arg("positions"), py::arg("vertex_counts"), py::arg("space") = "world")
             .def("_apply_deformable_vertex_batch", [](EngineContext& context,
                                                        py::object bodies,
                                                        py::object positions,

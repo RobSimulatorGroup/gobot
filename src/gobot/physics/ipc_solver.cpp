@@ -77,13 +77,19 @@ bool ValidateApi(const IpcSolverModuleApi* api, std::string* error) {
 
 class IpcSolverSession::Impl final {
 public:
-    ~Impl() {
+    ~Impl() { Close(); }
+
+    void Close() {
         if (api_ != nullptr && session_ != nullptr) {
             api_->destroy(session_);
+            session_ = nullptr;
         }
         if (module_ != nullptr) {
             dlclose(module_);
+            module_ = nullptr;
         }
+        api_ = nullptr;
+        diagnostics_.valid = false;
     }
 
     bool Initialize(const IpcSceneArtifact& artifact,
@@ -244,6 +250,7 @@ public:
     }
 
     bool Step(std::uint32_t steps) {
+        if (!session_) return Fail(nullptr, "IPC solver session is closed");
         if (steps == 0) {
             return Fail(nullptr, "IPC solver step count must be positive");
         }
@@ -255,6 +262,7 @@ public:
     }
 
     bool Reset() {
+        if (!session_) return Fail(nullptr, "IPC solver session is closed");
         std::array<char, kErrorCapacity> error{};
         if (!api_->reset(session_, error.data(), error.size())) {
             return Fail(error.data(), "IPC solver reset failed");
@@ -263,6 +271,7 @@ public:
     }
 
     bool SetAffineTarget(const std::string& path, const double* transform) {
+        if (!session_) return Fail(nullptr, "IPC solver session is closed");
         if (path.empty() || transform == nullptr) {
             return Fail(nullptr, "IPC affine target requires a path and a 4x4 transform");
         }
@@ -276,6 +285,7 @@ public:
     }
 
     bool SetJointTarget(const std::string& path, double position) {
+        if (!session_) return Fail(nullptr, "IPC solver session is closed");
         if (path.empty() || !std::isfinite(position)) {
             return Fail(nullptr, "IPC joint target requires a path and a finite position");
         }
@@ -359,6 +369,10 @@ bool IpcSolverSession::Step(std::uint32_t steps) {
 
 bool IpcSolverSession::Reset() {
     return impl_->Reset();
+}
+
+void IpcSolverSession::Close() {
+    impl_->Close();
 }
 
 bool IpcSolverSession::SetAffineTarget(

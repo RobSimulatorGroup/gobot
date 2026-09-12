@@ -1,4 +1,4 @@
-"""Small content-addressed cache for prepared physics runtime artifacts."""
+"""Content-addressed cache for prepared physics runtime artifacts."""
 
 from __future__ import annotations
 

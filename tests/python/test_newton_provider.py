@@ -16,13 +16,13 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 import gobot
-from gobot.rl.providers.newton import (
+from gobot.sim.providers.newton import (
     NewtonModelConfig,
     NewtonProvider,
     NewtonRobotLayout,
     _NewtonBindings,
 )
-from gobot.rl.providers.cache import ContentAddressedCache
+from gobot.sim.providers.cache import ContentAddressedCache
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -659,7 +659,7 @@ def _artifact(*, nq=2, nv=2, nu=2):
         }
         for index in range(nu)
     ]
-    return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
+    return gobot.sim.CompiledSceneArtifact.from_compiler_mapping(
         {
             "schema_version": 3,
             "producer": "mujoco",
@@ -730,7 +730,7 @@ def _artifact_with_content(artifact, content):
             control["index"] for control in controls if control["robot"] == robots[0]["name"]
         ]
     mapping["robots"] = robots
-    return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
+    return gobot.sim.CompiledSceneArtifact.from_compiler_mapping(
         mapping
     )
 
@@ -746,7 +746,7 @@ def _bindings(*, newton_options=None, mujoco_options=None):
 
 
 def test_fake_provider_lifecycle_and_masked_reset():
-    assert gobot.rl.NewtonProvider is NewtonProvider
+    assert gobot.sim.NewtonProvider is NewtonProvider
     bindings = _bindings()
     provider = NewtonProvider(
         _artifact(),
@@ -846,7 +846,7 @@ def test_fake_provider_lifecycle_and_masked_reset():
         arrays["overflow"][2] = 1 << 3
         try:
             provider.assert_no_overflow()
-        except gobot.rl.SimulationCapacityError as error:
+        except gobot.sim.SimulationCapacityError as error:
             assert "env 2" in str(error)
             assert "narrowphase contacts" in str(error)
         else:
@@ -883,7 +883,7 @@ def test_named_robot_layout_controls_and_reset():
             link_names=("base", "tip"),
         )
         assert isinstance(layout, NewtonRobotLayout)
-        assert gobot.rl.NewtonRobotLayout is NewtonRobotLayout
+        assert gobot.sim.NewtonRobotLayout is NewtonRobotLayout
         assert layout.robot_name == "robot"
         assert layout.runtime_prefix == "robot_"
         assert layout.base_body_index == 1
@@ -1109,7 +1109,7 @@ def test_graph_capture_can_be_disabled_and_storage_invalidation_is_rejected():
         captured._state = captured._model.state()
         try:
             captured.step(np.zeros((1, 2), dtype=np.float32))
-        except gobot.rl.GraphInvalidatedError as error:
+        except gobot.sim.GraphInvalidatedError as error:
             assert "storage changed" in str(error)
         else:
             raise AssertionError("replaced Newton state storage must invalidate the graph")
@@ -1164,7 +1164,7 @@ def test_availability_reports_missing_optional_package():
     def find_spec(name):
         return None if name == "newton" else object()
 
-    with patch("gobot.rl.providers.newton.importlib.util.find_spec", side_effect=find_spec):
+    with patch("gobot.sim.providers.newton.importlib.util.find_spec", side_effect=find_spec):
         availability = NewtonProvider.availability()
     assert not availability.available
     assert "newton" in availability.reason
@@ -1175,16 +1175,16 @@ def test_import_version_failure_is_reported_as_unavailable():
         patch.object(
             NewtonProvider,
             "availability",
-            return_value=gobot.rl.NewtonProviderAvailability(True),
+            return_value=gobot.sim.NewtonProviderAvailability(True),
         ),
         patch(
-            "gobot.rl.providers.newton.importlib.import_module",
+            "gobot.sim.providers.newton.importlib.import_module",
             side_effect=AttributeError("Warp is missing DeterministicMode"),
         ),
     ):
         try:
             NewtonProvider._load_bindings()
-        except gobot.rl.ProviderUnavailableError as error:
+        except gobot.sim.ProviderUnavailableError as error:
             assert "could not be imported together" in str(error)
             assert "DeterministicMode" in str(error)
         else:
@@ -1194,7 +1194,7 @@ def test_import_version_failure_is_reported_as_unavailable():
 def test_provider_rejects_non_cuda_device_and_dimension_mismatch():
     try:
         NewtonProvider(_artifact(), num_envs=1, device="cpu", _bindings=_bindings())
-    except gobot.rl.ProviderUnavailableError as error:
+    except gobot.sim.ProviderUnavailableError as error:
         assert "CUDA provider" in str(error)
     else:
         raise AssertionError("Newton accepted a CPU device")

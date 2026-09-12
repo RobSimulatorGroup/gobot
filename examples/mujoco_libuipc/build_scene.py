@@ -240,6 +240,7 @@ def _stage_project(output_dir: Path) -> None:
         return
     shutil.copy2(HERE / "build_scene.py", output_dir / "build_scene.py")
     shutil.copy2(HERE / PLAY_SCRIPT_NAME, output_dir / PLAY_SCRIPT_NAME)
+    shutil.copy2(HERE / "mujoco_libuipc_runtime.py", output_dir / "mujoco_libuipc_runtime.py")
     shutil.copy2(HERE / "project.gobot", output_dir / "project.gobot")
 
 

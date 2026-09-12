@@ -42,11 +42,16 @@ public:
     bool Step(RealType fixed_delta) override {
         ++step_count;
         last_fixed_delta = fixed_delta;
+        if (asynchronous) ready = false;
         return step_result;
     }
 
     bool Reset() override {
         ++reset_count;
+        if (asynchronous) {
+            ready = false;
+            completion.reset();
+        }
         if (reset_callback) {
             reset_callback();
         }
@@ -71,6 +76,19 @@ public:
     const std::string& GetLastError() const override {
         return last_error;
     }
+
+    bool IsAsynchronous() const override { return asynchronous; }
+    bool CanRequestStep() override { return ready; }
+    std::optional<ExternalSimulationCompletion> PollCompletion() override {
+        auto result = std::move(completion);
+        completion.reset();
+        if (result) ready = true;
+        return result;
+    }
+
+    bool asynchronous{false};
+    bool ready{false};
+    std::optional<ExternalSimulationCompletion> completion;
 
     int step_count{0};
     int reset_count{0};
@@ -1146,6 +1164,89 @@ TEST(TestSimulationServer, external_driver_uses_fixed_clock_and_generation_check
     EXPECT_EQ(simulation_server.GetMaxSubSteps(), 3);
 
     gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, asynchronous_provider_only_counts_completed_steps_and_callbacks) {
+    gobot::SimulationServer simulation;
+    auto* root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    driver->asynchronous = true;
+    ASSERT_NE(simulation.BeginExternalSession(driver, root, .002, 1), 0);
+    simulation.SetPaused(false);
+    int controls = 0;
+    auto control = [&](gobot::RealType dt) { ++controls; EXPECT_NEAR(dt, .002, 1e-9); };
+    for (int i = 0; i < 5; ++i) EXPECT_EQ(simulation.AdvanceRealtime(.016, control), 0);
+    EXPECT_EQ(controls, 0); // The provider is still building.
+    driver->completion = gobot::ExternalSimulationCompletion{.step = {.completed = true}};
+    EXPECT_EQ(simulation.AdvanceRealtime(.016, control), 0);
+    EXPECT_EQ(controls, 1);
+    EXPECT_EQ(driver->step_count, 1);
+    EXPECT_EQ(driver->sync_count, 1);
+    for (int i = 0; i < 5; ++i) EXPECT_EQ(simulation.AdvanceRealtime(.016, control), 0);
+    EXPECT_EQ(controls, 1);
+    EXPECT_EQ(simulation.GetSimulationTime(), 0);
+    driver->completion = gobot::ExternalSimulationCompletion{
+            .step = {.completed = true, .advanced_time = .002}, .tick = 1,
+            .simulation_time = .002, .physics_step = true};
+    simulation.SetPaused(true);
+    EXPECT_EQ(simulation.AdvanceRealtime(.016, control), 1);
+    EXPECT_EQ(simulation.GetFrameCount(), 1);
+    EXPECT_NEAR(simulation.GetSimulationTime(), .002, 1e-9);
+    EXPECT_EQ(controls, 1); // Pausing still polls the in-flight completion.
+    EXPECT_FALSE(simulation.StepOnce());
+    EXPECT_TRUE(simulation.Reset());
+    EXPECT_EQ(driver->sync_count, 2); // Reset has not published its frame yet.
+    driver->completion = gobot::ExternalSimulationCompletion{.step = {.completed = true}};
+    EXPECT_EQ(simulation.AdvanceRealtime(0), 0);
+    EXPECT_EQ(driver->sync_count, 3);
+    EXPECT_DOUBLE_EQ(simulation.GetSimulationTime(), 0);
+    simulation.ClearWorld();
+    EXPECT_EQ(driver->close_count, 1);
+    gobot::Object::Delete(root);
+}
+
+TEST(TestSimulationServer, asynchronous_provider_failure_retains_partial_time_and_pauses) {
+    gobot::SimulationServer simulation;
+    auto* root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    driver->asynchronous = true;
+    driver->ready = true;
+    ASSERT_NE(simulation.BeginExternalSession(driver, root, .004, 1), 0);
+    ASSERT_TRUE(simulation.RequestStep());
+    driver->completion = gobot::ExternalSimulationCompletion{
+            .step = {.advanced_time = .002, .error = "second microstep rolled back"},
+            .simulation_time = .002, .physics_step = true};
+    simulation.SetPaused(false);
+    EXPECT_EQ(simulation.AdvanceRealtime(.016), 0);
+    EXPECT_TRUE(simulation.IsPaused());
+    EXPECT_NEAR(simulation.GetSimulationTime(), .002, 1e-9);
+    EXPECT_EQ(simulation.GetFrameCount(), 0);
+    EXPECT_EQ(driver->sync_count, 1);
+    EXPECT_EQ(driver->step_count, 1);
+    EXPECT_FALSE(simulation.RequestStep());
+    EXPECT_TRUE(simulation.Reset());
+    driver->completion = gobot::ExternalSimulationCompletion{.step = {.completed = true}};
+    simulation.AdvanceRealtime(0);
+    EXPECT_TRUE(simulation.RequestStep());
+    simulation.ClearWorld();
+    gobot::Object::Delete(root);
+}
+
+TEST(TestSimulationServer, asynchronous_sync_replacing_session_preserves_replacement_clock) {
+    gobot::SimulationServer simulation;
+    auto* root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto replacement = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    driver->asynchronous = true;
+    ASSERT_NE(simulation.BeginExternalSession(driver, root, .002, 1), 0);
+    driver->completion = gobot::ExternalSimulationCompletion{.step = {.completed = true}};
+    driver->sync_callback = [&] { simulation.BeginExternalSession(replacement, root, .01, 1); };
+    simulation.SetPaused(false);
+    simulation.AdvanceRealtime(.016);
+    EXPECT_EQ(replacement->step_count, 0);
+    EXPECT_EQ(simulation.GetSimulationTime(), 0);
+    simulation.ClearWorld();
+    gobot::Object::Delete(root);
 }
 
 TEST(TestSimulationServer, rejects_non_finite_timing_at_external_and_frame_boundaries) {

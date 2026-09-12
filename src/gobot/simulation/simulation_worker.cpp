@@ -3,38 +3,35 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
-#include <mutex>
-#include <thread>
 #include <utility>
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/simulation/simulation_session.hpp"
+#include "gobot/simulation/physics_world_executor.hpp"
+#include "gobot/simulation/simulation_task_worker.hpp"
 
 namespace gobot {
 
-struct SimulationWorker::Impl {
-    mutable std::mutex mutex;
-    std::condition_variable wake;
-    bool shutdown = false;
-    bool retiring = false;
-    bool busy = false;
-    bool installed = false;
-    std::optional<Request> request;
-    std::optional<Request> control;
-    std::optional<Completion> completion;
-    std::thread thread;
+namespace {
+struct NativeSimulationRuntime {
+    using Request = SimulationWorker::Request;
+    using Completion = SimulationWorker::Completion;
+    using Operation = SimulationWorker::Operation;
+    Ref<PhysicsWorld> world;
+    std::shared_ptr<PhysicsWorldExecutor> executor;
+    std::unique_ptr<SimulationSession> session;
 
-    Impl() : thread([this] { Run(); }) {}
-
-    ~Impl() {
-        {
-            std::lock_guard lock(mutex);
-            shutdown = true;
-        }
-        wake.notify_one();
-        thread.join();
+    static bool IsInstall(const Request& request) { return request.operation == Operation::Install; }
+    static bool IsControl(const Request& request) {
+        return request.operation == Operation::Reset || request.operation == Operation::RestoreCheckpoint;
+    }
+    bool IsInstalled() const { return world.IsValid(); }
+    void Retire() noexcept {
+        session.reset();
+        executor.reset();
+        world.Reset();
     }
 
-    static Completion Execute(Ref<PhysicsWorld>& world, Request& request) {
+    Completion Execute(Request& request) {
         auto frame = std::make_shared<SimulationStateFrame>();
         frame->epoch = request.epoch;
         frame->tick = request.tick;
@@ -62,6 +59,15 @@ struct SimulationWorker::Impl {
                 return result;
             }
             world->SetSettings(request.settings);
+            if (!session || session->GetFixedTimeStep() != request.settings.fixed_time_step) {
+                const std::vector<SimulationEnvironmentClock> clocks{{
+                        .tick = request.tick, .microstep = request.tick,
+                        .time = request.simulation_time}};
+                session.reset();
+                executor = std::make_shared<PhysicsWorldExecutor>(world);
+                session = std::make_unique<SimulationSession>(executor, 1, request.settings.fixed_time_step);
+                session->SetRestoredClocks(clocks);
+            }
             if (request.operation == Operation::Step || request.operation == Operation::CaptureCheckpoint) {
                 if (!ApplyPhysicsCommands(*world.Get(), request.commands, &frame->step.error)) {
                     frame->step.state_valid = false;
@@ -69,21 +75,15 @@ struct SimulationWorker::Impl {
                 }
             }
             if (request.operation == Operation::Step) {
-                const RealType dt = request.settings.fixed_time_step;
-                frame->step = world->Step(dt);
-                const RealType tolerance = std::max(RealType(1e-8), dt * RealType(1e-5));
-                if (!std::isfinite(frame->step.advanced_time) || frame->step.advanced_time < 0 ||
-                    frame->step.advanced_time > dt + tolerance ||
-                    (frame->step.completed && std::abs(frame->step.advanced_time - dt) > tolerance)) {
-                    frame->step = {.state_valid = false, .error = "Physics backend returned an invalid step advancement."};
-                }
-                frame->simulation_time += frame->step.advanced_time;
-                if (frame->step.completed && frame->step.state_valid) ++frame->tick;
+                const auto result = session->Step();
+                frame->step = executor->Resolve(result);
+                frame->simulation_time = session->GetClocks().front().time;
+                frame->tick = session->GetClocks().front().tick;
             } else if (request.operation == Operation::Reset) {
-                world->Reset();
-                frame->step.completed = world->GetLastError().empty();
-                frame->step.state_valid = frame->step.completed;
-                frame->step.error = world->GetLastError();
+                session->Reset();
+                frame->step.completed = true;
+                frame->simulation_time = 0;
+                frame->tick = 0;
             } else if (request.operation == Operation::RestoreCheckpoint) {
                 frame->step.completed = world->RestoreCheckpoint(request.checkpoint.physics);
                 frame->step.state_valid = frame->step.completed;
@@ -91,6 +91,8 @@ struct SimulationWorker::Impl {
                 if (frame->step.completed) {
                     frame->tick = request.checkpoint.tick;
                     frame->simulation_time = request.checkpoint.simulation_time;
+                    session->SetRestoredClocks({{.tick = frame->tick, .microstep = frame->tick,
+                                                .time = frame->simulation_time}});
                 }
             } else if (request.operation == Operation::CaptureCheckpoint) {
                 result.checkpoint = {world->CaptureCheckpoint(), request.tick, request.simulation_time};
@@ -121,103 +123,40 @@ struct SimulationWorker::Impl {
         return result;
     }
 
-    void Run() {
-        Ref<PhysicsWorld> world;
-        std::unique_lock lock(mutex);
-        for (;;) {
-            wake.wait(lock, [&] { return shutdown || retiring || request || control; });
-            if (shutdown || retiring) {
-                const bool exit = shutdown;
-                // Destruction can synchronize a device. Never do it on the UI thread or under the mailbox lock.
-                auto abandoned = std::move(request);
-                auto abandoned_control = std::move(control);
-                request.reset();
-                control.reset();
-                completion.reset();
-                busy = true;
-                lock.unlock();
-                abandoned.reset();
-                abandoned_control.reset();
-                world.Reset();
-                lock.lock();
-                installed = false;
-                retiring = false;
-                busy = false;
-                if (exit) return;
-                continue;
-            }
-            // Install must precede a reset submitted immediately after BuildWorld.
-            const bool install_pending = request && request->operation == Operation::Install;
-            Request job = control && !install_pending ? std::move(*control) : std::move(*request);
-            if (control && !install_pending) {
-                control.reset();
-                request.reset();
-            } else {
-                request.reset();
-            }
-            busy = true;
-            lock.unlock();
-            auto output = Execute(world, job);
-            job = {};
-            lock.lock();
-            installed = world.IsValid();
-            busy = false;
-            if (!retiring && !shutdown && !control) completion = std::move(output);
-        }
-    }
 };
+} // namespace
+
+struct SimulationWorker::Impl : SimulationTaskWorker<NativeSimulationRuntime> {};
 
 SimulationWorker::SimulationWorker() : impl_(std::make_unique<Impl>()) {}
 SimulationWorker::~SimulationWorker() = default;
 
 bool SimulationWorker::CanInstall() const {
-    std::lock_guard lock(impl_->mutex);
-    return !impl_->installed && !impl_->busy && !impl_->retiring && !impl_->request &&
-            !impl_->control && !impl_->completion;
+    return impl_->CanInstall();
 }
 
 bool SimulationWorker::CanSubmit() const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->installed && !impl_->busy && !impl_->retiring && !impl_->request &&
-            !impl_->control && !impl_->completion;
+    return impl_->CanSubmit();
 }
 
 bool SimulationWorker::IsPending() const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->busy || impl_->retiring || impl_->request || impl_->control || impl_->completion;
+    return impl_->IsPending();
 }
 
 bool SimulationWorker::Submit(Request request) {
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->busy || impl_->retiring || impl_->request || impl_->control || impl_->completion ||
-        (request.operation == Operation::Install ? impl_->installed : !impl_->installed)) return false;
-    impl_->request = std::move(request);
-    impl_->wake.notify_one();
-    return true;
+    return impl_->Submit(std::move(request));
 }
 
 bool SimulationWorker::RequestControl(Request request) {
-    if (request.operation != Operation::Reset && request.operation != Operation::RestoreCheckpoint) return false;
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->retiring || (!impl_->installed && !impl_->busy && !impl_->request) || impl_->control) return false;
-    impl_->completion.reset();
-    impl_->control = std::move(request);
-    impl_->wake.notify_one();
-    return true;
+    return impl_->RequestControl(std::move(request));
 }
 
 void SimulationWorker::Retire() {
-    std::lock_guard lock(impl_->mutex);
-    impl_->retiring = true;
-    impl_->completion.reset();
-    impl_->wake.notify_one();
+    impl_->Retire();
 }
 
 std::optional<SimulationWorker::Completion> SimulationWorker::Poll() {
-    std::lock_guard lock(impl_->mutex);
-    auto result = std::move(impl_->completion);
-    impl_->completion.reset();
-    return result;
+    return impl_->Poll();
 }
 
 } // namespace gobot

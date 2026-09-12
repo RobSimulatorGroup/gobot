@@ -2,8 +2,13 @@
 
 namespace gobot::python {
 
+void RegisterSimulationSessionBindings(py::module_& module);
+void RegisterSimulationWorkerBindings(py::module_& module);
+
 void RegisterManualApis(py::module_& module) {
     RegisterManualCommonBindings(module);
+    RegisterSimulationSessionBindings(module);
+    RegisterSimulationWorkerBindings(module);
 
     auto node_class = py::class_<PyNodeHandle>(module, "Node");
     auto node3d_class = py::class_<PyNode3DHandle, PyNodeHandle>(module, "Node3D");

@@ -115,13 +115,13 @@ void WriteEditorBenchmark() {
         {"scene_ready_ms", s_benchmark.scene_ready_ms},
         {"first_play_ms", s_benchmark.first_play_ms},
         {"world_ready_ms", s_benchmark.world_ready_ms ? Json(*s_benchmark.world_ready_ms) : Json(nullptr)},
-        {"world_ready", s_simulation_server->IsWorldReady() || s_simulation_server->HasExternalSession()},
+        {"world_ready", s_simulation_server->IsSessionReady()},
         {"window_size", {s_benchmark.window_size.x(), s_benchmark.window_size.y()}},
         {"fixed_dt", s_simulation_server->GetFixedTimeStep()},
         {"physics_settings", VariantSerializer::VariantToJson(s_simulation_server->GetPhysicsWorldSettings())},
         {"time_scale", s_simulation_server->GetTimeScale()},
         {"max_sub_steps", s_simulation_server->GetMaxSubSteps()},
-        {"scheduling", s_worker_scheduling && s_simulation_server->HasWorld() ? "worker" : "synchronous"},
+        {"scheduling", s_simulation_server->IsSessionAsynchronous() ? "worker" : "synchronous"},
         {"requested_scheduling", s_worker_scheduling ? "worker" : "synchronous"},
         {"render_fps_limit", 1.0 / s_render_interval},
         {"physics_backend", static_cast<int>(s_simulation_server->GetBackendType())},
@@ -304,16 +304,16 @@ bool Main::Iteration()
     const auto physics_begin = BenchmarkClock::now();
     {
         GOBOT_PROFILE_ZONE("Main::PhysicsProcess");
-        const bool native_worker = s_simulation_server->IsAsyncSteppingEnabled() && s_simulation_server->HasWorld();
-        if ((native_worker || render_due) &&
-            OS::GetInstance()->GetMainLoop()->PhysicsProcess(native_worker ? duration : render_delta)) {
+        const bool runtime_worker = s_simulation_server->IsSessionAsynchronous();
+        if ((runtime_worker || render_due) &&
+            OS::GetInstance()->GetMainLoop()->PhysicsProcess(runtime_worker ? duration : render_delta)) {
             exit = true;
         }
     }
 
     const auto process_begin = BenchmarkClock::now();
     if (s_benchmark.started && s_benchmark.play && !s_benchmark.world_ready_ms &&
-        (s_simulation_server->IsWorldReady() || s_simulation_server->HasExternalSession())) {
+        s_simulation_server->IsSessionReady()) {
         s_benchmark.world_ready_ms = Milliseconds(s_benchmark.play_requested, process_begin);
     }
     if (s_benchmark.started && s_simulation_server->GetLastStepCount() > 0 &&

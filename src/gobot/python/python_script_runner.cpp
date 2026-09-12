@@ -188,18 +188,23 @@ bool& InterpreterStartedByRunner() {
     return started;
 }
 
+PyThreadState*& RunnerThreadState() {
+    static PyThreadState* state = nullptr;
+    return state;
+}
+
 EngineContext*& SceneScriptContext() {
-    static EngineContext* context = nullptr;
+    static thread_local EngineContext* context = nullptr;
     return context;
 }
 
 Node*& SceneScriptRoot() {
-    static Node* root = nullptr;
+    static thread_local Node* root = nullptr;
     return root;
 }
 
 std::uint64_t& SceneScriptEpoch() {
-    static std::uint64_t epoch = 0;
+    static thread_local std::uint64_t epoch = 0;
     return epoch;
 }
 
@@ -313,6 +318,9 @@ void EnsureInterpreter() {
     py::initialize_interpreter();
 #endif
     InterpreterStartedByRunner() = true;
+    // Initialization acquires the GIL. Holding that initial acquisition across
+    // editor frames would prevent any provider worker from entering Python.
+    RunnerThreadState() = PyEval_SaveThread();
 }
 
 void AddProjectPathToSysPath(EngineContext* context) {
@@ -688,8 +696,18 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
 
 void PythonScriptRunner::Shutdown() {
     if (InterpreterStartedByRunner() && Py_IsInitialized()) {
-        SceneScriptInstances().clear();
-        SetActiveAppContext(nullptr);
+        PyEval_RestoreThread(RunnerThreadState());
+        RunnerThreadState() = nullptr;
+        {
+            // Workers must finish Python callbacks and release their SDKs while
+            // the interpreter is still running, before Python starts finalizing.
+            py::dict modules = py::module_::import("sys").attr("modules");
+            if (modules.contains("gobot.sim.runtime"))
+                modules["gobot.sim.runtime"].attr("_shutdown_all")();
+            SceneScriptInstances().clear();
+            ScriptGlobals().clear();
+            SetActiveAppContext(nullptr);
+        }
         py::finalize_interpreter();
         InterpreterStartedByRunner() = false;
     }

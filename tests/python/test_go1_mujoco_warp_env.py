@@ -166,7 +166,7 @@ def _assert_warp_device_contract(torch, env) -> None:
 
 
 def main() -> int:
-    availability = gobot.rl.MuJoCoWarpProvider.availability()
+    availability = gobot.sim.MuJoCoWarpProvider.availability()
     if not availability.available:
         return _skip(availability.reason)
 

@@ -162,6 +162,26 @@ TEST(TestIpcSolver, forwards_and_validates_contact_activation_distance) {
     }
 }
 
+TEST(TestIpcSolver, close_releases_runtime_and_preserves_retained_host_storage) {
+    std::string error;
+    auto session = gobot::IpcSolverSession::Create(
+            MakeArtifact(), {}, GOBOT_TEST_IPC_SOLVER_MODULE_PATH, &error);
+    ASSERT_NE(session, nullptr) << error;
+    ASSERT_TRUE(session->Step(2));
+    const auto* storage = session->GetDeformablePositions().data();
+    const auto expected = session->GetDeformablePositions();
+    session->Close();
+    session->Close();
+    EXPECT_EQ(session->GetDeformablePositions().data(), storage);
+    EXPECT_EQ(session->GetDeformablePositions(), expected);
+    EXPECT_FALSE(session->GetDiagnostics().valid);
+    EXPECT_FALSE(session->Step());
+    EXPECT_FALSE(session->Reset());
+    EXPECT_FALSE(session->SetJointTarget("/World/Robot/FingerJoint", 0));
+    EXPECT_FALSE(session->SetAffineTarget("/World/Robot/Finger", nullptr));
+    EXPECT_NE(session->GetLastError().find("closed"), std::string::npos);
+}
+
 TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract) {
     std::string error;
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
