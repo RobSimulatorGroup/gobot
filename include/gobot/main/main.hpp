@@ -25,6 +25,8 @@ public:
 
     static void Cleanup();
 
+    static int GetExitCode();
+
 private:
     static TimePoint s_last_ticks;
 };

@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 6;
+inline constexpr std::uint32_t GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION = 7;
 
 enum IpcBatchSolverOutputFlag : std::uint32_t {
     IpcBatchSolverOutputNone = 0,
@@ -102,6 +102,7 @@ struct IpcBatchSolverModuleConfig {
     double linear_system_tolerance_rate{1.0e-3};
     bool strict_convergence{false};
     std::uint32_t output_flags{IpcBatchSolverOutputAll};
+    bool enable_stage_profiling{false};
 };
 
 struct IpcBatchSolverModuleDiagnostics {
@@ -118,6 +119,8 @@ struct IpcBatchSolverModuleDiagnostics {
     double last_ipc_advance_latency_ms{0.0};
     double last_reaction_export_latency_ms{0.0};
     double last_state_sync_latency_ms{0.0};
+    // Opt-in synchronized SDK timer hierarchy, seconds; valid until next call.
+    const char* last_stage_profile_json{nullptr};
     std::uint32_t output_flags{IpcBatchSolverOutputAll};
     std::uint64_t deformable_contact_force_frame{0};
     const char* contact_constitution{nullptr};

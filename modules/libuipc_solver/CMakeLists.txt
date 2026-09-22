@@ -25,6 +25,11 @@ set_target_properties(gobot_libuipc_solver PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/libuipc/$<CONFIG>/bin")
 add_dependencies(gobot_editor gobot_libuipc_solver)
 
+add_executable(gobot_ipc_timer_test EXCLUDE_FROM_ALL
+        ${PROJECT_SOURCE_DIR}/tests/physics/ipc_timer_thread_test.cpp)
+target_compile_features(gobot_ipc_timer_test PRIVATE cxx_std_20)
+target_link_libraries(gobot_ipc_timer_test PRIVATE uipc::uipc)
+
 # Explicitly built, non-installed coupling experiment. No public provider ABI.
 add_library(gobot_ipc_articulation_probe MODULE EXCLUDE_FROM_ALL
         ${PROJECT_SOURCE_DIR}/benchmark/native/ipc_articulation_probe.cpp)

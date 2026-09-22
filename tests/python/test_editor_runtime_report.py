@@ -13,7 +13,7 @@ spec.loader.exec_module(reporting)
 
 def capture():
     return {"schema": 1, "commit": "test", "project": "test", "play": True,
-            "warmup_frames": 1, "requested_frames": 2, "faulted": False, "error": "",
+            "warmup_frames": 1, "requested_frames": 2, "faulted": False, "error": "", "world_ready": True,
             "scene_ready_ms": 300, "first_play_ms": 200, "fixed_dt": 0.002,
             "columns": ["frame_ms", "physics_dispatch_ms", "process_ms", "draw_ms", "simulation_time"],
             "samples": [[500, 400, 50, 50, 0], [10, 1, 2, 3, 0.01], [20, 2, 3, 4, 0.02]]}
@@ -32,6 +32,44 @@ def test_faulted_incomplete_and_empty_captures_are_rejected():
         data[key] = value
         with pytest.raises(ValueError):
             reporting.summarize(data)
+
+
+@pytest.mark.parametrize("override", [
+    {"status": "failed", "failure_stage": "play_start", "error": "script failed"},
+    {"exit_code": 2}, {"error": "late snapshot failure"},
+    {"completed_physics_ticks": 0},
+])
+def test_rendered_frames_do_not_hide_failed_play_or_zero_physics(override):
+    data = capture()
+    data.update(override)
+    with pytest.raises(ValueError):
+        reporting.summarize(data)
+
+
+def test_play_requires_ready_world_and_advancing_clock():
+    data = capture()
+    del data["world_ready"]
+    with pytest.raises(ValueError, match="world"):
+        reporting.summarize(data)
+    data["world_ready"] = True
+    for row in data["samples"]:
+        row[-1] = 0.01
+    with pytest.raises(ValueError, match="advancement"):
+        reporting.summarize(data)
+
+
+def test_single_measured_frame_uses_previous_warmup_clock():
+    data = capture()
+    data["requested_frames"] = 1
+    data["samples"] = data["samples"][:2]
+    data["completed_physics_ticks"] = 5
+    result = reporting.summarize(data)
+    assert result["frames"] == 1
+    assert result["real_time_factor"] == 1.
+    for row in data["samples"]:
+        row[-1] = 0.01
+    with pytest.raises(ValueError, match="advancement"):
+        reporting.summarize(data)
 
 
 def test_failed_or_unrecorded_exit_rejects_even_complete_frame_samples():

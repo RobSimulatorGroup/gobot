@@ -687,6 +687,8 @@ class SolverCoupledProxy:
         self._nonfinite_failure_count = 0
         self._last_retry_reason = ""
         ipc_config = getattr(ipc_solver, "config", None)
+        self._profile_stages = bool(getattr(ipc_config, "enable_stage_profiling", False))
+        self._stage_profiles = []
         self._base_solver_options = {
             "newton_max_iterations": int(
                 getattr(ipc_config, "newton_max_iterations", 16)
@@ -1458,13 +1460,20 @@ class SolverCoupledProxy:
         self, phase: str, operation: Any, *args: Any, **kwargs: Any
     ) -> Any:
         start = time.perf_counter()
-        with _nvtx_range(self._torch, f"MuJoCoIpc/{phase}"):
-            result = operation(*args, **kwargs)
-        elapsed = (time.perf_counter() - start) * 1000.0
-        self._phase_latency_ms[phase] = (
-            self._phase_latency_ms.get(phase, 0.0) + elapsed
-        )
-        return result
+        try:
+            with _nvtx_range(self._torch, f"MuJoCoIpc/{phase}"):
+                return operation(*args, **kwargs)
+        finally:
+            elapsed = (time.perf_counter() - start) * 1000.0
+            self._phase_latency_ms[phase] = self._phase_latency_ms.get(phase, 0.0) + elapsed
+            if phase == "ipc_advance" and self._profile_stages:
+                # Retain every coupling attempt, including a failed solve before
+                # rollback. Diagnostics must not mask the original exception.
+                try:
+                    profile = self.ipc_solver.diagnostics.get("last_stage_profile_json", "")
+                    self._stage_profiles.append(json.loads(profile) if profile else {"error": "missing SDK profile"})
+                except Exception as error:
+                    self._stage_profiles.append({"error": str(error)})
 
     def _replay_or_call(self, name: str, operation: Any) -> None:
         graph = self._cuda_graphs.get(name)
@@ -1735,6 +1744,7 @@ class SolverCoupledProxy:
         self._last_rollback_succeeded = False
         self._last_failure_stage = ""
         self._phase_latency_ms = {}
+        self._stage_profiles = []
         if self._uses_rollback:
             self._phase = "CaptureCheckpoint"
             self._timed("rigid_checkpoint", self._capture_rigid_checkpoint)
@@ -2409,6 +2419,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                     self.coupler.cuda_graph_capture_reason
                 ),
                 "phase_latency_ms": phase_latency_ms,
+                "ipc_stage_profiles": list(self.coupler._stage_profiles),
                 "feedback_source": self.coupler.feedback_source,
                 "contact_pipeline": ipc_diagnostics.get(
                     "contact_constitution", "ipc"

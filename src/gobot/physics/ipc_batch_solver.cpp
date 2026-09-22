@@ -264,7 +264,8 @@ public:
                 config.line_search_max_iterations,
                 config.linear_system_tolerance_rate,
                 config.strict_convergence,
-                config.output_flags};
+                config.output_flags,
+                config.enable_stage_profiling};
 
         std::array<char, kErrorCapacity> module_error{};
         session_ = api_->create(&artifact_view, &module_config,
@@ -521,6 +522,8 @@ public:
         diagnostics_.static_collider_count_per_environment =
                 diagnostics.static_collider_count_per_environment;
         diagnostics_.last_step_latency_ms = diagnostics.last_step_latency_ms;
+        diagnostics_.last_stage_profile_json = diagnostics.last_stage_profile_json
+                ? diagnostics.last_stage_profile_json : "";
         diagnostics_.last_checkpoint_latency_ms =
                 diagnostics.last_checkpoint_latency_ms;
         diagnostics_.last_target_staging_latency_ms =

@@ -25,5 +25,5 @@ extern "C" int gobot_editor_main(int argc, char* argv[]) {
     }
 
     Main::Cleanup();
-    return 0;
+    return Main::GetExitCode();
 }

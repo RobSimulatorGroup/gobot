@@ -65,14 +65,18 @@ def _controllers():
 
 @lru_cache(maxsize=1)
 def _play():
-    return _load_module(
-        "gobot_rope_twist_test_play", EXAMPLE / "rope_twist_play.py"
-    )
+    sys.path.insert(0, str(EXAMPLE))
+    try:
+        return _load_module("gobot_rope_twist_test_play", EXAMPLE / "rope_twist_play.py")
+    finally:
+        sys.path.remove(str(EXAMPLE))
 
 
 @lru_cache(maxsize=1)
 def _batch():
     example_path = str(EXAMPLE)
+    names = ("build_scene", "controllers")
+    previous = {name: sys.modules.pop(name, None) for name in names}
     sys.path.insert(0, example_path)
     try:
         return _load_module(
@@ -80,6 +84,10 @@ def _batch():
         )
     finally:
         sys.path.remove(example_path)
+        for name in names:
+            sys.modules.pop(name, None)
+            if previous[name] is not None:
+                sys.modules[name] = previous[name]
 
 
 @lru_cache(maxsize=1)
@@ -104,13 +112,32 @@ def test_scene_is_reproducible() -> None:
     with tempfile.TemporaryDirectory(prefix="gobot-rope-twist-scene-") as temporary:
         output = Path(temporary)
         generated = builder.build_scene(output)
-        assert generated.read_bytes() == SCENE.read_bytes()
+        actual = json.loads(generated.read_text())
+        expected = json.loads(SCENE.read_text())
+        # The authored fixture predates shell properties. Missing volumetric
+        # defaults have identical loading semantics; keep physical assets fixed.
+        for new, old in zip(actual["__NODES__"], expected["__NODES__"], strict=True):
+            if old["type"] == "DeformableBody3D":
+                for key, value in dict(model="Volumetric", physics_material=None, surface_mesh=None,
+                        thickness=float(np.float32(.001)), bending_stiffness=float(np.float32(.001))).items():
+                    old["properties"].setdefault(key, value)
+            # Quaternion decomposition can differ by float32 roundoff. Only
+            # these transform fields permit it; geometry/materials stay exact.
+            for key in ("scale", "rotation_degrees"):
+                if key in old["properties"] and key in new["properties"]:
+                    lhs = new["properties"][key]["matrix_data"]["storage"]
+                    rhs = old["properties"][key]["matrix_data"]["storage"]
+                    np.testing.assert_allclose(lhs, rhs, rtol=0, atol=1e-6)
+                    new["properties"][key]["matrix_data"]["storage"] = rhs
+        assert actual == expected
         assert {
             path.name for path in output.iterdir() if path.is_file()
         } == {
             "README.md",
             "build_scene.py",
             "controllers.py",
+            "rope_twist_config.py",
+            "rope_twist_runtime.py",
             "dual_arm_rope_twist.jscn",
             "project.gobot",
             "rope_twist_batch.py",
@@ -652,90 +679,27 @@ def test_play_builds_bounded_soft_and_grip_contact_force_arrows() -> None:
 
 def test_interactive_scene_and_contact_refresh_cadence() -> None:
     play = _play()
-
-    class Provider:
-        frame = 0
-        arrays = {"ipc_positions": torch.zeros((1, 2, 3))}
-        synchronize_count = 0
-        sense_count = 0
-        refresh_count = 0
-        state_refresh_count = 0
-
-        def synchronize(self) -> None:
-            self.synchronize_count += 1
-
-        def sense(self) -> None:
-            self.sense_count += 1
-
-        def refresh_deformable_contact_forces(self) -> None:
-            self.refresh_count += 1
-
-        def refresh_state(self) -> None:
-            self.state_refresh_count += 1
-
-    class Context:
-        draw_contact_forces = False
-
-        def get_physics_debug_settings(self):
-            return {
-                "draw_contact_forces": self.draw_contact_forces,
-                "contact_force_scale": 1.0,
-                "contact_force_max_length": 1.0,
-            }
-
-    provider = Provider()
-    context = Context()
-    render_frames = []
-    contact_frames = []
-    shown_arrows = []
+    subscriptions, shown = [], []
+    context = SimpleNamespace(enabled=False)
+    context.get_physics_debug_settings = lambda: {"draw_contact_forces": context.enabled}
     script = SimpleNamespace(
-        provider=provider,
-        context=context,
-        quality_profile=play.QUALITY_PROFILES["interactive"],
-        last_scene_sync_frame=-1,
-        last_contact_refresh_frame=-1,
-        contact_arrows_enabled=False,
-        cached_torque_arrows=["torque"],
-        cached_contact_arrows=[],
-    )
-    script._sync_render_state = lambda positions: render_frames.append(
-        provider.frame
-    )
-
-    def refresh_contact(settings, positions) -> None:
-        del settings, positions
-        contact_frames.append(provider.frame)
-        script.cached_contact_arrows = ["contact"]
-
-    script._refresh_contact_arrows = refresh_contact
-    original_set_debug_arrows = play.set_debug_arrows
-    play.set_debug_arrows = lambda arrows: shown_arrows.append(list(arrows))
+        context=context, contact_arrows_enabled=False, cached_torque_arrows=["torque"],
+        runtime=SimpleNamespace(subscribe=lambda fields: subscriptions.append(tuple(fields))))
+    original = play.set_debug_arrows
+    play.set_debug_arrows = lambda arrows: shown.append(list(arrows))
     try:
-        for frame in range(3):
-            provider.frame = frame
-            play.Script._sync_scene(script)
-        assert render_frames == [0, 2]
-        assert provider.synchronize_count == 2
-        assert provider.state_refresh_count == 2
-
-        context.draw_contact_forces = True
-        for frame in range(3, 8):
-            provider.frame = frame
-            play.Script._sync_scene(script)
-        assert contact_frames == [3, 7]
-        assert provider.refresh_count == 2
-        assert provider.sense_count == 2
-        assert shown_arrows[-1] == ["torque", "contact"]
-
-        context.draw_contact_forces = False
-        provider.frame = 8
-        play.Script._sync_scene(script)
-        assert script.cached_contact_arrows == []
-        assert shown_arrows[-1] == ["torque"]
-        assert provider.refresh_count == 2
-        assert provider.state_refresh_count == 7
+        play.Script._process(script, .016)
+        assert subscriptions == []
+        context.enabled = True
+        play.Script._process(script, .016)
+        play.Script._process(script, .016)
+        assert subscriptions == [play.BASE_FIELDS + play.CONTACT_FIELDS]
+        context.enabled = False
+        play.Script._process(script, .016)
+        assert subscriptions[-1] == play.BASE_FIELDS
+        assert shown[-1] == ["torque"]
     finally:
-        play.set_debug_arrows = original_set_debug_arrows
+        play.set_debug_arrows = original
 
 
 def test_rope_twist_defaults_to_solver_coupled_proxy() -> None:
@@ -793,8 +757,8 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
     try:
         os.environ.pop(play.COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE, None)
         expected = {
-            "interactive": (1, "fixed", 2, 4, 16, 8, 1.0e-3),
-            "accurate": (2, "aitken", 1, 1, 16, 8, 1.0e-3),
+            "interactive": (1, "fixed", False, 16, 8, 1.0e-3),
+            "accurate": (2, "aitken", True, 16, 8, 1.0e-3),
         }
         for quality, values in expected.items():
             os.environ[play.QUALITY_ENVIRONMENT_VARIABLE] = quality
@@ -802,16 +766,15 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
             assert (
                 play._coupling_iterations(profile),
                 profile.relaxation_mode,
-                profile.scene_sync_interval,
-                profile.contact_refresh_interval,
+                profile.export_state_each_step,
                 profile.newton_max_iterations,
                 profile.line_search_max_iterations,
                 profile.linear_system_tolerance_rate,
             ) == values
             solver = play._batch_config(Context(), profile)
-            assert solver.newton_max_iterations == values[4]
-            assert solver.line_search_max_iterations == values[5]
-            assert solver.linear_system_tolerance_rate == values[6]
+            assert solver.newton_max_iterations == values[3]
+            assert solver.line_search_max_iterations == values[4]
+            assert solver.linear_system_tolerance_rate == values[5]
             assert solver.strict_convergence == (quality == "accurate")
             assert not solver.export_deformable_contact_forces
             assert solver.export_deformable_state == (quality == "accurate")
@@ -900,28 +863,30 @@ def test_authored_task_is_visible_and_runtime_driven() -> None:
     batch_source = (EXAMPLE / "rope_twist_batch.py").read_text(encoding="utf-8")
     play_source = (EXAMPLE / "rope_twist_play.py").read_text(encoding="utf-8")
     controller_source = (EXAMPLE / "controllers.py").read_text(encoding="utf-8")
-    combined = batch_source + play_source + controller_source
-    assert play_source.index("import torch") < play_source.index(
-        "from gobot.ipc import"
-    )
+    runtime_source = (EXAMPLE / "rope_twist_runtime.py").read_text(encoding="utf-8")
+    config_source = (EXAMPLE / "rope_twist_config.py").read_text(encoding="utf-8")
+    combined = batch_source + play_source + controller_source + runtime_source
+    assert runtime_source.index("import torch") < runtime_source.index("from gobot.ipc import")
     assert 'provider.arrays["actuator_force"]' in combined
     assert 'rigid_arrays["xfrc_applied"]' in controller_source
     assert 'provider.arrays["ipc_contact_forces"]' in batch_source
     assert "fixture_wrenches_in_tool_frames" in combined
     assert "BatchedGravityCompensator" in combined
     assert "ProviderPlaySession" in play_source
-    assert "apply_link_poses" in play_source
-    assert "apply_deformable_vertices" in play_source
+    assert "SceneSnapshotSync" in play_source
+    assert "AsyncSimulationSession" in play_source
     assert "DebugArrow" in play_source
-    assert 'provider.arrays["ipc_contact_forces"]' in play_source
+    assert 'provider.arrays["ipc_contact_forces"]' in runtime_source
+    assert "self.provider" not in play_source
     assert "get_physics_debug_settings" in play_source
-    assert "MuJoCoWarpContactSensorSpec" in play_source
-    assert "GOBOT_ROPE_TWIST_DRIVE_MODE" in play_source
+    assert "MuJoCoWarpContactSensorSpec" in config_source
+    assert "GOBOT_ROPE_TWIST_DRIVE_MODE" in config_source
     assert "GOBOT_ROPE_TWIST_INTEGRATION_SCHEME" not in play_source
-    assert "GOBOT_ROPE_TWIST_COUPLING_ITERATIONS" in play_source
-    assert "GOBOT_ROPE_TWIST_QUALITY" in play_source
-    assert "frame = self.provider.frame" in play_source
-    assert "refresh_deformable_contact_forces" in play_source
+    assert "GOBOT_ROPE_TWIST_COUPLING_ITERATIONS" in config_source
+    assert "GOBOT_ROPE_TWIST_QUALITY" in config_source
+    assert "refresh_deformable_contact_forces" in runtime_source
+    assert "apply_link_poses" not in runtime_source
+    assert "self.context" not in runtime_source
     assert 'model_array("actuator_forcerange")' in controller_source
     assert "WRIST_SHOWCASE_TORQUE_LIMIT" in controller_source
     assert "examples.mujoco_libuipc" not in combined

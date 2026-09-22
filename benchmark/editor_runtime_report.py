@@ -59,12 +59,14 @@ def summarize(report: dict, metadata: dict | None = None) -> dict:
         raise ValueError("Editor did not exit successfully; capture cannot be used as a baseline")
     if report["schema"] != 1:
         raise ValueError("Unsupported editor benchmark schema")
+    if report.get("status", "completed") != "completed" or report.get("exit_code", 0) != 0 or report.get("error"):
+        raise ValueError(f"Editor capture failed ({report.get('failure_stage', 'unknown')}): {report.get('error', '')}")
     samples = report["samples"][report["warmup_frames"] :]
     if not samples or len(samples) != report["requested_frames"]:
         raise ValueError("Incomplete capture: scene loading, Play, or editor exited early")
     if report["faulted"]:
         raise ValueError(f"Simulation faulted: {report['error']}")
-    if report["play"] and not report.get("world_ready", True):
+    if report["play"] and not report.get("world_ready", False):
         raise ValueError("Physics world did not finish building")
     columns = report["columns"]
     metrics = {}
@@ -81,8 +83,15 @@ def summarize(report: dict, metadata: dict | None = None) -> dict:
     time_index = columns.index("simulation_time")
     times = [row[time_index] for row in samples]
     simulated = times[-1] - times[0]
+    if len(samples) == 1:
+        previous_time = (report["samples"][report["warmup_frames"] - 1][time_index]
+                         if report["warmup_frames"] else 0.)
+        simulated = times[0] - previous_time
+        elapsed = samples[0][columns.index("frame_ms")] / 1000.
     if any(not math.isfinite(value) for value in times) or any(b < a for a, b in zip(times, times[1:])):
         raise ValueError("Simulation time reset during measured capture")
+    if report["play"] and (simulated <= 0 or report.get("completed_physics_ticks", 1) <= 0):
+        raise ValueError("No completed physics advancement during measurement")
     physics = {}
     physics_columns = report.get("physics_columns", [])
     physics_samples = [row for row in report.get("physics_samples", [])

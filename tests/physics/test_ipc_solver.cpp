@@ -187,8 +187,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
     EXPECT_FALSE(gobot::IpcBatchSolverSession::IsModuleAvailable(
             GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH, &error));
     EXPECT_NE(error.find("ABI"), std::string::npos);
-    EXPECT_NE(error.find("v5"), std::string::npos);
-    EXPECT_NE(error.find("v6"), std::string::npos);
+    EXPECT_NE(error.find("v" + std::to_string(gobot::GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION)), std::string::npos);
 
     error.clear();
     ASSERT_TRUE(gobot::IpcBatchSolverSession::IsModuleAvailable(
@@ -247,6 +246,7 @@ TEST(TestIpcBatchSolver, validates_extension_abi_and_owns_device_buffer_contract
               gobot::IpcBatchSolverOutputAll);
     EXPECT_GT(session->GetDiagnostics().last_target_staging_latency_ms,
               0.0);
+    EXPECT_EQ(session->GetDiagnostics().last_stage_profile_json, R"({"name":"test","duration":0.001})");
     EXPECT_TRUE(session->GetDiagnostics().device_native_coupling);
     EXPECT_TRUE(session->GetDiagnostics().cuda_stream_interop);
     EXPECT_EQ(session->GetDiagnostics().device_workspace_allocation_count, 3);

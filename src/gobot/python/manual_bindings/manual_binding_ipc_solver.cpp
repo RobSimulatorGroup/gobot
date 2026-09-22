@@ -106,6 +106,8 @@ IpcBatchSolverConfig BatchConfigFromPython(const py::dict& value) {
             config.linear_system_tolerance_rate);
     config.strict_convergence = ConfigValue(
             value, "strict_convergence", config.strict_convergence);
+    config.enable_stage_profiling = ConfigValue(
+            value, "enable_stage_profiling", config.enable_stage_profiling);
     config.output_flags = ConfigValue(
             value, "output_flags", config.output_flags);
     return config;
@@ -156,6 +158,7 @@ py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
             diagnostics.last_target_staging_latency_ms;
     result["last_ipc_advance_latency_ms"] =
             diagnostics.last_ipc_advance_latency_ms;
+    result["last_stage_profile_json"] = diagnostics.last_stage_profile_json;
     result["last_reaction_export_latency_ms"] =
             diagnostics.last_reaction_export_latency_ms;
     result["last_state_sync_latency_ms"] =

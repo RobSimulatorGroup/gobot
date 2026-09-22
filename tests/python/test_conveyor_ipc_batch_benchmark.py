@@ -53,3 +53,14 @@ def test_latency_summary_keeps_sample_count_and_tail(benchmark):
     assert result["samples"] == 5
     assert result["median"] == 3.
     assert result["p95"] > result["median"]
+
+
+def test_stage_profiles_sum_coupling_attempts_without_flattening_nested_scopes(benchmark):
+    profile = {"name": "step", "duration": .01, "children": [
+        {"name": "solve", "duration": .008, "children": [
+            {"name": "PCG", "duration": .003}]}]}
+    result = benchmark.stage_durations([profile, profile])
+    assert result == {"/step": 20., "/step/solve": 16., "/step/solve/PCG": 6.}
+    for profiles in ([], [{"error": "missing timer"}], [{"name": "step", "duration": float("nan")}]):
+        with pytest.raises(ValueError):
+            benchmark.stage_durations(profiles)

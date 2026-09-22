@@ -772,6 +772,8 @@ def _stage_project(output_dir: Path) -> None:
         "README.md",
         "build_scene.py",
         "controllers.py",
+        "rope_twist_config.py",
+        "rope_twist_runtime.py",
         "project.gobot",
         "rope_twist_batch.py",
         PLAY_SCRIPT_NAME,

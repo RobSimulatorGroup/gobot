@@ -72,12 +72,14 @@ class LibuipcConfig:
 
 
 class LibuipcBatchConfig:
+    enable_stage_profiling: bool
     solver: LibuipcConfig
     environments_per_shard: int
     contact_constitution: str
     newton_max_iterations: int
     line_search_max_iterations: int
     linear_system_tolerance_rate: float
+    strict_convergence: bool
     export_deformable_state: bool
     export_affine_state: bool
     export_deformable_contact_forces: bool
@@ -94,6 +96,8 @@ class LibuipcBatchConfig:
         newton_max_iterations: int = 16,
         line_search_max_iterations: int = 8,
         linear_system_tolerance_rate: float = 0.001,
+        strict_convergence: bool = False,
+        enable_stage_profiling: bool = False,
         export_deformable_state: bool = True,
         export_affine_state: bool = True,
         export_deformable_contact_forces: bool = True,

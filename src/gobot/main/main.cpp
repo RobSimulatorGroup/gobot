@@ -6,6 +6,7 @@
  */
 
 #include "gobot/main/main.hpp"
+#include <cmath>
 #include "gobot/core/profile.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/scene/scene_tree.hpp"
@@ -74,6 +75,10 @@ struct EditorBenchmark {
     bool play{false};
     bool started{false};
     bool written{false};
+    double timeout_seconds{600.0};
+    std::string failure_stage;
+    std::string error;
+    int exit_code{0};
     BenchmarkClock::time_point launch{BenchmarkClock::now()};
     double scene_ready_ms{0.0};
     double first_play_ms{0.0};
@@ -93,6 +98,24 @@ void WriteEditorBenchmark() {
     if (s_benchmark.output.empty() || s_benchmark.written) {
         return;
     }
+    const bool ready = s_simulation_server->IsSessionReady();
+    const bool faulted = s_simulation_server->IsFaulted();
+    if (s_benchmark.error.empty() && faulted) {
+        s_benchmark.failure_stage = "simulation";
+        s_benchmark.error = s_simulation_server->GetLastError();
+        if (s_benchmark.error.empty()) s_benchmark.error = "Simulation failed";
+    }
+    const bool complete = s_benchmark.samples.size() == s_benchmark.warmup + s_benchmark.frames;
+    const auto baseline_tick = s_benchmark.warmup > 0 && s_benchmark.samples.size() >= s_benchmark.warmup
+            ? s_benchmark.samples[s_benchmark.warmup - 1].simulation_tick : 0;
+    const auto final_tick = s_benchmark.samples.empty() ? 0 : s_benchmark.samples.back().simulation_tick;
+    const auto measured_ticks = final_tick >= baseline_tick ? final_tick - baseline_tick : 0;
+    if (s_benchmark.error.empty() && (!complete || (s_benchmark.play && (!ready || measured_ticks == 0)))) {
+        s_benchmark.failure_stage = "capture";
+        s_benchmark.error = !complete ? "Incomplete measurement window" :
+                !ready ? "Physics session is not ready" : "No completed physics ticks in measurement window";
+    }
+    s_benchmark.exit_code = s_benchmark.error.empty() ? 0 : 2;
     Json samples = Json::array();
     for (const auto& sample : s_benchmark.samples) {
         samples.push_back({sample.frame_ms, sample.physics_dispatch_ms, sample.process_ms,
@@ -109,6 +132,10 @@ void WriteEditorBenchmark() {
     }
     Json report = {
         {"schema", 1}, {"commit", Engine::GetBuildCommit()},
+        {"status", s_benchmark.exit_code == 0 ? "completed" : "failed"},
+        {"failure_stage", s_benchmark.failure_stage},
+        {"exit_code", s_benchmark.exit_code},
+        {"completed_physics_ticks", measured_ticks},
         {"project", s_project_settings->GetProjectPath()},
         {"play", s_benchmark.play}, {"warmup_frames", s_benchmark.warmup},
         {"requested_frames", s_benchmark.frames},
@@ -128,8 +155,8 @@ void WriteEditorBenchmark() {
         {"renderer", s_render_server->GetSceneRendererStats().active_mode == SceneRendererMode::Raster
                 ? "OpenGL" : s_render_server->GetSceneRendererCapabilities().backend_name},
         {"renderer_mode", static_cast<int>(s_render_server->GetSceneRendererStats().active_mode)},
-        {"faulted", s_simulation_server->IsFaulted()},
-        {"error", s_simulation_server->GetLastError()},
+        {"faulted", faulted},
+        {"error", s_benchmark.error},
         {"columns", {"frame_ms", "physics_dispatch_ms", "process_ms", "draw_ms",
                      "simulation_time", "simulation_tick", "mesh_cache_entries", "texture_cache_entries",
                      "render_cache_bytes", "uploaded_bytes_total", "geometry_uploads_total", "index_uploads_total",
@@ -142,6 +169,7 @@ void WriteEditorBenchmark() {
     std::ofstream output(s_benchmark.output);
     output << report.dump(2) << '\n';
     if (!output) {
+        s_benchmark.exit_code = 2;
         LOG_ERROR("Cannot write editor benchmark to '{}'.", s_benchmark.output);
     } else {
         s_benchmark.written = true;
@@ -167,6 +195,7 @@ Copyright(c) 2021-2026, RobSimulatorGroup)");
             ("benchmark-frames", "Measured frames after warmup", cxxopts::value<std::size_t>()->default_value("500"))
             ("benchmark-warmup", "Warmup frames", cxxopts::value<std::size_t>()->default_value("100"))
             ("benchmark-play", "Start scene Play before frame capture", cxxopts::value<bool>()->default_value("false"))
+            ("benchmark-timeout", "Maximum benchmark wall time in seconds", cxxopts::value<double>()->default_value("600"))
             ("physics-scheduling", "Editor physics scheduling: worker or synchronous", cxxopts::value<std::string>()->default_value("worker"))
             ("render-fps", "Editor presentation limit, independent of physics Hz", cxxopts::value<int>()->default_value("60"))
             ("h,help", "Print usage")
@@ -188,8 +217,10 @@ Copyright(c) 2021-2026, RobSimulatorGroup)");
         s_benchmark.frames = result["benchmark-frames"].as<std::size_t>();
         s_benchmark.warmup = result["benchmark-warmup"].as<std::size_t>();
         s_benchmark.play = result["benchmark-play"].as<bool>();
+        s_benchmark.timeout_seconds = result["benchmark-timeout"].as<double>();
         if (s_benchmark.output.empty() || s_benchmark.frames == 0 ||
-            s_benchmark.frames > 1000000 || s_benchmark.warmup > 1000000) {
+            s_benchmark.frames > 1000000 || s_benchmark.warmup > 1000000 ||
+            !std::isfinite(s_benchmark.timeout_seconds) || s_benchmark.timeout_seconds <= 0) {
             std::cerr << "Invalid benchmark output or frame count (maximum 1000000).\n";
             return false;
         }
@@ -275,6 +306,13 @@ bool Main::Start() {
 bool Main::Iteration()
 {
     GOBOT_PROFILE_ZONE("Main::Iteration");
+    if (!s_benchmark.output.empty() &&
+        Milliseconds(s_benchmark.launch, BenchmarkClock::now()) >= s_benchmark.timeout_seconds * 1000) {
+        s_benchmark.failure_stage = "timeout";
+        s_benchmark.error = "Benchmark wall-time limit exceeded";
+        WriteEditorBenchmark();
+        return true;
+    }
     if (!s_benchmark.output.empty() && !s_benchmark.started) {
         auto* editor = Editor::GetInstanceOrNull();
         if (editor != nullptr && editor->HasCurrentScenePath()) {
@@ -285,6 +323,9 @@ bool Main::Iteration()
             s_benchmark.play_requested = ready;
             if (s_benchmark.play && !editor->PlayScene()) {
                 LOG_ERROR("Benchmark Play failed: {}", editor->GetScenePlaySessionLastError());
+                s_benchmark.failure_stage = "play_start";
+                s_benchmark.error = editor->GetScenePlaySessionLastError();
+                if (s_benchmark.error.empty()) s_benchmark.error = "Scene Play failed to start";
                 WriteEditorBenchmark();
                 return true;
             }
@@ -346,6 +387,14 @@ bool Main::Iteration()
     }
 
     const auto draw_begin = BenchmarkClock::now();
+    if (s_benchmark.started && s_benchmark.play) {
+        auto* editor = Editor::GetInstanceOrNull();
+        if (editor && !editor->GetScenePlaySessionLastError().empty()) {
+            s_benchmark.failure_stage = "play_runtime";
+            s_benchmark.error = editor->GetScenePlaySessionLastError();
+            exit = true;
+        }
+    }
 
     {
         GOBOT_PROFILE_ZONE("Main::Draw");
@@ -381,6 +430,10 @@ void Main::Cleanup() {
 
     python::PythonScriptRunner::Shutdown();
     SceneInitializer::Destroy();
+}
+
+int Main::GetExitCode() {
+    return s_benchmark.exit_code;
 }
 
 }

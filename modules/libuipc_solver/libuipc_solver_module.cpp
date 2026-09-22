@@ -12,6 +12,7 @@
 #include "device_coupling_workspace.hpp"
 
 #include <uipc/uipc.h>
+#include <uipc/common/timer.h>
 #include <uipc/builtin/attribute_name.h>
 #include <uipc/constitution/affine_body_constitution.h>
 #include <uipc/constitution/affine_body_driving_prismatic_joint.h>
@@ -3105,6 +3106,33 @@ IpcSolverDeviceBufferView OffsetDeviceBuffer(
     return buffer;
 }
 
+// The SDK timer state is thread-local. Only explicitly profiled steps enable
+// synchronized scopes; ordinary execution retains its existing stream behavior.
+class StageProfileScope final {
+public:
+    StageProfileScope(bool enabled, std::string& output) : output_(output) {
+        output_.clear();
+        if (!enabled) return;
+        previous_ = uipc::GlobalTimer::current();
+        previously_enabled_ = uipc::Timer::enabled();
+        timer_ = std::make_unique<uipc::GlobalTimer>("Gobot IPC batch step");
+        timer_->set_as_current();
+        uipc::Timer::enable_all();
+    }
+    ~StageProfileScope() {
+        if (!timer_) return;
+        // Never replace a solver exception with a reporting error.
+        try { output_ = timer_->report_merged_as_json().dump(); } catch (...) {}
+        previous_->set_as_current();
+        if (!previously_enabled_) uipc::Timer::disable_all();
+    }
+private:
+    std::string& output_;
+    uipc::GlobalTimer* previous_{nullptr};
+    std::unique_ptr<uipc::GlobalTimer> timer_;
+    bool previously_enabled_{false};
+};
+
 class BatchSession final {
 public:
     BatchSession(const IpcSolverArtifactView& artifact,
@@ -3117,6 +3145,7 @@ public:
                           ? config.contact_constitution
                           : ""),
           output_flags_(config.output_flags),
+          enable_stage_profiling_(config.enable_stage_profiling),
           workspace_suffix_(MakeBatchWorkspaceSuffix()) {
         if (environment_count_ == 0 || environments_per_shard_ == 0 ||
             environment_count_ % environments_per_shard_ != 0) {
@@ -3271,6 +3300,7 @@ public:
             throw std::runtime_error(
                     "libuipc batch device buffers are not bound");
         }
+        StageProfileScope profile(enable_stage_profiling_, last_stage_profile_json_);
         const auto start = SteadyClock::now();
         last_target_staging_latency_ms_ = 0.0;
         last_ipc_advance_latency_ms_ = 0.0;
@@ -3426,6 +3456,7 @@ public:
     }
     std::uint64_t Frame() const { return frame_; }
     double LastStepLatencyMs() const { return last_step_latency_ms_; }
+    const std::string& LastStageProfileJson() const { return last_stage_profile_json_; }
     double LastCheckpointLatencyMs() const {
         return last_checkpoint_latency_ms_;
     }
@@ -3554,6 +3585,8 @@ private:
     std::string contact_constitution_;
     std::uint32_t output_flags_{IpcBatchSolverOutputAll};
     std::string workspace_suffix_;
+    bool enable_stage_profiling_{false};
+    std::string last_stage_profile_json_;
     WorkspaceLease workspace_lease_;
     std::vector<std::unique_ptr<Session>> shards_;
     std::vector<BodyRecord> deformable_bodies_;
@@ -3974,6 +4007,7 @@ bool BatchDiagnostics(void* session,
         result.static_collider_count_per_environment =
                 value->StaticColliderCountPerEnvironment();
         result.last_step_latency_ms = value->LastStepLatencyMs();
+        result.last_stage_profile_json = value->LastStageProfileJson().c_str();
         result.last_checkpoint_latency_ms = value->LastCheckpointLatencyMs();
         result.last_target_staging_latency_ms =
                 value->LastTargetStagingLatencyMs();

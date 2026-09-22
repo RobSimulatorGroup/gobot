@@ -33,6 +33,7 @@ struct IpcBatchSolverConfig {
     double linear_system_tolerance_rate{1.0e-3};
     bool strict_convergence{false};
     std::uint32_t output_flags{IpcBatchSolverOutputAll};
+    bool enable_stage_profiling{false};
 };
 
 struct IpcBatchSolverDiagnostics {
@@ -50,6 +51,7 @@ struct IpcBatchSolverDiagnostics {
     double last_ipc_advance_latency_ms{0.0};
     double last_reaction_export_latency_ms{0.0};
     double last_state_sync_latency_ms{0.0};
+    std::string last_stage_profile_json;
     std::uint32_t output_flags{IpcBatchSolverOutputAll};
     std::uint64_t deformable_contact_force_frame{0};
     std::string contact_constitution{"ipc"};

@@ -621,6 +621,7 @@ bool BatchDiagnostics(void* opaque,
     result.last_checkpoint_latency_ms = 0.05;
     result.last_target_staging_latency_ms = 0.04;
     result.last_ipc_advance_latency_ms = 0.10;
+    result.last_stage_profile_json = R"({"name":"test","duration":0.001})";
     result.last_reaction_export_latency_ms = 0.03;
     result.last_state_sync_latency_ms = 0.08;
     result.output_flags = session->output_flags;

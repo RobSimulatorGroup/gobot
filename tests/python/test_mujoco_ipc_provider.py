@@ -4,7 +4,7 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
 try:
     import torch
@@ -1431,6 +1431,43 @@ def test_composite_rejects_time_step_and_layout_mismatch() -> None:
     )
     assert "shard layout" in str(error)
     assert rigid.closed and ipc.closed
+
+
+def test_stage_profile_keeps_every_attempt_including_failed_solve():
+    import pytest
+    coupler = object.__new__(SolverCoupledProxy)
+    coupler._torch = None
+    coupler._profile_stages = True
+    coupler._stage_profiles = []
+    coupler._phase_latency_ms = {}
+    coupler.ipc_solver = SimpleNamespace(diagnostics={
+        "last_stage_profile_json": '{"name":"solve","duration":0.002}'})
+    assert coupler._timed("ipc_advance", lambda: 123) == 123
+    def fail():
+        raise RuntimeError("strict Newton limit")
+    with pytest.raises(RuntimeError, match="strict Newton limit"):
+        coupler._timed("ipc_advance", fail)
+    assert len(coupler._stage_profiles) == 2
+    assert coupler._phase_latency_ms["ipc_advance"] >= 0.
+    coupler.ipc_solver.diagnostics["last_stage_profile_json"] = "damaged"
+    with pytest.raises(RuntimeError, match="strict Newton limit"):
+        coupler._timed("ipc_advance", fail)
+    assert "error" in coupler._stage_profiles[-1]
+
+
+def test_stage_profiling_off_does_not_read_native_diagnostics():
+    coupler = object.__new__(SolverCoupledProxy)
+    coupler._torch = None
+    coupler._profile_stages = False
+    coupler._stage_profiles = []
+    coupler._phase_latency_ms = {}
+    class Solver:
+        @property
+        def diagnostics(self):
+            raise AssertionError("disabled profiling read SDK diagnostics")
+    coupler.ipc_solver = Solver()
+    coupler._timed("ipc_advance", lambda: None)
+    assert coupler._stage_profiles == []
 
 
 def main() -> int:

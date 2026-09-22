@@ -95,7 +95,10 @@ Play smoke run (210 rendered frames, 145 completed physics ticks) and exited
 normally. These are runtime regression checks, not throughput or grasp-success
 acceptance; the repeated M0 GPU comparisons remain pending.
 
-M2 still includes migration of rope and Newton policy Play plus their GPU validation.
+The rope Play path now uses a worker factory and selected completed snapshots;
+its controller and SDK objects stay on that worker, including reset and teardown.
+See `physics_runtime_followup.md` for validation and profiling details.
+M2 still includes migration of Newton policy Play and its GPU validation.
 M3 common compilation/contact ownership, M4 production articulation coupling,
 and M5 independent shard reset and batch admission remain outstanding. The M0
 repeated GPU comparisons must use the frozen assets/settings above.

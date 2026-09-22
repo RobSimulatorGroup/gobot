@@ -65,17 +65,23 @@ measured strand winding, wrist speeds, actuator efforts, fixture slip, mount
 error, rope reaction torque, and the active drive mode. Press `P` to restart the
 physical cycle.
 
+Physics, control, reset and SDK destruction run on the simulation worker.
+The editor consumes completed CPU snapshots at up to 60 Hz; it does not wait
+for CUDA synchronization in its scene-update callback. Initial kernel/model
+setup can still take substantial time. Stop retires an in-flight worker.
+
 Editor Play uses `GOBOT_ROPE_TWIST_QUALITY=interactive|accurate` and
 defaults to `interactive`:
 
-- `interactive`: standard IPC, Newton x1, fixed relaxation 1.0, scene readback
-  every 2 steps, and contact-force refresh every 4 steps. The current checked-in
+- `interactive`: standard IPC, one interface iteration, fixed relaxation 1.0,
+  and soft-state export on snapshot requests. The current checked-in
   solver limits are the accurate `16/8/1e-3` fallback because both evaluated
   interactive candidates missed the interface-residual admission bound.
   Newton-limit telemetry remains available, but this latency-oriented profile
   keeps libuipc's permissive non-strict frame commit behavior.
-- `accurate`: standard IPC, Newton x2 with Aitken relaxation, the established
-  `16/8/1e-3` solver limits, and all display outputs refreshed every step.
+- `accurate`: standard IPC, two interface iterations with Aitken relaxation,
+  the established `16/8/1e-3` solver limits, and native state export every step.
+  Presentation still uses the common bounded snapshot cadence.
   A strict native failure is rewound and retried once with
   `64/16/2.5e-4`; guarded steps retain conservative x2/Aitken settings.
 
@@ -105,8 +111,8 @@ before the green arrows are drawn in world coordinates. Nonzero rope-contact
 arrows use a 15 mm minimum display length so weak IPC forces remain visible;
 their directions and labels still use the unscaled world-space force in newtons.
 Every rope vertex above the 0.001 N display threshold is drawn without a
-strongest-contact count limit. In the interactive profile the overlay is at
-most four physics steps old; in accurate it refreshes every step. Disabling
+strongest-contact count limit. Both profiles refresh the overlay only for
+subscribed completed snapshots, at up to 60 Hz. Disabling
 the toggle clears contact arrows immediately. Per-vertex IPC contact forces
 are not exported on steps that do not refresh the enabled overlay.
 
@@ -119,8 +125,7 @@ GOBOT_ROPE_TWIST_DRIVE_MODE=finite-torque \
   uv run gobot_editor --path examples/dual_arm_rope_twist
 ```
 
-Play Mode searches local build directories for a compatible native module. To
-force one explicitly:
+Play Mode uses the native module installed with Gobot. To override it explicitly:
 
 ```bash
 export GOBOT_LIBUIPC_SOLVER_MODULE="$PWD/build/<matching-build>/python/gobot/libgobot_libuipc_solver.so"

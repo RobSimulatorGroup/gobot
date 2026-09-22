@@ -26,6 +26,6 @@ int main(int argc, char *argv[]) {
     }
 
     Main::Cleanup();
-    return 0;
+    return Main::GetExitCode();
 
 }

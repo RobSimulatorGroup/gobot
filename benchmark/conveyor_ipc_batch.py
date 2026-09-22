@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import deque
 from dataclasses import asdict
 import hashlib
+import importlib.metadata
 import io
 import json
 import os
@@ -89,12 +91,45 @@ def timing(values):
             "p95": float(np.percentile(values, 95))}
 
 
+def stage_durations(profiles):
+    """Inclusive SDK seconds -> per-step ms, keyed by full path.
+
+    Sum repeated coupling calls at the same path; never add nested scopes to
+    their parents. A failed/missing profile is not a zero-duration sample.
+    """
+    result = {}
+    def visit(node, parent=""):
+        if "error" in node:
+            raise ValueError(f"IPC profiling failed: {node['error']}")
+        path = parent + "/" + node["name"]
+        duration = float(node["duration"]) * 1000.
+        if not np.isfinite(duration) or duration < 0:
+            raise ValueError("invalid SDK stage duration")
+        result[path] = result.get(path, 0.) + duration
+        for child in node.get("children", []):
+            visit(child, path)
+    if not profiles:
+        raise ValueError("missing IPC stage profiles")
+    for profile in profiles:
+        # The SDK root is a structural group, not a measured timer.
+        if profile.get("name") == "Gobot IPC batch step":
+            if not profile.get("children"):
+                raise ValueError("empty IPC stage profile")
+            for child in profile["children"]:
+                visit(child, "/Gobot IPC batch step")
+        else:
+            visit(profile)
+    return result
+
+
 def run_worker(args):
     if (args.num_envs < 1 or args.steps < 1 or args.warmup_steps < 0
             or not np.isfinite(args.max_wall_seconds) or args.max_wall_seconds <= 0.):
         raise ValueError("invalid batch, sample count, warmup, or wall-time limit")
     count = args.num_envs
     report = {"schema_version": 1, "num_envs": count, "error": None, "benchmark_completed": False,
+              "measurement_mode": "synchronized_stage_profile" if args.profile_stages else "throughput",
+              "versions": {name: importlib.metadata.version(name) for name in ("mujoco", "mujoco-warp", "warp-lang", "torch")},
               "workload": "two_LEAP_blue_mailer_contact_acquisition", "grasp_acceptance_passed": False,
               "warmup_steps": args.warmup_steps, "requested_sample_steps": args.steps,
               "scene_sha256": hashlib.sha256(args.scene.read_bytes()).hexdigest(),
@@ -102,8 +137,18 @@ def run_worker(args):
                   path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (
                       Path(__file__), ROOT / "examples/conveyor_packages/conveyor_pinch_controller.py",
                       ROOT / "examples/conveyor_packages/conveyor_mujoco_ipc.py")}}
+    report["source_revisions"] = {}
+    for name, path in (("gobot", ROOT), ("libuipc", ROOT / "3rdparty/libuipc")):
+        report["source_revisions"][name] = {
+            "commit": subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip(),
+            "working_diff_sha256": hashlib.sha256(subprocess.check_output(
+                ["git", "-C", str(path), "diff", "--binary", "HEAD"])).hexdigest()}
+    report["driver"] = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"], text=True).strip()
     context = provider = sampler = None
     provider_ms, total_ms = [], []
+    stage_samples = []
+    warmup_stage_tail = deque(maxlen=16)
     completed_steps = 0
     with tempfile.TemporaryDirectory(prefix="gobot-conveyor-batch-") as workspace:
         try:
@@ -124,7 +169,8 @@ def run_worker(args):
                         fixed_time_step=trial.FIXED_DT, workspace=workspace, module_path=args.module_path,
                         contact_activation_distance=.0008, friction_coefficient=1., kinematic_strength=100.),
                         environments_per_shard=count, newton_max_iterations=48,
-                        line_search_max_iterations=16, strict_convergence=True),
+                        line_search_max_iterations=16, strict_convergence=True,
+                        enable_stage_profiling=args.profile_stages),
                     mujoco_options={"nconmax": 512, "njmax": 2048, "overflow_check_interval": 1})
                 provider.synchronize()
                 report["build_seconds"] = time.perf_counter() - build_start
@@ -186,12 +232,17 @@ def run_worker(args):
                     if tick >= args.warmup_steps:
                         provider_ms.append(solve_ms)
                         total_ms.append(1000. * (time.perf_counter() - start))
+                    if args.profile_stages:
+                        profiles = provider.diagnostics["ipc_stage_profiles"]
+                        sample = {"tick": tick + 1, "profiles": profiles,
+                                  "inclusive_ms": stage_durations(profiles)}
+                        (stage_samples if tick >= args.warmup_steps else warmup_stage_tail).append(sample)
                     if (tick + 1) % 100 == 0:
                         print(json.dumps({"num_envs": count, "step": tick + 1, "sample_steps": len(total_ms)}), flush=True)
                 report.update(benchmark_completed=True, provider_step_ms=timing(provider_ms),
                               end_to_end_step_ms=timing(total_ms),
-                              environment_steps_per_second=count * len(total_ms) * 1000. / sum(total_ms),
-                              provider_environment_steps_per_second=count * len(provider_ms) * 1000. / sum(provider_ms),
+                              environment_steps_per_second=None if args.profile_stages else count * len(total_ms) * 1000. / sum(total_ms),
+                              provider_environment_steps_per_second=None if args.profile_stages else count * len(provider_ms) * 1000. / sum(provider_ms),
                               contact_step_fraction_per_environment=(contact_steps / args.steps).tolist(),
                               bilateral_pinch_fraction_per_environment=(pinch_steps / args.steps).tolist(),
                               maximum_proxy_error_meters=maximum_proxy_error,
@@ -208,6 +259,14 @@ def run_worker(args):
         finally:
             report["completed_physical_steps"] = completed_steps
             report["completed_sample_steps"] = len(provider_ms)
+            if args.profile_stages:
+                report["stage_samples"] = stage_samples
+                report["warmup_tail_stage_samples"] = list(warmup_stage_tail)
+                paths = sorted({path for row in stage_samples for path in row["inclusive_ms"]})
+                report["stage_inclusive_ms"] = {
+                    path: timing([row["inclusive_ms"][path] for row in stage_samples if path in row["inclusive_ms"]])
+                    for path in paths}
+                report["profiling_note"] = "Scopes synchronize CUDA; nested inclusive durations overlap. Not a throughput baseline."
             if provider is not None:
                 try:
                     report["final_diagnostics"] = trial._jsonable(provider.diagnostics)
@@ -228,29 +287,37 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--counts", type=int, nargs="+", default=[1, 2, 4, 8])
+    parser.add_argument("--repeats", type=int, default=1, help="Fresh processes per environment count")
     parser.add_argument("--scene", type=Path, default=trial.HERE / trial.SCENE_NAME)
     parser.add_argument("--warmup-steps", type=int, default=800)
     parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--max-wall-seconds", type=float, default=1200.)
     parser.add_argument("--module-path", default="")
+    parser.add_argument("--profile-stages", action="store_true", help="Synchronized SDK stages; separate from throughput")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    if args.repeats < 1:
+        parser.error("--repeats must be positive")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     if args.num_envs is not None:
         report = run_worker(args)
         okay = report.get("benchmark_valid", False)
     else:
         report = {"schema_version": 1, "runs": [], "scope": "Contact-stage scaling, not completed grasp throughput."}
-        for count in args.counts:
-            path = args.report.with_name(args.report.stem + f"-{count}.json")
+        for repetition, count in ((repeat, count) for repeat in range(1, args.repeats + 1) for count in args.counts):
+            suffix = f"-{count}" + (f"-r{repetition}" if args.repeats > 1 else "")
+            path = args.report.with_name(args.report.stem + suffix + ".json")
             command = [sys.executable, str(Path(__file__)), "--num-envs", str(count),
                        "--warmup-steps", str(args.warmup_steps), "--steps", str(args.steps),
                        "--max-wall-seconds", str(args.max_wall_seconds), "--scene", str(args.scene),
                        "--report", str(path), "--module-path", args.module_path]
+            if args.profile_stages:
+                command.append("--profile-stages")
             with path.with_suffix(".log").open("w") as log:
                 result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
             row = json.loads(path.read_text()) if path.exists() else {"num_envs": count, "error": "worker produced no report"}
             row["returncode"] = result.returncode
+            row["repetition"] = repetition
             report["runs"].append(row)
             args.report.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
             print(json.dumps({"num_envs": count, "returncode": result.returncode,

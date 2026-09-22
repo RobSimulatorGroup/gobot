@@ -56,6 +56,8 @@ class LibuipcBatchConfig:
     line_search_max_iterations: int = 8
     linear_system_tolerance_rate: float = 1.0e-3
     strict_convergence: bool = False
+    # Synchronized diagnostic capture; do not use its timings as throughput.
+    enable_stage_profiling: bool = False
     export_deformable_state: bool = True
     export_affine_state: bool = True
     export_deformable_contact_forces: bool = True
@@ -90,6 +92,7 @@ class LibuipcBatchConfig:
         object.__setattr__(self, "linear_system_tolerance_rate", tolerance)
         for name in (
             "strict_convergence",
+            "enable_stage_profiling",
             "export_deformable_state",
             "export_affine_state",
             "export_deformable_contact_forces",
@@ -141,6 +144,7 @@ class LibuipcBatchConfig:
                     self.linear_system_tolerance_rate
                 ),
                 "strict_convergence": self.strict_convergence,
+                "enable_stage_profiling": self.enable_stage_profiling,
                 "output_flags": output_flags,
             }
         )
