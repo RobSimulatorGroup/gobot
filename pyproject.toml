@@ -72,6 +72,12 @@ cmake.version = ">=3.27"
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/gobot", "python/gobot_cli"]
+sdist.include = [
+    "3rdparty/mjbatch/LICENSE",
+    "3rdparty/mjbatch/src/mjbatch/csrc/*.h",
+    "cmake/GobotMjbatch.cmake",
+    "cmake/patches/mjbatch-native.patch",
+]
 
 [tool.scikit-build.install]
 components = ["python"]

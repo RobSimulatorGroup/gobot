@@ -35,6 +35,7 @@ jobs:
             3rdparty/imgui \
             3rdparty/luisa_compute \
             3rdparty/meshoptimizer \
+            3rdparty/mjbatch \
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb

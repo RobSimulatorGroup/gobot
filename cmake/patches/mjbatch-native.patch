@@ -1,0 +1,740 @@
+--- a/batch.h
++++ b/batch.h
+@@ -7,8 +7,6 @@
+ 
+ #include <mujoco/mjxmacro.h>
+ #include <mujoco/mujoco.h>
+-#include <nanobind/nanobind.h>
+-#include <nanobind/ndarray.h>
+ 
+ #include <algorithm>
+ #include <csetjmp>
+@@ -29,7 +27,11 @@
+ 
+ #include "threadpool.h"
+ 
+-namespace nb = nanobind;
++#include <span>
++#include <array>
++#include <limits>
++#include <type_traits>
++namespace mjbatch {
+ 
+ // Every logical CPU: MuJoCo's small dense linear algebra stalls on latency, so a
+ // core runs two threads at 1.3-1.5x the throughput of one (measured on a 7960X).
+@@ -64,17 +66,6 @@
+     default:
+       return "";
+   }
+-}
+-
+-// numpy's rule: an extent-1 axis may carry any stride and a size-0 array is contiguous.
+-inline bool IsCContig(const nb::ndarray<>& a) {
+-  if (a.size() == 0) return true;
+-  int64_t expect = 1;
+-  for (size_t i = a.ndim(); i-- > 0;) {
+-    if (a.shape(i) != 1 && a.stride(i) != expect) return false;
+-    expect *= static_cast<int64_t>(a.shape(i));
+-  }
+-  return true;
+ }
+ 
+ // One array field of mjModel or mjData, sized for a specific model.
+@@ -242,396 +233,335 @@
+   }
+ };
+ 
+-// mju_error trap for worker threads: record the message and unwind to the
+-// worker's setjmp; everything else goes to the handler that was active before.
++// Gobot native adaptation. The field tables, state vectors, expanded model
++// fields and worker pool retain mjbatch's storage/execution model. A Lease is
++// the native equivalent of RunSim: load one row, visit it, then save the row.
++// No Python objects, interpreter or GIL are needed by this interface.
+ inline thread_local std::jmp_buf* tls_jmp = nullptr;
+-inline thread_local std::string tls_error;
++inline thread_local char tls_error[1024] = {};
+ inline mjfLogHandler prev_log_handler = nullptr;
+ inline void LogTrap(const mjLogMessage* msg) {
+   if (msg->level == mjLOG_ERROR && tls_jmp) {
+-    tls_error = msg->subject;
++    std::snprintf(tls_error, sizeof(tls_error), "%s", msg->subject);
+     std::longjmp(*tls_jmp, 1);
+   }
+-  prev_log_handler(msg);
+-}
+-inline void InstallLogTrap() { prev_log_handler = mju_setLogHandler(LogTrap); }
++  if (prev_log_handler) prev_log_handler(msg);
++}
++inline void InstallLogTrap() {
++  static std::once_flag once;
++  std::call_once(once, [] { prev_log_handler = mju_setLogHandler(LogTrap); });
++}
++// Only a MuJoCo C call is below setjmp. In particular, user callbacks and
++// their C++ automatic objects are never unwound by longjmp.
++template<class F> void CheckedCall(F fn, mjModel* m, mjData* d) {
++  std::jmp_buf jb;
++  auto* previous = tls_jmp;
++  tls_jmp = &jb;
++  if (setjmp(jb) == 0) {
++    fn(m, d);
++    tls_jmp = previous;
++  } else {
++    tls_jmp = previous;
++    throw std::runtime_error(tls_error);
++  }
++}
+ 
+ class Batch {
+  public:
+-  enum class Op { Step, Forward, Reset, SetConst };
+-  using Ids = nb::ndarray<nb::ndim<1>, nb::c_contig>;
+-
+-  Batch(nb::object model, int num_sims, int num_threads, bool forward)
+-      : num_sims_(num_sims), forward_(forward) {
+-    if (num_sims < 1) throw nb::value_error("num_sims must be >= 1");
+-    auto addr = nb::cast<uintptr_t>(model.attr("_address"));
+-    template_ = mj_copyModel(nullptr, reinterpret_cast<const mjModel*>(addr));
+-    if (template_->opt.enableflags & mjENBL_SLEEP) throw nb::value_error("sleep is not supported");
+-    data_fields_ = DataFields(template_);
+-    model_fields_ = ModelFields(template_);
+-    for (auto& [name, f] : model_fields_) {
+-      if (!f.asset) restorable_.push_back(&f);
+-    }
+-    scalars_.assign(num_sims, Scalars::Of(template_));
+-    if (num_threads <= 0) num_threads = DefaultThreadCount();
+-    pool_ = std::make_unique<ThreadPool>(std::max(1, std::min(num_threads, num_sims)));
+-    for (int t = 0; t < pool_->size(); ++t) data_.push_back(mj_makeData(template_));
+-    nstate_ = mj_stateSize(template_, mjSTATE_INTEGRATION);
++  struct Contact {
++    mjContact value;
++    std::array<mjtNum, 6> force;
++  };
++  struct Worker {
++    struct ModelDelete { void operator()(mjModel* m) const { mj_deleteModel(m); } };
++    struct DataDelete { void operator()(mjData* d) const { mj_deleteData(d); } };
++    std::unique_ptr<mjModel, ModelDelete> model;
++    std::unique_ptr<mjData, DataDelete> data;
++    explicit Worker(const mjModel* source) : model(mj_copyModel(nullptr, source)) {
++      if (!model) throw std::bad_alloc();
++      data.reset(mj_makeData(model.get()));
++      if (!data) throw std::bad_alloc();
++    }
++  };
++  class Lease;
++  struct Context {
++    Batch* batch;
++    int sim;
++    Worker* worker;
++    Context* previous;
++  };
++  inline static thread_local Context* current = nullptr;
++
++  class Lease {
++   public:
++    Lease(Batch& batch, int sim, int worker = -1) : Lease(&batch, sim, worker) {}
++    Lease(Batch* ptr, int sim, int worker = -1) : batch_(ptr) {
++      if (!ptr) return;
++      Batch& batch = *ptr;
++      if (sim < 0 || sim >= batch.num_sims_) throw std::out_of_range("mjbatch simulation index");
++      if (current && current->batch == &batch) {
++        if (current->sim != sim) throw std::logic_error("nested mjbatch lease changed simulation");
++        return;
++      }
++      if (worker < 0) lock_ = std::unique_lock<std::mutex>(batch.mu_);
++      auto& w = *batch.workers_[worker < 0 ? 0 : worker];
++      batch.Load(w, sim);
++      context_ = {&batch, sim, &w, current};
++      current = &context_;
++      owns_ = true;
++    }
++    ~Lease() {
++      if (owns_) {
++        batch_->Save(*context_.worker, context_.sim);
++        current = context_.previous;
++      }
++    }
++    Lease(const Lease&) = delete;
++    Lease& operator=(const Lease&) = delete;
++   private:
++    Batch* batch_;
++    std::unique_lock<std::mutex> lock_;
++    Context context_{};
++    bool owns_ = false;
++  };
++
++  Batch(const mjModel* model, int num_sims) : num_sims_(num_sims), template_(mj_copyModel(nullptr, model)) {
++    InstallLogTrap();
++    if (!template_) throw std::bad_alloc();
++    if (num_sims < 1) throw std::invalid_argument("num_sims must be >= 1");
++    if (model->opt.enableflags & mjENBL_SLEEP) throw std::invalid_argument("mjbatch: sleep is not supported");
++    if (mj_version() != mjVERSION_HEADER) throw std::runtime_error("MuJoCo header/runtime version mismatch");
++    data_fields_ = DataFields(template_.get());
++    model_fields_ = ModelFields(template_.get());
++    for (auto& [name, f] : model_fields_) if (!f.asset) restorable_.push_back(&f);
++    // Stable ordering also gives checkpoint payloads a deterministic layout.
++    std::sort(restorable_.begin(), restorable_.end(), [](auto a, auto b) { return std::string_view(a->name) < b->name; });
++    nstate_ = mj_stateSize(template_.get(), mjSTATE_INTEGRATION);
+     states_.resize(static_cast<size_t>(num_sims) * nstate_);
+-    warnings_.resize(static_cast<size_t>(num_sims) * mjNWARNING);
+-    for (int i = 0; i < num_sims; ++i) {
+-      mj_getState(template_, data_[0], State(i), mjSTATE_INTEGRATION);
+-    }
+-  }
+-
+-  ~Batch() {
+-    pool_.reset();
+-    for (mjData* d : data_) mj_deleteData(d);
+-    for (mjModel* m : models_) mj_deleteModel(m);
+-    mj_deleteModel(template_);
+-  }
++    warnings_.resize(num_sims);
++    contacts_.resize(num_sims);
++    scalars_.assign(num_sims, Scalars::Of(template_.get()));
++    options_.assign(num_sims, template_->opt);
++    workers_.push_back(std::make_unique<Worker>(template_.get()));
++    for (int i = 0; i < num_sims; ++i) mj_getState(template_.get(), workers_[0]->data.get(), State(i), mjSTATE_INTEGRATION);
++    // Only fields used across native visits are retained, not the solver arena.
++    for (const char* name : {"xpos", "xmat", "xipos", "cvel", "subtree_com", "qacc",
++                            "qfrc_actuator", "sensordata", "geom_xpos", "geom_xmat"}) Bind(name);
++    for (const char* name : {"body_mass", "body_ipos", "geom_friction", "actuator_gainprm", "actuator_biasprm"}) Expand(name);
++  }
++  ~Batch() { pool_.reset(); }
+   Batch(const Batch&) = delete;
+   Batch& operator=(const Batch&) = delete;
+-
+   int num_sims() const { return num_sims_; }
+-  int num_threads() const { return pool_->size(); }
++  int num_threads() const { return static_cast<int>(workers_.size()); }
+   int nstate() const { return nstate_; }
+-
+-  nb::ndarray<nb::numpy> bind(const std::string& name, std::optional<nb::object> dtype) {
+-    std::lock_guard<std::mutex> lock(mu_);
+-    if (name == "state") {
+-      // The rows are the per-sim mjSTATE_INTEGRATION vectors themselves, so a write to
+-      // one is authoritative at the sim's next call; field writes land on top of it.
+-      if (dtype && !dtype->is_none()) throw nb::value_error("state cannot be float32");
+-      size_t shape[2] = {static_cast<size_t>(num_sims_), static_cast<size_t>(nstate_)};
+-      return nb::ndarray<nb::numpy>(states_.data(), 2, shape, nb::find(this), nullptr,
+-                                    nb::dtype<mjtNum>());
+-    }
+-    const FieldInfo& f = Field(data_fields_, name);
+-    bool f32 = ParseDtype(f, dtype);
+-    for (auto& s : bound_) {
+-      if (s->info == &f) return Matching(*s, f32);
+-    }
+-    bound_.push_back(MakeSlot(f, f32, f.input));
+-    // A derived field stays zero until the next call fills it.
+-    if (f.input) {
+-      for (int i = 0; i < num_sims_; ++i) {
+-        mj_setState(template_, data_[0], State(i), mjSTATE_INTEGRATION);
+-        std::memcpy(data_[0]->warning, Warning(i), sizeof(data_[0]->warning));
+-        CopyOut(*bound_.back(), data_[0], i);
++  Lease Access(int sim) { return Lease(*this, sim); }
++  mjModel* Model(int sim) const { return Active(sim).worker->model.get(); }
++  mjData* Data(int sim) const { return Active(sim).worker->data.get(); }
++  const std::vector<Contact>& Contacts(int sim) const { return contacts_.at(sim); }
++
++  // Step/forward/reset capture variable-length contacts before a worker is
++  // reused. The cached forces do not depend on the old constraint arena.
++  static void Step(mjModel* m, mjData* d) { CheckedCall(mj_step, m, d); CaptureContacts(m, d); }
++  static void Forward(mjModel* m, mjData* d) { CheckedCall(mj_forward, m, d); CaptureContacts(m, d); }
++  static void Reset(mjModel* m, mjData* d) { CheckedCall(mj_resetData, m, d); CaptureContacts(m, d); }
++
++  void Run(int count, int threads, const std::function<void(int)>& fn) {
++    std::lock_guard lock(mu_);
++    if (count < 0 || count > num_sims_) throw std::out_of_range("mjbatch simulation count");
++    ConfigureWorkers(threads);
++    std::exception_ptr error;
++    std::mutex error_mu;
++    auto task = [&](int t, int i) {
++      try {
++        Lease lease(*this, i, t);
++        fn(i);
++      } catch (const std::exception& e) {
++        std::lock_guard guard(error_mu);
++        if (!error) error = std::make_exception_ptr(std::runtime_error("sim " + std::to_string(i) + ": " + e.what()));
++        // A trapped native failure may have left the worker arena in use.
++        mj_resetData(workers_[t]->model.get(), workers_[t]->data.get());
++      } catch (...) {
++        std::lock_guard guard(error_mu);
++        if (!error) error = std::current_exception();
++        mj_resetData(workers_[t]->model.get(), workers_[t]->data.get());
+       }
+-    }
+-    return View(*bound_.back());
+-  }
+-
+-  nb::ndarray<nb::numpy> expand(const std::string& name, std::optional<nb::object> dtype) {
+-    std::lock_guard<std::mutex> lock(mu_);
+-    const FieldInfo& f = Field(model_fields_, name);
+-    bool f32 = ParseDtype(f, dtype);
++    };
++    if (workers_.size() == 1) for (int i = 0; i < count; ++i) task(0, i);
++    else pool_->Run(count, task);
++    if (error) std::rethrow_exception(error);
++  }
++
++  // Upstream's fixed-point discovery of fields changed by mj_setConst. The
++  // integration state and bound data are untouched until the next native visit.
++  void SetConst(const std::vector<int>& ids) {
++    std::lock_guard lock(mu_);
++    if (ids.empty()) return;
++    auto selected = ids;
++    std::set<const FieldInfo*> expanded_set;
++    for (auto& s : expanded_) expanded_set.insert(s->info);
++    while (true) {
++      std::set<const FieldInfo*> changed;
++      Worker& w = *workers_[0];
++      for (int i : selected) {
++        if (i < 0 || i >= num_sims_) throw std::out_of_range("mjbatch set_const simulation index");
++        Restore(w.model.get());
++        for (auto& s : expanded_) FromBuf(s->info->get(w.model.get()), s->buf.get() + i*s->row, *s);
++        w.model->opt = options_[i];
++        CheckedCall(mj_setConst, w.model.get(), w.data.get());
++        for (auto& s : expanded_) ToBuf(s->buf.get() + i*s->row, s->info->get(w.model.get()), *s);
++        scalars_[i] = Scalars::Of(w.model.get());
++        for (const FieldInfo* f : restorable_) {
++          if (!expanded_set.count(f) && f->bytes() && std::memcmp(f->get(w.model.get()), f->get(template_.get()), f->bytes())) changed.insert(f);
++        }
++      }
++      Restore(w.model.get());
++      if (changed.empty()) break;
++      for (auto* f : changed) { Expand(f->name); expanded_set.insert(f); }
++      selected.resize(num_sims_);
++      for (int i = 0; i < num_sims_; ++i) selected[i] = i;
++    }
++  }
++
++  // Opaque, versioned per-environment payload. Field names permit restoring a
++  // snapshot captured before additional set_const fields were expanded.
++  std::vector<uint8_t> Capture(int sim) {
++    auto access = Access(sim);
++    Save(*current->worker, sim);
++    std::vector<uint8_t> out;
++    auto put = [&](const void* p, size_t n) {
++      const auto* b = static_cast<const uint8_t*>(p);
++      if (n) out.insert(out.end(), b, b+n);
++    };
++    const uint32_t version = 1;
++    put(&version, sizeof(version));
++    put(State(sim), sizeof(mjtNum)*nstate_);
++    put(&warnings_[sim], sizeof(warnings_[sim]));
++    put(&options_[sim], sizeof(mjOption));
++    put(&scalars_[sim], sizeof(Scalars));
++    for (auto& s : bound_) put(s->buf.get()+sim*s->row, s->row);
++    const uint64_t count = expanded_.size();
++    put(&count, sizeof(count));
+     for (auto& s : expanded_) {
+-      if (s->info == &f) return Matching(*s, f32);
+-    }
+-    return View(Expand(f, f32));
+-  }
+-
+-  void step(std::optional<Ids> ids, int nstep, std::optional<nb::ndarray<>> history) {
+-    if (nstep < 1) throw nb::value_error("nstep must be >= 1");
+-    auto sel = Parse(ids);
+-    mjtNum* hist = nullptr;
+-    if (history) {
+-      hist = HistoryPtr(*history, sel ? static_cast<int>(sel->size()) : num_sims_, nstep);
+-    }
+-    Run(Op::Step, std::move(sel), nstep, hist);
+-  }
+-  void forward(std::optional<Ids> ids) { Run(Op::Forward, Parse(ids), 0); }
+-
+-  void reset(std::optional<Ids> ids, int keyframe) {
+-    if (keyframe < -1 || keyframe >= template_->nkey) {
+-      throw nb::value_error("keyframe out of range");
+-    }
+-    Run(Op::Reset, Parse(ids), keyframe);
+-  }
+-
+-  // mj_setConst per sim from its expanded fields. Every field it changes
+-  // becomes expanded, so afterwards each sim steps with a complete set of its
+-  // own derived constants. A newly expanded field is computed for every sim.
+-  void set_const(std::optional<Ids> ids) {
+-    auto sel = Parse(ids);
+-    nb::gil_scoped_release release;
+-    std::lock_guard<std::mutex> lock(mu_);
+-    if (models_.empty()) return;
+-    error_.clear();
+-    while (true) {
+-      RunLocked(Op::SetConst, sel, 0);
+-      if (changed_.empty()) break;
+-      for (const FieldInfo* f : changed_) Expand(*f, false);
+-      changed_.clear();
+-      sel.reset();
+-    }
+-    if (!error_.empty()) throw std::runtime_error(error_);
++      const std::string_view name = s->info->name;
++      const uint32_t len = name.size();
++      put(&len, sizeof(len)); put(name.data(), name.size());
++      put(s->buf.get()+sim*s->row, s->row);
++    }
++    const uint64_t nc = contacts_[sim].size();
++    put(&nc, sizeof(nc)); put(contacts_[sim].data(), nc*sizeof(Contact));
++    return out;
++  }
++  void RestoreSnapshot(int sim, std::span<const uint8_t> payload) {
++    std::lock_guard lock(mu_);
++    if (sim < 0 || sim >= num_sims_) throw std::out_of_range("mjbatch snapshot simulation index");
++    size_t offset = 0;
++    auto get = [&](void* p, size_t n) {
++      if (n > payload.size()-offset) throw std::invalid_argument("truncated mjbatch checkpoint");
++      if (n) std::memcpy(p, payload.data()+offset, n);
++      offset += n;
++    };
++    uint32_t version; get(&version, sizeof(version));
++    if (version != 1) throw std::invalid_argument("unsupported mjbatch checkpoint version");
++    get(State(sim), sizeof(mjtNum)*nstate_);
++    get(&warnings_[sim], sizeof(warnings_[sim]));
++    get(&options_[sim], sizeof(mjOption));
++    get(&scalars_[sim], sizeof(Scalars));
++    for (auto& s : bound_) get(s->buf.get()+sim*s->row, s->row);
++    for (auto& s : expanded_) ToBuf(s->buf.get()+sim*s->row, s->info->get(template_.get()), *s);
++    uint64_t count; get(&count, sizeof(count));
++    if (count > model_fields_.size()) throw std::invalid_argument("invalid mjbatch checkpoint fields");
++    for (uint64_t k = 0; k < count; ++k) {
++      uint32_t len; get(&len, sizeof(len));
++      if (len > payload.size()-offset) throw std::invalid_argument("invalid mjbatch checkpoint field");
++      std::string name(reinterpret_cast<const char*>(payload.data()+offset), len); offset += len;
++      Slot& s = Expand(name);
++      get(s.buf.get()+sim*s.row, s.row);
++    }
++    uint64_t nc; get(&nc, sizeof(nc));
++    if (nc > (payload.size()-offset)/sizeof(Contact)) throw std::invalid_argument("invalid mjbatch checkpoint contacts");
++    contacts_[sim].resize(nc); get(contacts_[sim].data(), nc*sizeof(Contact));
++    if (offset != payload.size()) throw std::invalid_argument("invalid mjbatch checkpoint size");
+   }
+ 
+  private:
+-  const FieldInfo& Field(const FieldTable& table, const std::string& name) {
+-    auto it = table.find(name);
+-    if (it == table.end()) {
+-      std::string msg = "unknown field " + name;
+-      if (&table == &data_fields_ && model_fields_.count(name)) {
+-        msg = name + " is an mjModel field; use expand(\"" + name + "\")";
+-      } else if (&table == &model_fields_ && data_fields_.count(name)) {
+-        msg = name + " is an mjData field; use bind(\"" + name + "\")";
+-      }
+-      throw nb::value_error(msg.c_str());
+-    }
+-    if (it->second.elem == Elem::Other) {
+-      throw nb::value_error(("unsupported element type in " + name).c_str());
+-    }
+-    return it->second;
+-  }
+-
+-  // True for float32 over an mjtNum field; the native dtype is always allowed.
+-  bool ParseDtype(const FieldInfo& f, std::optional<nb::object>& dtype) {
+-    if (!dtype || dtype->is_none()) return false;
+-    nb::object np = nb::module_::import_("numpy");
+-    std::string name = nb::cast<std::string>(nb::str(np.attr("dtype")(*dtype).attr("name")));
+-    if (name == DtypeName(f.elem)) return false;
+-    if (name == "float32" && f.elem == Elem::Num) return true;
+-    throw nb::value_error((std::string(f.name) + " cannot be " + name).c_str());
+-  }
+-
+-  nb::ndarray<nb::numpy> Matching(Slot& s, bool f32) {
+-    if (s.f32 != f32)
+-      throw nb::value_error(
+-          (std::string(s.info->name) + " is already bound with another dtype").c_str());
+-    return View(s);
+-  }
+-
+-  std::unique_ptr<Slot> MakeSlot(const FieldInfo& f, bool f32, bool mirror) {
++  Context& Active(int sim) const {
++    if (!current || current->batch != this || current->sim != sim) throw std::logic_error("MuJoCo workspace accessed without lease");
++    return *current;
++  }
++  static void CaptureContacts(mjModel* m, mjData* d) {
++    if (!current || current->worker->data.get() != d) return;
++    auto& out = current->batch->contacts_[current->sim];
++    out.resize(d->ncon);
++    for (int i = 0; i < d->ncon; ++i) {
++      out[i].value = d->contact[i];
++      mj_contactForce(m, d, i, out[i].force.data());
++    }
++  }
++  std::unique_ptr<Slot> MakeSlot(const FieldInfo& f) {
+     auto s = std::make_unique<Slot>();
+-    s->info = &f;
+-    s->f32 = f32;
+-    s->row = static_cast<size_t>(f.nr) * f.nc * (f32 ? sizeof(float) : f.elem_size);
+-    s->buf = std::make_unique<uint8_t[]>(s->row * num_sims_);
+-    if (mirror) s->mirror = std::make_unique<uint8_t[]>(s->row * num_sims_);
++    s->info = &f; s->f32 = false; s->row = f.bytes();
++    s->buf = std::make_unique<uint8_t[]>(s->row*num_sims_);
+     return s;
+   }
+-
+-  Slot& Expand(const FieldInfo& f, bool f32) {
+-    if (f.asset) throw nb::value_error((std::string(f.name) + " is asset data").c_str());
+-    auto s = MakeSlot(f, f32, false);
+-    for (int i = 0; i < num_sims_; ++i) ToBuf(s->buf.get() + i * s->row, f.get(template_), *s);
++  void Bind(const std::string& name) { bound_.push_back(MakeSlot(data_fields_.at(name))); }
++  Slot& Expand(const std::string& name) {
++    const auto& f = model_fields_.at(name);
++    for (auto& s : expanded_) if (s->info == &f) return *s;
++    if (f.asset) throw std::invalid_argument("cannot expand MuJoCo asset data");
++    auto s = MakeSlot(f);
++    for (int i = 0; i < num_sims_; ++i) ToBuf(s->buf.get()+i*s->row, f.get(template_.get()), *s);
+     expanded_.push_back(std::move(s));
+-    expanded_set_.insert(&f);
+-    if (std::string_view(f.name) == "enableflags") enableflags_ = expanded_.back().get();
+-    if (models_.empty()) {
+-      for (int t = 0; t < pool_->size(); ++t) models_.push_back(mj_copyModel(nullptr, template_));
+-    }
+     return *expanded_.back();
+   }
+-
+-  mjtNum* HistoryPtr(const nb::ndarray<>& a, int nsel, int nstep) {
+-    if (a.ndim() != 3 || static_cast<int>(a.shape(0)) != nsel ||
+-        static_cast<int>(a.shape(1)) != nstep || static_cast<int>(a.shape(2)) != nstate_) {
+-      throw nb::value_error("history must have shape (sims, nstep, nstate)");
+-    }
+-    if (a.dtype() != nb::dtype<mjtNum>()) {
+-      throw nb::value_error((std::string("history must be ") + DtypeName(Elem::Num)).c_str());
+-    }
+-    if (a.device_type() != nb::device::cpu::value || !IsCContig(a)) {
+-      throw nb::value_error("history must be a C-contiguous CPU array");
+-    }
+-    return static_cast<mjtNum*>(a.data());
+-  }
+-
+-  nb::ndarray<nb::numpy> View(const Slot& s) {
+-    const FieldInfo& f = *s.info;
+-    size_t shape[3] = {static_cast<size_t>(num_sims_), static_cast<size_t>(f.nr),
+-                       static_cast<size_t>(f.nc)};
+-    nb::dlpack::dtype dt;
+-    if (s.f32 || f.elem == Elem::Float) {
+-      dt = nb::dtype<float>();
+-    } else if (f.elem == Elem::Num) {
+-      dt = nb::dtype<mjtNum>();
+-    } else if (f.elem == Elem::Int) {
+-      dt = nb::dtype<int>();
+-    } else if (f.elem == Elem::Bool) {
+-      dt = nb::dtype<bool>();
+-    } else {
+-      dt = nb::dtype<uint8_t>();
+-    }
+-    return nb::ndarray<nb::numpy>(s.buf.get(), f.ndim + 1, shape, nb::find(this), nullptr, dt);
+-  }
+-
+-  void CopyOut(Slot& s, mjData* d, int i) {
+-    uint8_t* row = s.buf.get() + i * s.row;
+-    ToBuf(row, s.info->get(d), s);
+-    if (s.mirror) std::memcpy(s.mirror.get() + i * s.row, row, s.row);
+-  }
+-
++  void ConfigureWorkers(int n) {
++    n = std::max(1, std::min(n, num_sims_));
++    if (n == num_threads()) return;
++    std::vector<std::unique_ptr<Worker>> next;
++    next.reserve(n);
++    for (int t = 0; t < n; ++t) next.push_back(std::make_unique<Worker>(template_.get()));
++    std::unique_ptr<ThreadPool> pool;
++    if (n > 1) pool = std::make_unique<ThreadPool>(n);
++    pool_.reset();
++    workers_ = std::move(next);
++    pool_ = std::move(pool);
++  }
+   void Restore(mjModel* m) {
+-    for (const FieldInfo* f : restorable_) std::memcpy(f->get(m), f->get(template_), f->bytes());
++    for (auto* f : restorable_) if (f->bytes()) std::memcpy(f->get(m), f->get(template_.get()), f->bytes());
+     m->npolygonmax = template_->npolygonmax;
+     m->nmeshdegmax = template_->nmeshdegmax;
+-    Scalars::Of(template_).Apply(m);
+-  }
+-
+-  mjtNum* State(int i) { return states_.data() + static_cast<size_t>(i) * nstate_; }
+-  mjWarningStat* Warning(int i) { return warnings_.data() + static_cast<size_t>(i) * mjNWARNING; }
+-
+-  void RunSim(int t, int i, Op op, int arg, mjtNum* hist) {
+-    mjModel* m = models_.empty() ? template_ : models_[t];
+-    mjData* d = data_[t];
+-    if (op == Op::SetConst) Restore(m);
+-    for (auto& s : expanded_) FromBuf(s->info->get(m), s->buf.get() + i * s->row, *s);
+-    if (op == Op::SetConst) {
+-      mj_setConst(m, d);
+-      for (auto& s : expanded_) ToBuf(s->buf.get() + i * s->row, s->info->get(m), *s);
+-      scalars_[i] = Scalars::Of(m);
+-      for (const FieldInfo* f : restorable_) {
+-        if (!expanded_set_.count(f) && std::memcmp(f->get(m), f->get(template_), f->bytes())) {
+-          std::lock_guard<std::mutex> lock(changed_mu_);
+-          changed_.insert(f);
+-        }
+-      }
+-      Restore(m);
+-      return;
+-    }
+-    if (!models_.empty()) scalars_[i].Apply(m);
+-    if (op == Op::Reset) {
+-      if (arg >= 0) {
+-        mj_resetDataKeyframe(m, d, arg);
+-      } else {
+-        mj_resetData(m, d);
+-      }
+-    } else {
+-      mj_setState(m, d, State(i), mjSTATE_INTEGRATION);
+-      std::memcpy(d->warning, Warning(i), sizeof(d->warning));
+-    }
+-    for (auto& s : bound_) {
+-      if (!s->mirror) continue;
+-      const uint8_t* row = s->buf.get() + i * s->row;
+-      if (std::memcmp(row, s->mirror.get() + i * s->row, s->row) != 0) {
+-        CopyChanged(s->info->get(d), row, s->mirror.get() + i * s->row, *s);
+-      }
+-    }
+-    switch (op) {
+-      case Op::Step:
+-        for (int k = 0; k < arg; ++k) {
+-          mj_step(m, d);
+-          if (hist) mj_getState(m, d, hist + static_cast<size_t>(k) * nstate_, mjSTATE_INTEGRATION);
+-        }
+-        if (forward_) mj_forward(m, d);  // derived fields current with the new state
+-        break;
+-      case Op::Forward:
+-      case Op::Reset:
+-        mj_forward(m, d);
+-        break;
+-      case Op::SetConst:
+-        break;
+-    }
+-    mj_getState(m, d, State(i), mjSTATE_INTEGRATION);
+-    std::memcpy(Warning(i), d->warning, sizeof(d->warning));
+-    for (auto& s : bound_) CopyOut(*s, d, i);
+-  }
+-
+-  std::optional<std::vector<int>> Parse(const std::optional<Ids>& ids) {
+-    if (!ids) return std::nullopt;
+-    if (ids->dtype() == nb::dtype<bool>()) {
+-      if (static_cast<int>(ids->shape(0)) != num_sims_) {
+-        throw nb::value_error("a boolean ids mask must have num_sims entries");
+-      }
+-      std::vector<int> out;
+-      for (int i = 0; i < num_sims_; ++i) {
+-        if (static_cast<const bool*>(ids->data())[i]) out.push_back(i);
+-      }
+-      return out;
+-    }
+-    std::vector<int> out(ids->shape(0));
+-    for (size_t j = 0; j < out.size(); ++j) {
+-      if (ids->dtype() == nb::dtype<int64_t>()) {
+-        out[j] = static_cast<int>(static_cast<const int64_t*>(ids->data())[j]);
+-      } else if (ids->dtype() == nb::dtype<int32_t>()) {
+-        out[j] = static_cast<const int32_t*>(ids->data())[j];
+-      } else {
+-        throw nb::value_error("ids must be int32, int64 or a bool mask");
+-      }
+-      if (out[j] < 0 || out[j] >= num_sims_ || (j > 0 && out[j] <= out[j - 1])) {
+-        throw nb::value_error("ids must be sorted, unique and in range");
+-      }
+-    }
+-    return out;
+-  }
+-
+-  void Guarded(int t, int i, Op op, int arg, mjtNum* hist) {
+-    std::jmp_buf jb;
+-    tls_jmp = &jb;
+-    if (setjmp(jb) == 0) {
+-      RunSim(t, i, op, arg, hist);
+-    } else {
+-      // The sim's state was not written back; the worker's mjData, left
+-      // mid-call with its stack and arena in use, serves other sims next.
+-      tls_jmp = nullptr;
+-      if (op == Op::SetConst) Restore(models_[t]);
+-      mj_resetData(template_, data_[t]);
+-      std::lock_guard<std::mutex> lock(changed_mu_);
+-      if (error_.empty()) error_ = "sim " + std::to_string(i) + ": " + tls_error;
+-    }
+-    tls_jmp = nullptr;
+-  }
+-
+-  void Run(Op op, std::optional<std::vector<int>> sel, int arg, mjtNum* hist = nullptr) {
+-    nb::gil_scoped_release release;
+-    std::lock_guard<std::mutex> lock(mu_);
+-    error_.clear();
+-    RunLocked(op, sel, arg, hist);
+-    if (!error_.empty()) throw std::runtime_error(error_);
+-  }
+-
+-  void RunLocked(Op op, const std::optional<std::vector<int>>& sel, int arg,
+-                 mjtNum* hist = nullptr) {
+-    const int* p = sel ? sel->data() : nullptr;
+-    const int n = sel ? static_cast<int>(sel->size()) : num_sims_;
+-    // A per-sim enableflags must not switch on what the constructor refused. Raised
+-    // here rather than on a worker, where the setjmp path only yields a RuntimeError.
+-    if (enableflags_) {
+-      for (int j = 0; j < n; ++j) {
+-        int i = p ? p[j] : j;
+-        int flags = *reinterpret_cast<const int*>(enableflags_->buf.get() + i * enableflags_->row);
+-        if (flags & mjENBL_SLEEP) {
+-          throw nb::value_error(("sim " + std::to_string(i) + ": sleep is not supported").c_str());
+-        }
+-      }
+-    }
+-    auto fn = [this, op, arg, p, hist](int t, int j) {
+-      Guarded(t, p ? p[j] : j, op, arg,
+-              hist ? hist + static_cast<size_t>(j) * arg * nstate_ : nullptr);
+-    };
+-    if (pool_->size() == 1) {
+-      for (int j = 0; j < n; ++j) fn(0, j);
+-    } else {
+-      pool_->Run(n, fn);
+-    }
+-  }
+-
+-  int num_sims_;
+-  bool forward_;  // step ends with mj_forward
+-  mjModel* template_ = nullptr;
+-  FieldTable data_fields_;
+-  FieldTable model_fields_;
++    Scalars::Of(template_.get()).Apply(m);
++  }
++  void Load(Worker& w, int sim) {
++    for (auto& s : expanded_) if (s->row) FromBuf(s->info->get(w.model.get()), s->buf.get()+sim*s->row, *s);
++    scalars_[sim].Apply(w.model.get());
++    w.model->opt = options_[sim];
++    if (w.model->opt.enableflags & mjENBL_SLEEP) throw std::invalid_argument("mjbatch: sleep is not supported");
++    mj_setState(w.model.get(), w.data.get(), State(sim), mjSTATE_INTEGRATION);
++    std::memcpy(w.data->warning, warnings_[sim].data(), sizeof(w.data->warning));
++    for (auto& s : bound_) if (s->row) FromBuf(s->info->get(w.data.get()), s->buf.get()+sim*s->row, *s);
++  }
++  void Save(Worker& w, int sim) noexcept {
++    mj_getState(w.model.get(), w.data.get(), State(sim), mjSTATE_INTEGRATION);
++    std::memcpy(warnings_[sim].data(), w.data->warning, sizeof(w.data->warning));
++    options_[sim] = w.model->opt;
++    scalars_[sim] = Scalars::Of(w.model.get());
++    for (auto& s : expanded_) if (s->row) ToBuf(s->buf.get()+sim*s->row, s->info->get(w.model.get()), *s);
++    for (auto& s : bound_) if (s->row) ToBuf(s->buf.get()+sim*s->row, s->info->get(w.data.get()), *s);
++  }
++  mjtNum* State(int i) { return states_.data()+static_cast<size_t>(i)*nstate_; }
++  int num_sims_, nstate_ = 0;
++  std::unique_ptr<mjModel, Worker::ModelDelete> template_;
++  FieldTable data_fields_, model_fields_;
+   std::vector<const FieldInfo*> restorable_;
+-  std::vector<mjData*> data_;     // per worker
+-  std::vector<mjModel*> models_;  // per worker, once anything is expanded
+-  int nstate_;
+-  std::vector<mjtNum> states_;           // per sim, mjSTATE_INTEGRATION
+-  std::vector<mjWarningStat> warnings_;  // per sim
+-  std::vector<Scalars> scalars_;         // per sim
+-  std::vector<std::unique_ptr<Slot>> bound_;
+-  std::vector<std::unique_ptr<Slot>> expanded_;
+-  std::set<const FieldInfo*> expanded_set_;
+-  const Slot* enableflags_ = nullptr;   // scanned for mjENBL_SLEEP before every call
+-  std::set<const FieldInfo*> changed_;  // set_const outputs not yet expanded
++  std::vector<std::unique_ptr<Slot>> bound_, expanded_;
++  std::vector<mjtNum> states_;
++  std::vector<std::array<mjWarningStat, mjNWARNING>> warnings_;
++  std::vector<mjOption> options_;
++  std::vector<Scalars> scalars_;
++  std::vector<std::vector<Contact>> contacts_;
++  std::vector<std::unique_ptr<Worker>> workers_;
+   std::unique_ptr<ThreadPool> pool_;
+-  std::mutex mu_;          // serializes calls; held with the GIL released in Run
+-  std::mutex changed_mu_;  // changed_ and error_ from workers
+-  std::string error_;
++  std::mutex mu_;
+ };
++} // namespace mjbatch

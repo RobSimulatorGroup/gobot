@@ -27,6 +27,7 @@ _SUBMODULE_MARKERS = {
     "3rdparty/luisa_compute": "CMakeLists.txt",
     "3rdparty/libuipc": "CMakeLists.txt",
     "3rdparty/meshoptimizer": "CMakeLists.txt",
+    "3rdparty/mjbatch": "src/mjbatch/csrc/batch.h",
     "3rdparty/onetbb": "CMakeLists.txt",
     "3rdparty/openusd": "pxr/pxrConfig.cmake.in",
     "3rdparty/project_superdex": "CMakeLists.txt",

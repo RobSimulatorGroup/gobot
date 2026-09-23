@@ -6,18 +6,17 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstddef>
-#include <condition_variable>
-#include <exception>
 #include <functional>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/physics/joint_controller.hpp"
+
+#ifdef GOBOT_HAS_MUJOCO
+namespace mjbatch { class Batch; }
+#endif
 
 namespace gobot {
 
@@ -285,26 +284,18 @@ private:
                                       std::uint64_t ticks,
                                       std::size_t worker_count);
 
-    bool EnsureBatchWorkers(std::size_t worker_count);
-
     using BatchEnvironmentTask = std::function<void(std::size_t)>;
 
     bool RunEnvironmentBatchTask(std::size_t environment_count,
                                  std::size_t worker_count,
                                  BatchEnvironmentTask task);
 
-    void StopBatchWorkers();
-
-    void BatchWorkerLoop(std::size_t worker_index);
-
     bool available_{false};
     PhysicsSceneArtifact scene_artifact_;
 
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
-    void* data_{nullptr};
-    std::vector<void*> environment_models_;
-    std::vector<void*> environment_data_;
+    std::unique_ptr<mjbatch::Batch> batch_runtime_;
     std::vector<PhysicsSceneState> environment_states_;
     std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;
@@ -313,20 +304,6 @@ private:
     std::vector<MuJoCoSensorBinding> sensor_bindings_;
     std::unique_ptr<RobotBatchLayout> robot_batch_layout_;
 
-    std::vector<std::thread> batch_workers_;
-    std::mutex batch_mutex_;
-    std::condition_variable batch_cv_;
-    std::condition_variable batch_done_cv_;
-    std::size_t batch_generation_{0};
-    std::atomic<std::size_t> batch_completed_workers_{0};
-    std::atomic<std::size_t> batch_next_environment_{0};
-    std::size_t batch_active_workers_{0};
-    std::size_t batch_environment_count_{0};
-    std::size_t batch_work_chunk_{1};
-    BatchEnvironmentTask batch_environment_task_;
-    std::exception_ptr batch_worker_error_;
-    bool batch_stop_{false};
-    bool batch_work_pending_{false};
 #endif
 };
 

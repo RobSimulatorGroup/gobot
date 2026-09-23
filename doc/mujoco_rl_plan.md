@@ -7,6 +7,9 @@ compiled from Gobot scenes.
 
 ## Runtime Shape
 
+MuJoCo CPU batches use the pinned mjbatch native core; see
+[CPU batch runtime](mjbatch_cpu.md) for ownership, build and validation details.
+
 The target pipeline is:
 
 ```text

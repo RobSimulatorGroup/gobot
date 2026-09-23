@@ -49,3 +49,6 @@
 	path = 3rdparty/project_superdex
 	url = https://github.com/RobSimulatorGroup/project_superdex.git
 	branch = gobot-superdex-core
+[submodule "3rdparty/mjbatch"]
+	path = 3rdparty/mjbatch
+	url = https://github.com/kevinzakka/mjbatch.git

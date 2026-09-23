@@ -9,6 +9,12 @@ mark_as_advanced(
 )
 message(STATUS "gtest configured correctly")
 
+if(GOB_BUILD_MUJOCO)
+    add_executable(test_mjbatch_core physics/test_mjbatch_core.cpp)
+    target_link_libraries(test_mjbatch_core PRIVATE gtest_main gobot_mjbatch)
+    gtest_discover_tests(test_mjbatch_core)
+endif()
+
 add_library(gobot_test_support
         support/test_main.cpp
         support/test_render_backend.cpp)

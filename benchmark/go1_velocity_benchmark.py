@@ -60,6 +60,7 @@ def main() -> None:
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
 
+    initialization_begin = time.perf_counter()
     if args.backend == "mujoco-warp":
         env = Go1WarpVelocityEnv(
             cfg,
@@ -83,6 +84,7 @@ def main() -> None:
             collect_step_extras=not args.no_step_extras,
         )
 
+    initialization_ms = (time.perf_counter() - initialization_begin) * 1000.0
     try:
         print(f"Task: {cfg.name}")
         print(f"Backend: {args.backend}")
@@ -127,6 +129,7 @@ def main() -> None:
         metrics.update({
             "task": cfg.name,
             "device": args.device,
+            "initialization_ms": initialization_ms,
         })
         if args.profile_step:
             if hasattr(env, "profile_summary"):
