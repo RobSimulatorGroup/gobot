@@ -1,77 +1,55 @@
-# MuJoCo CPU batch runtime
+# MuJoCo CPU batches with mjbatch
 
-Gobot uses the native core of [mjbatch](https://github.com/kevinzakka/mjbatch)
-for CPU simulation batches. The upstream source is pinned to
-`2f169146b643adda65e195d8ad13d997abdd2a2e` in `3rdparty/mjbatch`.
-Gobot continues to compile and run against MuJoCo **3.12.0**; it does not
-install mjbatch's Python wheel or change the Warp/Newton dependency stack.
+Gobot uses the native core of [mjbatch](https://github.com/kevinzakka/mjbatch),
+pinned at `2f169146b643adda65e195d8ad13d997abdd2a2e` in `3rdparty/mjbatch`,
+with MuJoCo 3.12.0. Existing Gobot batch, reset, checkpoint, and training APIs
+remain the entry points. The old Gobot CPU worker implementation is removed;
+MuJoCo Warp remains the CUDA provider.
 
-Initialize the dependency with:
+## Build and ownership
+
+Python builds initialize the dependency automatically. For standalone CMake:
 
 ```sh
 git submodule update --init 3rdparty/mjbatch
 ```
 
-`GOB_BUILD_MUJOCO=ON` builds the native adaptation automatically. CMake copies
-the upstream headers into the build directory and applies
-`cmake/patches/mjbatch-native.patch` using the system `patch` utility. The
-submodule stays unmodified. With `GOB_BUILD_MUJOCO=OFF`, neither mjbatch nor
-the patch utility is required. The Python build backend bootstraps the pinned
-submodule and the wheel includes the upstream Apache-2.0 license.
+`GOB_BUILD_MUJOCO=ON` copies upstream headers into the build tree and applies
+[`mjbatch-native.patch`](../cmake/patches/mjbatch-native.patch) with the system
+`patch` utility. The submodule stays unchanged. No mjbatch Python/nanobind
+package is required; MuJoCo-disabled builds need neither mjbatch nor `patch`.
 
-## Runtime ownership
+- Each worker owns a model/data workspace; each environment stores integration
+  state, warnings, model overrides, derived fields, and contact results.
+  Solver arenas and mesh assets are shared across environments using a worker.
+- Worker-count changes preserve state. `sim_workers=0` uses logical CPU count,
+  capped by environment count.
+- Controllers and spring forces run each physics tick. Derived observations
+  preserve `mj_step` timing without an extra `mj_forward`. Contact forces are
+  captured before workspace reuse; mass/COM updates preserve integration state
+  through `set_const` field discovery.
+- Checkpoints include parameters and derived state in a private versioned
+  payload. Worker errors identify the environment; invalid steps require reset.
+  MuJoCo sleep is unsupported because `mjSTATE_INTEGRATION` omits its bookkeeping.
 
-The scene compiler supplies one template model. Each active worker owns one
-model/data workspace; each environment retains its integration state, warnings,
-model overrides, required derived fields and contact results. Solver arenas and
-mesh assets are not duplicated for every environment. Worker changes preserve
-environment state. `sim_workers=0` still selects the number of logical CPUs,
-clamped to the environment count.
+## Maintenance and validation
 
-The adaptation removes Python/nanobind from the batch core and adds scoped
-native visits. Gobot keeps control, sensors, named scene bindings and result
-conversion in its MuJoCo backend. Software controllers and spring forces run
-every physics tick. Derived observations keep MuJoCo's existing `mj_step`
-timing; loading another environment does not add an extra `mj_forward`.
-Contacts and their forces are captured before a worker's constraint arena is
-reused. Mass/center-of-mass changes use mjbatch's `set_const` field-discovery
-algorithm while preserving the integration state.
+Update the upstream commit and adaptation patch together. Build from a clean
+checkout, then run `test_mjbatch_core`, physics/simulation/controller tests, and
+Go1 CPU tests. Coverage includes independent MuJoCo parity, sensors and contact
+forces, worker-count changes, randomization, checkpoint replay, partial resets,
+and error recovery. Also check a `GOB_BUILD_MUJOCO=OFF` build.
 
-Existing Gobot batch, reset, checkpoint and Python training interfaces remain
-the entry points. Checkpoints retain environment parameters and derived state
-as a private, versioned backend payload. Native worker errors include the
-environment index. Reset is required after an invalid physics step. MuJoCo
-sleep is rejected because its bookkeeping is not part of `mjSTATE_INTEGRATION`.
+Use `benchmark/go1_velocity_benchmark.py --backend mujoco-cpu` and
+`/usr/bin/time -v` with matching environment/worker counts, seed, actions, and
+warmup. See [Go1 benchmark commands](../examples/go1/README.md#benchmark-and-parity).
 
-## Updating the dependency
+## Recorded comparison
 
-Keep the upstream commit and adaptation patch together. Apply and build the
-patch from a clean source checkout, then run `test_mjbatch_core`, the Gobot
-physics/simulation/controller tests and the Python Go1 CPU tests. The native
-core test compares shared workers with independent MuJoCo models and data,
-including contacts, randomization and worker-count changes.
-
-Use `benchmark/go1_velocity_benchmark.py --backend mujoco-cpu` to compare
-throughput, and `/usr/bin/time -v` to measure peak resident memory. Keep the
-environment count, worker count, seed, actions and warmup/measurement steps
-identical between versions. Memory for integration states, observations and
-contacts still scales with the number of environments.
-
-## Validation and measurements
-
-The Release build passed 118 CTest entries: five native mjbatch tests, the
-physics, simulation, joint-controller and locomotion-batch suites, and the
-Python build-backend, robot-batch-view and velocity-environment scripts.
-Native tests cover independent MuJoCo parity (including IMU, rotations and
-contact forces), changing worker counts, parameter randomization, checkpoint
-replay, partial reset and recovery after worker errors. A separate
-`GOB_BUILD_MUJOCO=OFF` configuration also compiled the MuJoCo backend object.
-
-The following local Go1 measurements used random actions, seed 42, observation
-noise disabled, five warmup steps and 30 measured steps. `auto` resolved to
-16 workers, capped by the environment count. Peak RSS includes the whole
-Python process, including Torch. Initialization was measured separately with
-zero warmup steps and one step, using the benchmark's `initialization_ms` field.
+These local runs used random actions, seed 42, no observation noise, 5 warmup
+and 30 measured steps. `auto` resolved to 16 workers, capped by environment
+count. RSS includes Python and Torch; initialization was measured separately
+with no warmup and one step.
 
 | Environments | Workers | Old env steps/s | mjbatch env steps/s | Old peak MiB | mjbatch peak MiB | Old init ms | mjbatch init ms |
 | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -84,16 +62,9 @@ zero warmup steps and one step, using the benchmark's `initialization_ms` field.
 | 1024 | 1 | 587 | 584 | 2591 | 1285 | 3358 | 2590 |
 | 1024 | auto | 2674 | 2570 | 2591 | 955 | 3357 | 2568 |
 
-These are single-run, indicative comparisons. The baseline was the previously
-installed Release package with OpenUSD enabled; the new local Release build
-has OpenUSD disabled. Both use MuJoCo 3.12 and the same task settings. At
-1024 environments with automatic workers, observed peak memory fell by about
-63%, initialization took about 24% less time, and throughput was about 4%
-lower. This change primarily reduces batch memory; it does not establish a
-general throughput improvement.
-
-Local raw results are in `build/mjbatch-validation/before-*.json` and
-`native-*.json`, with `/usr/bin/time -v` output in the corresponding logs.
-CTest uses the new module in `build/python`. An existing installed Gobot
-package must be rebuilt/reinstalled to use the new backend from ordinary
-Python invocations.
+These are single-run comparisons: the old installed Release build had OpenUSD
+enabled; the new Release build had it disabled. Both used MuJoCo 3.12 and the
+same task settings. At 1024 environments with automatic workers, peak memory
+fell about 63%, initialization time fell 24%, and throughput fell 4%. The
+observed benefit is memory use, with similar throughput. Per-environment state,
+observations, and contacts still scale with batch size.

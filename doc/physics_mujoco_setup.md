@@ -1,107 +1,52 @@
-# MuJoCo Backend Setup
+# MuJoCo setup
 
-Gobot keeps MuJoCo build-time configurable. The standard source and wheel build
-enables MuJoCo CPU and may fetch the pinned release when no local package is
-available. A minimal editor-only build can disable it explicitly:
+MuJoCo CPU is enabled by default. Gobot currently pins MuJoCo **3.12.0** in
+`CMakeLists.txt` and `pyproject.toml`. See [build and test](building.md) for a
+complete CPU configuration.
+
+## Python builds
+
+Python builds use the pinned `mujoco` wheel's headers and shared library from
+the build environment. They disable CMake's source-fetch fallback. CPU batches
+also use the pinned `3rdparty/mjbatch` native headers; the build backend
+initializes that submodule automatically. No mjbatch Python package is needed.
+
+## Standalone CMake
+
+Initialize mjbatch, then provide an installed MuJoCo SDK or let CMake discover
+the selected Python environment's wheel:
 
 ```bash
-cmake -S . -B build -DGOB_BUILD_MUJOCO=OFF
-```
-
-## Recommended: Local MuJoCo SDK
-
-Download a MuJoCo release from the official `google-deepmind/mujoco` GitHub
-releases page and extract it somewhere outside the Gobot source tree.
-
-Configure Gobot with the extracted SDK root:
-
-```bash
-cmake -S . -B build \
+git submodule update --init 3rdparty/mjbatch
+cmake -S . -B build/cpu \
   -DGOB_BUILD_MUJOCO=ON \
+  -DGOB_BUILD_LIBUIPC=OFF \
   -DGOB_MUJOCO_ROOT=/path/to/mujoco
 ```
 
-`GOB_MUJOCO_ROOT` may point either to a CMake install prefix containing
-`mujocoConfig.cmake`, or to the extracted SDK layout containing `include/` and
-`lib/` or `bin/`.
+`GOB_MUJOCO_ROOT` accepts a CMake install prefix or an SDK with `include/` and
+`lib/` or `bin/`. A package prefix can also be supplied through
+`CMAKE_PREFIX_PATH`. Dynamic SDK libraries must be visible at runtime, for
+example through `LD_LIBRARY_PATH=/path/to/mujoco/lib`.
 
-For Python builds, Gobot declares the pinned `mujoco` wheel as both a build and
-runtime dependency, then detects its headers and versioned shared library in
-the isolated PEP 517 environment or active uv/virtualenv. This keeps `uv run`
-and `uv sync` builds offline after the wheel is cached. Python builds disable
-the CMake source fallback. Set `GOB_FORCE_FETCH_MUJOCO=ON` only for an explicit
-native build that must compile the pinned MuJoCo source; Python wheels use the
-same MuJoCo binary package declared as their runtime dependency.
+| Option | Effect |
+| --- | --- |
+| `GOB_BUILD_MUJOCO=OFF` | Disable MuJoCo and mjbatch |
+| `GOB_FETCH_MUJOCO=ON` | Fetch the pinned source when no local package is found; standalone default |
+| `GOB_FORCE_FETCH_MUJOCO=ON` | Force a native source build even if an SDK is available |
+| `GOB_FETCH_MUJOCO=OFF` | Require a local SDK/package; Python build default |
+| `GOB_MUJOCO_GIT_TAG` | Select the fetched release; keep it aligned with the Python dependency |
 
-If MuJoCo was installed into a normal CMake prefix, this also works:
+A fetched build may download MuJoCo's own dependencies. The
+[mjbatch adapter](mjbatch_cpu.md) requires the system `patch` utility and leaves
+the upstream submodule unchanged.
 
-```bash
-cmake -S . -B build \
-  -DGOB_BUILD_MUJOCO=ON \
-  -DCMAKE_PREFIX_PATH=/path/to/mujoco
-```
+## Verify simulation
 
-## Optional: Fetch MuJoCo During Configure
+Load a robot scene, select **MuJoCo CPU** in the Physics panel, confirm
+**Available**, then **Build World** and **Step**. Check the frame counter and
+joint state. Falling requires a floating base; contact requires a floor.
 
-For a one-command source build, allow CMake to fetch the pinned official release:
-
-```bash
-cmake -S . -B build \
-  -DGOB_BUILD_MUJOCO=ON \
-  -DGOB_FETCH_MUJOCO=ON
-```
-
-The fetched release is controlled by:
-
-```bash
--DGOB_MUJOCO_GIT_TAG=3.8.0
-```
-
-Set `-DGOB_FETCH_MUJOCO=OFF` when builds must remain offline and provide a local
-SDK/package instead. MuJoCo's own CMake build uses `FetchContent` for some
-dependencies, so first-time fetched builds can be slow on restricted networks.
-
-## Not Using A Submodule Yet
-
-MuJoCo is not added as a git submodule. Gobot first looks for a configured or
-system package and otherwise uses the configurable fetch path. This keeps one
-dependency source of truth and lets offline builds require a local SDK.
-
-## Runtime Notes
-
-When linking against a dynamic SDK library, make sure the MuJoCo shared library
-is visible at runtime, for example:
-
-```bash
-export LD_LIBRARY_PATH=/path/to/mujoco/lib:$LD_LIBRARY_PATH
-```
-
-The normal authored path builds a MuJoCo model from Gobot scene data in `.jscn`:
-robots, links, joints, collision shapes, contact parameters, and actuator
-settings. `Robot3D.source_path` is retained only as a record of where an import
-came from. Physics backends never load that file at
-runtime; imported scenes must contain the authored links, joints, collision
-shapes, sensors, and actuator settings needed to compile the model.
-
-For the importer/runtime equivalence goals, see `doc/mjcf_equivalence.md`.
-
-## Editor Smoke Test
-
-The first editor-level check is that MuJoCo is actually selected and stepping:
-
-1. Load or import a robot scene.
-2. Open the `Physics` panel.
-3. Select `MuJoCo CPU`.
-4. Check that the backend reports `Available`.
-5. Click `Build World`.
-6. Click `Step` and watch the frame counter and joint state table.
-
-If the frame counter advances and joint positions/velocities are populated, the
-Gobot editor is creating a MuJoCo world and calling `mj_step`.
-
-Visible falling/contact behavior needs extra scene conditions:
-
-- The MuJoCo model must contain a ground plane or floor geom.
-- The robot root must be free/floating if gravity should move the base.
-- A fixed-base robot with no control targets may look unchanged even while
-  MuJoCo is stepping correctly.
+The backend compiles authored Gobot nodes and resources. `Robot3D.source_path`
+is import provenance and is never reopened during simulation. See
+[MJCF equivalence](mjcf_equivalence.md) for import checks.

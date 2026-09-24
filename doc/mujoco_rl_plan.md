@@ -1,481 +1,147 @@
-# Gobot MuJoCo RL Plan
+# MuJoCo RL: contracts and roadmap
 
-This document records the intended Gobot reinforcement-learning direction for
-MuJoCo CPU and MuJoCo Warp. Gobot scene data remains the authoring source of
-truth. MJCF, `mjModel`, MuJoCo data, and Warp arrays are runtime artifacts
-compiled from Gobot scenes.
+MuJoCo CPU is the semantic baseline; MuJoCo Warp provides CUDA batch execution.
+Both consume Gobot-authored scenes. Start with the [Go1 guide](../examples/go1/README.md)
+for runnable training commands and [architecture](architecture.md) for engine
+ownership and policy/checkpoint contracts.
 
-## Runtime Shape
-
-MuJoCo CPU batches use the pinned mjbatch native core; see
-[CPU batch runtime](mjbatch_cpu.md) for ownership, build and validation details.
-
-The target pipeline is:
+## Runtime
 
 ```text
-Gobot SceneTree / .jscn
-  -> scene-to-physics compile layer
-  -> Python task envs using Gobot batch action/state APIs
-  -> MuJoCo CPU semantic baseline
-  -> MuJoCo Warp CUDA graph fast path
-  -> editor debug / policy playback
-```
-
-Training is Python-driven through `gobot.rl`. Core engine APIs must not depend
-on Gymnasium, rsl_rl, ImGui, viewport selection, or raw MuJoCo/Warp pointers.
-Compatibility wrappers can live above the core API.
-
-## Script And Editor Boundaries
-
-- `NodeScript` and `ScenePlaySession` are for editor Play Mode, single-scene
-  debugging, and policy playback.
-- Packaged editor examples live under `examples/` in the source tree and
-  `gobot/examples/` in wheels. See `doc/examples.md`.
-- Play Mode runs scripts on a runtime clone of the edited scene. The editor
-  viewport and physics world use that clone while playback is active, so script
-  motion is visible without mutating the edited scene.
-- Physics controls that switch backend or rebuild the world are disabled while
-  scripts are running.
-- RL training does not run node scripts and does not enter editor Play Mode.
-- Python Panel `Run Once` executes a tool script against the active editor
-  context. It does not install tick callbacks, enter Play Mode, or participate
-  in vectorized RL stepping.
-- Editor playback should use the same Gobot action/control API as training, but
-  it remains a visualization/debug surface rather than the training runtime.
-- Python-backed playback uses `gobot.sim.ProviderPlaySession`. It registers an
-  external driver with `SimulationServer`, which owns the fixed-step clock,
-  pause/reset/sync/stop lifecycle, and excludes a simultaneous native world.
-  The provider and its CUDA objects remain outside the SceneTree.
-
-Long-term, Gobot should provide an explicit runtime scene owner/root for
-headless simulation, offscreen rendering, editor Play Mode, and policy
-playback. Loading a scene for runtime use should attach instantiated nodes to a
-runtime tree with normal lifecycle, path lookup, world membership, and
-visibility semantics, instead of returning a permanently detached root and
-spreading `IsInsideTree()` exceptions through engine code. This runtime root is
-not the edited SceneTree: it must not appear in the editor SceneTree dock, must
-not participate in undo/redo or dirty-state tracking, and must be destroyed as a
-runtime artifact when the session/evaluation ends.
-
-## Scene To Runtime Compile Layer
-
-The compile layer should produce a stable runtime name map from `.jscn` or a
-live `SceneTree`:
-
-- robot names
-- body/link names
-- joint names
-- actuator names
-- sensor names
-
-Gobot joint controllers are the public control API. They should cover passive,
-effort, position, velocity, gains, limits, action scaling, and clipping. The
-MuJoCo backend translates Gobot joint commands into MuJoCo actuator controls
-below this boundary.
-
-The Python-facing runtime map and state APIs should expose Gobot names and
-engine units. They should not expose backend array indices as the primary user
-contract.
-
-## Python Task Environment Layer
-
-The intended package shape is:
-
-```text
-gobot.sim
-  MuJoCo CPU stepping/state/control
-
-gobot.rl
-  locomotion helpers
-  training config helpers
-  compatibility wrappers above task envs
-
-gobot.app
-  editor/runtime context
-```
-
-Default step order:
-
-```text
-process_action(action)
-
-for substep in decimation:
-    apply_action()
-    physics_step()
-    update_runtime_state()
-
-compute_termination()
-compute_reward()
-reset_done_envs()
-compute_observation()
-```
-
-Default semantics:
-
-- `physics_dt` and `env_dt` are separate.
-- `env_dt = physics_dt * decimation`.
-- Reward terms use `env_dt`.
-- Done environments auto-reset by default.
-- Generic batch environments may opt into `final_observation`; the Go1 task
-  follows immediate reset semantics and does not build a terminal observation
-  in its hot path.
-- Core APIs are batched even when `num_envs == 1`.
-
-Current implementation status:
-
-- The legacy string-dispatched `gobot.rl.ManagerBasedEnv` prototype has been
-  removed.
-- Vectorized training environments currently live as normal Python task modules
-  under `examples/`.
-- Task code defines observations, rewards, resets, commands, and metrics in
-  Python while C++ provides generic batch stepping, action application, and
-  runtime state extraction.
-- The batch API stays backend-neutral: MuJoCo CPU implements the semantic
-  baseline with persistent native worlds, while the Go1 Warp task consumes the
-  same compiled scene artifact and exposes the same reset/action/state contract
-  over persistent CUDA model/data arrays.
-- Fixed task functions should be expressed as NumPy batch functions over
-  structured arrays, not as arbitrary per-step Python scene traversal. That is
-  the array-first contract: action, physics state, reward, done, reset masks,
-  and observations are all `(num_envs, *)` arrays.
-- The previous runtime LLVM/JIT task-kernel path has been removed from the Go1
-  training surface. Future code generation can be reconsidered only after the
-  CPU batch contract, backend arrays, reset masks, and async rollout path are
-  stable.
-- Python task code may read batch state arrays, previous actions, commands,
-  randomization buffers, and done masks. It must not call `node.find()`, pull
-  Python dictionaries from `get_runtime_state()`, or mutate scene nodes inside
-  the hot reward/observation path.
-- `RslRlVecEnvWrapper.training_state_dict()` is the task-neutral checkpoint
-  pass-through for resumable scheduler and curriculum state. The Go1 CPU and
-  Warp environments save command progress, terrain level/type assignments,
-  and RNG state through this boundary.
-- Go1 restores exact terrain assignments when `num_envs` is unchanged. When a
-  checkpoint is resumed at a different batch size, it reconstructs each
-  terrain type's level histogram instead of silently returning to initial
-  levels. Legacy checkpoints report the fallback explicitly.
-- Training state does not include active MuJoCo episode state. Resume starts
-  fresh episodes using the restored scheduler, curriculum, and RNG; it does
-  not claim byte-identical continuation of physics contacts or integrator
-  state.
-- Go1 checkpoint admission requires survival and commanded planar/yaw progress
-  over every authored terrain cell. Training reward alone is not a policy
-  selection criterion. Run-policy evaluation additionally records paired-foot
-  contact patterns and action/foot-speed/foot-height errors, so a high-speed
-  trot or stationary reward exploit is not mislabeled as a bound.
-- Profile-local curriculum progress is checkpointed separately from global
-  command and terrain progress. Resuming the same profile restores it exactly;
-  switching from `balanced` to `run` starts the run-speed curriculum at stage
-  zero without discarding the learned terrain assignment.
-
-## MuJoCo CPU VectorEnv Baseline
-
-The first real vector backend should prioritize correctness over throughput.
-
-Required behavior:
-
-- API is always batched:
-  - action: `(num_envs, action_dim)`
-  - observation: `(num_envs, obs_dim)`
-  - reward: `(num_envs,)`
-  - terminated/truncated: `(num_envs,)`
-- `num_envs > 1` may initially own multiple independent CPU MuJoCo worlds/data.
-- One VectorEnv only supports one scene topology.
-- Each environment owns independent seed, episode length, reset state, command,
-  target, and runtime metrics.
-- CPU VectorEnv is the behavior reference for MuJoCo Warp.
-- Reset and terminal handling should be expressed as explicit environment masks
-  so CPU and Warp can share task code.
-
-Current native CPU implementation status:
-
-- The generic C++ `NativeVectorEnv` / task-json path has been removed.
-- Go1 training loads the Gobot `.jscn` scene and uses the engine's typed CPU
-  batch API. Python never loads MJCF or reads `mjModel` / `mjData`.
-- A future engine-backed vector env should expose a clean task API instead of
-  serializing reward/observation definitions through opaque JSON.
-- Go1 exposes task runtime metadata in `env.cfg["task_runtime"]`. The current
-  runtime is `numpy`: C++ owns persistent action/task buffers, command update,
-  typed physics stepping, and state/contact/height-scan extraction; Python
-  computes observation, reward, and termination with vectorized NumPy.
-
-Current Gobot Go1 CPU batch env shape:
-
-```text
-Python Go1VelocityEnv.step(action)
-  -> NativeLocomotionBatchBackend.step_task_inputs(...)
-  -> AppContext native batch view
-       prepares clipped/scaled joint targets
-       submits PhysicsRobotBatchStepRequest with Gobot names and typed arrays
-  -> PhysicsWorld::StepRobotBatch(...)
-       applies per-environment model randomization and pushes
-       steps the backend's persistent CPU worker pool
-       returns PhysicsRobotBatchStepResult state/contact/sensor arrays
-  -> vectorized NumPy reward, termination, observation, and reset
-  -> stable BatchEnvState returned to the training wrapper
-```
-
-The scene remains the source of truth. `PhysicsSceneCompiler` compiles the
-loaded `.jscn` hierarchy once, and the MuJoCo backend builds each CPU
-environment from that snapshot. Training must not load an MJCF file as a
-second runtime source.
-
-The backend-neutral kernel split is complete: Python sources include no physics
-backend headers, `MuJoCoPhysicsWorld` has no Python friend, and architecture
-tests reject raw MuJoCo pointers or binding storage in Python code. Batched
-velocity-command state, sampling, timers, and frame conversion now live in the
-Python-independent `LocomotionCommandRuntime` service with an independent RNG
-per environment. `LocomotionBatchRuntime` now composes that service and owns
-the resolved robot-state layout, float32 base/joint/link/foot/sensor buffers,
-batched foot contact events, air/contact timing, landing forces, peak heights,
-and collision counters. Every physics result is checked against the resolved
-name and dimension contract before extraction. Task-specific reward and
-observation scratch arrays are allocated by the Python task backend; the
-pybind class only adapts NumPy arrays and lifecycle calls to the simulation
-service.
-
-Performance work must preserve deterministic reset, stable joint ordering,
-substep contact history, and the policy manifest contract. Use persistent
-workers and preallocated buffers; do not reintroduce direct-XML benchmark
-paths as training APIs.
-
-## MuJoCo Warp Fast Path
-
-The Warp backend must be designed around persistent buffers, reset masks, and
-CUDA graph replay.
-
-Warp's LLVM/codegen path is useful as an implementation reference, not as an
-immediate runtime dependency for Gobot's CPU MuJoCo training path. Gobot should
-first stabilize flat Gobot/MuJoCo batch buffers:
-
-```text
-.jscn + robot task config
-  -> mjModel + offset tables + TaskRuntimeMetadata
-  -> native batch step + NumPy task update
-  -> optional generated native/Warp kernel later
-```
-
-That keeps `.jscn` / SceneTree compile-only for training hot paths and avoids
-turning arbitrary Python functions into runtime scene traversal. If Gobot later
-adds more code generation, it must preserve the same batch buffer contract and
-remain optional behind the NumPy reference path.
-
-Initialization:
-
-```text
-compile model
-put_model()
-put_data(nworld=num_envs, nconmax, njmax)
-allocate persistent action/obs/reward/done buffers
-allocate persistent reset_mask
-create_graph()
-```
-
-Graphs to capture and manage:
-
-- `step_graph`
-- `forward_graph`
-- `reset_graph`
-- `sense_graph`
-
-Runtime rule: never replace arrays captured by a graph during the training loop.
-Only mutate array contents.
-
-Per environment step:
-
-```text
-process_action(actions)
-
-for substep in decimation:
-    write persistent ctrl/action buffer
-    launch step_graph
-
-compute termination/reward
-write reset_mask for done envs
-launch reset_graph if needed
-launch forward_graph if needed
-launch sense_graph if sensors enabled
-compute observation
-```
-
-`reset_graph` reads the persistent GPU reset mask:
-
-```text
-reset_mask[num_envs]
-mjwarp.reset_data(model, data, reset=reset_mask)
-```
-
-These operations require graph recapture:
-
-- model or data arrays are replaced
-- `expand_model_fields()` changes backing arrays
-- sensor context changes
-- render or raycast pipeline changes
-- per-world variant fields are reallocated
-- contact or constraint capacity is rebuilt
-- `nconmax` or `njmax` changes
-
-Training loops must report an error instead of silently falling back to CPU when
-the requested Warp path is unavailable.
-
-Training loops must also avoid:
-
-- per-step action/observation/reward buffer allocation
-- per-step model/data array replacement
-- per-env Python loops around physics stepping
-- implicit CPU fallback
-
-### Implemented Provider Boundary
-
-The first provider infrastructure follows this split:
-
-```text
-SceneTree / .jscn
+.jscn / authored scene
   -> PhysicsSceneCompiler
-  -> stateless PhysicsServer registry/compiler
-  -> PhysicsSceneArtifact schema v3
-  -> gobot.sim.MuJoCoWarpProvider
-  -> MuJoCo Warp model/data and Torch CUDA views
+  -> native CPU batch or portable PhysicsSceneArtifact
+  -> Python task environment
+  -> rsl_rl / other training adapter
 ```
 
-`AppContext.compile_scene_artifact()` performs compilation without installing a
-runtime `PhysicsWorld`. C++ and MuJoCo Warp communicate through the artifact
-value, not through `mjModel*`, Warp arrays, CUDA pointers, or editor state. The
-Schema v3 carries canonical content and digest, producer and producer-version
-metadata, dimensions, robot/body/joint topology, and ordered control topology.
-The compiler's backend-neutral `PhysicsSceneSnapshot` is the source for stable
-authored paths/ids and collision, material, actuator, and sensor-noise data;
-the portable MuJoCo artifact contains the compiled MJCF representation of the
-subset consumed by MuJoCo plus the explicit runtime topology.
-Providers validate those fields and consume the explicit control map rather
-than deriving actuator semantics from runtime names. The provider is a Python
-package layer and therefore is not a native `PhysicsBackendType` exposed to
-scene nodes or editor serialization.
+CPU batches use the pinned [mjbatch native core](mjbatch_cpu.md). Warp and
+Newton are Python providers consuming a validated schema-v3 artifact from
+`AppContext.compile_scene_artifact()`. Compilation does not install an active
+physics world. Providers validate content digests, producer metadata,
+dimensions, topology, and the explicit control map.
 
-The provider owns persistent model/data arrays, a reset mask, zero-copy Torch
-views, runtime contact sensors, BVH terrain raycasts, per-world model fields,
-and captured step/forward/reset/sense graphs. It rejects incompatible
-artifacts, changed captured storage, unavailable CUDA runtimes, fixed-capacity
-overflow, and non-finite state explicitly. The RSL-RL adapter preserves
-device-native action, observation, reward, and timeout tensors.
+Training tasks live under `examples/`; they define observations, rewards,
+termination, commands, and curriculum in Python. C++ supplies generic controls,
+stepping, sensors, and state extraction. The old string-dispatched
+`ManagerBasedEnv`, task-JSON `NativeVectorEnv`, and Go1 LLVM/JIT task path have
+been removed. Future task APIs should retain the typed batch boundary.
 
-Provider runtime fingerprints include the artifact digest, provider name and
-version, and normalized provider configuration. Prepared runtime assets use a
-content-addressed cache rooted at `$XDG_CACHE_HOME/gobot/physics`, or
-`~/.cache/gobot/physics` when XDG is unset. `GOBOT_PHYSICS_CACHE_DIR` can
-override the root for controlled environments. Cache entries use checksums,
-process locks, corruption invalidation, and atomic directory publication.
+## Task contract
 
-`examples.go1.train.go1_warp_velocity_env.Go1WarpVelocityEnv` is the first
-complete CUDA task using this boundary. It implements the Go1 rough-terrain
-action, command, reset, terrain curriculum, contact history, ray sensing,
-reward, termination, actor observation, critic observation, startup
-randomization, and push semantics with CUDA tensors. The CPU environment
-remains the semantic baseline and short-step parity oracle. Backend selection
-is explicit in the training CLI and never falls back implicitly.
+| Value | Shape or rule |
+| --- | --- |
+| Actions | `(num_envs, action_dim)` |
+| Observations | `(num_envs, obs_dim)` |
+| Reward, terminated, truncated | `(num_envs,)` |
+| Environment time step | `env_dt = physics_dt * decimation` |
+| Reward scaling | Use `env_dt` |
+| Reset | Explicit masks; each environment has independent RNG and episode state |
+| Topology | One scene topology per batch; also batched when `num_envs == 1` |
 
-### Newton Admission Boundary
+The step order is:
 
-`NewtonProvider` uses the same validated schema-v3 artifact and provider
-lifecycle without becoming a public Gobot backend. Its MJCF compatibility
-adapter caches materialized inline meshes using the runtime fingerprint. It
-must not add Newton handles or Warp arrays to `Scene`, `Robot3D`,
-`SimulationServer`, or editor APIs.
+```text
+process action
+  -> apply controls, step physics, update state for each substep
+  -> termination and reward
+  -> reset done environments
+  -> observation
+```
 
-For editor policy playback, `ProviderPlaySession` registers Newton as an
-external simulation driver. `SimulationServer` remains the single owner of the
-active native-or-external session and supplies fixed stepping, reset, scene
-synchronization, and deterministic shutdown.
+Go1 auto-resets without constructing terminal observations in its hot path.
+Generic environments that offer `final_observation` must capture it before
+reset. Timeouts set `truncated`; task failures set `terminated`.
 
-The initial Newton prototype must demonstrate all of the following:
+Task hot paths operate on contiguous NumPy arrays for CPU or device tensors
+for CUDA. Resolve Gobot joint/link/sensor names once. Keep scene traversal,
+per-node dictionaries, raw backend pointers, and per-environment Python physics
+loops out of step/reward/observation code. Gymnasium and rsl_rl adapters stay
+above the engine API.
 
-- stable Gobot robot/link/joint/sensor name resolution
-- fixed-capacity batched allocation with actionable overflow diagnostics
-- persistent device buffers and explicit graph recapture rules
-- masked reset and deterministic seed replay
-- joint control, state, contacts, and required sensor parity with MuJoCo CPU
-- short-horizon CPU parity tests and a standalone throughput benchmark
-- isolated optional dependency versions so Newton cannot silently replace the
-  Warp/MuJoCo versions used by the MuJoCo Warp provider
+`LocomotionBatchRuntime` owns typed robot/sensor/contact buffers and composes
+`LocomotionCommandRuntime` for command sampling. Python owns task-specific
+observation/reward/termination scratch arrays. Controllers use Gobot joint
+commands, gains, limits, scaling, and clipping; backend actuator translation
+stays inside the physics implementation.
 
-Do not add `NewtonGpu` to the public backend enum. Local upstream checkouts are
-references only; runtime integration goes through the packaged provider and
-the external-session contract.
+## CPU and CUDA execution
 
-## Randomization And Variants
+CPU stepping follows:
 
-Data randomization is cheap and should happen through persistent data buffers:
+```text
+Go1VelocityEnv.step
+  -> NativeLocomotionBatchBackend.step_task_inputs
+  -> PhysicsWorld::StepRobotBatch
+  -> mjbatch workers and typed state/contact/sensor results
+  -> vectorized NumPy task update
+```
 
-- `qpos` / `qvel`
-- initial pose
-- target command
-- episode state
+Per-environment randomization, external forces, deterministic reset, stable
+joint ordering, and substep contact history are part of this contract. The
+scene compiles once; training does not reload source MJCF as a second model.
 
-Model randomization is more expensive:
+Warp owns persistent model/data, controls, reset masks, sensor buffers, and
+Torch CUDA views. It captures step, forward, reset, and sense graphs. Mutate
+captured arrays in place. Replacing storage, expanding model fields, changing
+sensor/raycast contexts, or rebuilding contact/constraint capacities requires
+graph recapture. Overflow, non-finite state, incompatible artifacts, and
+unavailable CUDA must produce explicit errors. Backend selection never silently
+falls back to CPU.
 
-- mass
-- friction
-- damping
-- actuator gains
-- geom/material/mesh variants
+`Go1WarpVelocityEnv` keeps physics, sensing, task state, observations, rewards,
+resets, and actions on CUDA. CPU remains the short-horizon parity oracle.
+Model randomization should use expanded per-world fields; data randomization
+and reset should reuse persistent buffers. Each environment retains its own
+random stream.
 
-Model randomization should prefer expanded per-world model fields when possible.
-Replacing captured arrays requires graph recapture. Each environment needs an
-independent RNG, and seed replay should be deterministic.
+Provider cache keys include the artifact digest, provider version, and normalized
+configuration. Prepared assets use `$XDG_CACHE_HOME/gobot/physics` or
+`~/.cache/gobot/physics`; `GOBOT_PHYSICS_CACHE_DIR` overrides the root. Entries
+use checksums, process locks, corruption invalidation, and atomic publication.
 
-## Sensors, Rendering, And Playback
+## Policies, checkpoints, and playback
 
-- Training does not depend on the editor viewport.
-- Sensor work belongs in `sense_graph` for the Warp path.
-- The editor should show one environment or a selected environment.
-- Policy playback uses the same Gobot action/control API as training.
-- Physics/debug panels may display backend, simulation time, active policy,
-  controlled joints, current action, reward/debug terms, and selected env id.
+Training, ONNX export, and playback share `gobot.rl.PolicyManifest`. Loaders
+reject missing or mismatched observation/action specs, joint order, control
+settings, or simulation-scene digest. See the [policy contract](architecture.md#policy-contract).
 
-## Test Checklist
+`RslRlVecEnvWrapper` passes task training state through without interpreting
+curriculum fields. Go1 saves scheduler progress, terrain assignments,
+profile-local progress, and RNG state. Equal batch sizes restore assignments;
+changed sizes preserve each terrain type's level histogram. Switching from
+`balanced` to `run` restarts only the profile-local curriculum. Legacy fallback
+must be explicit. Training resume starts fresh physics episodes; exact runtime
+checkpoints are a separate engine feature.
 
-Scene script boundary:
+Go1 policy admission requires survival and commanded planar/yaw progress across
+all authored terrain cells. Run evaluation also records paired-foot gait
+metrics; reward or speed alone does not establish a successful running gait.
 
-- Play Mode runs `_ready`, `_process`, `_physics_process`, and `_exit_tree`.
-- Python Panel Run Once does not start Play Mode.
-- `ProviderPlaySession` uses the SimulationServer clock and closes its provider
-  idempotently when the session stops or is explicitly cleaned up.
-- Native and external simulation sessions cannot be active together.
-- External callback or scene-sync failures pause the session and preserve the
-  first diagnostic until reset, preventing a failing CUDA callback from being
-  retried every editor frame.
+Play Mode uses a runtime clone and never modifies the edited scene. Training
+runs without node scripts or editor dependencies. Python-backed playback uses
+`ProviderPlaySession`; `SimulationServer` owns its fixed-step clock and
+pause/reset/sync/stop lifecycle. Native and external sessions are exclusive.
+Callback or sync failures pause the session until reset. Python Panel **Run
+Once** remains a tool action and does not start a simulation session.
 
-Scene to runtime compile:
+## Remaining work and validation
 
-- cartpole `.jscn` compiles to a stable joint/action map.
-- slider effort or position control is effective.
-- passive hinge state is preserved.
+- Consolidate runtime scene ownership across headless simulation, rendering,
+  and Play Mode, keeping it outside editor undo/redo and dirty-state tracking.
+- Keep the [Newton provider](newton_openusd.md) behind the artifact/session
+  boundary. Direct neutral-snapshot compilation and graph capture remain
+  follow-up work. Do not add backend handles to scene or editor APIs.
+- Optimize buffers and rollout only while preserving reset, contact, and policy
+  contracts. Reconsider generated task kernels after the array contract is stable.
 
-Manager layer:
+Required regression coverage:
 
-- action clipping
-- reward dt scaling
-- timeout produces `truncated`
-- failure produces `terminated`
-- terminal observation is saved before reset
-
-CPU VectorEnv:
-
-- `num_envs=1` and `num_envs=N` env0 match under the same seed and actions.
-- reset masks only reset done environments.
-- fixed seed replay is deterministic.
-- observation/reward/done shapes are correct and finite.
-
-MuJoCo Warp:
-
-- step/forward/reset/sense graphs can be captured and replayed.
-- changing reset mask contents affects graph replay.
-- replacing captured model/data arrays requires recapture.
-- captured buffers are not reallocated inside the training loop.
-
-Parity and diagnostics:
-
-- CPU and Warp match over short horizons within tolerance.
-- contact/constraint capacity overflow reports a clear diagnostic.
-- NaN guards identify the environment id.
-- editor policy playback does not mutate authored scene data.
+- Stable compiled names/control maps; effective effort/position control.
+- Action clipping, reward time scaling, finite shapes, and correct done flags.
+- Same-seed replay, env-0 parity between single/batched execution, and masked reset.
+- CPU/Warp short-horizon parity for state, contacts, sensors, and task terms.
+- Graph replay with changing reset masks; recapture after storage changes.
+- Clear capacity/non-finite diagnostics and deterministic provider shutdown.
+- Play lifecycle callbacks, native/external exclusion, failure pausing, and
+  preservation of authored scene data.
