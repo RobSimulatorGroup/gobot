@@ -55,6 +55,11 @@ def main():
 
     root = context.load_scene(args.scene)
     print(f"loaded scene root={root.name} type={root.type} children={root.child_count}")
+    if args.backend == "mujoco" and args.expect_go1_stand:
+        # Match the Go1 runtime's integrator: its velocity-actuator damping
+        # destabilizes the stand under the engine's default Euler integrator.
+        # This headless smoke does not run the node script that configures it.
+        context.set_mujoco_solver_settings({"integrator": "ImplicitFast"})
     context.build_world(gobot.PhysicsBackendType.MuJoCoCpu if args.backend == "mujoco"
                         else gobot.PhysicsBackendType.Null)
     context.reset_simulation()

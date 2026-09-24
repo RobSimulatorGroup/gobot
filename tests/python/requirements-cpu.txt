@@ -1,0 +1,6 @@
+# Dependencies for the CPU CTest scripts; GPU providers remain optional.
+# Keep MuJoCo aligned with GOB_MUJOCO_GIT_TAG and pyproject.toml.
+mujoco==3.12.0
+numpy>=2,<3
+scipy>=1.11
+trimesh>=4.6.8

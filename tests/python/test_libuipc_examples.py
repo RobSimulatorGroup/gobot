@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -11,7 +12,6 @@ from unittest.mock import patch
 
 import gobot
 import numpy as np
-import pytest
 from gobot.ipc import CompiledIpcSceneArtifact
 from gobot.sim.providers import CompiledMuJoCoIpcArtifact
 
@@ -48,7 +48,7 @@ def _assert_authored_scene_matches(actual, expected):
                 compare(first, second, path + f"/{index}")
         elif isinstance(a, float):
             # A single float32 ULP can differ after URDF transform decomposition.
-            assert a == pytest.approx(b, rel=1e-7, abs=1e-7), path
+            assert math.isclose(a, b, rel_tol=1e-7, abs_tol=1e-7), path
         else:
             assert a == b, path
     compare(actual, expected, "scene")
