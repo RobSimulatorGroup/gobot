@@ -30,7 +30,7 @@ def _compiled_cartpole_artifact():
 def main() -> None:
     context, temporary_directory, artifact = _compiled_cartpole_artifact()
     try:
-        compiled = gobot.sim.CompiledSceneArtifact.from_compiler_mapping(artifact)
+        compiled = gobot.sim.CompiledSceneArtifact.from_mapping(artifact)
         assert compiled.format == "mjcf"
         assert compiled.robot_prefix("warp_cartpole") == "warp_cartpole_"
         assert compiled.dimensions["nq"] == 2

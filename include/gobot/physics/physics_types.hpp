@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/robotics_types.hpp"
+#include "gobot/core/tactile_sensor_parameters.hpp"
 #include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
@@ -217,6 +219,9 @@ struct PhysicsLinkSnapshot {
     std::string scene_path;
     std::uint64_t stable_id{0};
     PhysicsLinkRole role{PhysicsLinkRole::Physical};
+    PhysicsLinkRole authored_role{PhysicsLinkRole::Physical};
+    bool has_inertial{false};
+    Affine3 local_transform{Affine3::Identity()};
     Affine3 global_transform{Affine3::Identity()};
     RealType mass{0.0};
     Vector3 center_of_mass{Vector3::Zero()};
@@ -226,7 +231,19 @@ struct PhysicsLinkSnapshot {
     std::vector<PhysicsShapeSnapshot> collision_shapes;
 };
 
+struct PhysicsTactileSnapshot {
+    std::vector<Vector3> gel_vertices;
+    std::vector<std::uint32_t> gel_tetrahedra;
+    std::vector<std::uint32_t> gel_surface_triangles;
+    std::optional<TactileSensorParameters> parameters;
+    std::string attachment_link_path;
+    Affine3 attachment_transform{Affine3::Identity()};
+    std::uint32_t collision_layer{1};
+    std::uint32_t collision_mask{0xffffffffU};
+};
+
 struct PhysicsSensorSnapshot {
+    std::size_t scene_order{0};
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     std::string name;
     std::string scene_path;
@@ -261,6 +278,7 @@ struct PhysicsSensorSnapshot {
     RealType grid_resolution{0.1};
     RayAlignmentMode ray_alignment{RayAlignmentMode::World};
     std::vector<std::string> channel_names;
+    std::optional<PhysicsTactileSnapshot> tactile;
 };
 
 struct PhysicsJointSnapshot {
@@ -269,6 +287,10 @@ struct PhysicsJointSnapshot {
     std::uint64_t stable_id{0};
     std::string parent_link;
     std::string child_link;
+    // Authored names above are independent of the structural Scene hierarchy.
+    std::string structural_parent_link_path;
+    std::vector<std::string> structural_child_link_paths;
+    Affine3 local_transform{Affine3::Identity()};
     Affine3 global_transform{Affine3::Identity()};
     Vector3 axis{Vector3::UnitX()};
     RealType lower_limit{0.0};
@@ -303,6 +325,7 @@ struct PhysicsRobotSnapshot {
     std::string scene_path;
     std::uint64_t stable_id{0};
     bool standalone_rigid_body{false};
+    Affine3 global_transform{Affine3::Identity()};
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
     std::vector<PhysicsSensorSnapshot> sensors;
@@ -339,6 +362,16 @@ struct PhysicsCouplingSnapshot {
     int mode{0};
     RealType force_scale{1.0};
     RealType torque_scale{1.0};
+};
+
+struct PhysicsDeformableAttachmentSnapshot {
+    std::string scene_path;
+    std::uint64_t stable_id{0};
+    bool enabled{true};
+    std::string deformable_body_path;
+    std::string rigid_link_path;
+    std::vector<std::uint32_t> vertex_indices;
+    RealType strength_rate{100.0};
 };
 
 struct PhysicsTerrainBoxSnapshot {
@@ -390,12 +423,14 @@ struct PhysicsTerrainSnapshot {
 };
 
 struct PhysicsSceneSnapshot {
+    std::string scene_name;
     std::vector<PhysicsRobotSnapshot> robots;
     std::vector<PhysicsTerrainSnapshot> terrains;
     std::vector<PhysicsShapeSnapshot> loose_collision_shapes;
     std::vector<PhysicsSensorSnapshot> loose_sensors;
     std::vector<PhysicsDeformableSnapshot> deformables;
     std::vector<PhysicsCouplingSnapshot> couplings;
+    std::vector<PhysicsDeformableAttachmentSnapshot> deformable_attachments;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};

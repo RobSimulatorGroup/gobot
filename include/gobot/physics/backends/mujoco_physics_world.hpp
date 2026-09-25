@@ -173,24 +173,7 @@ protected:
 
 private:
 #ifdef GOBOT_HAS_MUJOCO
-    friend class MuJoCoSceneCompiler;
-
     struct RobotBatchLayout;
-
-    bool CompileArtifactOnly(PhysicsSceneSnapshot scene_snapshot);
-
-    bool CompileAuthoredModel(bool build_runtime_bindings = true);
-
-    bool AddAuthoredRobotToSpec(void* parent_spec,
-                                const PhysicsRobotSnapshot& robot,
-                                std::size_t robot_index,
-                                const std::string& prefix);
-
-    void AddLooseSceneGeomsToSpec(void* spec);
-
-    void AddTerrainGeomsToSpec(void* spec);
-
-    void AddFloatingBaseJointsToSpec(void* spec, const PhysicsRobotSnapshot& robot);
 
     void BuildJointBindings();
 

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/core/tactile_sensor_parameters.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 
@@ -70,25 +71,12 @@ public:
     void SetRgbModel(const std::string& rgb_model);
     const std::string& GetRgbModel() const;
 
+    const TactileSensorParameters& GetParameters() const { return parameters_; }
+
     bool Validate(const TetrahedralMesh& gel_mesh, std::string* error = nullptr) const;
 
 private:
-    std::uint32_t image_width_{320};
-    std::uint32_t image_height_{240};
-    RealType near_plane_{0.0};
-    RealType far_plane_{0.05};
-    RealType pixel_size_{7.9375e-5};
-    RealType density_{1000.0};
-    RealType young_modulus_{500000.0};
-    RealType poisson_ratio_{0.4};
-    RealType damping_{0.0};
-    RealType friction_coefficient_{1.0};
-    std::vector<std::uint32_t> coat_vertex_indices_;
-    std::vector<std::uint32_t> stick_vertex_indices_;
-    std::vector<Vector2> marker_positions_;
-    std::vector<std::uint32_t> marker_tetrahedra_;
-    std::vector<Vector4> marker_barycentric_;
-    std::string rgb_model_{"gobot_deterministic_v1"};
+    TactileSensorParameters parameters_;
 };
 
 class GOBOT_EXPORT TactileSensor3D : public Sensor3D {

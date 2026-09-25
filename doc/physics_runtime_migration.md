@@ -3,6 +3,29 @@
 This work implements the agreed M0–M5 runtime plan. The acceptance target is
 runtime and physics correctness, not a successful conveyor bag/carton flip.
 
+## Artifact compilation API
+
+Compile MuJoCo and IPC artifacts from one scene snapshot:
+
+```python
+artifacts = context.compile_scene_artifacts(include_ipc=True)
+physics = artifacts["physics"]
+ipc = artifacts["ipc"]
+```
+
+The backend defaults to `MuJoCoCpu`. With `include_ipc=False`, `ipc` is `None`.
+Compilation leaves the live world unchanged and publishes results only when all
+requested compilers succeed. `compile_scene_artifact()` and
+`compile_ipc_scene_artifact()` remain single-output wrappers.
+`CompiledMuJoCoIpcArtifact.from_context()` uses the combined entry point.
+
+C++ IPC callers now pass `PhysicsSceneSnapshot` to `IpcSceneCompiler::Compile`;
+use `PhysicsSceneCompiler::Compile` for Scene extraction first. Solver consumers
+include `ipc_scene_artifact.hpp`. Python callers use
+`CompiledSceneArtifact.from_mapping()`; `from_compiler_mapping()` and
+`allow_current_compiler_bridge` were removed. MJCF schema 3, IPC schema 5, and
+scene serialization formats are unchanged.
+
 ## Frozen comparison
 
 The reference is Gobot `2379635b0fa1388d1faf2ca994bac68b94519650` and libuipc

@@ -244,7 +244,7 @@ class CompiledMuJoCoIpcArtifact:
         ipc: Mapping[str, Any] | CompiledIpcSceneArtifact,
     ) -> "CompiledMuJoCoIpcArtifact":
         rigid_artifact = validate_compiled_artifact(
-            mujoco, allow_current_compiler_bridge=True
+            mujoco
         )
         ipc_artifact = validate_ipc_artifact(ipc)
         return cls(
@@ -255,13 +255,11 @@ class CompiledMuJoCoIpcArtifact:
 
     @classmethod
     def from_context(cls, context: Any) -> "CompiledMuJoCoIpcArtifact":
-        compile_mujoco = getattr(context, "compile_scene_artifact", None)
-        compile_ipc = getattr(context, "compile_ipc_scene_artifact", None)
-        if not callable(compile_mujoco) or not callable(compile_ipc):
-            raise RuntimeError(
-                "Gobot AppContext must expose both MuJoCo and IPC artifact compilers"
-            )
-        return cls.from_artifacts(compile_mujoco(), compile_ipc())
+        compile_artifacts = getattr(context, "compile_scene_artifacts", None)
+        if not callable(compile_artifacts):
+            raise TypeError("context must expose compile_scene_artifacts()")
+        artifacts = compile_artifacts(include_ipc=True)
+        return cls.from_artifacts(artifacts["physics"], artifacts["ipc"])
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CompiledMuJoCoIpcArtifact":

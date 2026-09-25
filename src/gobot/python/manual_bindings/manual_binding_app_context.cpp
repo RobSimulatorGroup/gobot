@@ -1575,6 +1575,21 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 }
                 return SceneArtifactToPython(artifact);
             }, py::arg("backend_type") = PhysicsBackendType::MuJoCoCpu)
+            .def("compile_scene_artifacts", [](EngineContext& context,
+                                                PhysicsBackendType backend_type,
+                                                bool include_ipc) {
+                PhysicsSceneArtifact physics;
+                IpcSceneArtifact ipc;
+                if (!context.CompileSceneArtifacts(SceneRootForContext(context), backend_type,
+                                                    &physics, include_ipc ? &ipc : nullptr)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+                py::dict result;
+                result["physics"] = SceneArtifactToPython(physics);
+                result["ipc"] = include_ipc ? py::object(IpcSceneArtifactToPython(ipc)) : py::none();
+                return result;
+            }, py::arg("backend_type") = PhysicsBackendType::MuJoCoCpu,
+               py::kw_only(), py::arg("include_ipc") = false)
             .def("compile_ipc_scene_artifact", [](EngineContext& context) {
                 IpcSceneArtifact artifact;
                 Node* root = SceneRootForContext(context);

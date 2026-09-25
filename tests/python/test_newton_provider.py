@@ -660,7 +660,7 @@ def _artifact(*, nq=2, nv=2, nu=2):
         }
         for index in range(nu)
     ]
-    return gobot.sim.CompiledSceneArtifact.from_compiler_mapping(
+    return gobot.sim.CompiledSceneArtifact.from_mapping(
         {
             "schema_version": 3,
             "producer": "mujoco",
@@ -731,7 +731,7 @@ def _artifact_with_content(artifact, content):
             control["index"] for control in controls if control["robot"] == robots[0]["name"]
         ]
     mapping["robots"] = robots
-    return gobot.sim.CompiledSceneArtifact.from_compiler_mapping(
+    return gobot.sim.CompiledSceneArtifact.from_mapping(
         mapping
     )
 

@@ -1397,7 +1397,7 @@ def test_compiled_scene_artifact_validates_robot_prefixes():
     except ValueError as error:
         assert "schema" in str(error)
     try:
-        CompiledSceneArtifact.from_compiler_mapping(
+        CompiledSceneArtifact.from_mapping(
             {
                 "schema_version": 1,
                 "backend": "MuJoCoCpu",

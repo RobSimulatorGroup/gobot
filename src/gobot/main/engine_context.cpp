@@ -6,6 +6,7 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/main/runtime_scene_owner.hpp"
 #include "gobot/physics/physics_scene_compiler.hpp"
+#include "gobot/physics/ipc_scene_compiler.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -191,37 +192,24 @@ bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
 bool EngineContext::CompileSceneArtifact(const Node* scene_root,
                                          PhysicsBackendType backend_type,
                                          PhysicsSceneArtifact* artifact) {
-    if (simulation_server_ == nullptr) {
-        SetLastError("Physics compilation services are not available.");
-        return false;
-    }
-    if (scene_root == nullptr) {
-        SetLastError("Cannot compile a physics artifact without a loaded scene.");
-        return false;
-    }
-    if (artifact == nullptr) {
+    return CompileSceneArtifacts(scene_root, backend_type, artifact);
+}
+
+bool EngineContext::CompileSceneArtifacts(PhysicsBackendType backend_type,
+                                          PhysicsSceneArtifact* physics,
+                                          IpcSceneArtifact* ipc) {
+    return CompileSceneArtifacts(scene_root_, backend_type, physics, ipc);
+}
+
+bool EngineContext::CompileSceneArtifacts(const Node* scene_root,
+                                          PhysicsBackendType backend_type,
+                                          PhysicsSceneArtifact* physics,
+                                          IpcSceneArtifact* ipc) {
+    if (physics == nullptr) {
         SetLastError("Cannot compile a physics artifact into a null output.");
         return false;
     }
-
-    CompiledPhysicsScene compiled_scene;
-    std::string compile_error;
-    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene, &compile_error)) {
-        SetLastError(compile_error);
-        return false;
-    }
-    if (!PhysicsServer::CompileSceneArtifact(
-                backend_type,
-                std::move(compiled_scene.snapshot),
-                simulation_server_->GetPhysicsWorldSettings(),
-                artifact,
-                &compile_error)) {
-        SetLastError(compile_error);
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
+    return CompileSnapshotArtifacts(scene_root, backend_type, physics, ipc);
 }
 
 bool EngineContext::CompileIpcSceneArtifact(IpcSceneArtifact* artifact) {
@@ -230,20 +218,46 @@ bool EngineContext::CompileIpcSceneArtifact(IpcSceneArtifact* artifact) {
 
 bool EngineContext::CompileIpcSceneArtifact(const Node* scene_root,
                                             IpcSceneArtifact* artifact) {
-    if (scene_root == nullptr) {
-        SetLastError("Cannot compile an IPC artifact without a loaded scene.");
-        return false;
-    }
     if (artifact == nullptr) {
         SetLastError("Cannot compile an IPC artifact into a null output.");
         return false;
     }
+    return CompileSnapshotArtifacts(scene_root, PhysicsBackendType::Null, nullptr, artifact);
+}
 
-    std::string compile_error;
-    if (!IpcSceneCompiler::Compile(scene_root, artifact, &compile_error)) {
-        SetLastError(std::move(compile_error));
+bool EngineContext::CompileSnapshotArtifacts(const Node* scene_root,
+                                             PhysicsBackendType backend_type,
+                                             PhysicsSceneArtifact* physics,
+                                             IpcSceneArtifact* ipc) {
+    if (scene_root == nullptr) {
+        SetLastError("Cannot compile an artifact without a loaded scene.");
         return false;
     }
+    if (physics != nullptr && simulation_server_ == nullptr) {
+        SetLastError("Physics compilation services are not available.");
+        return false;
+    }
+    CompiledPhysicsScene compiled_scene;
+    std::string error;
+    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    // Publish both outputs only after every requested compiler succeeds.
+    PhysicsSceneArtifact physics_result;
+    IpcSceneArtifact ipc_result;
+    if (ipc != nullptr && !IpcSceneCompiler::Compile(compiled_scene.snapshot, &ipc_result, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    if (physics != nullptr && !PhysicsServer::CompileSceneArtifact(
+            backend_type, std::move(compiled_scene.snapshot),
+            simulation_server_->GetPhysicsWorldSettings(), &physics_result, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    if (physics != nullptr) *physics = std::move(physics_result);
+    if (ipc != nullptr) *ipc = std::move(ipc_result);
     last_error_.clear();
     return true;
 }

@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "gobot/core/object.hpp"
-#include "gobot/physics/ipc_scene_compiler.hpp"
+#include "gobot/physics/ipc_scene_artifact.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/rendering/renderer_debug_draw.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -57,6 +57,13 @@ public:
     bool CompileSceneArtifact(const Node* scene_root,
                               PhysicsBackendType backend_type,
                               PhysicsSceneArtifact* artifact);
+    bool CompileSceneArtifacts(PhysicsBackendType backend_type,
+                               PhysicsSceneArtifact* physics,
+                               IpcSceneArtifact* ipc = nullptr);
+    bool CompileSceneArtifacts(const Node* scene_root,
+                               PhysicsBackendType backend_type,
+                               PhysicsSceneArtifact* physics,
+                               IpcSceneArtifact* ipc = nullptr);
     bool CompileIpcSceneArtifact(IpcSceneArtifact* artifact);
     bool CompileIpcSceneArtifact(const Node* scene_root,
                                  IpcSceneArtifact* artifact);
@@ -104,6 +111,10 @@ public:
     void MarkSceneDirtyBaseline();
 
 private:
+    bool CompileSnapshotArtifacts(const Node* scene_root,
+                                  PhysicsBackendType backend_type,
+                                  PhysicsSceneArtifact* physics,
+                                  IpcSceneArtifact* ipc);
     void ClearOwnedScene();
     void AttachOwnedSceneToRuntimeTree();
     void AdvanceSceneEpoch();

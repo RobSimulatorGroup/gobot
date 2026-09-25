@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "gobot/core/robotics_types.hpp"
+
 #include <cstdint>
 #include <vector>
 
@@ -17,10 +19,6 @@
 
 namespace gobot {
 
-enum class DeformableBodyModel {
-    Volumetric,
-    ThinShell,
-};
 
 class GOBOT_EXPORT DeformableBody3D : public Node3D {
     GOBCLASS(DeformableBody3D, Node3D)

@@ -11,6 +11,7 @@
 
 #include <gobot/core/sha256.hpp>
 #include <gobot/physics/ipc_scene_compiler.hpp>
+#include <gobot/physics/physics_scene_compiler.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/deformable_attachment_3d.hpp>
 #include <gobot/scene/deformable_body_3d.hpp>
@@ -31,6 +32,13 @@
 #include <gobot/scene/window.hpp>
 
 namespace {
+
+bool CompileScene(const gobot::Node* root, gobot::IpcSceneArtifact* artifact, std::string* error) {
+    gobot::CompiledPhysicsScene scene;
+    return gobot::PhysicsSceneCompiler::Compile(root, &scene, error) &&
+           gobot::IpcSceneCompiler::Compile(scene.snapshot, artifact, error);
+}
+
 
 gobot::Ref<gobot::TetrahedralMesh> MakeTetrahedron() {
     auto mesh = gobot::MakeRef<gobot::TetrahedralMesh>();
@@ -104,8 +112,8 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     gobot::IpcSceneArtifact first;
     gobot::IpcSceneArtifact second;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &first, &error)) << error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &second, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &first, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &second, &error)) << error;
 
     EXPECT_EQ(first.schema_version, 5);
     EXPECT_EQ(first.producer, "gobot");
@@ -134,7 +142,20 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     EXPECT_EQ(manifest.at("tactile_sensors").at(0).at("coat_vertex_indices"),
               nlohmann::json::array({0, 1, 2}));
 
+    gobot::CompiledPhysicsScene captured;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &captured, &error)) << error;
+    config->SetImageWidth(1);
+    mesh->SetVertices({});
     tree.Finalize();
+    gobot::IpcSceneArtifact detached;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &detached, &error)) << error;
+    EXPECT_EQ(detached.manifest, first.manifest);
+    ASSERT_EQ(detached.blobs.size(), first.blobs.size());
+    EXPECT_EQ(detached.blobs[0].data, first.blobs[0].data);
+    captured.snapshot.deformables[0].tetrahedra[0] = 99;
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &detached, &error));
+    EXPECT_EQ(detached.manifest, first.manifest);
+    EXPECT_EQ(detached.blobs[0].data, first.blobs[0].data);
 }
 
 TEST(TestIpcSceneCompiler, compiles_thin_shell_deformable) {
@@ -151,7 +172,7 @@ TEST(TestIpcSceneCompiler, compiles_thin_shell_deformable) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(body, &artifact, &error)) << error;
     ASSERT_EQ(artifact.blobs.size(), 1);
     EXPECT_EQ(artifact.blobs.front().encoding, "gobot.triangle-mesh.le.v1");
 
@@ -167,7 +188,7 @@ TEST(TestIpcSceneCompiler, compiles_thin_shell_deformable) {
     EXPECT_TRUE(film.at("self_collision"));
 
     body->SetThickness(0.0);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("thickness"), std::string::npos);
     tree.Finalize();
 }
@@ -202,7 +223,7 @@ TEST(TestIpcSceneCompiler, compiles_loose_static_box_and_mesh_colliders) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error))
+    ASSERT_TRUE(CompileScene(root, &artifact, &error))
             << error;
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     const nlohmann::json& colliders = manifest.at("static_colliders");
@@ -228,7 +249,7 @@ TEST(TestIpcSceneCompiler, reports_terrain_as_unsupported) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(terrain, &artifact, &error));
+    EXPECT_FALSE(CompileScene(terrain, &artifact, &error));
     EXPECT_NE(error.find("Terrain3D is not supported"), std::string::npos);
     tree.Finalize();
 }
@@ -245,7 +266,7 @@ TEST(TestIpcSceneCompiler, rejects_invalid_deformable_mesh) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("positively oriented"), std::string::npos);
     tree.Finalize();
 }
@@ -261,12 +282,12 @@ TEST(TestIpcSceneCompiler, accepts_small_uniform_scale_and_rejects_invalid_surfa
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(body, &artifact, &error)) << error;
 
     auto invalid_surface = MakeTetrahedron();
     invalid_surface->SetSurfaceTriangles({0, 1, 2});
     body->SetMesh(invalid_surface);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("every boundary face"), std::string::npos);
 
     auto isolated_vertex = MakeTetrahedron();
@@ -274,7 +295,7 @@ TEST(TestIpcSceneCompiler, accepts_small_uniform_scale_and_rejects_invalid_surfa
     vertices.push_back({2.0, 2.0, 2.0});
     isolated_vertex->SetVertices(vertices);
     body->SetMesh(isolated_vertex);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("not referenced"), std::string::npos);
 
     auto overlapping_tetrahedra = MakeTetrahedron();
@@ -283,13 +304,13 @@ TEST(TestIpcSceneCompiler, accepts_small_uniform_scale_and_rejects_invalid_surfa
     overlapping_tetrahedra->SetVertices(overlapping_vertices);
     overlapping_tetrahedra->SetTetrahedra({0, 1, 2, 3, 0, 1, 2, 4});
     body->SetMesh(overlapping_tetrahedra);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("opposite orientation"), std::string::npos);
 
     auto duplicate_tetrahedra = MakeTetrahedron();
     duplicate_tetrahedra->SetTetrahedra({0, 1, 2, 3, 0, 1, 2, 3});
     body->SetMesh(duplicate_tetrahedra);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(body, &artifact, &error));
+    EXPECT_FALSE(CompileScene(body, &artifact, &error));
     EXPECT_NE(error.find("duplicate tetrahedron"), std::string::npos);
     tree.Finalize();
 }
@@ -353,7 +374,7 @@ TEST(TestIpcSceneCompiler, records_robot_fk_and_inertial_topology) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(robot, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(robot, &artifact, &error)) << error;
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     ASSERT_EQ(manifest.at("robots").size(), 1);
     const nlohmann::json& compiled_robot = manifest.at("robots").at(0);
@@ -447,7 +468,7 @@ TEST(TestIpcSceneCompiler, compiles_explicit_couplings_in_canonical_order) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &artifact, &error)) << error;
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     const nlohmann::json& couplings = manifest.at("couplings");
     ASSERT_EQ(couplings.size(), 2);
@@ -490,7 +511,7 @@ TEST(TestIpcSceneCompiler, compiles_standalone_rigid_body_coupling) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &artifact, &error)) << error;
     EXPECT_EQ(artifact.schema_version, 5);
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     ASSERT_EQ(manifest.at("robots").size(), 1u);
@@ -531,26 +552,26 @@ TEST(TestIpcSceneCompiler, rejects_invalid_or_duplicate_couplings) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
-    EXPECT_NE(error.find("requires a target_body_path"), std::string::npos);
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
+    EXPECT_NE(error.find("requires a valid rigid body path"), std::string::npos);
 
     coupling->SetRigidLinkPath(gobot::NodePath("../robot/link"));
     collision->SetDisabled(true);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
     EXPECT_NE(error.find("no enabled CollisionShape3D"), std::string::npos);
 
     collision->SetDisabled(false);
     coupling->SetForceScale(std::numeric_limits<double>::infinity());
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
-    EXPECT_NE(error.find("finite and non-negative"), std::string::npos);
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
+    EXPECT_NE(error.find("non-negative force scales"), std::string::npos);
 
     coupling->SetForceScale(1.0);
     auto* duplicate = gobot::Object::New<gobot::PhysicsCoupling>();
     duplicate->SetName("duplicate");
     duplicate->SetRigidLinkPath(gobot::NodePath("../robot/link"));
     root->AddChild(duplicate);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
-    EXPECT_NE(error.find("multiple enabled PhysicsCoupling"), std::string::npos);
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
+    EXPECT_NE(error.find("Multiple enabled PhysicsCoupling"), std::string::npos);
     tree.Finalize();
 }
 
@@ -586,7 +607,7 @@ TEST(TestIpcSceneCompiler, treats_coupled_floating_base_as_external_proxy) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &artifact, &error)) << error;
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     ASSERT_EQ(manifest.at("robots").size(), 1);
     EXPECT_TRUE(manifest.at("robots").at(0).at("joints").empty());
@@ -596,7 +617,7 @@ TEST(TestIpcSceneCompiler, treats_coupled_floating_base_as_external_proxy) {
                         .ends_with("/fixture_link"));
 
     coupling->SetEnabled(false);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
     EXPECT_NE(error.find("requires an enabled PhysicsCoupling"), std::string::npos);
     tree.Finalize();
 }
@@ -640,7 +661,7 @@ TEST(TestIpcSceneCompiler, compiles_and_validates_deformable_attachments) {
 
     gobot::IpcSceneArtifact artifact;
     std::string error;
-    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    ASSERT_TRUE(CompileScene(root, &artifact, &error)) << error;
     const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
     const nlohmann::json& attachments = manifest.at("deformable_attachments");
     ASSERT_EQ(attachments.size(), 1);
@@ -655,17 +676,136 @@ TEST(TestIpcSceneCompiler, compiles_and_validates_deformable_attachments) {
               nlohmann::json::array({0, 2}));
     EXPECT_DOUBLE_EQ(attachments.at(0).at("strength_rate"), 250.0);
 
+    gobot::CompiledPhysicsScene captured;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &captured, &error)) << error;
+    const auto original = artifact.manifest;
+
     attachment->SetVertexIndices({0, 0});
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
     EXPECT_NE(error.find("non-empty and unique"), std::string::npos);
 
     attachment->SetVertexIndices({4});
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
     EXPECT_NE(error.find("out-of-range"), std::string::npos);
 
     attachment->SetVertexIndices({0});
     coupling->SetEnabled(false);
-    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_FALSE(CompileScene(root, &artifact, &error));
     EXPECT_NE(error.find("requires an enabled PhysicsCoupling"), std::string::npos);
     tree.Finalize();
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &artifact, &error)) << error;
+    EXPECT_EQ(artifact.manifest, original);
+}
+
+TEST(TestIpcSceneCompiler, captures_nested_owners_and_auxiliary_nodes_once) {
+    auto* root = gobot::Object::New<gobot::Robot3D>();
+    root->SetName("outer");
+    root->SetPosition({1.0, 2.0, 3.0});
+    auto* outer_link = gobot::Object::New<gobot::Link3D>();
+    outer_link->SetName("outer_link");
+    root->AddChild(outer_link);
+    auto* nested = gobot::Object::New<gobot::Robot3D>();
+    nested->SetName("inner");
+    outer_link->AddChild(nested);
+    auto* inner_link = gobot::Object::New<gobot::Link3D>();
+    inner_link->SetName("inner_link");
+    nested->AddChild(inner_link);
+    auto* body = gobot::Object::New<gobot::DeformableBody3D>();
+    body->SetName("gel");
+    body->SetMesh(MakeTetrahedron());
+    inner_link->AddChild(body);
+    auto* sensor = gobot::Object::New<gobot::TactileSensor3D>();
+    sensor->SetName("pad");
+    sensor->SetPosition({0.0, 0.0, 0.1});
+    sensor->SetGelMesh(MakeTetrahedron());
+    sensor->SetConfig(gobot::MakeRef<gobot::TactileSensorConfig>());
+    inner_link->AddChild(sensor);
+
+    gobot::CompiledPhysicsScene captured;
+    std::string error;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &captured, &error)) << error;
+    ASSERT_EQ(captured.snapshot.robots.size(), 2u);
+    EXPECT_EQ(captured.snapshot.robots[0].name, "outer");
+    EXPECT_EQ(captured.snapshot.robots[1].name, "inner");
+    EXPECT_EQ(captured.snapshot.robots[0].links.size(), 1u);
+    EXPECT_EQ(captured.snapshot.robots[1].links.size(), 1u);
+    EXPECT_EQ(captured.snapshot.total_link_count, 2u);
+    EXPECT_EQ(captured.snapshot.total_sensor_count, 1u);
+    ASSERT_EQ(captured.snapshot.deformables.size(), 1u);
+    EXPECT_TRUE(captured.snapshot.deformables[0].global_transform.translation().isApprox(
+            gobot::Vector3{1.0, 2.0, 3.0}));
+    ASSERT_EQ(captured.snapshot.robots[1].sensors.size(), 1u);
+    const auto& tactile = captured.snapshot.robots[1].sensors[0].tactile;
+    ASSERT_TRUE(tactile.has_value());
+    EXPECT_EQ(tactile->attachment_link_path, captured.snapshot.robots[1].links[0].scene_path);
+    EXPECT_TRUE(tactile->attachment_transform.translation().isApprox(gobot::Vector3{0.0, 0.0, 0.1}));
+    gobot::IpcSceneArtifact artifact;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &artifact, &error)) << error;
+    const auto before = artifact.manifest;
+    gobot::Object::Delete(root);
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &artifact, &error)) << error;
+    EXPECT_EQ(artifact.manifest, before);
+    captured.snapshot.terrains.emplace_back();
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(captured.snapshot, &artifact, &error));
+    EXPECT_NE(error.find("Terrain3D"), std::string::npos);
+    EXPECT_EQ(artifact.manifest, before);
+}
+
+TEST(TestIpcSceneCompiler, validates_snapshot_geometry_without_scene_resources) {
+    gobot::PhysicsSceneSnapshot scene;
+    scene.scene_name = "mesh_world";
+    gobot::PhysicsShapeSnapshot shape;
+    shape.name = "triangle";
+    shape.scene_path = "/mesh_world/triangle";
+    shape.type = gobot::PhysicsShapeType::Mesh;
+    shape.vertices = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    shape.indices = {0, 1, 3};
+    scene.loose_collision_shapes.push_back(shape);
+    gobot::IpcSceneArtifact artifact;
+    artifact.manifest = "unchanged";
+    std::string error;
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error));
+    EXPECT_EQ(artifact.manifest, "unchanged");
+    scene.loose_collision_shapes[0].indices = {0, 1, 2};
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error)) << error;
+    EXPECT_TRUE(error.empty());
+    scene.loose_collision_shapes[0].indices = {0, 1, 2, 0, 2, 1};
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error));
+    EXPECT_NE(error.find("duplicate"), std::string::npos);
+}
+
+TEST(TestIpcSceneCompiler, rejects_cross_robot_joint_paths_with_matching_names) {
+    gobot::PhysicsSceneSnapshot scene;
+    scene.scene_name = "world";
+    gobot::PhysicsRobotSnapshot robot;
+    robot.name = "robot";
+    robot.scene_path = "/world/robot";
+    gobot::PhysicsLinkSnapshot base;
+    base.name = "base";
+    base.scene_path = "/world/robot/base";
+    gobot::PhysicsLinkSnapshot tip;
+    tip.name = "tip";
+    tip.scene_path = "/world/robot/base/joint/tip";
+    robot.links = {base, tip};
+    gobot::PhysicsJointSnapshot joint;
+    joint.name = "joint";
+    joint.scene_path = "/world/robot/base/joint";
+    joint.structural_parent_link_path = base.scene_path;
+    joint.structural_child_link_paths = {tip.scene_path};
+    robot.joints.push_back(joint);
+    scene.robots.push_back(robot);
+    gobot::PhysicsRobotSnapshot other;
+    other.name = "other";
+    other.scene_path = "/world/other";
+    base.scene_path = "/world/other/base";
+    other.links.push_back(base);
+    scene.robots.push_back(other);
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error)) << error;
+    const auto original = artifact.manifest;
+    scene.robots[0].joints[0].structural_parent_link_path = base.scene_path;
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error));
+    EXPECT_NE(error.find("outside its robot"), std::string::npos);
+    EXPECT_EQ(artifact.manifest, original);
 }

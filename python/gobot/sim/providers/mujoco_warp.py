@@ -369,7 +369,6 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
 
         self.artifact = validate_compiled_artifact(
             artifact,
-            allow_current_compiler_bridge=True,
         )
         self._bindings = _bindings if _bindings is not None else self._load_bindings()
         self._mujoco = self._bindings.mujoco

@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "gobot/core/macros.hpp"
-#include "gobot/physics/ipc_scene_compiler.hpp"
+#include "gobot/physics/ipc_scene_artifact.hpp"
 
 namespace gobot {
 

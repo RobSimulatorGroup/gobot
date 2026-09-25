@@ -19,26 +19,9 @@
 #include <utility>
 
 #include "gobot/core/sha256.hpp"
+#include "gobot/core/math/mesh_validation.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/physics/physics_types.hpp"
-#include "gobot/scene/collision_shape_3d.hpp"
-#include "gobot/scene/deformable_attachment_3d.hpp"
-#include "gobot/scene/deformable_body_3d.hpp"
-#include "gobot/scene/joint_3d.hpp"
-#include "gobot/scene/link_3d.hpp"
-#include "gobot/scene/node.hpp"
-#include "gobot/scene/node_3d.hpp"
-#include "gobot/scene/physics_coupling.hpp"
-#include "gobot/scene/resources/box_shape_3d.hpp"
-#include "gobot/scene/resources/capsule_shape_3d.hpp"
-#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
-#include "gobot/scene/resources/cylinder_shape_3d.hpp"
-#include "gobot/scene/resources/mesh.hpp"
-#include "gobot/scene/resources/sphere_shape_3d.hpp"
-#include "gobot/scene/rigid_body_3d.hpp"
-#include "gobot/scene/robot_3d.hpp"
-#include "gobot/scene/tactile_sensor_3d.hpp"
-#include "gobot/scene/terrain_3d.hpp"
 
 namespace gobot {
 namespace {
@@ -46,9 +29,15 @@ namespace {
 constexpr std::string_view kMeshEncoding = "gobot.tetrahedral-mesh.le.v1";
 constexpr std::string_view kSurfaceMeshEncoding = "gobot.triangle-mesh.le.v1";
 
+struct TetrahedralMeshView {
+    std::span<const Vector3> vertices;
+    std::span<const std::uint32_t> tetrahedra;
+    std::span<const std::uint32_t> surface;
+};
+
 struct SurfaceMeshData {
-    std::vector<Vector3> vertices;
-    std::vector<std::uint32_t> triangles;
+    std::span<const Vector3> vertices;
+    std::span<const std::uint32_t> triangles;
 };
 
 constexpr std::string_view ProducerVersion() {
@@ -82,23 +71,23 @@ void AppendF64(std::vector<std::uint8_t>* output, double value) {
     AppendU64(output, std::bit_cast<std::uint64_t>(value));
 }
 
-std::vector<std::uint8_t> EncodeMesh(const TetrahedralMesh& mesh) {
-    const std::vector<std::uint32_t> surface = mesh.GetResolvedSurfaceTriangles();
+std::vector<std::uint8_t> EncodeMesh(const TetrahedralMeshView& mesh) {
+    const auto surface = mesh.surface;
     std::vector<std::uint8_t> data;
-    data.reserve(24 + mesh.GetVertexCount() * 24 +
-                 mesh.GetTetrahedra().size() * 4 + surface.size() * 4);
+    data.reserve(24 + mesh.vertices.size() * 24 +
+                 mesh.tetrahedra.size() * 4 + surface.size() * 4);
     constexpr std::array<std::uint8_t, 8> magic{'G', 'O', 'B', 'T', 'I', 'P', 'C', '1'};
     data.insert(data.end(), magic.begin(), magic.end());
     AppendU32(&data, 1);
-    AppendU32(&data, static_cast<std::uint32_t>(mesh.GetVertexCount()));
-    AppendU32(&data, static_cast<std::uint32_t>(mesh.GetTetrahedronCount()));
+    AppendU32(&data, static_cast<std::uint32_t>(mesh.vertices.size()));
+    AppendU32(&data, static_cast<std::uint32_t>(mesh.tetrahedra.size() / 4));
     AppendU32(&data, static_cast<std::uint32_t>(surface.size() / 3));
-    for (const Vector3& vertex : mesh.GetVertices()) {
+    for (const Vector3& vertex : mesh.vertices) {
         AppendF64(&data, static_cast<double>(vertex.x()));
         AppendF64(&data, static_cast<double>(vertex.y()));
         AppendF64(&data, static_cast<double>(vertex.z()));
     }
-    for (const std::uint32_t index : mesh.GetTetrahedra()) {
+    for (const std::uint32_t index : mesh.tetrahedra) {
         AppendU32(&data, index);
     }
     for (const std::uint32_t index : surface) {
@@ -126,96 +115,16 @@ std::vector<std::uint8_t> EncodeSurfaceMesh(const SurfaceMeshData& mesh) {
     return data;
 }
 
-bool CollectSurfaceMesh(const Mesh& mesh, SurfaceMeshData* output, std::string* error) {
-    const std::shared_ptr<const MeshSurfaceList> surfaces = mesh.GetSurfaceData();
-    if (!surfaces || surfaces->empty()) {
-        return SetCompileError(error, "convex collision mesh has no surface data");
-    }
-    SurfaceMeshData result;
-    for (const MeshSurfaceData& surface : *surfaces) {
-        if (surface.vertices.empty()) {
-            continue;
-        }
-        if (result.vertices.size() + surface.vertices.size() >
-            std::numeric_limits<std::uint32_t>::max()) {
-            return SetCompileError(error, "convex collision mesh has too many vertices");
-        }
-        const std::uint32_t vertex_offset =
-                static_cast<std::uint32_t>(result.vertices.size());
-        result.vertices.insert(
-                result.vertices.end(), surface.vertices.begin(), surface.vertices.end());
-        if (surface.indices.empty()) {
-            if (surface.vertices.size() % 3 != 0) {
-                return SetCompileError(
-                        error, "unindexed convex collision mesh is not a triangle list");
-            }
-            for (std::uint32_t index = 0; index < surface.vertices.size(); ++index) {
-                result.triangles.push_back(vertex_offset + index);
-            }
-        } else {
-            if (surface.indices.size() % 3 != 0) {
-                return SetCompileError(
-                        error, "indexed convex collision mesh is not a triangle list");
-            }
-            for (const std::uint32_t index : surface.indices) {
-                if (index >= surface.vertices.size()) {
-                    return SetCompileError(
-                            error, "convex collision mesh has an out-of-range index");
-                }
-                result.triangles.push_back(vertex_offset + index);
-            }
-        }
-    }
-    if (result.vertices.size() < 3 || result.triangles.empty()) {
-        return SetCompileError(error, "convex collision mesh has no triangles");
-    }
-    for (const Vector3& vertex : result.vertices) {
-        if (!vertex.allFinite()) {
-            return SetCompileError(error, "convex collision mesh has a non-finite vertex");
-        }
-    }
-    std::set<std::array<std::uint32_t, 3>> unique_triangles;
-    for (std::size_t offset = 0; offset < result.triangles.size(); offset += 3) {
-        const std::uint32_t ia = result.triangles[offset];
-        const std::uint32_t ib = result.triangles[offset + 1];
-        const std::uint32_t ic = result.triangles[offset + 2];
-        if (ia == ib || ib == ic || ic == ia) {
-            return SetCompileError(
-                    error, "convex collision mesh has a repeated triangle vertex");
-        }
-        std::array<std::uint32_t, 3> triangle_key{ia, ib, ic};
-        std::sort(triangle_key.begin(), triangle_key.end());
-        if (!unique_triangles.insert(triangle_key).second) {
-            return SetCompileError(
-                    error, "convex collision mesh has a duplicate triangle");
-        }
-        const Vector3 edge_ab = result.vertices[ib] - result.vertices[ia];
-        const Vector3 edge_ac = result.vertices[ic] - result.vertices[ia];
-        const RealType edge_scale = std::max(edge_ab.norm(), edge_ac.norm());
-        const RealType area_scale = edge_scale * edge_scale;
-        const RealType tolerance =
-                std::numeric_limits<RealType>::epsilon() * 128.0 * area_scale;
-        const RealType double_area = edge_ab.cross(edge_ac).norm();
-        if (!std::isfinite(double_area) || !std::isfinite(tolerance) ||
-            edge_scale <= 0.0 || double_area <= tolerance) {
-            return SetCompileError(
-                    error, "convex collision mesh has a degenerate triangle");
-        }
-    }
-    *output = std::move(result);
-    return true;
-}
-
-std::string MeshTopologyDigest(const TetrahedralMesh& mesh) {
-    const std::vector<std::uint32_t> surface = mesh.GetResolvedSurfaceTriangles();
+std::string MeshTopologyDigest(const TetrahedralMeshView& mesh) {
+    const auto surface = mesh.surface;
     std::vector<std::uint8_t> data;
     constexpr std::array<std::uint8_t, 12> magic{
             'G', 'O', 'B', 'T', 'I', 'P', 'C', 'T', 'O', 'P', '1', 0};
     data.insert(data.end(), magic.begin(), magic.end());
-    AppendU32(&data, static_cast<std::uint32_t>(mesh.GetVertexCount()));
-    AppendU32(&data, static_cast<std::uint32_t>(mesh.GetTetrahedronCount()));
+    AppendU32(&data, static_cast<std::uint32_t>(mesh.vertices.size()));
+    AppendU32(&data, static_cast<std::uint32_t>(mesh.tetrahedra.size() / 4));
     AppendU32(&data, static_cast<std::uint32_t>(surface.size() / 3));
-    for (const std::uint32_t index : mesh.GetTetrahedra()) {
+    for (const std::uint32_t index : mesh.tetrahedra) {
         AppendU32(&data, index);
     }
     for (const std::uint32_t index : surface) {
@@ -250,93 +159,27 @@ Json TransformJson(const Affine3& transform) {
     return Json{{"matrix_row_major", std::move(matrix)}};
 }
 
-Json GlobalTransformJson(const Node3D& node) {
-    return TransformJson(node.GetGlobalTransform());
-}
-
-Json LocalTransformJson(const Node3D& node) {
-    return TransformJson(node.GetTransform());
-}
-
-std::string NodePathString(const Node& node) {
-    return static_cast<std::string>(node.GetPath());
-}
-
-const Node* ResolveNodePath(const Node& source, const NodePath& path) {
-    if (path.IsEmpty() || path.GetSubNameCount() != 0) {
-        return nullptr;
-    }
-    const Node* current = &source;
-    std::size_t name_index = 0;
-    const std::vector<std::string> names = path.GetNames();
-    if (path.IsAbsolute()) {
-        while (current->GetParent() != nullptr) {
-            current = current->GetParent();
-        }
-        if (!names.empty() && names.front() == current->GetName()) {
-            name_index = 1;
-        }
-    }
-    for (; name_index < names.size(); ++name_index) {
-        const std::string& name = names[name_index];
-        if (name == ".") {
-            continue;
-        }
-        if (name == "..") {
-            current = current->GetParent();
-            if (current == nullptr) {
-                return nullptr;
-            }
-            continue;
-        }
-        const Node* child = nullptr;
-        for (std::size_t index = 0; index < current->GetChildCount(); ++index) {
-            const Node* candidate = current->GetChild(static_cast<int>(index));
-            if (candidate->GetName() == name) {
-                child = candidate;
-                break;
-            }
-        }
-        if (child == nullptr) {
-            return nullptr;
-        }
-        current = child;
-    }
-    return current;
-}
-
-const Link3D* FindAncestorLink(const Node& node) {
-    const Node* ancestor = node.GetParent();
-    while (ancestor != nullptr) {
-        if (const auto* link = Object::PointerCastTo<Link3D>(ancestor)) {
-            return link;
-        }
-        ancestor = ancestor->GetParent();
-    }
-    return nullptr;
-}
-
-bool ValidateMaterial(const DeformableBody3D& body, std::string* error) {
-    if (!std::isfinite(body.GetDensity()) || body.GetDensity() <= 0.0) {
+bool ValidateMaterial(const PhysicsDeformableSnapshot& body, std::string* error) {
+    if (!std::isfinite(body.density) || body.density <= 0.0) {
         return SetCompileError(error, "deformable body density must be finite and positive");
     }
-    if (!std::isfinite(body.GetYoungModulus()) || body.GetYoungModulus() <= 0.0) {
+    if (!std::isfinite(body.young_modulus) || body.young_modulus <= 0.0) {
         return SetCompileError(error, "deformable body Young modulus must be finite and positive");
     }
-    if (!std::isfinite(body.GetPoissonRatio()) || body.GetPoissonRatio() <= -1.0 ||
-        body.GetPoissonRatio() >= 0.5) {
+    if (!std::isfinite(body.poisson_ratio) || body.poisson_ratio <= -1.0 ||
+        body.poisson_ratio >= 0.5) {
         return SetCompileError(error, "deformable body Poisson ratio must be in (-1, 0.5)");
     }
-    if (!std::isfinite(body.GetDamping()) || body.GetDamping() < 0.0) {
+    if (!std::isfinite(body.damping) || body.damping < 0.0) {
         return SetCompileError(error, "deformable body damping must be finite and non-negative");
     }
-    if (body.GetModel() == DeformableBodyModel::ThinShell) {
-        if (!std::isfinite(body.GetThickness()) || body.GetThickness() <= 0.0) {
+    if (body.model == static_cast<int>(DeformableBodyModel::ThinShell)) {
+        if (!std::isfinite(body.thickness) || body.thickness <= 0.0) {
             return SetCompileError(
                     error, "thin-shell deformable thickness must be finite and positive");
         }
-        if (!std::isfinite(body.GetBendingStiffness()) ||
-            body.GetBendingStiffness() < 0.0) {
+        if (!std::isfinite(body.bending_stiffness) ||
+            body.bending_stiffness < 0.0) {
             return SetCompileError(
                     error,
                     "thin-shell deformable bending stiffness must be finite and non-negative");
@@ -346,8 +189,7 @@ bool ValidateMaterial(const DeformableBody3D& body, std::string* error) {
 }
 
 bool ValidateDeformableTransform(
-        const Node3D& node, std::string_view description, std::string* error) {
-    const Affine3 transform = node.GetGlobalTransform();
+        const Affine3& transform, std::string_view description, std::string* error) {
     if (!transform.matrix().allFinite()) {
         return SetCompileError(
                 error, std::string(description) + " has a non-finite transform");
@@ -370,61 +212,39 @@ bool ValidateDeformableTransform(
 
 class CompilerState {
 public:
-    bool Visit(const Node* node, std::string* error) {
-        if (Object::PointerCastTo<Terrain3D>(node) != nullptr) {
-            return SetCompileError(
-                    error,
-                    "Terrain3D is not supported by the IPC scene compiler; "
-                    "use loose static CollisionShape3D nodes instead");
+    explicit CompilerState(const PhysicsSceneSnapshot& snapshot) : snapshot_(snapshot) {}
+
+    bool Compile(std::string* error) {
+        if (!snapshot_.terrains.empty()) {
+            return SetCompileError(error, "Terrain3D is not supported by the IPC scene compiler; use loose static CollisionShape3D nodes instead");
         }
-        if (const auto* body = Object::PointerCastTo<DeformableBody3D>(node)) {
-            if (!AddDeformable(*body, error)) {
-                return false;
+        for (const auto& body : snapshot_.deformables) {
+            if (!AddDeformable(body, error)) return false;
+        }
+        for (const auto& robot : snapshot_.robots) {
+            if (!AddRobot(robot, error)) return false;
+        }
+        // Preserve Scene preorder across sensors captured in different owners.
+        std::vector<const PhysicsSensorSnapshot*> tactile;
+        for (const auto& sensor : snapshot_.loose_sensors) {
+            if (sensor.tactile) tactile.push_back(&sensor);
+        }
+        for (const auto& robot : snapshot_.robots) {
+            for (const auto& sensor : robot.sensors) {
+                if (sensor.tactile) tactile.push_back(&sensor);
             }
         }
-        if (const auto* sensor = Object::PointerCastTo<TactileSensor3D>(node)) {
-            if (!AddTactile(*sensor, error)) {
-                return false;
-            }
+        std::ranges::sort(tactile, {}, [](const auto* sensor) { return sensor->scene_order; });
+        for (const auto* sensor : tactile) {
+            if (!AddTactile(*sensor, error)) return false;
         }
-        if (const auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
-            if (!AddRigidBody(*rigid_body, error)) {
-                return false;
-            }
-        } else if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
-            if (!AddRobot(*robot, error)) {
-                return false;
-            }
+        for (const auto& shape : snapshot_.loose_collision_shapes) {
+            if (!AddCollisionShape(shape, nullptr, &static_colliders_, &static_collider_paths_, error)) return false;
         }
-        if (const auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
-            coupling_nodes_.push_back(coupling);
-        }
-        if (const auto* attachment =
-                    Object::PointerCastTo<DeformableAttachment3D>(node)) {
-            attachment_nodes_.push_back(attachment);
-        }
-        if (const auto* collision = Object::PointerCastTo<CollisionShape3D>(node)) {
-            const Node* ancestor = collision->GetParent();
-            while (ancestor != nullptr &&
-                   Object::PointerCastTo<Link3D>(ancestor) == nullptr) {
-                ancestor = ancestor->GetParent();
-            }
-            if (ancestor == nullptr &&
-                !AddCollisionShape(
-                        *collision, nullptr, &static_colliders_,
-                        &static_collider_paths_, error)) {
-                return false;
-            }
-        }
-        for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
-            if (!Visit(node->GetChild(static_cast<int>(index)), error)) {
-                return false;
-            }
-        }
-        return true;
+        return FinalizeCouplings(error) && FinalizeExternalFloatingBases(error) && FinalizeAttachments(error);
     }
 
-    bool FinalizeAttachments(const Node& scene_root, std::string* error) {
+    bool FinalizeAttachments(std::string* error) {
         struct PendingAttachment {
             std::string attachment_path;
             std::string deformable_body_path;
@@ -447,59 +267,38 @@ public:
 
         std::vector<PendingAttachment> pending;
         std::set<std::pair<std::string, std::uint32_t>> attached_vertices;
-        for (const DeformableAttachment3D* attachment : attachment_nodes_) {
-            if (!attachment->IsEnabled()) {
+        for (const auto& attachment : snapshot_.deformable_attachments) {
+            if (!attachment.enabled) {
                 continue;
             }
-            const std::string attachment_path = NodePathString(*attachment);
-            if (attachment->GetDeformableBodyPath().IsEmpty() ||
-                attachment->GetRigidLinkPath().IsEmpty()) {
-                return SetCompileError(
-                        error, "DeformableAttachment3D '" + attachment_path +
-                                       "' requires deformable_body_path and rigid_link_path");
+            const std::string attachment_path = attachment.scene_path;
+            const auto body_it = std::ranges::find(snapshot_.deformables, attachment.deformable_body_path, &PhysicsDeformableSnapshot::scene_path);
+            if (body_it == snapshot_.deformables.end()) {
+                return SetCompileError(error, "DeformableAttachment3D '" + attachment_path + "' deformable_body_path must resolve to a DeformableBody3D in the compiled scene");
             }
-
-            const Node* body_node = ResolveNodePath(
-                    *attachment, attachment->GetDeformableBodyPath());
-            const auto* body = Object::PointerCastTo<DeformableBody3D>(body_node);
-            if (body == nullptr ||
-                (body != &scene_root && !scene_root.IsAncestorOf(body))) {
-                return SetCompileError(
-                        error, "DeformableAttachment3D '" + attachment_path +
-                                       "' deformable_body_path must resolve to a DeformableBody3D in the compiled scene");
+            const auto& body = *body_it;
+            const auto& body_path = body.scene_path;
+            if (!deformable_paths.contains(body_path) || body.kinematic || body.tetrahedra.empty()) {
+                return SetCompileError(error, "DeformableAttachment3D '" + attachment_path + "' requires a compiled dynamic deformable body");
             }
-            const std::string body_path = NodePathString(*body);
-            if (!deformable_paths.contains(body_path) || body->IsKinematic() ||
-                !body->GetMesh().IsValid()) {
-                return SetCompileError(
-                        error, "DeformableAttachment3D '" + attachment_path +
-                                       "' requires a compiled dynamic deformable body");
+            const auto& link_path = attachment.rigid_link_path;
+            if (FindLink(link_path) == nullptr) {
+                return SetCompileError(error, "DeformableAttachment3D '" + attachment_path + "' rigid_link_path must resolve to a Link3D in the compiled scene");
             }
-
-            const Node* link_node = ResolveNodePath(
-                    *attachment, attachment->GetRigidLinkPath());
-            const auto* link = Object::PointerCastTo<Link3D>(link_node);
-            if (link == nullptr ||
-                (link != &scene_root && !scene_root.IsAncestorOf(link))) {
-                return SetCompileError(
-                        error, "DeformableAttachment3D '" + attachment_path +
-                                       "' rigid_link_path must resolve to a Link3D in the compiled scene");
-            }
-            const std::string link_path = NodePathString(*link);
             const auto proxy = proxy_indices.find(link_path);
             if (proxy == proxy_indices.end()) {
                 return SetCompileError(
                         error, "DeformableAttachment3D '" + attachment_path +
                                        "' rigid Link3D requires an enabled PhysicsCoupling");
             }
-            if (!std::isfinite(attachment->GetStrengthRate()) ||
-                attachment->GetStrengthRate() <= 0.0) {
+            if (!std::isfinite(attachment.strength_rate) ||
+                attachment.strength_rate <= 0.0) {
                 return SetCompileError(
                         error, "DeformableAttachment3D '" + attachment_path +
                                        "' strength_rate must be finite and positive");
             }
 
-            std::vector<std::uint32_t> indices = attachment->GetVertexIndices();
+            std::vector<std::uint32_t> indices = attachment.vertex_indices;
             std::ranges::sort(indices);
             if (indices.empty() ||
                 std::ranges::adjacent_find(indices) != indices.end()) {
@@ -507,7 +306,7 @@ public:
                         error, "DeformableAttachment3D '" + attachment_path +
                                        "' vertex_indices must be non-empty and unique");
             }
-            const std::size_t vertex_count = body->GetMesh()->GetVertexCount();
+            const std::size_t vertex_count = body.vertices.size();
             for (const std::uint32_t vertex : indices) {
                 if (vertex >= vertex_count) {
                     return SetCompileError(
@@ -521,7 +320,7 @@ public:
             }
             pending.push_back(PendingAttachment{
                     attachment_path, body_path, link_path, proxy->second,
-                    attachment->GetStrengthRate(), std::move(indices)});
+                    attachment.strength_rate, std::move(indices)});
         }
 
         std::ranges::sort(pending, {}, &PendingAttachment::attachment_path);
@@ -537,84 +336,37 @@ public:
         return true;
     }
 
-    bool FinalizeCouplings(const Node& scene_root, std::string* error) {
+    bool FinalizeCouplings(std::string* error) {
         struct PendingCoupling {
             std::string coupling_path;
             std::string link_path;
             std::string robot_name;
             std::string link_name;
-            PhysicsCouplingMode mode;
+            int mode;
             RealType force_scale;
             RealType torque_scale;
         };
 
         std::vector<PendingCoupling> pending;
         std::unordered_set<std::string> linked_paths;
-        for (const PhysicsCoupling* coupling : coupling_nodes_) {
-            if (!coupling->IsEnabled()) {
+        for (const auto& coupling : snapshot_.couplings) {
+            if (!coupling.enabled) {
                 continue;
             }
-            const std::string coupling_path = NodePathString(*coupling);
-            const NodePath& target_path = coupling->GetTargetBodyPath();
-            if (target_path.IsEmpty()) {
-                return SetCompileError(
-                        error, "PhysicsCoupling '" + coupling_path +
-                                       "' requires a target_body_path");
-            }
-            const Node* target = ResolveNodePath(*coupling, target_path);
-            const auto* link = Object::PointerCastTo<Link3D>(target);
-            if (link == nullptr) {
-                return SetCompileError(
-                        error, "PhysicsCoupling '" + coupling_path +
-                                       "' target_body_path does not resolve to a RigidBody3D or Link3D");
-            }
-            if (link != &scene_root && !scene_root.IsAncestorOf(link)) {
-                return SetCompileError(
-                        error, "PhysicsCoupling '" + coupling_path +
-                                       "' must target a rigid body in the compiled scene");
-            }
-
-            const auto* rigid_body = Object::PointerCastTo<RigidBody3D>(link);
-            const Robot3D* robot = nullptr;
-            if (rigid_body == nullptr) {
-                for (const Node* ancestor = link->GetParent(); ancestor != nullptr;
-                     ancestor = ancestor->GetParent()) {
-                    if (const auto* candidate = Object::PointerCastTo<Robot3D>(ancestor)) {
-                        robot = candidate;
-                        break;
-                    }
-                }
-            }
-            if (rigid_body == nullptr &&
-                (robot == nullptr ||
-                 (robot != &scene_root && !scene_root.IsAncestorOf(robot)))) {
-                return SetCompileError(
-                        error, "PhysicsCoupling '" + coupling_path +
-                                       "' target must be a RigidBody3D or belong to a Robot3D in the compiled scene");
-            }
-
-            const std::string link_path = NodePathString(*link);
-            const std::string owner_path = rigid_body != nullptr
-                                                   ? NodePathString(*rigid_body)
-                                                   : NodePathString(*robot);
+            const std::string coupling_path = coupling.scene_path;
+            const auto& link_path = coupling.rigid_link_path;
             const Json* compiled_link = nullptr;
-            for (const Json& compiled_robot : robots_) {
-                if (compiled_robot.at("path").get<std::string>() !=
-                    owner_path) {
-                    continue;
-                }
-                for (const Json& candidate : compiled_robot.at("links")) {
-                    if (candidate.at("path").get<std::string>() == link_path) {
-                        compiled_link = &candidate;
-                        break;
+            std::string robot_name;
+            for (const Json& robot : robots_) {
+                for (const Json& link : robot.at("links")) {
+                    if (link.at("path") == link_path) {
+                        compiled_link = &link;
+                        robot_name = robot.at("name").get<std::string>();
                     }
                 }
-                break;
             }
             if (compiled_link == nullptr) {
-                return SetCompileError(
-                        error, "PhysicsCoupling '" + coupling_path +
-                                       "' target is not a compiled rigid body");
+                return SetCompileError(error, "PhysicsCoupling '" + coupling_path + "' target_body_path must resolve to a RigidBody3D or Link3D in the compiled scene");
             }
             const bool has_enabled_collision = std::ranges::any_of(
                     compiled_link->at("collision_shapes"), [](const Json& shape) {
@@ -626,17 +378,17 @@ public:
                                        "' target body has no enabled CollisionShape3D");
             }
 
-            const int mode = static_cast<int>(coupling->GetMode());
+            const int mode = static_cast<int>(coupling.mode);
             if (mode < static_cast<int>(PhysicsCouplingMode::OneWay) ||
                 mode > static_cast<int>(PhysicsCouplingMode::TwoWay)) {
                 return SetCompileError(
                         error, "PhysicsCoupling '" + coupling_path +
                                        "' has an invalid coupling mode");
             }
-            if (!std::isfinite(coupling->GetForceScale()) ||
-                coupling->GetForceScale() < 0.0 ||
-                !std::isfinite(coupling->GetTorqueScale()) ||
-                coupling->GetTorqueScale() < 0.0) {
+            if (!std::isfinite(coupling.force_scale) ||
+                coupling.force_scale < 0.0 ||
+                !std::isfinite(coupling.torque_scale) ||
+                coupling.torque_scale < 0.0) {
                 return SetCompileError(
                         error, "PhysicsCoupling '" + coupling_path +
                                        "' force and torque scales must be finite and non-negative");
@@ -649,11 +401,11 @@ public:
             pending.push_back(PendingCoupling{
                     coupling_path,
                     link_path,
-                    rigid_body != nullptr ? rigid_body->GetName() : robot->GetName(),
-                    link->GetName(),
-                    coupling->GetMode(),
-                    coupling->GetForceScale(),
-                    coupling->GetTorqueScale()});
+                    robot_name,
+                    compiled_link->at("name").get<std::string>(),
+                    coupling.mode,
+                    coupling.force_scale,
+                    coupling.torque_scale});
         }
 
         std::ranges::sort(pending, {}, &PendingCoupling::coupling_path);
@@ -664,7 +416,7 @@ public:
                     {"force_scale", coupling.force_scale},
                     {"link_name", coupling.link_name},
                     {"link_path", coupling.link_path},
-                    {"mode", coupling.mode == PhysicsCouplingMode::OneWay
+                    {"mode", coupling.mode == static_cast<int>(PhysicsCouplingMode::OneWay)
                                      ? "OneWay"
                                      : "TwoWay"},
                     {"proxy_index", proxy_index},
@@ -690,7 +442,7 @@ public:
         return true;
     }
 
-    Json BuildManifest(const Node& scene_root) const {
+    Json BuildManifest() const {
         Json blob_table = Json::array();
         for (const auto& [id, blob] : blobs_) {
             blob_table.push_back({
@@ -720,7 +472,7 @@ public:
                 {"producer", "gobot"},
                 {"producer_version", ProducerVersion()},
                 {"robots", robots_},
-                {"scene_name", scene_root.GetName()},
+                {"scene_name", snapshot_.scene_name},
                 {"schema_version", 5},
                 {"static_colliders", std::move(static_colliders)},
                 {"tactile_sensors", tactile_sensors_}};
@@ -742,57 +494,38 @@ private:
         std::string link_path;
     };
 
-    std::string AddMesh(const TetrahedralMesh& mesh) {
-        std::vector<std::uint8_t> data = EncodeMesh(mesh);
-        const std::string digest = Sha256Digest(std::span<const std::uint8_t>(data));
+    const PhysicsLinkSnapshot* FindLink(const std::string& path) const {
+        for (const auto& robot : snapshot_.robots) {
+            for (const auto& link : robot.links) {
+                if (link.scene_path == path) return &link;
+            }
+        }
+        return nullptr;
+    }
+
+    std::string AddBlob(std::vector<std::uint8_t> data, std::string_view encoding) {
+        const auto digest = Sha256Digest(std::span<const std::uint8_t>(data));
         if (!blobs_.contains(digest)) {
-            blobs_.emplace(digest, IpcSceneArtifactBlob{
-                    digest, std::string(kMeshEncoding), digest, std::move(data)});
+            blobs_.emplace(digest, IpcSceneArtifactBlob{digest, std::string(encoding), digest, std::move(data)});
         }
         return digest;
     }
 
-    std::string AddSurfaceMesh(const SurfaceMesh& mesh) {
-        SurfaceMeshData surface_mesh;
-        surface_mesh.vertices = mesh.GetVertices();
-        surface_mesh.triangles = mesh.GetTriangles();
-        std::vector<std::uint8_t> data = EncodeSurfaceMesh(surface_mesh);
-        const std::string digest = Sha256Digest(std::span<const std::uint8_t>(data));
-        if (!blobs_.contains(digest)) {
-            blobs_.emplace(digest, IpcSceneArtifactBlob{
-                    digest, std::string(kSurfaceMeshEncoding), digest, std::move(data)});
-        }
-        return digest;
+    std::string AddMesh(const TetrahedralMeshView& mesh) {
+        return AddBlob(EncodeMesh(mesh), kMeshEncoding);
     }
 
-    bool AddSurfaceMesh(const Mesh& mesh,
-                        std::string* blob_id,
-                        std::size_t* vertex_count,
-                        std::size_t* triangle_count,
-                        std::string* error) {
-        SurfaceMeshData surface_mesh;
-        if (!CollectSurfaceMesh(mesh, &surface_mesh, error)) {
-            return false;
-        }
-        *vertex_count = surface_mesh.vertices.size();
-        *triangle_count = surface_mesh.triangles.size() / 3;
-        std::vector<std::uint8_t> data = EncodeSurfaceMesh(surface_mesh);
-        const std::string digest = Sha256Digest(std::span<const std::uint8_t>(data));
-        if (!blobs_.contains(digest)) {
-            blobs_.emplace(digest, IpcSceneArtifactBlob{
-                    digest, std::string(kSurfaceMeshEncoding), digest, std::move(data)});
-        }
-        *blob_id = digest;
-        return true;
+    std::string AddSurfaceMesh(const SurfaceMeshData& mesh) {
+        return AddBlob(EncodeSurfaceMesh(mesh), kSurfaceMeshEncoding);
     }
 
-    bool AddDeformable(const DeformableBody3D& body, std::string* error) {
-        const std::string path = NodePathString(body);
-        if (body.GetName().empty()) {
+    bool AddDeformable(const PhysicsDeformableSnapshot& body, std::string* error) {
+        const std::string path = body.scene_path;
+        if (body.name.empty()) {
             return SetCompileError(error, "IPC deformable bodies require a non-empty name");
         }
         if (!ValidateDeformableTransform(
-                    body, "deformable body '" + path + "'", error)) {
+                    body.global_transform, "deformable body '" + path + "'", error)) {
             return false;
         }
         std::string validation_error;
@@ -806,163 +539,131 @@ private:
         std::size_t tetrahedron_count = 0;
         std::size_t surface_triangle_count = 0;
         std::string model_name;
-        if (body.GetModel() == DeformableBodyModel::ThinShell) {
-            const Ref<SurfaceMesh>& mesh = body.GetSurfaceMesh();
-            if (!mesh.IsValid()) {
-                return SetCompileError(
-                        error, "thin-shell deformable body '" + path + "' has no surface mesh");
+        vertex_count = body.vertices.size();
+        if (body.model == static_cast<int>(DeformableBodyModel::ThinShell)) {
+            if (!ValidateTriangleMesh(body.vertices, body.surface_triangles, &validation_error)) {
+                return SetCompileError(error, "thin-shell deformable body '" + path + "' has invalid mesh: " + validation_error);
             }
-            if (!mesh->Validate(&validation_error)) {
-                return SetCompileError(
-                        error, "thin-shell deformable body '" + path +
-                                       "' has invalid mesh: " + validation_error);
-            }
-            blob_id = AddSurfaceMesh(*mesh.Get());
-            vertex_count = mesh->GetVertexCount();
-            surface_triangle_count = mesh->GetTriangleCount();
+            blob_id = AddSurfaceMesh({body.vertices, body.surface_triangles});
+            surface_triangle_count = body.surface_triangles.size() / 3;
             model_name = "thin_shell";
         } else {
-            const Ref<TetrahedralMesh>& mesh = body.GetMesh();
-            if (!mesh.IsValid()) {
-                return SetCompileError(
-                        error, "deformable body '" + path + "' has no tetrahedral mesh");
+            if (!ValidateTetrahedralMesh(body.vertices, body.tetrahedra, body.surface_triangles, &validation_error)) {
+                return SetCompileError(error, "deformable body '" + path + "' has invalid mesh: " + validation_error);
             }
-            if (!mesh->Validate(&validation_error)) {
-                return SetCompileError(
-                        error, "deformable body '" + path +
-                                       "' has invalid mesh: " + validation_error);
-            }
-            blob_id = AddMesh(*mesh.Get());
-            vertex_count = mesh->GetVertexCount();
-            tetrahedron_count = mesh->GetTetrahedronCount();
-            surface_triangle_count = mesh->GetResolvedSurfaceTriangles().size() / 3;
+            const auto surface = ResolveTetrahedralSurface(body.tetrahedra, body.surface_triangles);
+            blob_id = AddMesh({body.vertices, body.tetrahedra, surface});
+            tetrahedron_count = body.tetrahedra.size() / 4;
+            surface_triangle_count = surface.size() / 3;
             model_name = "volumetric";
         }
         deformable_bodies_.push_back({
-                {"bending_stiffness", body.GetBendingStiffness()},
-                {"collision_layer", body.GetCollisionLayer()},
-                {"collision_mask", body.GetCollisionMask()},
-                {"damping", body.GetDamping()},
-                {"density", body.GetDensity()},
-                {"kinematic", body.IsKinematic()},
+                {"bending_stiffness", body.bending_stiffness},
+                {"collision_layer", body.collision_layer},
+                {"collision_mask", body.collision_mask},
+                {"damping", body.damping},
+                {"density", body.density},
+                {"kinematic", body.kinematic},
                 {"mesh_blob", blob_id},
                 {"model", model_name},
-                {"name", body.GetName()},
+                {"name", body.name},
                 {"path", path},
-                {"poisson_ratio", body.GetPoissonRatio()},
-                {"self_collision", body.IsSelfCollisionEnabled()},
+                {"poisson_ratio", body.poisson_ratio},
+                {"self_collision", body.self_collision_enabled},
                 {"surface_triangle_count", surface_triangle_count},
                 {"tetrahedron_count", tetrahedron_count},
-                {"thickness", body.GetThickness()},
-                {"transform", GlobalTransformJson(body)},
+                {"thickness", body.thickness},
+                {"transform", TransformJson(body.global_transform)},
                 {"vertex_count", vertex_count},
-                {"young_modulus", body.GetYoungModulus()}});
+                {"young_modulus", body.young_modulus}});
         return true;
     }
 
-    bool AddTactile(const TactileSensor3D& sensor, std::string* error) {
-        const std::string path = NodePathString(sensor);
-        if (sensor.GetName().empty()) {
+    bool AddTactile(const PhysicsSensorSnapshot& sensor, std::string* error) {
+        const std::string path = sensor.scene_path;
+        if (sensor.name.empty()) {
             return SetCompileError(error, "IPC tactile sensors require a non-empty name");
         }
         if (!ValidateDeformableTransform(
-                    sensor, "tactile sensor '" + path + "'", error)) {
+                    sensor.global_transform, "tactile sensor '" + path + "'", error)) {
             return false;
         }
-        const Ref<TetrahedralMesh>& gel_mesh = sensor.GetGelMesh();
-        const Ref<TactileSensorConfig>& config = sensor.GetConfig();
-        if (!gel_mesh.IsValid()) {
-            return SetCompileError(error, "tactile sensor '" + path + "' has no gel mesh");
-        }
-        if (!config.IsValid()) {
+        const auto& data = *sensor.tactile;
+        if (!data.parameters) {
             return SetCompileError(error, "tactile sensor '" + path + "' has no config");
         }
+        const auto& config = *data.parameters;
         std::string validation_error;
-        if (!gel_mesh->Validate(&validation_error)) {
-            return SetCompileError(
-                    error, "tactile sensor '" + path + "' has invalid gel mesh: " + validation_error);
+        if (!ValidateTetrahedralMesh(data.gel_vertices, data.gel_tetrahedra, data.gel_surface_triangles, &validation_error)) {
+            return SetCompileError(error, "tactile sensor '" + path + "' has invalid gel mesh: " + validation_error);
         }
-        if (!config->Validate(*gel_mesh.Get(), &validation_error)) {
-            return SetCompileError(
-                    error, "tactile sensor '" + path + "' has invalid config: " + validation_error);
+        if (!config.Validate(data.gel_vertices.size(), data.gel_tetrahedra.size() / 4, &validation_error)) {
+            return SetCompileError(error, "tactile sensor '" + path + "' has invalid config: " + validation_error);
         }
-
+        const auto surface = ResolveTetrahedralSurface(data.gel_tetrahedra, data.gel_surface_triangles);
+        const TetrahedralMeshView gel_mesh{data.gel_vertices, data.gel_tetrahedra, surface};
         Json marker_positions = Json::array();
-        for (const Vector2& position : config->GetMarkerPositions()) {
+        for (const Vector2& position : config.marker_positions) {
             marker_positions.push_back(Vector2Json(position));
         }
         Json marker_barycentric = Json::array();
-        for (const Vector4& weights : config->GetMarkerBarycentric()) {
+        for (const Vector4& weights : config.marker_barycentric) {
             marker_barycentric.push_back(Vector4Json(weights));
         }
         Json attachment = nullptr;
-        if (const Link3D* link = FindAncestorLink(sensor)) {
-            attachment = {
-                    {"link_path", NodePathString(*link)},
-                    {"transform", TransformJson(
-                            link->GetGlobalTransform().inverse() *
-                            sensor.GetGlobalTransform())}};
+        if (!data.attachment_link_path.empty()) {
+            if (!FindLink(data.attachment_link_path)) {
+                return SetCompileError(error, "tactile sensor '" + path + "' attachment link is outside the compiled scene");
+            }
+            attachment = {{"link_path", data.attachment_link_path}, {"transform", TransformJson(data.attachment_transform)}};
         }
         tactile_sensors_.push_back({
                 {"attachment", std::move(attachment)},
-                {"collision_layer", sensor.GetCollisionLayer()},
-                {"collision_mask", sensor.GetCollisionMask()},
-                {"coat_vertex_indices", config->GetCoatVertexIndices()},
-                {"damping", config->GetDamping()},
-                {"density", config->GetDensity()},
-                {"enabled", sensor.IsEnabled()},
-                {"far_plane", config->GetFarPlane()},
-                {"friction_coefficient", config->GetFrictionCoefficient()},
-                {"gel_mesh_blob", AddMesh(*gel_mesh.Get())},
-                {"gel_topology_sha256", MeshTopologyDigest(*gel_mesh.Get())},
-                {"gel_tetrahedron_count", gel_mesh->GetTetrahedronCount()},
-                {"gel_vertex_count", gel_mesh->GetVertexCount()},
+                {"collision_layer", data.collision_layer},
+                {"collision_mask", data.collision_mask},
+                {"coat_vertex_indices", config.coat_vertex_indices},
+                {"damping", config.damping},
+                {"density", config.density},
+                {"enabled", sensor.enabled},
+                {"far_plane", config.far_plane},
+                {"friction_coefficient", config.friction_coefficient},
+                {"gel_mesh_blob", AddMesh(gel_mesh)},
+                {"gel_topology_sha256", MeshTopologyDigest(gel_mesh)},
+                {"gel_tetrahedron_count", data.gel_tetrahedra.size() / 4},
+                {"gel_vertex_count", data.gel_vertices.size()},
                 {"marker_barycentric", std::move(marker_barycentric)},
                 {"marker_positions", std::move(marker_positions)},
-                {"marker_tetrahedra", config->GetMarkerTetrahedra()},
-                {"name", sensor.GetName()},
-                {"near_plane", config->GetNearPlane()},
+                {"marker_tetrahedra", config.marker_tetrahedra},
+                {"name", sensor.name},
+                {"near_plane", config.near_plane},
                 {"path", path},
-                {"pixel_size", config->GetPixelSize()},
-                {"poisson_ratio", config->GetPoissonRatio()},
-                {"resolution", Json::array({config->GetImageHeight(), config->GetImageWidth()})},
-                {"rgb_model", config->GetRgbModel()},
-                {"stick_vertex_indices", config->GetStickVertexIndices()},
-                {"transform", GlobalTransformJson(sensor)},
-                {"young_modulus", config->GetYoungModulus()}});
+                {"pixel_size", config.pixel_size},
+                {"poisson_ratio", config.poisson_ratio},
+                {"resolution", Json::array({config.image_height, config.image_width})},
+                {"rgb_model", config.rgb_model},
+                {"stick_vertex_indices", config.stick_vertex_indices},
+                {"transform", TransformJson(sensor.global_transform)},
+                {"young_modulus", config.young_modulus}});
         return true;
     }
 
-    bool AddCollisionShape(const CollisionShape3D& collision,
-                           const Link3D* link,
+    bool AddCollisionShape(const PhysicsShapeSnapshot& collision,
+                           const PhysicsLinkSnapshot* link,
                            Json* collision_shapes,
                            std::unordered_set<std::string>* collision_paths,
                            std::string* error) {
-        const std::string path = NodePathString(collision);
+        const std::string path = collision.scene_path;
         const std::string kind = link != nullptr ? "robot" : "static";
-        if (collision.GetName().empty() || !collision_paths->insert(path).second) {
+        if (collision.name.empty() || !collision_paths->insert(path).second) {
             return SetCompileError(
                     error, kind +
                                    " collision shape paths and names must be non-empty and unique");
         }
         if (!ValidateDeformableTransform(
-                    collision, kind + " collision shape '" + path + "'", error)) {
+                    collision.global_transform, kind + " collision shape '" + path + "'", error)) {
             return false;
         }
-        const Ref<Shape3D>& shape = collision.GetShape();
-        if (!shape.IsValid()) {
-            return SetCompileError(
-                    error, kind + " collision shape '" + path + "' has no shape resource");
-        }
-        PhysicsMaterialSnapshot material;
-        if (const Ref<PhysicsMaterial3D>& authored = collision.GetPhysicsMaterial(); authored.IsValid()) {
-            material.sliding_friction = authored->GetSlidingFriction();
-            material.torsional_friction = authored->GetTorsionalFriction();
-            material.rolling_friction = authored->GetRollingFriction();
-            material.restitution = authored->GetRestitution();
-            material.contact_compliance = authored->GetContactCompliance();
-            material.contact_damping = authored->GetContactDamping();
-        }
+        const auto& material = collision.material;
         const std::array<RealType, 6> material_values{
                 material.sliding_friction,
                 material.torsional_friction,
@@ -973,19 +674,19 @@ private:
         if (!std::ranges::all_of(material_values, [](RealType value) {
                 return std::isfinite(value) && value >= 0.0;
             }) || material.restitution > 1.0 ||
-            !std::isfinite(collision.GetContactOffset()) || collision.GetContactOffset() < 0.0 ||
-            !std::isfinite(collision.GetRestOffset()) ||
-            collision.GetRestOffset() > collision.GetContactOffset()) {
+            !std::isfinite(collision.contact_offset) || collision.contact_offset < 0.0 ||
+            !std::isfinite(collision.rest_offset) ||
+            collision.rest_offset > collision.contact_offset) {
             return SetCompileError(
                     error, kind + " collision shape '" + path +
                                    "' has invalid contact parameters");
         }
 
         Json compiled = {
-                {"collision_layer", collision.GetCollisionLayer()},
-                {"collision_mask", collision.GetCollisionMask()},
-                {"contact_offset", collision.GetContactOffset()},
-                {"disabled", collision.IsDisabled()},
+                {"collision_layer", collision.collision_layer},
+                {"collision_mask", collision.collision_mask},
+                {"contact_offset", collision.contact_offset},
+                {"disabled", collision.disabled},
                 {"material", {
                         {"contact_compliance", material.contact_compliance},
                         {"contact_damping", material.contact_damping},
@@ -993,35 +694,35 @@ private:
                         {"rolling_friction", material.rolling_friction},
                         {"sliding_friction", material.sliding_friction},
                         {"torsional_friction", material.torsional_friction}}},
-                {"name", collision.GetName()},
+                {"name", collision.name},
                 {"path", path},
-                {"rest_offset", collision.GetRestOffset()},
-                {"transform", GlobalTransformJson(collision)}};
+                {"rest_offset", collision.rest_offset},
+                {"transform", TransformJson(collision.global_transform)}};
         if (link != nullptr) {
             compiled["link_transform"] = TransformJson(
-                    link->GetGlobalTransform().inverse() *
-                    collision.GetGlobalTransform());
+                    link->global_transform.inverse() *
+                    collision.global_transform);
         }
 
-        if (const auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
-            const Vector3 size = box->GetSize();
+        if (collision.type == PhysicsShapeType::Box) {
+            const Vector3 size = collision.box_size;
             if (!size.allFinite() || (size.array() <= 0.0).any()) {
                 return SetCompileError(
                         error, kind + " box collision shape '" + path + "' has invalid size");
             }
             compiled["shape_type"] = "box";
             compiled["size"] = Vector3Json(size);
-        } else if (const auto sphere = dynamic_pointer_cast<SphereShape3D>(shape)) {
-            const double radius = sphere->GetRadius();
+        } else if (collision.type == PhysicsShapeType::Sphere) {
+            const double radius = collision.radius;
             if (!std::isfinite(radius) || radius <= 0.0) {
                 return SetCompileError(
                         error, kind + " sphere collision shape '" + path + "' has invalid radius");
             }
             compiled["radius"] = radius;
             compiled["shape_type"] = "sphere";
-        } else if (const auto capsule = dynamic_pointer_cast<CapsuleShape3D>(shape)) {
-            const double radius = capsule->GetRadius();
-            const double height = capsule->GetHeight();
+        } else if (collision.type == PhysicsShapeType::Capsule) {
+            const double radius = collision.radius;
+            const double height = collision.height;
             if (!std::isfinite(radius) || radius <= 0.0 ||
                 !std::isfinite(height) || height <= 0.0) {
                 return SetCompileError(
@@ -1031,9 +732,9 @@ private:
             compiled["height"] = height;
             compiled["radius"] = radius;
             compiled["shape_type"] = "capsule";
-        } else if (const auto cylinder = dynamic_pointer_cast<CylinderShape3D>(shape)) {
-            const double radius = cylinder->GetRadius();
-            const double height = cylinder->GetHeight();
+        } else if (collision.type == PhysicsShapeType::Cylinder) {
+            const double radius = collision.radius;
+            const double height = collision.height;
             if (!std::isfinite(radius) || radius <= 0.0 ||
                 !std::isfinite(height) || height <= 0.0) {
                 return SetCompileError(
@@ -1043,22 +744,14 @@ private:
             compiled["height"] = height;
             compiled["radius"] = radius;
             compiled["shape_type"] = "cylinder";
-        } else if (const auto convex_mesh = dynamic_pointer_cast<ConvexMeshShape3D>(shape)) {
-            const Ref<Mesh>& mesh = convex_mesh->GetMesh();
-            if (!mesh.IsValid()) {
-                return SetCompileError(
-                        error, kind + " triangle collision shape '" + path + "' has no mesh");
-            }
-            std::string blob_id;
-            std::size_t vertex_count = 0;
-            std::size_t triangle_count = 0;
+        } else if (collision.type == PhysicsShapeType::Mesh) {
             std::string mesh_error;
-            if (!AddSurfaceMesh(
-                        *mesh.Get(), &blob_id, &vertex_count, &triangle_count, &mesh_error)) {
-                return SetCompileError(
-                        error, kind + " triangle collision shape '" + path +
-                                       "' is invalid: " + mesh_error);
+            if (!ValidateTriangleMesh(collision.vertices, collision.indices, &mesh_error, false)) {
+                return SetCompileError(error, kind + " triangle collision shape '" + path + "' is invalid: " + mesh_error);
             }
+            const auto blob_id = AddSurfaceMesh({collision.vertices, collision.indices});
+            const auto vertex_count = collision.vertices.size();
+            const auto triangle_count = collision.indices.size() / 3;
             compiled["mesh_blob"] = blob_id;
             compiled["shape_type"] = "triangle_mesh";
             compiled["triangle_count"] = triangle_count;
@@ -1072,78 +765,13 @@ private:
         return true;
     }
 
-    bool CollectLinkCollisionShapes(
-            const Node* node,
-            const Link3D* owner,
-            Json* collision_shapes,
-            std::unordered_set<std::string>* collision_paths,
-            std::string* error) {
-        if (node != owner &&
-            (Object::PointerCastTo<Link3D>(node) != nullptr ||
-             Object::PointerCastTo<Robot3D>(node) != nullptr)) {
-            return true;
-        }
-        if (const auto* collision = Object::PointerCastTo<CollisionShape3D>(node)) {
-            if (!AddCollisionShape(
-                        *collision, owner, collision_shapes, collision_paths, error)) {
-                return false;
-            }
-        }
-        for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
-            if (!CollectLinkCollisionShapes(
-                        node->GetChild(static_cast<int>(index)), owner,
-                        collision_shapes, collision_paths, error)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool AddRigidBody(const RigidBody3D& body, std::string* error) {
-        const std::string body_path = NodePathString(body);
-        if (body.GetName().empty()) {
-            return SetCompileError(error, "IPC rigid bodies require a non-empty name");
-        }
-        if (!ValidateDeformableTransform(
-                    body, "rigid body '" + body_path + "'", error)) {
-            return false;
-        }
-
-        Json links = Json::array();
-        Json joints = Json::array();
-        std::unordered_set<std::string> link_names;
-        std::unordered_set<std::string> joint_names;
-        if (!CollectRobotNodes(
-                    &body, &body, &links, &joints, &link_names,
-                    &joint_names, error)) {
-            return false;
-        }
-        if (links.size() != 1 || !joints.empty() ||
-            links.at(0).at("path").get<std::string>() != body_path) {
-            return SetCompileError(
-                    error,
-                    "RigidBody3D '" + body_path +
-                            "' must contain collision, visual, or sensor children only");
-        }
-
-        robots_.push_back({
-                {"joints", Json::array()},
-                {"kind", "rigid_body"},
-                {"links", std::move(links)},
-                {"name", body.GetName()},
-                {"path", body_path},
-                {"root_link_paths", Json::array({body_path})},
-                {"transform", GlobalTransformJson(body)}});
-        return true;
-    }
-
-    bool AddRobot(const Robot3D& robot, std::string* error) {
-        const std::string robot_path = NodePathString(robot);
-        if (robot.GetName().empty()) {
+    bool AddRobot(const PhysicsRobotSnapshot& robot, std::string* error) {
+        const std::string robot_path = robot.scene_path;
+        if (robot.name.empty()) {
             return SetCompileError(error, "IPC robots require a non-empty name");
         }
         if (!ValidateDeformableTransform(
-                    robot, "robot '" + robot_path + "'", error)) {
+                    robot.global_transform, "robot '" + robot_path + "'", error)) {
             return false;
         }
         Json links = Json::array();
@@ -1151,8 +779,17 @@ private:
         std::unordered_set<std::string> link_names;
         std::unordered_set<std::string> joint_names;
         if (!CollectRobotNodes(
-                    &robot, &robot, &links, &joints, &link_names, &joint_names, error)) {
+                    robot, &links, &joints, &link_names, &joint_names, error)) {
             return false;
+        }
+        if (robot.standalone_rigid_body) {
+            if (links.size() != 1 || !joints.empty() || links.at(0).at("path") != robot_path) {
+                return SetCompileError(error, "RigidBody3D '" + robot_path + "' must contain collision, visual, or sensor children only");
+            }
+            robots_.push_back({{"joints", Json::array()}, {"kind", "rigid_body"},
+                {"links", std::move(links)}, {"name", robot.name}, {"path", robot_path},
+                {"root_link_paths", Json::array({robot_path})}, {"transform", TransformJson(robot.global_transform)}});
+            return true;
         }
         if (links.empty()) {
             return SetCompileError(error, "robot '" + robot_path + "' has no links");
@@ -1193,185 +830,170 @@ private:
                 {"joints", std::move(joints)},
                 {"kind", "articulation"},
                 {"links", std::move(links)},
-                {"name", robot.GetName()},
+                {"name", robot.name},
                 {"path", robot_path},
                 {"root_link_paths", std::move(root_link_paths)},
-                {"transform", GlobalTransformJson(robot)}});
+                {"transform", TransformJson(robot.global_transform)}});
         return true;
     }
 
-    bool CollectRobotNodes(const Node* node,
-                           const Node* root,
-                           Json* links,
-                           Json* joints,
+    bool CollectRobotNodes(const PhysicsRobotSnapshot& robot,
+                           Json* links, Json* joints,
                            std::unordered_set<std::string>* link_names,
                            std::unordered_set<std::string>* joint_names,
                            std::string* error) {
-        if (node != root &&
-            (Object::PointerCastTo<Robot3D>(node) != nullptr ||
-             Object::PointerCastTo<RigidBody3D>(node) != nullptr)) {
-            return true;
-        }
-        if (const auto* link = Object::PointerCastTo<Link3D>(node)) {
-            const std::string path = NodePathString(*link);
-            if (link->GetName().empty() || !link_names->insert(link->GetName()).second) {
+        for (const auto& link : robot.links) {
+            const std::string path = link.scene_path;
+            if (link.name.empty() || !link_names->insert(link.name).second) {
                 return SetCompileError(
                         error, "robot link names must be non-empty and unique in '" +
-                                       NodePathString(*root) + "'");
+                                       robot.scene_path + "'");
             }
-            if (!ValidateDeformableTransform(*link, "robot link '" + path + "'", error)) {
+            if (!ValidateDeformableTransform(link.global_transform, "robot link '" + path + "'", error)) {
                 return false;
             }
             Json collision_shapes = Json::array();
             std::unordered_set<std::string> collision_paths;
-            if (!CollectLinkCollisionShapes(
-                        link, link, &collision_shapes, &collision_paths, error)) {
-                return false;
+            for (const auto& shape : link.collision_shapes) {
+                if (!AddCollisionShape(shape, &link, &collision_shapes, &collision_paths, error)) return false;
             }
-            const Quaternion& inertia_orientation = link->GetInertiaOrientation();
-            if (!std::isfinite(link->GetMass()) || link->GetMass() < 0.0 ||
-                !link->GetCenterOfMass().allFinite() ||
+            const Quaternion& inertia_orientation = link.inertia_orientation;
+            if (!std::isfinite(link.mass) || link.mass < 0.0 ||
+                !link.center_of_mass.allFinite() ||
                 !inertia_orientation.coeffs().allFinite() ||
                 inertia_orientation.squaredNorm() <=
                         std::numeric_limits<RealType>::epsilon() ||
-                !link->GetInertiaDiagonal().allFinite() ||
-                (link->GetInertiaDiagonal().array() < 0.0).any() ||
-                !link->GetInertiaOffDiagonal().allFinite() ||
-                static_cast<int>(link->GetRole()) <
-                        static_cast<int>(LinkRole::Physical) ||
-                static_cast<int>(link->GetRole()) >
-                        static_cast<int>(LinkRole::VirtualRoot)) {
+                !link.inertia_diagonal.allFinite() ||
+                (link.inertia_diagonal.array() < 0.0).any() ||
+                !link.inertia_off_diagonal.allFinite() ||
+                static_cast<int>(link.authored_role) <
+                        static_cast<int>(PhysicsLinkRole::Physical) ||
+                static_cast<int>(link.authored_role) >
+                        static_cast<int>(PhysicsLinkRole::VirtualRoot)) {
                 return SetCompileError(
                         error, "robot link '" + path + "' has invalid inertial properties");
             }
             links->push_back({
-                    {"center_of_mass", Vector3Json(link->GetCenterOfMass())},
+                    {"center_of_mass", Vector3Json(link.center_of_mass)},
                     {"collision_shapes", std::move(collision_shapes)},
-                    {"has_inertial", link->HasInertial()},
-                    {"inertia_diagonal", Vector3Json(link->GetInertiaDiagonal())},
-                    {"inertia_off_diagonal", Vector3Json(link->GetInertiaOffDiagonal())},
+                    {"has_inertial", link.has_inertial},
+                    {"inertia_diagonal", Vector3Json(link.inertia_diagonal)},
+                    {"inertia_off_diagonal", Vector3Json(link.inertia_off_diagonal)},
                     {"inertia_orientation_wxyz", QuaternionWxyzJson(inertia_orientation)},
-                    {"local_transform", LocalTransformJson(*link)},
-                    {"mass", link->GetMass()},
-                    {"name", link->GetName()},
+                    {"local_transform", TransformJson(link.local_transform)},
+                    {"mass", link.mass},
+                    {"name", link.name},
                     {"path", path},
-                    {"role", static_cast<int>(link->GetRole())},
-                    {"transform", GlobalTransformJson(*link)}});
+                    {"role", static_cast<int>(link.authored_role)},
+                    {"transform", TransformJson(link.global_transform)}});
         }
-        if (const auto* joint = Object::PointerCastTo<Joint3D>(node)) {
-            const std::string path = NodePathString(*joint);
-            if (joint->GetName().empty() || !joint_names->insert(joint->GetName()).second) {
+        for (const auto& joint : robot.joints) {
+            const std::string path = joint.scene_path;
+            if (joint.name.empty() || !joint_names->insert(joint.name).second) {
                 return SetCompileError(
                         error, "robot joint names must be non-empty and unique in '" +
-                                       NodePathString(*root) + "'");
+                                       robot.scene_path + "'");
             }
-            if (!ValidateDeformableTransform(*joint, "robot joint '" + path + "'", error)) {
+            if (!ValidateDeformableTransform(joint.global_transform, "robot joint '" + path + "'", error)) {
                 return false;
             }
-            const auto* parent_link = Object::PointerCastTo<Link3D>(joint->GetParent());
-            const Link3D* child_link = nullptr;
-            for (std::size_t index = 0; index < joint->GetChildCount(); ++index) {
-                if (const auto* candidate =
-                            Object::PointerCastTo<Link3D>(joint->GetChild(static_cast<int>(index)))) {
-                    if (child_link != nullptr) {
-                        return SetCompileError(
-                                error, "robot joint '" + path +
-                                               "' has more than one direct child link");
-                    }
-                    child_link = candidate;
-                }
+            const auto find_robot_link = [&](const std::string& link_path) -> const PhysicsLinkSnapshot* {
+                const auto found = std::ranges::find(robot.links, link_path, &PhysicsLinkSnapshot::scene_path);
+                return found == robot.links.end() ? nullptr : &*found;
+            };
+            const auto* parent_link = find_robot_link(joint.structural_parent_link_path);
+            if (!joint.structural_parent_link_path.empty() && parent_link == nullptr) {
+                return SetCompileError(error, "robot joint '" + path + "' references a link outside its robot");
             }
+            if (joint.structural_child_link_paths.size() > 1) {
+                return SetCompileError(error, "robot joint '" + path + "' has more than one direct child link");
+            }
+            const auto* child_link = joint.structural_child_link_paths.empty() ? nullptr : find_robot_link(joint.structural_child_link_paths.front());
             const std::array<RealType, 20> parameters{
-                    joint->GetLowerLimit(), joint->GetUpperLimit(),
-                    joint->GetEffortLimit(), joint->GetVelocityLimit(),
-                    joint->GetDamping(), joint->GetArmature(), joint->GetFrictionLoss(),
-                    joint->GetJointPosition(), joint->GetInitialPosition(),
-                    joint->GetDriveStiffness(), joint->GetDriveDamping(),
-                    joint->GetControlLowerLimit(), joint->GetControlUpperLimit(),
-                    joint->GetForceLowerLimit(), joint->GetForceUpperLimit(),
-                    joint->GetAffineActuatorControlGain(),
-                    joint->GetAffineActuatorForceOffset(),
-                    joint->GetAffineActuatorPositionGain(),
-                    joint->GetAffineActuatorVelocityGain(),
-                    joint->GetAffineActuatorInheritRange()};
-            if (joint->GetJointType() == JointType::Floating &&
+                    joint.lower_limit, joint.upper_limit,
+                    joint.effort_limit, joint.velocity_limit,
+                    joint.damping, joint.armature, joint.friction_loss,
+                    joint.joint_position, joint.initial_position,
+                    joint.drive_stiffness, joint.drive_damping,
+                    joint.control_lower_limit, joint.control_upper_limit,
+                    joint.force_lower_limit, joint.force_upper_limit,
+                    joint.affine_actuator_control_gain,
+                    joint.affine_actuator_force_offset,
+                    joint.affine_actuator_position_gain,
+                    joint.affine_actuator_velocity_gain,
+                    joint.affine_actuator_inherit_range};
+            if (joint.joint_type == static_cast<int>(JointType::Floating) &&
                 parent_link == nullptr && child_link != nullptr) {
                 // MuJoCo owns floating-base dynamics. In the IPC artifact the
                 // coupled child is an externally driven affine proxy, so this
                 // root joint is intentionally omitted from IPC articulation.
                 external_floating_bases_.push_back(
-                        {path, NodePathString(*child_link)});
+                        {path, child_link->scene_path});
             } else if (parent_link == nullptr || child_link == nullptr ||
-                !joint->GetAxis().allFinite() ||
-                joint->GetAxis().squaredNorm() <=
+                !joint.axis.allFinite() ||
+                joint.axis.squaredNorm() <=
                         std::numeric_limits<RealType>::epsilon() ||
                 !std::all_of(parameters.begin(), parameters.end(), [](RealType value) {
                     return std::isfinite(value);
                 }) ||
-                joint->GetEffortLimit() < 0.0 || joint->GetVelocityLimit() < 0.0 ||
-                joint->GetDamping() < 0.0 || joint->GetArmature() < 0.0 ||
-                joint->GetFrictionLoss() < 0.0 || joint->GetDriveStiffness() < 0.0 ||
-                joint->GetDriveDamping() < 0.0 ||
-                static_cast<int>(joint->GetJointType()) <
+                joint.effort_limit < 0.0 || joint.velocity_limit < 0.0 ||
+                joint.damping < 0.0 || joint.armature < 0.0 ||
+                joint.friction_loss < 0.0 || joint.drive_stiffness < 0.0 ||
+                joint.drive_damping < 0.0 ||
+                static_cast<int>(joint.joint_type) <
                         static_cast<int>(JointType::Fixed) ||
-                static_cast<int>(joint->GetJointType()) >
+                static_cast<int>(joint.joint_type) >
                         static_cast<int>(JointType::Planar) ||
-                static_cast<int>(joint->GetDriveMode()) <
+                static_cast<int>(joint.drive_mode) <
                         static_cast<int>(JointDriveMode::Passive) ||
-                static_cast<int>(joint->GetDriveMode()) >
+                static_cast<int>(joint.drive_mode) >
                         static_cast<int>(JointDriveMode::Velocity) ||
                 !std::all_of(
-                        joint->GetGear().begin(), joint->GetGear().end(),
+                        joint.gear.begin(), joint.gear.end(),
                         [](RealType value) { return std::isfinite(value); })) {
                 return SetCompileError(
                         error, "robot joint '" + path + "' has invalid topology or parameters");
             } else {
                 joints->push_back({
-                    {"affine_actuator_control_gain", joint->GetAffineActuatorControlGain()},
-                    {"affine_actuator_enabled", joint->IsAffineActuatorEnabled()},
-                    {"affine_actuator_force_offset", joint->GetAffineActuatorForceOffset()},
-                    {"affine_actuator_inherit_range", joint->GetAffineActuatorInheritRange()},
-                    {"affine_actuator_position_gain", joint->GetAffineActuatorPositionGain()},
-                    {"affine_actuator_velocity_gain", joint->GetAffineActuatorVelocityGain()},
-                    {"authored_child_link", joint->GetChildLink()},
-                    {"authored_parent_link", joint->GetParentLink()},
-                    {"axis", Vector3Json(joint->GetAxis())},
-                    {"armature", joint->GetArmature()},
-                    {"child_link", child_link->GetName()},
-                    {"control_lower_limit", joint->GetControlLowerLimit()},
-                    {"control_upper_limit", joint->GetControlUpperLimit()},
-                    {"damping", joint->GetDamping()},
-                    {"drive_damping", joint->GetDriveDamping()},
-                    {"drive_mode", static_cast<int>(joint->GetDriveMode())},
-                    {"drive_stiffness", joint->GetDriveStiffness()},
-                    {"effort_limit", joint->GetEffortLimit()},
-                    {"force_lower_limit", joint->GetForceLowerLimit()},
-                    {"force_upper_limit", joint->GetForceUpperLimit()},
-                    {"friction_loss", joint->GetFrictionLoss()},
-                    {"gear", joint->GetGear()},
-                    {"initial_position", joint->GetInitialPosition()},
-                    {"joint_type", static_cast<int>(joint->GetJointType())},
-                    {"joint_position", joint->GetJointPosition()},
-                    {"local_transform", LocalTransformJson(*joint)},
-                    {"lower_limit", joint->GetLowerLimit()},
-                    {"name", joint->GetName()},
-                    {"parent_link", parent_link->GetName()},
+                    {"affine_actuator_control_gain", joint.affine_actuator_control_gain},
+                    {"affine_actuator_enabled", joint.affine_actuator_enabled},
+                    {"affine_actuator_force_offset", joint.affine_actuator_force_offset},
+                    {"affine_actuator_inherit_range", joint.affine_actuator_inherit_range},
+                    {"affine_actuator_position_gain", joint.affine_actuator_position_gain},
+                    {"affine_actuator_velocity_gain", joint.affine_actuator_velocity_gain},
+                    {"authored_child_link", joint.child_link},
+                    {"authored_parent_link", joint.parent_link},
+                    {"axis", Vector3Json(joint.axis)},
+                    {"armature", joint.armature},
+                    {"child_link", child_link->name},
+                    {"control_lower_limit", joint.control_lower_limit},
+                    {"control_upper_limit", joint.control_upper_limit},
+                    {"damping", joint.damping},
+                    {"drive_damping", joint.drive_damping},
+                    {"drive_mode", static_cast<int>(joint.drive_mode)},
+                    {"drive_stiffness", joint.drive_stiffness},
+                    {"effort_limit", joint.effort_limit},
+                    {"force_lower_limit", joint.force_lower_limit},
+                    {"force_upper_limit", joint.force_upper_limit},
+                    {"friction_loss", joint.friction_loss},
+                    {"gear", joint.gear},
+                    {"initial_position", joint.initial_position},
+                    {"joint_type", static_cast<int>(joint.joint_type)},
+                    {"joint_position", joint.joint_position},
+                    {"local_transform", TransformJson(joint.local_transform)},
+                    {"lower_limit", joint.lower_limit},
+                    {"name", joint.name},
+                    {"parent_link", parent_link->name},
                     {"path", path},
-                    {"transform", GlobalTransformJson(*joint)},
-                    {"velocity_limit", joint->GetVelocityLimit()},
-                    {"upper_limit", joint->GetUpperLimit()}});
-            }
-        }
-        for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
-            if (!CollectRobotNodes(
-                        node->GetChild(static_cast<int>(index)), root, links, joints,
-                        link_names, joint_names, error)) {
-                return false;
+                    {"transform", TransformJson(joint.global_transform)},
+                    {"velocity_limit", joint.velocity_limit},
+                    {"upper_limit", joint.upper_limit}});
             }
         }
         return true;
     }
 
+    const PhysicsSceneSnapshot& snapshot_;
     Json deformable_bodies_ = Json::array();
     Json tactile_sensors_ = Json::array();
     Json robots_ = Json::array();
@@ -1379,8 +1001,6 @@ private:
     Json deformable_attachments_ = Json::array();
     Json static_colliders_ = Json::array();
     std::unordered_set<std::string> static_collider_paths_;
-    std::vector<const PhysicsCoupling*> coupling_nodes_;
-    std::vector<const DeformableAttachment3D*> attachment_nodes_;
     std::vector<ExternalFloatingBase> external_floating_bases_;
     std::map<std::string, IpcSceneArtifactBlob> blobs_;
 };
@@ -1388,31 +1008,17 @@ private:
 } // namespace
 
 bool IpcSceneCompiler::Compile(
-        const Node* scene_root, IpcSceneArtifact* artifact, std::string* error) {
-    if (scene_root == nullptr) {
-        return SetCompileError(error, "Cannot compile an IPC artifact without a scene root.");
-    }
+        const PhysicsSceneSnapshot& snapshot, IpcSceneArtifact* artifact, std::string* error) {
     if (artifact == nullptr) {
         return SetCompileError(error, "Cannot compile an IPC artifact into a null output.");
     }
-    if (scene_root->GetName().empty()) {
+    if (snapshot.scene_name.empty()) {
         return SetCompileError(error, "Cannot compile an IPC artifact with an unnamed scene root.");
     }
 
-    CompilerState compiler;
-    if (!compiler.Visit(scene_root, error)) {
-        return false;
-    }
-    if (!compiler.FinalizeCouplings(*scene_root, error)) {
-        return false;
-    }
-    if (!compiler.FinalizeExternalFloatingBases(error)) {
-        return false;
-    }
-    if (!compiler.FinalizeAttachments(*scene_root, error)) {
-        return false;
-    }
-    const Json manifest_json = compiler.BuildManifest(*scene_root);
+    CompilerState compiler(snapshot);
+    if (!compiler.Compile(error)) return false;
+    const Json manifest_json = compiler.BuildManifest();
     IpcSceneArtifact result;
     result.schema_version = 5;
     result.producer = "gobot";

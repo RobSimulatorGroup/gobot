@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
@@ -13,12 +14,45 @@ def source_files(root: Path, suffixes: set[str]) -> list[Path]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--config", default="Release")
+    args = parser.parse_args()
     violations: list[str] = []
+    if args.build_dir is not None:
+        manifest = args.build_dir / f"physics_dependencies_{args.config}.txt"
+        if not manifest.is_file():
+            violations.append(f"missing evaluated physics target manifest: {manifest}")
+        else:
+            expected_sources = {
+                "physics_scene_compiler.cpp": "gobot_physics_scene_compile",
+                "ipc_scene_compiler.cpp": "gobot_physics_ipc_compile",
+                "mujoco_scene_compiler.cpp": "gobot_physics_mujoco_compile",
+                "mujoco_physics_world.cpp": "gobot_physics_mujoco_cpu",
+            }
+            seen = set()
+            for line in manifest.read_text().splitlines():
+                target, sources, includes, links = line.split("|")
+                for source in sources.split(";"):
+                    name = Path(source).name
+                    if name in expected_sources:
+                        seen.add(name)
+                        if target != expected_sources[name]:
+                            violations.append(f"{name} compiled by wrong target {target}")
+                for token in ("glad", "/stb", "/gli", "/superdex/", "SuperDex::"):
+                    if token in includes or token in links:
+                        violations.append(f"{target} inherits unrelated SDK dependency {token}")
+                if target in {"gobot_physics_core", "gobot_physics_scene_compile", "gobot_physics_ipc_compile"}:
+                    if any(part.startswith(("mujoco", "mjbatch"))
+                           for include in includes.split(";") for part in Path(include.lower()).parts):
+                        violations.append(f"{target} inherits MuJoCo implementation headers")
+            for name in expected_sources.keys() - seen:
+                violations.append(f"compiler target missing source {name}")
+
     physics_headers = source_files(ROOT / "include/gobot/physics", {".hpp", ".h"})
     physics_sources = source_files(ROOT / "src/gobot/physics", {".cpp", ".cc"})
 
     scene_compiler_sources = {
-        "ipc_scene_compiler.cpp",
         "physics_scene_compiler.cpp",
     }
     for path in [*physics_headers, *physics_sources]:
@@ -48,6 +82,18 @@ def main() -> int:
                 violations.append(
                     f"{path.relative_to(ROOT)}: physics API reintroduces direct Scene traversal through BuildFromScene"
                 )
+
+    for relative in (
+        "src/gobot/physics/ipc_scene_compiler.cpp",
+        "src/gobot/physics/backends/mujoco_scene_compiler.cpp",
+        "include/gobot/physics/ipc_solver.hpp",
+    ):
+        text = (ROOT / relative).read_text()
+        for token in ("mujoco_physics_world.hpp", "physics_scene_compiler.hpp", "CompileArtifactOnly", "GetChild("):
+            if token in text:
+                violations.append(f"{relative}: artifact compiler/runtime boundary contains {token}")
+    if "ipc_scene_compiler.hpp" in (ROOT / "include/gobot/physics/ipc_solver.hpp").read_text():
+        violations.append("IPC solver depends on compiler instead of artifact contract")
 
     python_binding_root = ROOT / "src/gobot/python"
     forbidden_binding_tokens = {
@@ -183,6 +229,9 @@ def main() -> int:
     )
     for target_name in (
         "gobot_physics_core",
+        "gobot_physics_scene_compile",
+        "gobot_physics_ipc_compile",
+        "gobot_physics_mujoco_compile",
         "gobot_simulation_core",
         "gobot_physics_mujoco_cpu",
         "gobot_resource_mjcf",

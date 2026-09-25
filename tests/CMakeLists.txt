@@ -1,3 +1,7 @@
+# Discover serially in CTest: concurrent post-build discovery can overwrite
+# the shared GoogleTest JSON output in affected CMake toolchains.
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+
 #https://modern-cmake-cn.github.io/Modern-CMake-zh_CN/chapters/testing/googletest.html
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/3rdparty/googletest" "3rdparty/googletest")
@@ -281,6 +285,7 @@ add_test(
         NAME test_architecture_dependencies
         COMMAND ${Python3_EXECUTABLE} -S
                 ${CMAKE_CURRENT_SOURCE_DIR}/architecture/test_dependency_boundaries.py
+                --build-dir "${CMAKE_BINARY_DIR}" --config "$<CONFIG>"
 )
 set_tests_properties(test_architecture_dependencies
         PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

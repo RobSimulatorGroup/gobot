@@ -6,245 +6,161 @@
 
 #include "gobot/scene/tactile_sensor_3d.hpp"
 
-#include <algorithm>
-#include <cmath>
-
 #include "gobot/core/registration.hpp"
 
 namespace gobot {
-namespace {
-
-bool SetValidationError(std::string* error, std::string message) {
-    if (error != nullptr) {
-        *error = std::move(message);
-    }
-    return false;
-}
-
-} // namespace
 
 void TactileSensorConfig::SetImageWidth(std::uint32_t image_width) {
-    image_width_ = image_width;
+    parameters_.image_width = image_width;
     MarkChanged();
 }
 
 std::uint32_t TactileSensorConfig::GetImageWidth() const {
-    return image_width_;
+    return parameters_.image_width;
 }
 
 void TactileSensorConfig::SetImageHeight(std::uint32_t image_height) {
-    image_height_ = image_height;
+    parameters_.image_height = image_height;
     MarkChanged();
 }
 
 std::uint32_t TactileSensorConfig::GetImageHeight() const {
-    return image_height_;
+    return parameters_.image_height;
 }
 
 void TactileSensorConfig::SetNearPlane(RealType near_plane) {
-    near_plane_ = near_plane;
+    parameters_.near_plane = near_plane;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetNearPlane() const {
-    return near_plane_;
+    return parameters_.near_plane;
 }
 
 void TactileSensorConfig::SetFarPlane(RealType far_plane) {
-    far_plane_ = far_plane;
+    parameters_.far_plane = far_plane;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetFarPlane() const {
-    return far_plane_;
+    return parameters_.far_plane;
 }
 
 void TactileSensorConfig::SetPixelSize(RealType pixel_size) {
-    pixel_size_ = pixel_size;
+    parameters_.pixel_size = pixel_size;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetPixelSize() const {
-    return pixel_size_;
+    return parameters_.pixel_size;
 }
 
 void TactileSensorConfig::SetDensity(RealType density) {
-    density_ = density;
+    parameters_.density = density;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetDensity() const {
-    return density_;
+    return parameters_.density;
 }
 
 void TactileSensorConfig::SetYoungModulus(RealType young_modulus) {
-    young_modulus_ = young_modulus;
+    parameters_.young_modulus = young_modulus;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetYoungModulus() const {
-    return young_modulus_;
+    return parameters_.young_modulus;
 }
 
 void TactileSensorConfig::SetPoissonRatio(RealType poisson_ratio) {
-    poisson_ratio_ = poisson_ratio;
+    parameters_.poisson_ratio = poisson_ratio;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetPoissonRatio() const {
-    return poisson_ratio_;
+    return parameters_.poisson_ratio;
 }
 
 void TactileSensorConfig::SetDamping(RealType damping) {
-    damping_ = damping;
+    parameters_.damping = damping;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetDamping() const {
-    return damping_;
+    return parameters_.damping;
 }
 
 void TactileSensorConfig::SetFrictionCoefficient(RealType friction_coefficient) {
-    friction_coefficient_ = friction_coefficient;
+    parameters_.friction_coefficient = friction_coefficient;
     MarkChanged();
 }
 
 RealType TactileSensorConfig::GetFrictionCoefficient() const {
-    return friction_coefficient_;
+    return parameters_.friction_coefficient;
 }
 
 void TactileSensorConfig::SetCoatVertexIndices(
         const std::vector<std::uint32_t>& coat_vertex_indices) {
-    coat_vertex_indices_ = coat_vertex_indices;
+    parameters_.coat_vertex_indices = coat_vertex_indices;
     MarkChanged();
 }
 
 const std::vector<std::uint32_t>& TactileSensorConfig::GetCoatVertexIndices() const {
-    return coat_vertex_indices_;
+    return parameters_.coat_vertex_indices;
 }
 
 void TactileSensorConfig::SetStickVertexIndices(
         const std::vector<std::uint32_t>& stick_vertex_indices) {
-    stick_vertex_indices_ = stick_vertex_indices;
+    parameters_.stick_vertex_indices = stick_vertex_indices;
     MarkChanged();
 }
 
 const std::vector<std::uint32_t>& TactileSensorConfig::GetStickVertexIndices() const {
-    return stick_vertex_indices_;
+    return parameters_.stick_vertex_indices;
 }
 
 void TactileSensorConfig::SetMarkerPositions(
         const std::vector<Vector2>& marker_positions) {
-    marker_positions_ = marker_positions;
+    parameters_.marker_positions = marker_positions;
     MarkChanged();
 }
 
 const std::vector<Vector2>& TactileSensorConfig::GetMarkerPositions() const {
-    return marker_positions_;
+    return parameters_.marker_positions;
 }
 
 void TactileSensorConfig::SetMarkerTetrahedra(
         const std::vector<std::uint32_t>& marker_tetrahedra) {
-    marker_tetrahedra_ = marker_tetrahedra;
+    parameters_.marker_tetrahedra = marker_tetrahedra;
     MarkChanged();
 }
 
 const std::vector<std::uint32_t>& TactileSensorConfig::GetMarkerTetrahedra() const {
-    return marker_tetrahedra_;
+    return parameters_.marker_tetrahedra;
 }
 
 void TactileSensorConfig::SetMarkerBarycentric(
         const std::vector<Vector4>& marker_barycentric) {
-    marker_barycentric_ = marker_barycentric;
+    parameters_.marker_barycentric = marker_barycentric;
     MarkChanged();
 }
 
 const std::vector<Vector4>& TactileSensorConfig::GetMarkerBarycentric() const {
-    return marker_barycentric_;
+    return parameters_.marker_barycentric;
 }
 
 void TactileSensorConfig::SetRgbModel(const std::string& rgb_model) {
-    rgb_model_ = rgb_model;
+    parameters_.rgb_model = rgb_model;
     MarkChanged();
 }
 
 const std::string& TactileSensorConfig::GetRgbModel() const {
-    return rgb_model_;
+    return parameters_.rgb_model;
 }
 
-bool TactileSensorConfig::Validate(
-        const TetrahedralMesh& gel_mesh, std::string* error) const {
-    if (image_width_ == 0 || image_height_ == 0) {
-        return SetValidationError(error, "tactile image resolution must be positive");
-    }
-    if (!std::isfinite(near_plane_) || !std::isfinite(far_plane_) ||
-        near_plane_ < 0.0 || far_plane_ <= near_plane_) {
-        return SetValidationError(
-                error, "tactile near/far planes must be finite and strictly ordered");
-    }
-    if (!std::isfinite(pixel_size_) || pixel_size_ <= 0.0) {
-        return SetValidationError(error, "tactile pixel size must be finite and positive");
-    }
-    if (!std::isfinite(density_) || density_ <= 0.0 ||
-        !std::isfinite(young_modulus_) || young_modulus_ <= 0.0 ||
-        !std::isfinite(poisson_ratio_) || poisson_ratio_ <= -1.0 ||
-        poisson_ratio_ >= 0.5 || !std::isfinite(damping_) || damping_ < 0.0 ||
-        !std::isfinite(friction_coefficient_) || friction_coefficient_ < 0.0) {
-        return SetValidationError(error, "tactile gel material parameters are invalid");
-    }
-    if (rgb_model_.empty()) {
-        return SetValidationError(error, "tactile RGB model name must not be empty");
-    }
-    const auto validate_vertex_set = [&](const std::vector<std::uint32_t>& indices,
-                                         const char* description) {
-        std::vector<std::uint32_t> sorted = indices;
-        std::sort(sorted.begin(), sorted.end());
-        if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
-            return SetValidationError(
-                    error, std::string("tactile ") + description + " contains duplicates");
-        }
-        if (std::any_of(sorted.begin(), sorted.end(), [&](std::uint32_t index) {
-                return index >= gel_mesh.GetVertexCount();
-            })) {
-            return SetValidationError(
-                    error, std::string("tactile ") + description + " references an invalid vertex");
-        }
-        return true;
-    };
-    if (!validate_vertex_set(coat_vertex_indices_, "coat vertex set") ||
-        !validate_vertex_set(stick_vertex_indices_, "stick vertex set")) {
-        return false;
-    }
-    if (marker_positions_.size() != marker_tetrahedra_.size() ||
-        marker_positions_.size() != marker_barycentric_.size()) {
-        return SetValidationError(
-                error, "tactile marker position, tetrahedron, and barycentric tables must match");
-    }
-    for (std::size_t index = 0; index < marker_positions_.size(); ++index) {
-        const Vector2& marker = marker_positions_[index];
-        if (!marker.allFinite() || marker.x() < 0.0 || marker.y() < 0.0 ||
-            marker.x() >= static_cast<RealType>(image_width_) ||
-            marker.y() >= static_cast<RealType>(image_height_)) {
-            return SetValidationError(
-                    error, "tactile marker " + std::to_string(index) +
-                                   " is outside the image in pixel coordinates");
-        }
-        if (marker_tetrahedra_[index] >= gel_mesh.GetTetrahedronCount()) {
-            return SetValidationError(
-                    error, "tactile marker references an invalid gel tetrahedron");
-        }
-        const Vector4& barycentric = marker_barycentric_[index];
-        if (!barycentric.allFinite() ||
-            (barycentric.array() < -CMP_EPSILON).any() ||
-            std::abs(barycentric.sum() - 1.0) > 1.0e-5) {
-            return SetValidationError(
-                    error, "tactile marker barycentric weights must be finite, non-negative, and sum to one");
-        }
-    }
-    if (error != nullptr) {
-        error->clear();
-    }
-    return true;
+bool TactileSensorConfig::Validate(const TetrahedralMesh& gel_mesh, std::string* error) const {
+    return parameters_.Validate(gel_mesh.GetVertexCount(), gel_mesh.GetTetrahedronCount(), error);
 }
 
 void TactileSensor3D::SetConfig(const Ref<TactileSensorConfig>& config) {

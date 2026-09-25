@@ -6,16 +6,14 @@
 
 #pragma once
 
+#include "gobot/core/robotics_types.hpp"
+
 #include "gobot/core/math/math_defs.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/node_path.hpp"
 
 namespace gobot {
 
-enum class PhysicsCouplingMode {
-    OneWay,
-    TwoWay,
-};
 
 class GOBOT_EXPORT PhysicsCoupling : public Node {
     GOBCLASS(PhysicsCoupling, Node)

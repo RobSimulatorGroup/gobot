@@ -173,84 +173,6 @@ def _validate_unique_strings(values: Sequence[str], description: str) -> None:
         raise ValueError(f"compiled scene artifact has duplicate {description}s")
 
 
-def _legacy_robot_and_control_topology(
-    content: str,
-    robot_names: tuple[str, ...],
-    robot_prefixes: tuple[str, ...],
-) -> tuple[tuple[CompiledRobotTopology, ...], tuple[CompiledControlTopology, ...]]:
-    """Bridge legacy schema-v1 compiler output into the current v2 contract.
-
-    This deliberately lives outside :meth:`CompiledSceneArtifact.from_mapping`:
-    arbitrary v1 artifacts remain unsupported. The bridge derives only the
-    topology fields that were absent from the legacy compiler response.
-    """
-
-    try:
-        root = ET.fromstring(content)
-    except ET.ParseError as error:
-        raise ValueError(f"compiled scene artifact contains invalid MJCF: {error}") from error
-
-    def owner(runtime_name: str) -> str:
-        matches = [
-            (len(prefix), robot_name)
-            for robot_name, prefix in zip(robot_names, robot_prefixes, strict=True)
-            if prefix and runtime_name.startswith(prefix)
-        ]
-        return max(matches, default=(0, ""))[1]
-
-    body_names = tuple(
-        element.attrib["name"]
-        for element in root.findall("./worldbody//body")
-        if element.attrib.get("name")
-    )
-    joint_names = tuple(
-        element.attrib["name"]
-        for tag in ("joint", "freejoint")
-        for element in root.findall(f"./worldbody//{tag}")
-        if element.attrib.get("name")
-    )
-    controls: list[CompiledControlTopology] = []
-    for index, element in enumerate(
-        child for section in root.findall("actuator") for child in section
-    ):
-        control_name = element.attrib.get("name", f"actuator_{index}")
-        joint_name = element.attrib.get("joint", "")
-        robot_name = owner(joint_name) or owner(control_name)
-        if element.tag in ("position", "velocity") and joint_name:
-            mode = element.tag
-        elif element.tag == "general" and control_name.endswith("_position"):
-            # The legacy compiler serialized MuJoCo's canonical affine form;
-            # Current artifacts carry this semantic explicitly and need no inference.
-            mode = "position"
-        elif element.tag == "general" and control_name.endswith("_velocity"):
-            mode = "velocity"
-        else:
-            mode = "direct"
-        controls.append(
-            CompiledControlTopology(
-                index=index,
-                name=control_name,
-                joint=joint_name,
-                mode=mode,
-                robot=robot_name,
-            )
-        )
-
-    robots = tuple(
-        CompiledRobotTopology(
-            name=robot_name,
-            runtime_prefix=prefix,
-            body_names=tuple(name for name in body_names if owner(name) == robot_name),
-            joint_names=tuple(name for name in joint_names if owner(name) == robot_name),
-            control_indices=tuple(
-                control.index for control in controls if control.robot == robot_name
-            ),
-        )
-        for robot_name, prefix in zip(robot_names, robot_prefixes, strict=True)
-    )
-    return robots, tuple(controls)
-
-
 @dataclass(frozen=True)
 class CompiledSceneArtifact:
     """Schema-v3 portable physics artifact compiled from a Gobot scene."""
@@ -413,15 +335,6 @@ class CompiledSceneArtifact:
             terrain_geom_groups=tuple(value.get("terrain_geom_groups", ())),
         )
 
-    @classmethod
-    def from_compiler_mapping(cls, value: Mapping[str, Any]) -> "CompiledSceneArtifact":
-        """Validate current compiler output without legacy schema bridging."""
-
-        if not isinstance(value, Mapping):
-            raise TypeError("compiled scene artifact must be a mapping")
-        schema_version = int(value.get("schema_version", 0))
-        return cls.from_mapping(value)
-
     def to_mapping(self) -> Mapping[str, Any]:
         return {
             "schema_version": self.schema_version,
@@ -525,15 +438,11 @@ class CompiledSceneArtifact:
 
 def validate_compiled_artifact(
     artifact: Mapping[str, Any] | CompiledSceneArtifact,
-    *,
-    allow_current_compiler_bridge: bool = False,
 ) -> CompiledSceneArtifact:
     """Central validation entry point shared by all Python providers."""
 
     if isinstance(artifact, CompiledSceneArtifact):
         return CompiledSceneArtifact.from_mapping(artifact.to_mapping())
-    if allow_current_compiler_bridge:
-        return CompiledSceneArtifact.from_compiler_mapping(artifact)
     return CompiledSceneArtifact.from_mapping(artifact)
 
 

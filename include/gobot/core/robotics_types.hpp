@@ -8,6 +8,17 @@
 
 namespace gobot {
 
+enum class DeformableBodyModel {
+    Volumetric,
+    ThinShell,
+};
+
+enum class PhysicsCouplingMode {
+    OneWay,
+    TwoWay,
+};
+
+
 enum class JointType {
     Fixed,
     Revolute,

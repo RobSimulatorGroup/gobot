@@ -503,6 +503,25 @@ class _FakeNativeBatchSession:
         self.closed = True
 
 
+def test_context_compiles_artifacts_without_building_world() -> None:
+    context = gobot.app.create_context()
+    context.set_project_path(str(SCENE.parent))
+    context.load_scene("res://" + SCENE.name)
+    combined = context.compile_scene_artifacts(include_ipc=True)
+    assert combined["physics"] == context.compile_scene_artifact()
+    assert combined["ipc"] == context.compile_ipc_scene_artifact()
+    assert context.compile_scene_artifacts()["ipc"] is None
+    calls = []
+
+    def compile_artifacts(*, include_ipc=False):
+        calls.append(include_ipc)
+        return combined
+
+    artifact = CompiledMuJoCoIpcArtifact.from_context(SimpleNamespace(compile_scene_artifacts=compile_artifacts))
+    assert calls == [True]
+    assert artifact.mujoco.content_digest == combined["physics"]["content_digest"]
+
+
 def test_composite_artifact_has_explicit_mapping_and_ownership() -> None:
     artifact = _artifact()
     assert artifact.schema_version == 4
@@ -1474,6 +1493,7 @@ def main() -> int:
     if torch is None:
         print("MuJoCo+IPC provider test skipped: Torch is not installed")
         return 77
+    test_context_compiles_artifacts_without_building_world()
     test_composite_artifact_has_explicit_mapping_and_ownership()
     test_composite_rejects_v1_and_missing_physics_coupling()
     test_ipc_schema_v3_normalizes_missing_static_colliders()

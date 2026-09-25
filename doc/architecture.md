@@ -24,15 +24,23 @@ runtime path that conflicts with this one.
 
 ## Physics Pipeline
 
-The only supported runtime path is:
+Scene extraction happens once on the scene owner thread:
 
 ```text
 .jscn / live authored scene
   -> PhysicsSceneCompiler
-  -> PhysicsSceneSnapshot + SceneBindings
-  -> PhysicsWorld::Build(snapshot)
-  -> backend runtime model and state
+  -> PhysicsSceneSnapshot (values) + SceneBindings (synchronization)
+       -> MuJoCoSceneCompiler -> MJCF artifact / owned runtime model
+       -> IpcSceneCompiler    -> IPC manifest + geometry blobs
+       -> PhysicsWorld::Build(snapshot) -> backend runtime state
 ```
+
+Artifact compilers consume snapshots without traversing or retaining Scene
+nodes. MuJoCo artifact compilation and CPU world construction share the model
+builder; exporting an artifact does not construct a temporary physics world.
+IPC solvers depend on the artifact contract, separately from its compiler.
+Snapshot extraction, IPC compilation, MuJoCo compilation, and CPU runtime have
+separate CMake object targets with private SDK dependencies.
 
 `Robot3D.source_path` records import provenance. It is not copied into the
 physics snapshot and is never opened by a physics backend. Importing URDF or

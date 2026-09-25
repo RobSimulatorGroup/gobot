@@ -9,6 +9,9 @@
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/rigid_body_3d.hpp"
+#include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -41,6 +44,49 @@ protected:
     ProjectSettings second{false};
 };
 } // namespace
+
+TEST(EngineContextArtifacts, CompilesOneSnapshotAndPublishesAtomically) {
+    SimulationServer simulation;
+    EngineContext context(nullptr, &simulation);
+    auto* root = Object::New<Node3D>();
+    root->SetName("artifact_world");
+    auto* shape = Object::New<CollisionShape3D>();
+    shape->SetName("floor");
+    shape->SetShape(MakeRef<BoxShape3D>());
+    auto* body = Object::New<RigidBody3D>();
+    body->SetName("body");
+    body->SetMass(1.0);
+    body->SetInertiaDiagonal({0.1, 0.1, 0.1});
+    root->AddChild(body);
+    body->AddChild(shape);
+    PhysicsSceneArtifact physics;
+    IpcSceneArtifact ipc;
+    physics.content = "unchanged physics";
+    ipc.manifest = "unchanged ipc";
+    EXPECT_FALSE(context.CompileSceneArtifacts(root, PhysicsBackendType::Null, &physics, &ipc));
+    EXPECT_EQ(physics.content, "unchanged physics");
+    EXPECT_EQ(ipc.manifest, "unchanged ipc");
+#ifdef GOBOT_HAS_MUJOCO
+    const auto backend = context.GetBackendType();
+    ASSERT_TRUE(context.CompileSceneArtifacts(root, PhysicsBackendType::MuJoCoCpu, &physics, &ipc))
+            << context.GetLastError();
+    EXPECT_FALSE(context.HasWorld());
+    EXPECT_EQ(context.GetBackendType(), backend);
+    PhysicsSceneArtifact single_physics;
+    IpcSceneArtifact single_ipc;
+    ASSERT_TRUE(context.CompileSceneArtifact(root, PhysicsBackendType::MuJoCoCpu, &single_physics));
+    ASSERT_TRUE(context.CompileIpcSceneArtifact(root, &single_ipc));
+    EXPECT_EQ(single_physics.content, physics.content);
+    EXPECT_EQ(single_ipc.manifest, ipc.manifest);
+    const auto content = physics.content;
+    const auto manifest = ipc.manifest;
+    shape->SetShape({});
+    EXPECT_FALSE(context.CompileSceneArtifacts(root, PhysicsBackendType::MuJoCoCpu, &physics, &ipc));
+    EXPECT_EQ(physics.content, content);
+    EXPECT_EQ(ipc.manifest, manifest);
+#endif
+    Object::Delete(root);
+}
 
 TEST_F(EngineContextIsolation, NestedAndThreadLocalResolutionDoesNotChangeDefault) {
     auto* original = ProjectSettings::GetInstance();

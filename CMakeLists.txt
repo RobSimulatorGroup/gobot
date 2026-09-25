@@ -688,12 +688,20 @@ file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
 file(GLOB_RECURSE SOURCE_SIMULATION CONFIGURE_DEPENDS "src/gobot/simulation/*.cpp")
 set(SOURCE_PHYSICS_MUJOCO
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/mujoco_physics_world.cpp")
+set(SOURCE_PHYSICS_MUJOCO_COMPILER
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/mujoco_scene_compiler.cpp")
+set(SOURCE_PHYSICS_SCENE_COMPILER
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/physics_scene_compiler.cpp")
+set(SOURCE_PHYSICS_IPC_COMPILER
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/ipc_scene_compiler.cpp")
 set(SOURCE_PHYSICS_SUPERDEX
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/superdex_physics_world.cpp")
 set(SOURCE_RESOURCE_MJCF
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/core/io/resource_format_mjcf.cpp")
 list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_MUJOCO})
+list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_MUJOCO_COMPILER})
 list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_SUPERDEX})
+list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_SCENE_COMPILER} ${SOURCE_PHYSICS_IPC_COMPILER})
 list(REMOVE_ITEM SOURCE_CORE ${SOURCE_RESOURCE_MJCF})
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_OPENGL_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/opengl/*.cpp")
@@ -742,14 +750,11 @@ function(gobot_configure_engine_object_target TARGET_NAME)
             PRIVATE
                 gobot_public_abi
                 RTTR::Core
-                stb
-                gli
                 spdlog::spdlog
                 fmt::fmt
                 Eigen3::Eigen
                 magic_enum::magic_enum
-                nlohmann_json::nlohmann_json
-                glad)
+                nlohmann_json::nlohmann_json)
     target_compile_definitions(${TARGET_NAME}
             PRIVATE
                 GOBOT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
@@ -762,23 +767,23 @@ endfunction()
 add_library(gobot_physics_core OBJECT ${SOURCE_PHYSICS})
 gobot_configure_engine_object_target(gobot_physics_core)
 
+add_library(gobot_physics_scene_compile OBJECT ${SOURCE_PHYSICS_SCENE_COMPILER})
+gobot_configure_engine_object_target(gobot_physics_scene_compile)
+
+add_library(gobot_physics_ipc_compile OBJECT ${SOURCE_PHYSICS_IPC_COMPILER})
+gobot_configure_engine_object_target(gobot_physics_ipc_compile)
+
 add_library(gobot_simulation_core OBJECT ${SOURCE_SIMULATION})
 gobot_configure_engine_object_target(gobot_simulation_core)
 
 add_library(gobot_physics_mujoco_cpu OBJECT ${SOURCE_PHYSICS_MUJOCO})
 gobot_configure_engine_object_target(gobot_physics_mujoco_cpu)
 
+add_library(gobot_physics_mujoco_compile OBJECT ${SOURCE_PHYSICS_MUJOCO_COMPILER})
+gobot_configure_engine_object_target(gobot_physics_mujoco_compile)
+
 set(GOBOT_PHYSICS_SUPERDEX_OBJECTS)
 if(GOB_BUILD_SUPERDEX)
-    # Mochi exports SIMD options that affect Eigen's fixed-size type ABI. Every
-    # translation unit sharing Gobot physics types must use the same options.
-    foreach(GOBOT_SUPERDEX_ABI_TARGET IN ITEMS
-            gobot_physics_core
-            gobot_simulation_core
-            gobot_physics_mujoco_cpu)
-        target_link_libraries(${GOBOT_SUPERDEX_ABI_TARGET} PRIVATE SuperDex::Physics)
-    endforeach()
-
     add_library(gobot_physics_superdex OBJECT ${SOURCE_PHYSICS_SUPERDEX})
     gobot_configure_engine_object_target(gobot_physics_superdex)
     target_compile_definitions(gobot_physics_superdex PRIVATE
@@ -794,17 +799,27 @@ endif()
 
 add_library(gobot_resource_mjcf OBJECT ${SOURCE_RESOURCE_MJCF})
 gobot_configure_engine_object_target(gobot_resource_mjcf)
-if(GOB_BUILD_SUPERDEX)
-    target_link_libraries(gobot_resource_mjcf PRIVATE SuperDex::Physics)
-endif()
 
 if(GOB_BUILD_MUJOCO)
     include(cmake/GobotMjbatch.cmake)
     target_compile_definitions(gobot_physics_mujoco_cpu PRIVATE GOBOT_HAS_MUJOCO=1)
+    target_compile_definitions(gobot_physics_mujoco_compile PRIVATE GOBOT_HAS_MUJOCO=1)
     target_compile_definitions(gobot_resource_mjcf PRIVATE GOBOT_HAS_MUJOCO=1)
     target_link_libraries(gobot_physics_mujoco_cpu PRIVATE gobot_mjbatch)
+    target_link_libraries(gobot_physics_mujoco_compile PRIVATE ${GOBOT_MUJOCO_TARGET})
     target_link_libraries(gobot_resource_mjcf PRIVATE ${GOBOT_MUJOCO_TARGET})
 endif()
+
+# Export evaluated target dependencies for the architecture regression check.
+set(GOBOT_PHYSICS_DEPENDENCY_MANIFEST "")
+foreach(GOBOT_PHYSICS_TARGET IN ITEMS
+        gobot_physics_core gobot_physics_scene_compile gobot_physics_ipc_compile
+        gobot_physics_mujoco_compile gobot_physics_mujoco_cpu)
+    string(APPEND GOBOT_PHYSICS_DEPENDENCY_MANIFEST
+        "${GOBOT_PHYSICS_TARGET}|$<JOIN:$<TARGET_PROPERTY:${GOBOT_PHYSICS_TARGET},SOURCES>,;>|$<JOIN:$<TARGET_PROPERTY:${GOBOT_PHYSICS_TARGET},INCLUDE_DIRECTORIES>,;>|$<JOIN:$<TARGET_PROPERTY:${GOBOT_PHYSICS_TARGET},LINK_LIBRARIES>,;>\n")
+endforeach()
+file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/physics_dependencies_$<CONFIG>.txt"
+     CONTENT "${GOBOT_PHYSICS_DEPENDENCY_MANIFEST}")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED
@@ -815,8 +830,11 @@ add_library(gobot SHARED
         ${SOURCE_APP_RUNTIME}
         ${SOURCE_PYTHON_RUNTIME}
         $<TARGET_OBJECTS:gobot_physics_core>
+        $<TARGET_OBJECTS:gobot_physics_scene_compile>
+        $<TARGET_OBJECTS:gobot_physics_ipc_compile>
         $<TARGET_OBJECTS:gobot_simulation_core>
         $<TARGET_OBJECTS:gobot_physics_mujoco_cpu>
+        $<TARGET_OBJECTS:gobot_physics_mujoco_compile>
         ${GOBOT_PHYSICS_SUPERDEX_OBJECTS}
         $<TARGET_OBJECTS:gobot_resource_mjcf>)
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
@@ -872,7 +890,7 @@ endif()
 
 if(GOB_BUILD_SUPERDEX)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_SUPERDEX=1)
-    target_link_libraries(gobot PUBLIC SuperDex::Physics)
+    target_link_libraries(gobot PRIVATE SuperDex::Physics)
     if(GOBOT_SUPERDEX_SDK_TARGET)
         add_dependencies(gobot ${GOBOT_SUPERDEX_SDK_TARGET})
     endif()

@@ -240,7 +240,6 @@ def _validated_artifact(
 ) -> CompiledSceneArtifact:
     return validate_compiled_artifact(
         artifact,
-        allow_current_compiler_bridge=True,
     )
 
 

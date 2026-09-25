@@ -10,14 +10,18 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <stdexcept>
 #include <unordered_set>
 #include <utility>
 
 #include <fmt/format.h>
 
 #include "gobot/core/registration.hpp"
+#include "gobot/core/math/mesh_validation.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
+#include "gobot/scene/deformable_attachment_3d.hpp"
+#include "gobot/scene/tactile_sensor_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
@@ -35,6 +39,12 @@
 
 namespace gobot {
 namespace {
+
+struct CaptureError : std::runtime_error {
+    std::string path;
+    CaptureError(std::string path, std::string message)
+        : std::runtime_error(std::move(message)), path(std::move(path)) {}
+};
 
 std::string CanonicalScenePath(const Node* node) {
     std::vector<std::string> names;
@@ -275,34 +285,30 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
 
         snapshot.type = PhysicsShapeType::Mesh;
         for (const MeshSurfaceData& surface : *surfaces) {
-            const std::uint32_t vertex_offset =
-                    static_cast<std::uint32_t>(snapshot.vertices.size());
-            snapshot.vertices.insert(snapshot.vertices.end(),
-                                     surface.vertices.begin(),
-                                     surface.vertices.end());
-
-            if (surface.indices.empty()) {
-                const std::size_t triangle_vertex_count =
-                        surface.vertices.size() - surface.vertices.size() % 3;
-                for (std::size_t index = 0; index < triangle_vertex_count; ++index) {
-                    snapshot.indices.push_back(vertex_offset + static_cast<std::uint32_t>(index));
-                }
-                continue;
+            if (surface.vertices.empty()) continue;
+            if (snapshot.vertices.size() + surface.vertices.size() >
+                std::numeric_limits<std::uint32_t>::max()) {
+                throw CaptureError(snapshot.scene_path, "collision mesh has too many vertices");
             }
-
-            for (std::size_t index = 0; index + 2 < surface.indices.size(); index += 3) {
-                const std::uint32_t a = surface.indices[index];
-                const std::uint32_t b = surface.indices[index + 1];
-                const std::uint32_t c = surface.indices[index + 2];
-                if (a >= surface.vertices.size() ||
-                    b >= surface.vertices.size() ||
-                    c >= surface.vertices.size()) {
-                    continue;
+            const auto vertex_offset = static_cast<std::uint32_t>(snapshot.vertices.size());
+            if ((surface.indices.empty() ? surface.vertices.size() : surface.indices.size()) % 3 != 0) {
+                throw CaptureError(snapshot.scene_path, "collision mesh must contain complete triangles");
+            }
+            snapshot.vertices.insert(snapshot.vertices.end(), surface.vertices.begin(), surface.vertices.end());
+            if (surface.indices.empty()) {
+                for (std::uint32_t index = 0; index < surface.vertices.size(); ++index)
+                    snapshot.indices.push_back(vertex_offset + index);
+            } else {
+                for (const auto index : surface.indices) {
+                    if (index >= surface.vertices.size())
+                        throw CaptureError(snapshot.scene_path, "collision mesh has an out-of-range index");
+                    snapshot.indices.push_back(vertex_offset + index);
                 }
-                snapshot.indices.insert(snapshot.indices.end(),
-                                        {vertex_offset + a, vertex_offset + b, vertex_offset + c});
             }
         }
+        std::string error;
+        if (!ValidateTriangleMesh(snapshot.vertices, snapshot.indices, &error, false))
+            throw CaptureError(snapshot.scene_path, std::move(error));
     }
     return snapshot;
 }
@@ -399,6 +405,27 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
         snapshot.ray_alignment = raycast->GetRayAlignment();
     }
 
+    if (const auto* tactile = Object::PointerCastTo<TactileSensor3D>(sensor)) {
+        PhysicsTactileSnapshot data;
+        data.collision_layer = tactile->GetCollisionLayer();
+        data.collision_mask = tactile->GetCollisionMask();
+        if (const auto& mesh = tactile->GetGelMesh(); mesh.IsValid()) {
+            data.gel_vertices = mesh->GetVertices();
+            data.gel_tetrahedra = mesh->GetTetrahedra();
+            data.gel_surface_triangles = mesh->GetResolvedSurfaceTriangles();
+        }
+        if (const auto& config = tactile->GetConfig(); config.IsValid()) {
+            data.parameters = config->GetParameters();
+        }
+        for (const Node* ancestor = sensor->GetParent(); ancestor; ancestor = ancestor->GetParent()) {
+            if (const auto* link = Object::PointerCastTo<Link3D>(ancestor)) {
+                data.attachment_link_path = CanonicalScenePath(link);
+                break;
+            }
+        }
+        snapshot.tactile = std::move(data);
+    }
+
     snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
     if (snapshot.type == PhysicsSensorType::RayCast || snapshot.type == PhysicsSensorType::HeightScanner) {
         for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
@@ -475,171 +502,16 @@ PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
     return snapshot;
 }
 
-void CollectRobotNodes(const Node* node,
-                       PhysicsRobotSnapshot* robot_snapshot,
-                       PhysicsRobotSceneBinding* scene_binding,
-                       std::vector<PhysicsShapeSnapshot>* loose_collision_shapes,
-                       const Affine3& parent_global_transform,
-                       std::optional<std::size_t> parent_link_index = std::nullopt) {
-    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
-    const Affine3 global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
-    std::optional<std::size_t> link_index = parent_link_index;
-
-    if (const auto* link = Object::PointerCastTo<Link3D>(node)) {
-        PhysicsLinkSnapshot snapshot;
-        snapshot.name = link->GetName();
-        snapshot.scene_path = CanonicalScenePath(link);
-        snapshot.role = link->GetRole() == LinkRole::VirtualRoot
-                                ? PhysicsLinkRole::VirtualRoot
-                                : PhysicsLinkRole::Physical;
-        snapshot.global_transform = global_transform;
-        snapshot.mass = link->GetMass();
-        snapshot.center_of_mass = link->GetCenterOfMass();
-        snapshot.inertia_orientation = link->GetInertiaOrientation();
-        snapshot.inertia_diagonal = link->GetInertiaDiagonal();
-        snapshot.inertia_off_diagonal = link->GetInertiaOffDiagonal();
-        link_index = robot_snapshot->links.size();
-        robot_snapshot->links.push_back(std::move(snapshot));
-        scene_binding->link_ids.push_back(link->GetInstanceId());
-    } else if (const auto* joint = Object::PointerCastTo<Joint3D>(node)) {
-        PhysicsJointSnapshot snapshot;
-        snapshot.name = joint->GetName();
-        snapshot.scene_path = CanonicalScenePath(joint);
-        snapshot.parent_link = joint->GetParentLink();
-        snapshot.child_link = joint->GetChildLink();
-        snapshot.global_transform = global_transform;
-        snapshot.axis = joint->GetAxis();
-        snapshot.lower_limit = joint->GetLowerLimit();
-        snapshot.upper_limit = joint->GetUpperLimit();
-        snapshot.effort_limit = joint->GetEffortLimit();
-        snapshot.velocity_limit = joint->GetVelocityLimit();
-        snapshot.damping = joint->GetDamping();
-        snapshot.armature = joint->GetArmature();
-        snapshot.friction_loss = joint->GetFrictionLoss();
-        if (const Ref<JointActuatorConfig>& config = joint->GetActuatorConfig();
-            config.IsValid()) {
-            snapshot.actuator_model.command_delay_steps = config->GetCommandDelaySteps();
-            snapshot.actuator_model.command_deadband = config->GetCommandDeadband();
-            snapshot.actuator_model.command_slew_rate = config->GetCommandSlewRate();
-            snapshot.actuator_model.strength_scale = config->GetStrengthScale();
-            snapshot.actuator_model.motor_velocity_limit = config->GetMotorVelocityLimit();
-            snapshot.actuator_model.motor_stall_effort = config->GetMotorStallEffort();
-        }
-        snapshot.joint_position = joint->GetJointPosition();
-        snapshot.initial_position = joint->GetInitialPosition();
-        snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
-        snapshot.drive_stiffness = joint->GetDriveStiffness();
-        snapshot.drive_damping = joint->GetDriveDamping();
-        snapshot.control_lower_limit = joint->GetControlLowerLimit();
-        snapshot.control_upper_limit = joint->GetControlUpperLimit();
-        snapshot.force_lower_limit = joint->GetForceLowerLimit();
-        snapshot.force_upper_limit = joint->GetForceUpperLimit();
-        snapshot.gear = joint->GetGear();
-        snapshot.affine_actuator_enabled = joint->IsAffineActuatorEnabled();
-        snapshot.affine_actuator_control_gain = joint->GetAffineActuatorControlGain();
-        snapshot.affine_actuator_force_offset = joint->GetAffineActuatorForceOffset();
-        snapshot.affine_actuator_position_gain = joint->GetAffineActuatorPositionGain();
-        snapshot.affine_actuator_velocity_gain = joint->GetAffineActuatorVelocityGain();
-        snapshot.affine_actuator_inherit_range = joint->GetAffineActuatorInheritRange();
-        snapshot.joint_type = static_cast<int>(joint->GetJointType());
-        robot_snapshot->joints.push_back(std::move(snapshot));
-        scene_binding->joint_ids.push_back(joint->GetInstanceId());
-    } else if (const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        PhysicsShapeSnapshot snapshot = CaptureShapeSnapshot(collision_shape, global_transform);
-        if (link_index.has_value()) {
-            robot_snapshot->links[*link_index].collision_shapes.push_back(std::move(snapshot));
-        } else {
-            loose_collision_shapes->push_back(std::move(snapshot));
-        }
-    } else if (const auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
-        const std::string link_name = link_index.has_value()
-                                              ? robot_snapshot->links[*link_index].name
-                                              : std::string{};
-        robot_snapshot->sensors.push_back(CaptureSensorSnapshot(sensor, link_name, global_transform));
-    }
-
-    for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
-        CollectRobotNodes(node->GetChild(static_cast<int>(index)),
-                          robot_snapshot,
-                          scene_binding,
-                          loose_collision_shapes,
-                          global_transform,
-                          link_index);
-    }
-}
-
-void CollectSceneNodes(const Node* node,
-                       PhysicsSceneSnapshot* snapshot,
-                       PhysicsSceneBindings* bindings,
-                       const Affine3& parent_global_transform) {
-    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
-    const Affine3 global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
-
-    if (const auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
-        PhysicsRobotSnapshot rigid_snapshot;
-        rigid_snapshot.name = rigid_body->GetName();
-        rigid_snapshot.scene_path = CanonicalScenePath(rigid_body);
-        rigid_snapshot.standalone_rigid_body = true;
-        PhysicsRobotSceneBinding scene_binding;
-        scene_binding.robot_id = rigid_body->GetInstanceId();
-        CollectRobotNodes(node,
-                          &rigid_snapshot,
-                          &scene_binding,
-                          &snapshot->loose_collision_shapes,
-                          parent_global_transform);
-        snapshot->total_link_count += rigid_snapshot.links.size();
-        snapshot->total_joint_count += rigid_snapshot.joints.size();
-        snapshot->total_sensor_count += rigid_snapshot.sensors.size();
-        for (const PhysicsLinkSnapshot& link : rigid_snapshot.links) {
-            snapshot->total_collision_shape_count += link.collision_shapes.size();
-        }
-        snapshot->robots.push_back(std::move(rigid_snapshot));
-        bindings->robots.push_back(std::move(scene_binding));
-        return;
-    }
-
-    if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
-        PhysicsRobotSnapshot robot_snapshot;
-        robot_snapshot.name = robot->GetName();
-        robot_snapshot.scene_path = CanonicalScenePath(robot);
-        PhysicsRobotSceneBinding scene_binding;
-        scene_binding.robot_id = robot->GetInstanceId();
-        CollectRobotNodes(node,
-                          &robot_snapshot,
-                          &scene_binding,
-                          &snapshot->loose_collision_shapes,
-                          parent_global_transform);
-        for (std::size_t index = 0; index < robot_snapshot.links.size(); ++index) {
-            const auto* link = Object::PointerCastTo<Link3D>(
-                    ObjectDB::GetInstance(scene_binding.link_ids[index]));
-            if (IsImplicitVirtualRootLink(link, robot_snapshot)) {
-                robot_snapshot.links[index].role = PhysicsLinkRole::VirtualRoot;
-            }
-        }
-        snapshot->total_link_count += robot_snapshot.links.size();
-        snapshot->total_joint_count += robot_snapshot.joints.size();
-        snapshot->total_sensor_count += robot_snapshot.sensors.size();
-        for (const PhysicsLinkSnapshot& link : robot_snapshot.links) {
-            snapshot->total_collision_shape_count += link.collision_shapes.size();
-        }
-        snapshot->robots.push_back(std::move(robot_snapshot));
-        bindings->robots.push_back(std::move(scene_binding));
-        return;
-    }
-
-    if (const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        snapshot->loose_collision_shapes.push_back(CaptureShapeSnapshot(collision_shape, global_transform));
-        ++snapshot->total_collision_shape_count;
-    } else if (const auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
-        snapshot->loose_sensors.push_back(CaptureSensorSnapshot(sensor, {}, global_transform));
-        ++snapshot->total_sensor_count;
-    } else if (const auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
+void CaptureAuxiliaryNode(const Node* node, PhysicsSceneSnapshot* snapshot,
+                          PhysicsSceneBindings* bindings, const Affine3& global_transform) {
+    if (const auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
         PhysicsTerrainSnapshot terrain_snapshot = CaptureTerrainSnapshot(terrain, global_transform);
         ++snapshot->total_terrain_count;
         snapshot->total_collision_shape_count += terrain_snapshot.boxes.size() +
                                                  terrain_snapshot.heightfields.size() +
                                                  terrain_snapshot.mesh_patches.size();
         snapshot->terrains.push_back(std::move(terrain_snapshot));
+
     } else if (const auto* deformable = Object::PointerCastTo<DeformableBody3D>(node)) {
         PhysicsDeformableSnapshot deformable_snapshot;
         deformable_snapshot.name = deformable->GetName();
@@ -686,7 +558,219 @@ void CollectSceneNodes(const Node* node,
         coupling_snapshot.torque_scale = coupling->GetTorqueScale();
         snapshot->couplings.push_back(std::move(coupling_snapshot));
         ++snapshot->total_coupling_count;
+    } else if (const auto* attachment = Object::PointerCastTo<DeformableAttachment3D>(node)) {
+        PhysicsDeformableAttachmentSnapshot value;
+        value.scene_path = CanonicalScenePath(attachment);
+        value.enabled = attachment->IsEnabled();
+        if (const auto* body = Object::PointerCastTo<DeformableBody3D>(
+                ResolveNodePath(*attachment, attachment->GetDeformableBodyPath()))) {
+            value.deformable_body_path = CanonicalScenePath(body);
+        }
+        if (const auto* link = Object::PointerCastTo<Link3D>(
+                ResolveNodePath(*attachment, attachment->GetRigidLinkPath()))) {
+            value.rigid_link_path = CanonicalScenePath(link);
+        }
+        value.vertex_indices = attachment->GetVertexIndices();
+        value.strength_rate = attachment->GetStrengthRate();
+        snapshot->deformable_attachments.push_back(std::move(value));
     }
+
+}
+
+void CollectSceneNodes(const Node* node, PhysicsSceneSnapshot* snapshot,
+                       PhysicsSceneBindings* bindings, const Affine3& parent_global_transform);
+
+void CollectRobotNodes(const Node* node,
+                       PhysicsRobotSnapshot* robot_snapshot,
+                       PhysicsRobotSceneBinding* scene_binding,
+                       PhysicsSceneSnapshot* scene_snapshot,
+                       PhysicsSceneBindings* scene_bindings,
+                       const Affine3& parent_global_transform,
+                       std::optional<std::size_t> parent_link_index = std::nullopt) {
+    if (node->GetInstanceId() != scene_binding->robot_id &&
+        (Object::PointerCastTo<Robot3D>(node) || Object::PointerCastTo<RigidBody3D>(node))) {
+        CollectSceneNodes(node, scene_snapshot, scene_bindings, parent_global_transform);
+        return;
+    }
+    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
+    const Affine3 global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
+    std::optional<std::size_t> link_index = parent_link_index;
+
+    if (const auto* link = Object::PointerCastTo<Link3D>(node)) {
+        PhysicsLinkSnapshot snapshot;
+        snapshot.name = link->GetName();
+        snapshot.scene_path = CanonicalScenePath(link);
+        snapshot.role = link->GetRole() == LinkRole::VirtualRoot
+                                ? PhysicsLinkRole::VirtualRoot
+                                : PhysicsLinkRole::Physical;
+        snapshot.authored_role = static_cast<PhysicsLinkRole>(link->GetRole());
+        snapshot.has_inertial = link->HasInertial();
+        snapshot.local_transform = link->GetTransform();
+        snapshot.global_transform = global_transform;
+        snapshot.mass = link->GetMass();
+        snapshot.center_of_mass = link->GetCenterOfMass();
+        snapshot.inertia_orientation = link->GetInertiaOrientation();
+        snapshot.inertia_diagonal = link->GetInertiaDiagonal();
+        snapshot.inertia_off_diagonal = link->GetInertiaOffDiagonal();
+        link_index = robot_snapshot->links.size();
+        robot_snapshot->links.push_back(std::move(snapshot));
+        scene_binding->link_ids.push_back(link->GetInstanceId());
+    } else if (const auto* joint = Object::PointerCastTo<Joint3D>(node)) {
+        PhysicsJointSnapshot snapshot;
+        snapshot.name = joint->GetName();
+        snapshot.scene_path = CanonicalScenePath(joint);
+        snapshot.parent_link = joint->GetParentLink();
+        snapshot.child_link = joint->GetChildLink();
+        snapshot.local_transform = joint->GetTransform();
+        if (const auto* parent = Object::PointerCastTo<Link3D>(joint->GetParent())) {
+            snapshot.structural_parent_link_path = CanonicalScenePath(parent);
+        }
+        for (std::size_t index = 0; index < joint->GetChildCount(); ++index) {
+            if (const auto* child = Object::PointerCastTo<Link3D>(joint->GetChild(static_cast<int>(index))))
+                snapshot.structural_child_link_paths.push_back(CanonicalScenePath(child));
+        }
+        snapshot.global_transform = global_transform;
+        snapshot.axis = joint->GetAxis();
+        snapshot.lower_limit = joint->GetLowerLimit();
+        snapshot.upper_limit = joint->GetUpperLimit();
+        snapshot.effort_limit = joint->GetEffortLimit();
+        snapshot.velocity_limit = joint->GetVelocityLimit();
+        snapshot.damping = joint->GetDamping();
+        snapshot.armature = joint->GetArmature();
+        snapshot.friction_loss = joint->GetFrictionLoss();
+        if (const Ref<JointActuatorConfig>& config = joint->GetActuatorConfig();
+            config.IsValid()) {
+            snapshot.actuator_model.command_delay_steps = config->GetCommandDelaySteps();
+            snapshot.actuator_model.command_deadband = config->GetCommandDeadband();
+            snapshot.actuator_model.command_slew_rate = config->GetCommandSlewRate();
+            snapshot.actuator_model.strength_scale = config->GetStrengthScale();
+            snapshot.actuator_model.motor_velocity_limit = config->GetMotorVelocityLimit();
+            snapshot.actuator_model.motor_stall_effort = config->GetMotorStallEffort();
+        }
+        snapshot.joint_position = joint->GetJointPosition();
+        snapshot.initial_position = joint->GetInitialPosition();
+        snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
+        snapshot.drive_stiffness = joint->GetDriveStiffness();
+        snapshot.drive_damping = joint->GetDriveDamping();
+        snapshot.control_lower_limit = joint->GetControlLowerLimit();
+        snapshot.control_upper_limit = joint->GetControlUpperLimit();
+        snapshot.force_lower_limit = joint->GetForceLowerLimit();
+        snapshot.force_upper_limit = joint->GetForceUpperLimit();
+        snapshot.gear = joint->GetGear();
+        snapshot.affine_actuator_enabled = joint->IsAffineActuatorEnabled();
+        snapshot.affine_actuator_control_gain = joint->GetAffineActuatorControlGain();
+        snapshot.affine_actuator_force_offset = joint->GetAffineActuatorForceOffset();
+        snapshot.affine_actuator_position_gain = joint->GetAffineActuatorPositionGain();
+        snapshot.affine_actuator_velocity_gain = joint->GetAffineActuatorVelocityGain();
+        snapshot.affine_actuator_inherit_range = joint->GetAffineActuatorInheritRange();
+        snapshot.joint_type = static_cast<int>(joint->GetJointType());
+        robot_snapshot->joints.push_back(std::move(snapshot));
+        scene_binding->joint_ids.push_back(joint->GetInstanceId());
+    } else if (const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
+        PhysicsShapeSnapshot snapshot = CaptureShapeSnapshot(collision_shape, global_transform);
+        if (link_index.has_value()) {
+            robot_snapshot->links[*link_index].collision_shapes.push_back(std::move(snapshot));
+        } else {
+            scene_snapshot->loose_collision_shapes.push_back(std::move(snapshot));
+            ++scene_snapshot->total_collision_shape_count;
+        }
+    } else if (const auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
+        const std::string link_name = link_index.has_value()
+                                              ? robot_snapshot->links[*link_index].name
+                                              : std::string{};
+        auto value = CaptureSensorSnapshot(sensor, link_name, global_transform);
+        value.scene_order = scene_snapshot->total_sensor_count++;
+        robot_snapshot->sensors.push_back(std::move(value));
+    }
+
+    CaptureAuxiliaryNode(node, scene_snapshot, scene_bindings, global_transform);
+
+    for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
+        CollectRobotNodes(node->GetChild(static_cast<int>(index)),
+                          robot_snapshot,
+                          scene_binding,
+                          scene_snapshot,
+                          scene_bindings,
+                          global_transform,
+                          link_index);
+    }
+}
+
+void CollectSceneNodes(const Node* node,
+                       PhysicsSceneSnapshot* snapshot,
+                       PhysicsSceneBindings* bindings,
+                       const Affine3& parent_global_transform) {
+    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
+    const Affine3 global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
+
+    if (const auto* rigid_body = Object::PointerCastTo<RigidBody3D>(node)) {
+        PhysicsRobotSnapshot rigid_snapshot;
+        rigid_snapshot.name = rigid_body->GetName();
+        rigid_snapshot.scene_path = CanonicalScenePath(rigid_body);
+        rigid_snapshot.standalone_rigid_body = true;
+        rigid_snapshot.global_transform = global_transform;
+        PhysicsRobotSceneBinding scene_binding;
+        scene_binding.robot_id = rigid_body->GetInstanceId();
+        const auto owner_index = snapshot->robots.size();
+        snapshot->robots.emplace_back();
+        bindings->robots.emplace_back();
+        CollectRobotNodes(node,
+                          &rigid_snapshot,
+                          &scene_binding,
+                          snapshot,
+                          bindings,
+                          parent_global_transform);
+        snapshot->total_link_count += rigid_snapshot.links.size();
+        snapshot->total_joint_count += rigid_snapshot.joints.size();
+        for (const PhysicsLinkSnapshot& link : rigid_snapshot.links) {
+            snapshot->total_collision_shape_count += link.collision_shapes.size();
+        }
+        snapshot->robots[owner_index] = std::move(rigid_snapshot);
+        bindings->robots[owner_index] = std::move(scene_binding);
+        return;
+    }
+
+    if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
+        PhysicsRobotSnapshot robot_snapshot;
+        robot_snapshot.name = robot->GetName();
+        robot_snapshot.scene_path = CanonicalScenePath(robot);
+        robot_snapshot.global_transform = global_transform;
+        PhysicsRobotSceneBinding scene_binding;
+        scene_binding.robot_id = robot->GetInstanceId();
+        const auto owner_index = snapshot->robots.size();
+        snapshot->robots.emplace_back();
+        bindings->robots.emplace_back();
+        CollectRobotNodes(node,
+                          &robot_snapshot,
+                          &scene_binding,
+                          snapshot,
+                          bindings,
+                          parent_global_transform);
+        for (std::size_t index = 0; index < robot_snapshot.links.size(); ++index) {
+            const auto* link = Object::PointerCastTo<Link3D>(
+                    ObjectDB::GetInstance(scene_binding.link_ids[index]));
+            if (IsImplicitVirtualRootLink(link, robot_snapshot)) {
+                robot_snapshot.links[index].role = PhysicsLinkRole::VirtualRoot;
+            }
+        }
+        snapshot->total_link_count += robot_snapshot.links.size();
+        snapshot->total_joint_count += robot_snapshot.joints.size();
+        for (const PhysicsLinkSnapshot& link : robot_snapshot.links) {
+            snapshot->total_collision_shape_count += link.collision_shapes.size();
+        }
+        snapshot->robots[owner_index] = std::move(robot_snapshot);
+        bindings->robots[owner_index] = std::move(scene_binding);
+        return;
+    }
+
+    if (const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
+        snapshot->loose_collision_shapes.push_back(CaptureShapeSnapshot(collision_shape, global_transform));
+        ++snapshot->total_collision_shape_count;
+    } else if (const auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
+        snapshot->loose_sensors.push_back(CaptureSensorSnapshot(sensor, {}, global_transform));
+        snapshot->loose_sensors.back().scene_order = snapshot->total_sensor_count++;
+    }
+    CaptureAuxiliaryNode(node, snapshot, bindings, global_transform);
 
     for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
         CollectSceneNodes(node->GetChild(static_cast<int>(index)), snapshot, bindings, global_transform);
@@ -730,6 +814,9 @@ void AssignStableIds(PhysicsSceneSnapshot* snapshot) {
     }
     for (PhysicsCouplingSnapshot& coupling : snapshot->couplings) {
         entries.push_back({coupling.scene_path, &coupling.stable_id});
+    }
+    for (auto& attachment : snapshot->deformable_attachments) {
+        entries.push_back({attachment.scene_path, &attachment.stable_id});
     }
     for (const Entry& entry : entries) {
         std::uint64_t stable_id = UINT64_C(14695981039346656037);
@@ -901,6 +988,10 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
     }
     for (const PhysicsCouplingSnapshot& coupling : compiled_scene->snapshot.couplings) {
         validate_identity(coupling.scene_path, coupling.stable_id, "PhysicsCoupling");
+    }
+
+    for (const auto& attachment : compiled_scene->snapshot.deformable_attachments) {
+        validate_identity(attachment.scene_path, attachment.stable_id, "DeformableAttachment3D");
     }
 
     std::unordered_set<std::string> robot_names;
@@ -1142,10 +1233,30 @@ bool PhysicsSceneCompiler::Compile(const Node* scene_root,
     }
 
     compiled_scene->bindings.scene_root_id = scene_root->GetInstanceId();
-    CollectSceneNodes(scene_root,
-                      &compiled_scene->snapshot,
-                      &compiled_scene->bindings,
-                      Affine3::Identity());
+    compiled_scene->snapshot.scene_name = scene_root->GetName();
+    try {
+        CollectSceneNodes(scene_root, &compiled_scene->snapshot,
+                          &compiled_scene->bindings, Affine3::Identity());
+    } catch (const CaptureError& failure) {
+        AddDiagnostic(compiled_scene, PhysicsSceneCompileSeverity::Error, failure.path, failure.what());
+        if (error) *error = failure.path + ": " + failure.what();
+        return false;
+    }
+    // Resolve attachment frames from captured transforms, including detached scenes.
+    const auto resolve_tactile = [&](PhysicsSensorSnapshot& sensor) {
+        if (!sensor.tactile || sensor.tactile->attachment_link_path.empty()) return;
+        for (const auto& robot : compiled_scene->snapshot.robots) {
+            for (const auto& link : robot.links) {
+                if (link.scene_path == sensor.tactile->attachment_link_path) {
+                    sensor.tactile->attachment_transform = link.global_transform.inverse() * sensor.global_transform;
+                    return;
+                }
+            }
+        }
+    };
+    for (auto& robot : compiled_scene->snapshot.robots)
+        for (auto& sensor : robot.sensors) resolve_tactile(sensor);
+    for (auto& sensor : compiled_scene->snapshot.loose_sensors) resolve_tactile(sensor);
     AssignStableIds(&compiled_scene->snapshot);
     if (!ValidateCompiledScene(compiled_scene)) {
         if (error != nullptr) {
