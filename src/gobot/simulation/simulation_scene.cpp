@@ -318,6 +318,15 @@ bool SimulationScene::SetEnvironmentJointPositionTargets(const std::string& robo
                                                          const std::vector<std::string>& joint_names,
                                                          const std::vector<RealType>& target_positions,
                                                          std::size_t environment_count) {
+    return SetEnvironmentJointControls(robot_name, joint_names, PhysicsJointControlMode::Position,
+                                        target_positions, environment_count);
+}
+
+bool SimulationScene::SetEnvironmentJointControls(const std::string& robot_name,
+                                                  const std::vector<std::string>& joint_names,
+                                                  PhysicsJointControlMode control_mode,
+                                                  const std::vector<RealType>& targets,
+                                                  std::size_t environment_count) {
     if (!EnsureReady()) {
         return false;
     }
@@ -327,8 +336,8 @@ bool SimulationScene::SetEnvironmentJointPositionTargets(const std::string& robo
     }
     if (!world_->SetEnvironmentJointControls(robot_name,
                                              joint_names,
-                                             PhysicsJointControlMode::Position,
-                                             target_positions,
+                                             control_mode,
+                                             targets,
                                              environment_count)) {
         SetLastError(world_->GetLastError());
         return false;

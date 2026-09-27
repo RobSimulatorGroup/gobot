@@ -328,6 +328,9 @@ class AppContext:
     def set_batch_joint_position_targets(
         self, robot: str, joint_names: Sequence[str], target_positions: Any
     ) -> None: ...
+    def set_batch_joint_effort_targets(
+        self, robot: str, joint_names: Sequence[str], target_efforts: Any
+    ) -> None: ...
     def reset_batch_joint_state(
         self, env_id: int, robot: str, joint: str, position: float, velocity: float = 0.0
     ) -> None: ...

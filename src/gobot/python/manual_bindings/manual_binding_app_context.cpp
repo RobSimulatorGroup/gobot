@@ -18,6 +18,33 @@ namespace gobot::python {
 
 namespace {
 
+auto BatchJointTargets(PhysicsJointControlMode mode) {
+    return [mode](EngineContext& context,
+                  const std::string& robot,
+                  const std::vector<std::string>& joint_names,
+                  py::array_t<RealType, py::array::c_style | py::array::forcecast> targets) {
+        SimulationServer* simulation = context.GetSimulationServer();
+        if (simulation == nullptr || simulation->GetRuntimeScene() == nullptr) {
+            throw std::runtime_error("simulation runtime scene has not been built");
+        }
+        const py::buffer_info buffer = targets.request();
+        if (buffer.ndim != 2 || static_cast<std::size_t>(buffer.shape[1]) != joint_names.size()) {
+            throw std::invalid_argument("joint targets must have shape [num_envs, num_joints]");
+        }
+        const auto environment_count = static_cast<std::size_t>(buffer.shape[0]);
+        const auto* data = static_cast<const RealType*>(buffer.ptr);
+        const std::vector<RealType> values(data, data + buffer.size);
+        if (!std::all_of(values.begin(), values.end(), [](RealType value) { return std::isfinite(value); })) {
+            throw std::invalid_argument("joint targets must be finite");
+        }
+        auto* runtime = simulation->GetRuntimeScene();
+        if (!runtime->SetEnvironmentJointControls(robot, joint_names, mode, values, environment_count)) {
+            throw std::runtime_error(runtime->GetLastError());
+        }
+    };
+}
+
+
 std::vector<std::regex> CompileContactPatterns(const std::vector<std::string>& patterns) {
     std::vector<std::regex> compiled;
     compiled.reserve(patterns.size());
@@ -2105,38 +2132,10 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("target_position"))
-            .def("set_batch_joint_position_targets", [](EngineContext& context,
-                                                        const std::string& robot,
-                                                        const std::vector<std::string>& joint_names,
-                                                        py::array_t<RealType, py::array::c_style | py::array::forcecast> target_positions) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                const py::buffer_info buffer = target_positions.request();
-                if (buffer.ndim != 2) {
-                    throw std::invalid_argument("target_positions must be a 2D array with shape [num_envs, num_joints]");
-                }
-                const auto environment_count = static_cast<std::size_t>(buffer.shape[0]);
-                const auto joint_count = static_cast<std::size_t>(buffer.shape[1]);
-                if (joint_count != joint_names.size()) {
-                    throw std::invalid_argument(fmt::format("target_positions has {} joint column(s), expected {}",
-                                                            joint_count,
-                                                            joint_names.size()));
-                }
-                const auto* data = static_cast<const RealType*>(buffer.ptr);
-                std::vector<RealType> targets(data, data + environment_count * joint_count);
-                if (!runtime_scene->SetEnvironmentJointPositionTargets(robot,
-                                                                       joint_names,
-                                                                       targets,
-                                                                       environment_count)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint_names"), py::arg("target_positions"))
+            .def("set_batch_joint_position_targets", BatchJointTargets(PhysicsJointControlMode::Position),
+                 py::arg("robot"), py::arg("joint_names"), py::arg("target_positions"))
+            .def("set_batch_joint_effort_targets", BatchJointTargets(PhysicsJointControlMode::Effort),
+                 py::arg("robot"), py::arg("joint_names"), py::arg("target_efforts"))
             .def("reset_batch_joint_state", [](EngineContext& context,
                                                std::size_t env_id,
                                                const std::string& robot,

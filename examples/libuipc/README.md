@@ -60,3 +60,7 @@ Run a short native CUDA smoke test with:
 uv run python examples/libuipc/libuipc_demo.py \
   --scene examples/libuipc/fr3_brick_grasp.jscn --steps 2
 ```
+
+The scene builder uses `fr3_robot.py` to construct the robot independently of
+its workbench and soft workpiece. The dual-arm rope example uses the same
+factory with its own initial joint poses and control configuration.

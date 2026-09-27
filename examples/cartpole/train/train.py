@@ -10,7 +10,8 @@ from pathlib import Path
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
-from env import CartPoleVecEnv
+from .env import CartPoleEnv, PROJECT_PATH
+from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 
 TRAIN_CFG = {
@@ -59,6 +60,7 @@ TRAIN_CFG = {
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-envs", type=int, default=64)
+    parser.add_argument("--sim-workers", type=int, default=0)
     parser.add_argument("--iterations", type=int, default=800)
     parser.add_argument("--log-dir", type=str, default="logs/position_tracking")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
@@ -71,7 +73,7 @@ def main() -> None:
     parser.add_argument("--policy-out", type=str, default="policies/cartpole.pt")
     args = parser.parse_args()
 
-    project_path = Path(__file__).resolve().parent
+    project_path = PROJECT_PATH
     log_dir = Path(args.log_dir)
     if not log_dir.is_absolute():
         log_dir = project_path / log_dir
@@ -80,33 +82,36 @@ def main() -> None:
     print(f"Device: {args.device}")
     print(f"Log dir: {log_dir}")
 
-    env = CartPoleVecEnv(
+    core_env = CartPoleEnv(
         num_envs=args.num_envs,
         max_episode_length=1000,
-        device=args.device,
         target_range=args.target_range,
         disturbance_interval=args.disturbance_interval,
         disturbance_duration=args.disturbance_duration,
         disturbance_std=args.disturbance_std,
         disturbance_clip=args.disturbance_clip,
         seed=args.seed,
+        sim_workers=args.sim_workers,
     )
 
-    runner = OnPolicyRunner(env, copy.deepcopy(TRAIN_CFG), log_dir=str(log_dir), device=args.device)
-    runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=True)
+    try:
+        env = RslRlVecEnvWrapper(core_env, device=args.device)
+        runner = OnPolicyRunner(env, copy.deepcopy(TRAIN_CFG), log_dir=str(log_dir), device=args.device)
+        runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=True)
 
-    final_path = log_dir / "model_final.pt"
-    runner.save(str(final_path), infos={"gobot_cartpole": env.cfg})
+        final_path = log_dir / "model_final.pt"
+        runner.save(str(final_path), infos={"gobot_cartpole": env.cfg})
 
-    policy_path = Path(args.policy_out)
-    if not policy_path.is_absolute():
-        policy_path = project_path / policy_path
-    policy_path.parent.mkdir(parents=True, exist_ok=True)
-    runner.save(str(policy_path), infos={"gobot_cartpole": env.cfg})
+        policy_path = Path(args.policy_out)
+        if not policy_path.is_absolute():
+            policy_path = project_path / policy_path
+        policy_path.parent.mkdir(parents=True, exist_ok=True)
+        runner.save(str(policy_path), infos={"gobot_cartpole": env.cfg})
 
-    print(f"Saved final model to {final_path}")
-    print(f"Saved editor policy to {policy_path}")
-    env.close()
+        print(f"Saved final model to {final_path}")
+        print(f"Saved editor policy to {policy_path}")
+    finally:
+        core_env.close()
 
 
 if __name__ == "__main__":

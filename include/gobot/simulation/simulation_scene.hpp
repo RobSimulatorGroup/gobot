@@ -102,6 +102,12 @@ public:
                                             const std::vector<RealType>& target_positions,
                                             std::size_t environment_count);
 
+    bool SetEnvironmentJointControls(const std::string& robot_name,
+                                     const std::vector<std::string>& joint_names,
+                                     PhysicsJointControlMode control_mode,
+                                     const std::vector<RealType>& targets,
+                                     std::size_t environment_count);
+
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
                               const Vector3& point,

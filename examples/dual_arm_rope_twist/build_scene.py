@@ -22,7 +22,7 @@ PLAY_SCRIPT_PATH = "res://" + PLAY_SCRIPT_NAME
 PLAY_SCRIPT_RESOURCE_ID = "rope_twist_play_script"
 
 FR3_SOURCE_PROJECT = HERE.parent / "libuipc"
-FR3_SOURCE_BUILDER = FR3_SOURCE_PROJECT / "build_demos.py"
+FR3_ROBOT_MODULE = FR3_SOURCE_PROJECT / "fr3_robot.py"
 FR3_SOURCE_ASSETS = FR3_SOURCE_PROJECT / "assets"
 FR3_URDF_RESOURCE = (
     "res://assets/franka_emika_panda/urdf/fr3_franka_hand.urdf"
@@ -134,25 +134,25 @@ STRAND_OFFSETS = tuple(
 )
 ROPE_SEGMENTS = 72
 ROPE_SIDES = 6
-_FR3_BUILDER: Any | None = None
+_FR3_ASSET_MODULE: Any | None = None
 
 
-def _load_fr3_builder() -> Any:
-    global _FR3_BUILDER
-    if _FR3_BUILDER is not None:
-        return _FR3_BUILDER
-    if not FR3_SOURCE_BUILDER.is_file():
+def _load_fr3_asset() -> Any:
+    global _FR3_ASSET_MODULE
+    if _FR3_ASSET_MODULE is not None:
+        return _FR3_ASSET_MODULE
+    if not FR3_ROBOT_MODULE.is_file():
         raise FileNotFoundError(
-            "the shared FR3 scene builder is missing: " + str(FR3_SOURCE_BUILDER)
+            "the shared FR3 robot module is missing: " + str(FR3_ROBOT_MODULE)
         )
-    module_name = "gobot_dual_arm_rope_fr3_source"
-    spec = importlib.util.spec_from_file_location(module_name, FR3_SOURCE_BUILDER)
+    module_name = "gobot_example_fr3_robot"
+    spec = importlib.util.spec_from_file_location(module_name, FR3_ROBOT_MODULE)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load FR3 builder: {FR3_SOURCE_BUILDER}")
+        raise RuntimeError(f"cannot load FR3 builder: {FR3_ROBOT_MODULE}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
-    _FR3_BUILDER = module
+    _FR3_ASSET_MODULE = module
     return module
 
 
@@ -215,27 +215,25 @@ def _add_box_visual(
 
 def _create_fr3_robot(
     root: Any,
-    fr3_builder: Any,
+    fr3_asset: Any,
     name: str,
     base_transform: np.ndarray,
 ) -> Any:
-    source_root = fr3_builder._fr3_soft_grasp_scene()
-    robot = source_root.find("fr3_arm")
-    if robot is None:
-        raise RuntimeError("shared FR3 scene builder did not create fr3_arm")
-    robot.reparent(root)
-    robot.name = name
+    robot = fr3_asset.create_fr3_robot(
+        name, arm_positions=dict(zip(ARM_JOINT_NAMES, FR3_ROPE_POSE, strict=True)),
+        finger_position=FR3_FINGER_OPEN_POSITION,
+    )
+    root.add_child(robot)
     robot.mode = gobot.RobotMode.Assembly
     robot.source_path = FR3_URDF_RESOURCE
-    fr3_builder._set_matrix(robot, base_transform)
+    fr3_asset.set_transform_matrix(robot, base_transform)
 
     nodes = _nodes_by_name(robot)
-    _, joint_specs = fr3_builder._parse_fr3_urdf()
+    limits = fr3_asset.joint_limits()
     for index, (joint_name, initial) in enumerate(
         zip(ARM_JOINT_NAMES, FR3_ROPE_POSE, strict=True)
     ):
         joint = nodes[joint_name]
-        spec = joint_specs[joint_name]
         if joint_name == "fr3_joint7":
             joint.drive_mode = gobot.JointDriveMode.Velocity
             joint.drive_stiffness = 0.0
@@ -252,8 +250,8 @@ def _create_fr3_robot(
             joint.force_lower_limit = -ARM_EFFORT_LIMITS[index]
             joint.force_upper_limit = ARM_EFFORT_LIMITS[index]
         joint.velocity_limit = ARM_VELOCITY_LIMITS[index]
-        lower_limit = float(spec["lower"]) - initial
-        upper_limit = float(spec["upper"]) - initial
+        lower_limit = limits[joint_name][0] - initial
+        upper_limit = limits[joint_name][1] - initial
         if joint_name == "fr3_joint7":
             lower_limit = -WRIST_ROTATION_LIMIT
             upper_limit = WRIST_ROTATION_LIMIT
@@ -267,13 +265,6 @@ def _create_fr3_robot(
             joint.control_upper_limit = upper_limit
         joint.initial_position = 0.0
         joint.joint_position = 0.0
-        child = nodes[f"fr3_link{index + 1}"]
-        fr3_builder._set_matrix(
-            child,
-            fr3_builder._joint_motion_matrix(
-                spec["type"], spec["axis"], initial
-            ),
-        )
 
     for joint_name in FINGER_JOINT_NAMES:
         joint = nodes[joint_name]
@@ -289,14 +280,6 @@ def _create_fr3_robot(
         joint.control_upper_limit = 0.04 - FR3_FINGER_OPEN_POSITION
         joint.initial_position = 0.0
         joint.joint_position = 0.0
-        spec = joint_specs[joint_name]
-        child = nodes[str(spec["child"])]
-        fr3_builder._set_matrix(
-            child,
-            fr3_builder._joint_motion_matrix(
-                spec["type"], spec["axis"], FR3_FINGER_OPEN_POSITION
-            ),
-        )
 
     for side, finger_name in zip(
         ("left", "right"), FINGER_LINK_NAMES, strict=True
@@ -311,7 +294,7 @@ def _create_fr3_robot(
         )
         pad_visual.surface_color = (0.035, 0.045, 0.055, 1.0)
         pad_visual.semantic_label = "friction_grip_pad"
-        fr3_builder._set_matrix(
+        fr3_asset.set_transform_matrix(
             pad_visual, _translation(GRIP_PAD_POSITION)
         )
         finger.add_child(pad_visual)
@@ -329,7 +312,7 @@ def _create_fr3_robot(
         }
         pad_collision.contact_offset = GRIP_CONTACT_OFFSET
         pad_collision.rest_offset = GRIP_REST_OFFSET
-        fr3_builder._set_matrix(
+        fr3_asset.set_transform_matrix(
             pad_collision, _translation(GRIP_PAD_POSITION)
         )
         finger.add_child(pad_collision)
@@ -618,7 +601,7 @@ def _add_rope_attachment(
 
 
 def create_scene() -> Any:
-    fr3_builder = _load_fr3_builder()
+    fr3_asset = _load_fr3_asset()
     root = gobot.create_node("Node3D", SCENE_ROOT_NAME)
 
     floor = _add_box_visual(
@@ -652,13 +635,13 @@ def create_scene() -> Any:
 
     _create_fr3_robot(
         root,
-        fr3_builder,
+        fr3_asset,
         LEFT_ROBOT_NAME,
         _yaw_transform(LEFT_BASE_POSITION, 0.0),
     )
     _create_fr3_robot(
         root,
-        fr3_builder,
+        fr3_asset,
         RIGHT_ROBOT_NAME,
         _yaw_transform(RIGHT_BASE_POSITION, math.pi),
     )
@@ -774,6 +757,8 @@ def _stage_project(output_dir: Path) -> None:
         "controllers.py",
         "rope_twist_config.py",
         "rope_twist_runtime.py",
+        "rope_twist_control.py",
+        "rope_twist_metrics.py",
         "project.gobot",
         "rope_twist_batch.py",
         PLAY_SCRIPT_NAME,

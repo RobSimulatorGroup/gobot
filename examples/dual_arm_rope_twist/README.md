@@ -210,3 +210,15 @@ implicit contact solve makes this accuracy-oriented example substantially more
 expensive than rigid-only MuJoCo. The important contract is structural: robot
 contact moves free fixtures, fixtures deform the rope, and the resulting soft
 reaction changes the robot motion until finite actuator torque is insufficient.
+
+## Code layout
+
+- `build_scene.py` authors the workcell and uses the public FR3 factory in
+  `../libuipc/fr3_robot.py`; robot construction does not create another demo scene.
+- `rope_twist_control.py` owns robot bindings, wrist control, and gravity
+  compensation shared by batch trials and the Play worker.
+- `rope_twist_metrics.py` measures contacts, grip slip, attachments and winding,
+  and produces the trial report.
+- `rope_twist_batch.py` handles CLI configuration, provider lifetime, warmup and
+  measured stepping. `rope_twist_runtime.py` adapts the shared controller to
+  worker snapshots and editor reset.

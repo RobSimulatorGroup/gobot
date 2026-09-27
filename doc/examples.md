@@ -9,7 +9,7 @@ uv run gobot_editor --path examples/go1
 
 | Project | Purpose | Guide |
 | --- | --- | --- |
-| `cartpole` | Inverted-pendulum policy playback and local MuJoCo training | [Project files](../examples/cartpole) |
+| `cartpole` | Inverted-pendulum playback and scene-authored CPU batch training | [Guide](../examples/cartpole/README.md) |
 | `go1` | Rough-terrain locomotion, CPU/CUDA training, ONNX playback | [Go1](../examples/go1/README.md) |
 | `newton_g1` | Humanoid policy playback with Newton and USD assets | [Newton G1](../examples/newton_g1/README.md) |
 | `libuipc` | FEM/contact and articulated grasping demos | [libuipc](../examples/libuipc/README.md) |

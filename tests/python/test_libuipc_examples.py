@@ -60,7 +60,11 @@ def _load_builder():
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(EXAMPLE_ROOT))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(EXAMPLE_ROOT))
     return module
 
 

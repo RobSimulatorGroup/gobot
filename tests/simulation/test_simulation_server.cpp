@@ -833,6 +833,27 @@ TEST(TestSimulationServer, sets_joint_control_targets_on_world) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, sets_batched_joint_control_modes_through_runtime_scene) {
+    gobot::SimulationServer server;
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(server.BuildWorldFromScene(robot));
+    auto* runtime = server.GetRuntimeScene();
+    ASSERT_NE(runtime, nullptr);
+    ASSERT_TRUE(runtime->SetEnvironmentJointControls(
+            "robot", {"joint"}, gobot::PhysicsJointControlMode::Effort, {2.5}, 1));
+    const auto& joint = server.GetWorld()->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(joint.control_mode, gobot::PhysicsJointControlMode::Effort);
+    EXPECT_DOUBLE_EQ(joint.target_effort, 2.5);
+    ASSERT_TRUE(runtime->SetEnvironmentJointPositionTargets("robot", {"joint"}, {0.5}, 1));
+    EXPECT_EQ(joint.control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(joint.target_position, 0.5);
+    EXPECT_FALSE(runtime->SetEnvironmentJointControls(
+            "missing", {"joint"}, gobot::PhysicsJointControlMode::Effort, {1.0}, 1));
+    EXPECT_FALSE(runtime->GetLastError().empty());
+    EXPECT_EQ(joint.control_mode, gobot::PhysicsJointControlMode::Position);
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, invalidates_robot_controller_when_runtime_scene_session_changes) {
     gobot::SimulationServer simulation_server;
 

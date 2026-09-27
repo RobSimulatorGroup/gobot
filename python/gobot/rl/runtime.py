@@ -85,6 +85,11 @@ class BatchSimulationRuntime:
             float(velocity),
         )
 
+    def set_joint_effort_targets(self, target_efforts: Any) -> None:
+        self.context.set_batch_joint_effort_targets(
+            self.robot, list(self.joint_names), np.asarray(target_efforts, dtype=np.float64)
+        )
+
     def reset_link_state(
         self,
         env_id: int,

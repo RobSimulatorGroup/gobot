@@ -465,6 +465,12 @@ set_tests_properties(test_python_dual_arm_rope_twist_example
             SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(NAME test_python_rope_trial
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_rope_trial.py)
+set_tests_properties(test_python_rope_trial PROPERTIES
+        ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+        SKIP_RETURN_CODE 77
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 add_test(
         NAME test_python_conveyor_packages_example
         COMMAND ${Python3_EXECUTABLE} -S
@@ -568,6 +574,13 @@ add_test(
         NAME test_velocity_env
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_env.py
 )
+if(GOB_BUILD_MUJOCO)
+    add_test(NAME test_python_cartpole_example
+            COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_cartpole_example.py)
+    set_tests_properties(test_python_cartpole_example PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
 set_tests_properties(test_velocity_env
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"

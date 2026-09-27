@@ -6,22 +6,26 @@ from importlib.metadata import PackageNotFoundError, version
 import gobot
 
 
-ROBOT = "cartpole"
-SLIDER_JOINT = "slider"
-HINGE_JOINT = "hinge"
+if __package__:
+    from .. import cartpole_task as task
+else:
+    import cartpole_task as task
+
+ROBOT = task.ROBOT
+SLIDER_JOINT, HINGE_JOINT = task.JOINT_NAMES
+FORCE_LIMIT = task.FORCE_LIMIT
+DISTURBANCE_STD = task.DISTURBANCE_STD
+DISTURBANCE_CLIP = task.DISTURBANCE_CLIP
+DISTURBANCE_INTERVAL_TICKS = task.DISTURBANCE_INTERVAL_TICKS
+DISTURBANCE_DURATION_TICKS = task.DISTURBANCE_DURATION_TICKS
+DISTURBANCE_START_TICK = task.DISTURBANCE_START_TICK
 TARGET_CART_POSITION = 0.0
-FORCE_LIMIT = 3.0
 PRINT_EVERY_TICKS = 240
 DEFAULT_POLICY_PATH = "res://policies/cartpole.onnx"
 TORCH_POLICY_PATH = "res://policies/cartpole.pt"
 INITIAL_CART_POSITION = 0.0
 INITIAL_POLE_ANGLE = 0.0
 DISTURBANCE_ENABLED = True
-DISTURBANCE_STD = 0.05
-DISTURBANCE_CLIP = 0.20
-DISTURBANCE_INTERVAL_TICKS = 480
-DISTURBANCE_DURATION_TICKS = 60
-DISTURBANCE_START_TICK = 240
 
 
 def _parse_version_prefix(value):
@@ -222,6 +226,8 @@ def _find_node_by_name(node, name):
 class Script(gobot.NodeScript):
     def _ready(self):
         self.robot = self._find_robot()
+        task.configure_robot(self.robot)
+        self.context.fixed_time_step = task.FIXED_DT
         self.slider = self._find_joint(SLIDER_JOINT, ("rail/slider", "slider"))
         self.hinge = self._find_joint(HINGE_JOINT, ("rail/slider/cart/hinge", "cart/hinge", "hinge"))
         self.target_cart_position = TARGET_CART_POSITION
@@ -234,9 +240,6 @@ class Script(gobot.NodeScript):
         self.playing = True
         self.world_controls_ready = False
 
-        self.slider.effort_limit = FORCE_LIMIT
-        self.slider.velocity_limit = max(float(getattr(self.slider, "velocity_limit", 0.0)), 20.0)
-        self.hinge.effort_limit = max(float(getattr(self.hinge, "effort_limit", 0.0)), DISTURBANCE_CLIP)
         print(
             "CartPole RL policy playback started. policy={} force_limit={:.1f}N disturbance_std={:.3f}Nm".format(
                 "loaded" if self.policy is not None else "missing",
@@ -427,15 +430,7 @@ class Script(gobot.NodeScript):
                 theta_dot = float(hinge.get("velocity", 0.0))
                 self.previous_x = x
                 self.previous_theta = theta
-                return [
-                    math.cos(theta),
-                    math.sin(theta),
-                    x,
-                    x_dot,
-                    theta_dot,
-                    self.target_cart_position,
-                    x - self.target_cart_position,
-                ]
+                return task.observation((x, theta), (x_dot, theta_dot), self.target_cart_position).tolist()
 
         x = float(self.slider.joint_position)
         theta = _wrap_angle(float(self.hinge.joint_position))
@@ -447,15 +442,7 @@ class Script(gobot.NodeScript):
             theta_dot = 0.0
         self.previous_x = x
         self.previous_theta = theta
-        return [
-            math.cos(theta),
-            math.sin(theta),
-            x,
-            x_dot,
-            theta_dot,
-            self.target_cart_position,
-            x - self.target_cart_position,
-        ]
+        return task.observation((x, theta), (x_dot, theta_dot), self.target_cart_position).tolist()
 
     def _runtime_joint_states(self):
         if not self.context.has_world:
