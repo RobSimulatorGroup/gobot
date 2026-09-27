@@ -5,6 +5,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 
@@ -115,7 +116,11 @@ def _load_module(name: str, path: Path):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
     return module
 
 
@@ -184,6 +189,10 @@ def test_scene_is_reproducible() -> None:
             "README.md",
             "build_scene.py",
             "conveyor_forces.py",
+            "conveyor_config.py",
+            "conveyor_control.py",
+            "conveyor_metrics.py",
+            "conveyor_meshes.py",
             "conveyor_packages.jscn",
             "conveyor_packages_batch.py",
             "conveyor_packages_play.py",
@@ -192,6 +201,13 @@ def test_scene_is_reproducible() -> None:
         }
         assert (output / "assets").is_symlink()
         assert (output / "assets").resolve() == (builder.HERE / "assets").resolve()
+        imported = subprocess.run(
+            [sys.executable, "-S", "-c",
+             "from pathlib import Path; import conveyor_packages_play, conveyor_packages_batch, conveyor_config; "
+             "assert Path(conveyor_config.__file__).parent == Path.cwd()"],
+            cwd=output, capture_output=True, text=True,
+        )
+        assert imported.returncode == 0, imported.stderr
 
 
 def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
@@ -2478,7 +2494,7 @@ def test_editor_preview_uses_runtime_only_coarse_superdex_meshes() -> None:
         for spec in builder.SOFT_PACKAGE_SPECS
     }
 
-    total_nodes = play._apply_preview_deformable_meshes(nodes, builder)
+    total_nodes = play._apply_preview_deformable_meshes(nodes)
 
     assert total_nodes == 780
     assert len(nodes["soft_mailer_blue"].surface_mesh.vertices) == 260

@@ -5,6 +5,7 @@ import json
 import math
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
@@ -74,7 +75,11 @@ def _load_play_script():
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(EXAMPLE_ROOT))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(EXAMPLE_ROOT))
     return module
 
 
@@ -111,6 +116,14 @@ def test_checked_in_libuipc_scenes_are_reproducible() -> None:
                 json.loads((EXAMPLE_ROOT / name).read_text(encoding="utf-8")))
         assert (Path(directory) / "libuipc_demo.py").is_file()
         assert (Path(directory) / "libuipc_runtime.py").is_file()
+        assert (Path(directory) / "fr3_grasp.py").is_file()
+        imported = subprocess.run(
+            [sys.executable, "-S", "-c",
+             "from pathlib import Path; import libuipc_runtime, libuipc_demo, fr3_grasp; "
+             "assert Path(fr3_grasp.__file__).parent == Path.cwd()"],
+            cwd=directory, capture_output=True, text=True,
+        )
+        assert imported.returncode == 0, imported.stderr
         assert (Path(directory) / "project.gobot").is_file()
         assert (
             Path(directory)

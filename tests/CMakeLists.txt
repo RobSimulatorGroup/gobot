@@ -471,6 +471,13 @@ set_tests_properties(test_python_rope_trial PROPERTIES
         ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
         SKIP_RETURN_CODE 77
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+foreach(example_contract conveyor_trial libuipc_grasp node_script_reference)
+    add_test(NAME test_python_${example_contract}
+            COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_${example_contract}.py)
+    set_tests_properties(test_python_${example_contract} PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endforeach()
 add_test(
         NAME test_python_conveyor_packages_example
         COMMAND ${Python3_EXECUTABLE} -S

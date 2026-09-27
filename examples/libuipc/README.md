@@ -16,6 +16,11 @@ during a solve. Reset restarts the controller and physics together, and stale
 results from the previous cycle are discarded. Contact-force presentation is
 subscribed only while the debug arrows are enabled.
 
+The grasp trajectory and timing live in `fr3_grasp.py`. The worker imports this
+task module directly; `libuipc_demo.py` handles Play lifecycle and presentation.
+The scene builder attaches scripts through `Node.set("script", path)` before
+saving. Pass `None` to remove a script reference.
+
 The project contains one focused robot scene:
 
 - `fr3_brick_grasp.jscn`: the Franka Research 3 and Franka Hand used by

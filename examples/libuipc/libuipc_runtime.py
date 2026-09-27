@@ -1,11 +1,11 @@
 """Native libuipc factory and FR3 controller; no scene objects cross the worker boundary."""
 from __future__ import annotations
 
+from fr3_grasp import FR3_JOINT_NAMES, motion_targets
+
 
 class GraspController:
     def __init__(self, provider):
-        from libuipc_demo import FR3_JOINT_NAMES
-
         self.provider = provider
         self.joints = {}
         for name in FR3_JOINT_NAMES:
@@ -16,9 +16,7 @@ class GraspController:
         self.reset((0,))
 
     def _set_targets(self):
-        from libuipc_demo import _fr3_motion_targets
-
-        for name, target in _fr3_motion_targets(self.time).items():
+        for name, target in motion_targets(self.time).items():
             self.provider.set_joint_target(self.joints[name], target)
 
     def step(self, dt):

@@ -746,7 +746,15 @@ void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::ha
     if (!property.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
     }
-    Variant variant_value = PythonToVariantForType(value, property.get_type());
+    // Scripts are authored resource references. Loading a script here does not
+    // execute it; PackedScene stores the reference through the normal saver.
+    Variant variant_value;
+    if (name == "script" && property.get_type() == Type::get<Ref<PythonScript>>()) {
+        variant_value = Variant(value.is_none() ? Ref<PythonScript>{}
+                                               : LoadPythonScriptResource(py::cast<std::string>(value)));
+    } else {
+        variant_value = PythonToVariantForType(value, property.get_type());
+    }
     if (IsSceneScriptRuntimeMutation()) {
         if (!node->Set(name, variant_value)) {
             throw std::runtime_error("failed to set Gobot runtime node property '" + name + "'");

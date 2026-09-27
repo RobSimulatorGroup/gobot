@@ -22,9 +22,9 @@ EXAMPLE_ROOT = ROOT / "examples" / "libuipc"
 MODULE_PATH = os.environ.get("GOBOT_LIBUIPC_TEST_MODULE_PATH", "")
 
 
-def _load_play_script():
+def _load_grasp_task():
     spec = importlib.util.spec_from_file_location(
-        "gobot_libuipc_gpu_demo", EXAMPLE_ROOT / "libuipc_demo.py"
+        "gobot_libuipc_gpu_grasp", EXAMPLE_ROOT / "fr3_grasp.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -84,7 +84,7 @@ def _assert_contact_forces(
 
 
 def test_fr3_soft_box_grasp_joint_targets() -> None:
-    demo = _load_play_script()
+    demo = _load_grasp_task()
     assert demo.FR3_CLOSED_FINGER == 0.0146
     context, provider, temporary_directory = _provider("fr3_brick_grasp.jscn")
     held_positions = np.asarray(provider.arrays["positions"])
@@ -123,7 +123,7 @@ def test_fr3_soft_box_grasp_joint_targets() -> None:
 
         for step in range(1000):
             target_time = float(step) * demo.FIXED_DT
-            for name, target in demo._fr3_motion_targets(target_time).items():
+            for name, target in demo.motion_targets(target_time).items():
                 provider.set_joint_target(joint_paths[name], target)
             provider.step()
             positions = _assert_finite(provider)

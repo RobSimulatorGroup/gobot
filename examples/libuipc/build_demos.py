@@ -212,35 +212,12 @@ def _fr3_soft_grasp_scene():
     return root
 
 
-def _attach_play_script(scene_path: Path) -> None:
+def _normalize_scene_ids(scene_path: Path) -> None:
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     resources = scene.get("__EXT_RESOURCES__")
     nodes = scene.get("__NODES__")
     if not isinstance(resources, list) or not isinstance(nodes, list):
         raise RuntimeError(f"generated scene {scene_path.name} has no node/resource table")
-    matches = [
-        entry for entry in resources if entry.get("__PATH__") == PLAY_SCRIPT_PATH
-    ]
-    if len(matches) > 1:
-        raise RuntimeError(f"generated scene {scene_path.name} has duplicate Play scripts")
-    if matches:
-        resource_id = str(matches[0]["__ID__"])
-        matches[0]["__TYPE__"] = "PythonScript"
-    else:
-        resource_id = PLAY_SCRIPT_RESOURCE_ID
-        resources.insert(
-            0,
-            {
-                "__ID__": resource_id,
-                "__PATH__": PLAY_SCRIPT_PATH,
-                "__TYPE__": "PythonScript",
-            },
-        )
-    roots = [entry for entry in nodes if int(entry.get("parent", -2)) == -1]
-    if len(roots) != 1:
-        raise RuntimeError(f"generated scene {scene_path.name} has no unique root")
-    roots[0].setdefault("properties", {})["script"] = f"ExtResource({resource_id})"
-
     resources.sort(
         key=lambda entry: (
             entry.get("__PATH__") != PLAY_SCRIPT_PATH,
@@ -305,6 +282,7 @@ def _stage_demo_project(output_dir: Path) -> None:
         return
     shutil.copy2(HERE / "libuipc_demo.py", output_dir / "libuipc_demo.py")
     shutil.copy2(HERE / "libuipc_runtime.py", output_dir / "libuipc_runtime.py")
+    shutil.copy2(HERE / "fr3_grasp.py", output_dir / "fr3_grasp.py")
     shutil.copy2(HERE / "project.gobot", output_dir / "project.gobot")
     shutil.copytree(HERE / "assets", output_dir / "assets", dirs_exist_ok=True)
 
@@ -319,8 +297,9 @@ def build_demos(output_dir: Path = HERE) -> tuple[Path, ...]:
         root = create_scene()
         destination = output_dir / filename
         gobot.app.context().set_project_path(str(output_dir))
+        root.set("script", PLAY_SCRIPT_PATH)
         gobot.save_scene(root, "res://" + filename)
-        _attach_play_script(destination)
+        _normalize_scene_ids(destination)
         destinations.append(destination)
     return tuple(destinations)
 

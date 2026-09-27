@@ -35,10 +35,10 @@ METRICS = _load("conveyor_acceptance_test_metrics", "conveyor_grasp_metrics.py")
 def runner():
     for dependency in ("torch", "mujoco", "scipy", "trimesh"):
         pytest.importorskip(dependency)
-    builder = _load("conveyor_acceptance_test_builder", "build_scene.py")
+    config = _load("conveyor_acceptance_test_config", "conveyor_config.py")
     profile = _load("conveyor_acceptance_test_profile", "conveyor_profile.py")
     with pytest.MonkeyPatch.context() as patches:
-        for name, module in (("build_scene", builder), ("conveyor_profile", profile),
+        for name, module in (("conveyor_config", config), ("conveyor_profile", profile),
                              ("conveyor_grasp_metrics", METRICS)):
             patches.setitem(sys.modules, name, module)
         controller = _load("conveyor_acceptance_test_controller", "conveyor_pinch_controller.py")

@@ -18,6 +18,13 @@ SceneTree and `.jscn` remain the only authoring source. The Play and headless
 scripts submit ordinary joint position targets and external-force commands to
 `SimulationServer`; they never write runtime link poses or deformable vertices.
 
+`conveyor_control.py` supplies the hand commands and belt forces for both entry
+points. `conveyor_metrics.py` measures completed physics ticks and builds the
+headless report. Scene definitions live in `conveyor_config.py`, motion timing
+in `conveyor_profile.py`, and parcel mesh generation in `conveyor_meshes.py`.
+`build_scene.py` composes and saves the scene; it attaches the Play script with
+`root.set("script", "res://conveyor_packages_play.py")` before saving.
+
 ## Package models
 
 The blue parcel is a 1,820-vertex closed thin shell with separate top and

@@ -21,7 +21,7 @@ import gobot
 from gobot.ipc import LibuipcBatchConfig, LibuipcConfig
 from gobot.sim.providers import CompiledMuJoCoIpcArtifact, MuJoCoIpcConfig, MuJoCoIpcProvider
 
-from build_scene import (
+from conveyor_config import (
     HAND_BASE_LINK_NAMES, HAND_JOINT_NAMES_BY_SIDE, HERE,
     LEAP_CONTACT_LINK_NAMES, LEAP_ROBOT_NAMES, SCENE_NAME, WORKTABLE_TOP_Z,
 )
