@@ -184,6 +184,23 @@ bool EngineContext::RebuildWorld(bool preserve_state) {
     return true;
 }
 
+bool EngineContext::CompilePhysicsSceneSnapshot(const Node* scene_root,
+                                                PhysicsSceneSnapshot* snapshot) {
+    if (scene_root == nullptr || snapshot == nullptr) {
+        SetLastError("Physics snapshot compilation requires a scene and an output.");
+        return false;
+    }
+    CompiledPhysicsScene compiled;
+    std::string error;
+    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    *snapshot = std::move(compiled.snapshot);
+    last_error_.clear();
+    return true;
+}
+
 bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
                                          PhysicsSceneArtifact* artifact) {
     return CompileSceneArtifact(scene_root_, backend_type, artifact);

@@ -304,6 +304,15 @@ void RegisterManualIpcSceneBindings(
 
     surface_mesh_class
             .def(py::init<>())
+            .def_property("uv0", [](const PySurfaceMesh& mesh) {
+                py::list result;
+                for (const auto& uv : mesh.resource->GetUV0()) result.append(Vector2ToPython(uv));
+                return result;
+            }, [](PySurfaceMesh& mesh, const py::iterable& value) {
+                std::vector<Vector2> uv;
+                for (const auto& item : value) uv.push_back(PythonToVector2(item));
+                mesh.resource->SetUV0(uv);
+            })
             .def_property(
                     "vertices",
                     [](const PySurfaceMesh& mesh) {

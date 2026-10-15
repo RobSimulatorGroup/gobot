@@ -52,6 +52,8 @@ public:
 
     bool BuildWorld();
     bool RebuildWorld(bool preserve_state = true);
+    // Capture engine physics data without constructing a backend world.
+    bool CompilePhysicsSceneSnapshot(const Node* scene_root, PhysicsSceneSnapshot* snapshot);
     bool CompileSceneArtifact(PhysicsBackendType backend_type,
                               PhysicsSceneArtifact* artifact);
     bool CompileSceneArtifact(const Node* scene_root,

@@ -12,6 +12,7 @@
 #include <gobot/core/io/python_script.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
+#include <gobot/scene/deformable_body_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/joint_actuator_config.hpp>
@@ -1121,6 +1122,37 @@ TEST_F(TestResourceFormatScene, built_in_mesh_material_and_instance_override_rou
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, deformable_round_trips_material_and_uvs_without_runtime_vertices) {
+    auto mesh = gobot::MakeRef<gobot::SurfaceMesh>();
+    mesh->SetVertices({{0, 0, 0}, {1, 0, 0}, {0, 1, 0}});
+    mesh->SetTriangles({0, 1, 2});
+    mesh->SetUV0({{0, 0}, {1, 0}, {0, 1}});
+    auto material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    material->SetRoughness(0.34f);
+    auto* body = gobot::Object::New<gobot::DeformableBody3D>();
+    body->SetName("Mailer");
+    body->SetModel(gobot::DeformableBodyModel::ThinShell);
+    body->SetSurfaceMesh(mesh);
+    body->SetMaterial(material);
+    body->SetRuntimeVertices({{0, 0, 1}, {1, 0, 1}, {0, 1, 1}});
+    auto packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(body));
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed, "res://mailer.jscn"));
+    auto loaded = gobot::dynamic_pointer_cast<gobot::PackedScene>(gobot::ResourceLoader::Load(
+            "res://mailer.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore));
+    ASSERT_TRUE(loaded.IsValid());
+    auto* restored = gobot::Object::PointerCastTo<gobot::DeformableBody3D>(loaded->Instantiate());
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->GetSurfaceMesh()->GetUV0(), mesh->GetUV0());
+    EXPECT_TRUE(restored->GetRuntimeVertices().empty());
+    const auto pbr = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(restored->GetMaterial());
+    ASSERT_TRUE(pbr.IsValid());
+    EXPECT_FLOAT_EQ(pbr->GetRoughness(), 0.34f);
+    EXPECT_FLOAT_EQ(restored->GetRenderMesh()->GetVertices()[0].z(), 0);
+    gobot::Object::Delete(body);
+    gobot::Object::Delete(restored);
 }
 
 TEST_F(TestResourceFormatScene, array_mesh_round_trips_multiple_surfaces_and_nested_pbr_assets) {

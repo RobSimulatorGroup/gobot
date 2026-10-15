@@ -32,6 +32,7 @@ dependencies = [
     "nvidia-nvjitlink-cu12>=12.8,<13; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "onnx>=1.16",
     "onnxruntime>=1.19",
+    "pillow>=10.1",
     "rsl-rl-lib==5.2.0",
     "scipy>=1.11",
     "tensorboard",

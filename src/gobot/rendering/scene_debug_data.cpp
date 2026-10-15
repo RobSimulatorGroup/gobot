@@ -94,16 +94,14 @@ void CollectDeformableGeometry(const Node* node,
                     const Vector3 a = transform * vertices[ia];
                     const Vector3 b = transform * vertices[ib];
                     const Vector3 c = transform * vertices[ic];
-                    PushWorldVertex(geometry.triangles, a);
-                    PushWorldVertex(geometry.triangles, b);
-                    PushWorldVertex(geometry.triangles, c);
+                    // Filled deformable surfaces belong to the scene render pass.
                     if (body->IsDebugWireframeVisible()) {
                         AppendWorldLine(geometry.lines, a, b);
                         AppendWorldLine(geometry.lines, b, c);
                         AppendWorldLine(geometry.lines, c, a);
                     }
                 }
-                if (!geometry.triangles.empty()) {
+                if (!geometry.lines.empty()) {
                     geometries.push_back(std::move(geometry));
                 }
             }

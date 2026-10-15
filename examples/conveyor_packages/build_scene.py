@@ -13,6 +13,7 @@ from typing import Any
 import gobot
 import numpy as np
 
+from conveyor_appearance import apply_appearance
 
 from conveyor_config import (
     HERE,
@@ -48,10 +49,12 @@ from conveyor_config import (
     HAND_FINGER_STIFFNESS,
     HAND_FINGER_DAMPING,
     HAND_FRICTION,
+    HAND_FRAME_FRICTION,
     LEAP_TIP_BOUNDS,
     LEAP_THUMB_TIP_BOUNDS,
     RIGID_COLLISION_LAYER,
     HAND_COLLISION_LAYER,
+    HAND_TIP_COLLISION_LAYER,
     DEFORMABLE_COLLISION_LAYER,
     RIGID_PACKAGE_COLLISION_LAYER,
     DEFORMABLE_FILL_COLLISION_LAYER,
@@ -407,7 +410,7 @@ def _configure_leap_model(nodes: dict[str, Any], robot_name: str) -> None:
             node.contact_offset = 0.0
             node.rest_offset = 0.0
             node.physics_material = {
-                "sliding_friction": HAND_FRICTION,
+                "sliding_friction": HAND_FRAME_FRICTION,
                 "torsional_friction": 0.006,
                 "rolling_friction": 0.0002,
                 "contact_compliance": 0.0,
@@ -434,8 +437,8 @@ def _configure_leap_model(nodes: dict[str, Any], robot_name: str) -> None:
             regular_tip_size,
             regular_tip_center,
             sliding_friction=HAND_FRICTION,
-            collision_layer=HAND_COLLISION_LAYER,
-            collision_mask=HAND_COLLISION_MASK,
+            collision_layer=HAND_COLLISION_LAYER | HAND_TIP_COLLISION_LAYER,
+            collision_mask=HAND_COLLISION_MASK | HAND_TIP_COLLISION_LAYER,
         )
     thumb_tip_size, thumb_tip_center = _box_from_bounds(
         LEAP_THUMB_TIP_BOUNDS
@@ -446,8 +449,8 @@ def _configure_leap_model(nodes: dict[str, Any], robot_name: str) -> None:
         thumb_tip_size,
         thumb_tip_center,
         sliding_friction=HAND_FRICTION,
-        collision_layer=HAND_COLLISION_LAYER,
-        collision_mask=HAND_COLLISION_MASK,
+        collision_layer=HAND_COLLISION_LAYER | HAND_TIP_COLLISION_LAYER,
+        collision_mask=HAND_COLLISION_MASK | HAND_TIP_COLLISION_LAYER,
     )
 
 
@@ -692,8 +695,8 @@ def _create_conveyor(root: Any) -> None:
         "moving_belt_collision",
         (BELT_PROXY_LENGTH, BELT_WIDTH, BELT_THICKNESS),
         (0.0, 0.0, 0.0),
-        # Both solvers keep belt contact normal-only. Explicit velocity-field
-        # forces provide all traction, matching Newton's conveyor-force model.
+        # Rigid parcels use explicit contact-limited belt traction. Newton's
+        # soft contacts override this friction with the moving-surface material.
         sliding_friction=1.0e-5,
     )
     marker_pitch = 0.22
@@ -762,7 +765,9 @@ def _create_soft_package(root: Any, spec: dict[str, Any]) -> None:
     if spec.get("model", "volumetric") == "thin_shell":
         body.model = gobot.DeformableBodyModel.ThinShell
         body.surface_mesh = _soft_mailer_shell_mesh(
-            spec["size"], spec["cells"]
+            spec["size"], spec["cells"], seam_thickness=spec.get("seam_thickness"),
+            edge_refinement=spec.get("edge_refinement", 1.),
+            underside_wrinkle=spec.get("underside_wrinkle", .018),
         )
         body.thickness = spec["thickness"]
         body.bending_stiffness = spec["bending_stiffness"]
@@ -815,11 +820,27 @@ def create_scene() -> Any:
         _create_carton(root, spec)
     for spec in SOFT_PACKAGE_SPECS:
         _create_soft_package(root, spec)
+    # Authored lighting is shared by editor Play and headless capture. A broad
+    # ambient term keeps white film readable while the key reveals its creases.
+    environment = gobot.create_node("Environment3D", "warehouse_environment")
+    environment.set("ambient_intensity", .5)
+    environment.set("sky_color", {"red": .65, "green": .68, "blue": .72, "alpha": 1.})
+    environment.set("ground_color", {"red": .28, "green": .29, "blue": .31, "alpha": 1.})
+    environment.set("exposure", .9)
+    root.add_child(environment)
+    key = gobot.create_node("DirectionalLight3D", "warehouse_key")
+    key.rotation_degrees = (25., -30., -25.)
+    key.set("intensity", 1.4)
+    key.set("shadow_enabled", True)
+    key.set("shadow_bias", .005)
+    key.set("shadow_normal_bias", .005)
+    root.add_child(key)
     return root
 
 
 def _finalize_scene(scene_path: Path) -> None:
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    apply_appearance(scene, scene_path.parent / "assets" / "parcels")
     nodes = scene.get("__NODES__", [])
     resources = scene.get("__EXT_RESOURCES__", [])
     if not isinstance(nodes, list) or not isinstance(resources, list):
@@ -913,11 +934,14 @@ def _stage_project(output_dir: Path) -> None:
         "build_scene.py",
         "conveyor_forces.py",
         "conveyor_config.py",
+        "conveyor_appearance.py",
         "conveyor_control.py",
         "conveyor_metrics.py",
         "conveyor_meshes.py",
         "conveyor_packages_batch.py",
         "conveyor_packages_play.py",
+        "conveyor_newton_runtime.py",
+        "conveyor_newton_batch.py",
         "conveyor_profile.py",
         "project.gobot",
     ):

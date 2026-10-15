@@ -1,6 +1,7 @@
 #include "gobot/rendering/scene_render_items.hpp"
 
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/gaussian_splat_3d.hpp"
@@ -389,6 +390,27 @@ void CollectNodeRenderItems(const Node* node,
                 }
             }
 #endif
+        }
+    }
+
+    const auto* deformable = Object::PointerCastTo<DeformableBody3D>(node);
+    if (deformable && visible &&
+        (deformable->GetMaterial().IsValid() || deformable->GetDebugSurfaceColor().alpha() > 0)) {
+        const auto mesh = deformable->GetRenderMesh();
+        if (mesh.IsValid()) {
+            const auto first = items.visual_meshes.size();
+            AppendMeshItems(items, deformable->GetInstanceId(), instance_id, semantic_id,
+                            relative_path, semantic_label, mesh, node_transform.matrix(),
+                            deformable->GetMaterial(), {}, deformable->GetDebugSurfaceColor());
+            for (auto i = first; i < items.visual_meshes.size(); ++i) {
+                items.visual_meshes[i].material.double_sided = true;
+                if (!deformable->GetMaterial().IsValid()) {
+                    items.visual_meshes[i].material.roughness = 0.38;
+                    if (deformable->GetDebugSurfaceColor().alpha() < 1) {
+                        items.visual_meshes[i].material.alpha_mode = AlphaMode::Blend;
+                    }
+                }
+            }
         }
     }
 

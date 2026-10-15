@@ -1,4 +1,5 @@
 #include "manual_bindings_internal.hpp"
+#include "manual_binding_physics_snapshot.hpp"
 #include "gobot/simulation/simulation_data_runtime.hpp"
 #include "gobot/simulation/simulation_scene_sync.hpp"
 
@@ -1593,6 +1594,15 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("backend_type") = PhysicsBackendType::Null)
+            .def("compile_physics_scene_snapshot", [](EngineContext& context) {
+                PhysicsSceneSnapshot snapshot;
+                if (!context.CompilePhysicsSceneSnapshot(SceneRootForContext(context), &snapshot)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+                auto result = PhysicsSnapshotToPython(snapshot);
+                result["gravity"] = Vector3ToPython(context.GetGravity());
+                return result;
+            })
             .def("compile_scene_artifact", [](EngineContext& context,
                                                PhysicsBackendType backend_type) {
                 PhysicsSceneArtifact artifact;

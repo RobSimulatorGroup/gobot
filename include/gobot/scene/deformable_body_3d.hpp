@@ -14,6 +14,7 @@
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/physics_material_3d.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/surface_mesh.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 
@@ -78,7 +79,15 @@ public:
     const std::vector<Vector3>& GetRuntimeVertices() const;
     void ClearRuntimeVertices();
 
+    // Backend-neutral surface resource shared by viewport and sensor rendering.
+    Ref<ArrayMesh> GetRenderMesh() const;
+    void SetMaterial(const Ref<Material>& material);
+    const Ref<Material>& GetMaterial() const;
+
 private:
+    mutable Ref<ArrayMesh> render_mesh_;
+    Ref<Material> material_;
+    mutable std::vector<Vector2> render_uv0_;
     Ref<TetrahedralMesh> mesh_;
     Ref<SurfaceMesh> surface_mesh_;
     DeformableBodyModel model_{DeformableBodyModel::Volumetric};

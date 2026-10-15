@@ -51,32 +51,28 @@ def package_mesh(
                 center_x = max(0.0, 1.0 - u * u)
                 center_y = max(0.0, 1.0 - v * v)
                 if side_rounding > 0.0:
-                    # Map the regular grid to a rounded pillow volume. The
-                    # middle layers carry the full footprint, while the top
-                    # and bottom layers draw inward. Height also fades toward
-                    # the sealed perimeter, leaving a broad, inflated center.
-                    layer_side_scale = 1.0 - side_rounding * w * w
+                    # Taper the contents toward the seam. Keep grid columns
+                    # aligned through the thickness so the thin corner cells
+                    # remain valid tetrahedra rather than folding over.
                     x = (
                         half_x
                         * u
                         * (1.0 - side_rounding * (1.0 - center_y))
-                        * layer_side_scale
                     )
                     y = (
                         half_y
                         * v
                         * (1.0 - side_rounding * (1.0 - center_x))
-                        * layer_side_scale
                     )
-                    center_fraction = math.sqrt(center_x * center_y)
-                    # Match the asymmetric film cavity: the contents have a
-                    # shallow underside and most of their loft above it. This
-                    # preserves clearance from both sheets at initialization.
+                    center_fraction = math.sqrt(max(0., 1. - u**4) * max(0., 1. - v**4))
+                    # Rounded contents support both sides of the pillow. A shallow
+                    # underside lets the unsupported film flange fall flat;
+                    # keeping volume below the seam preserves the filled shape.
                     bottom = -(
-                        0.04 + 0.15 * center_fraction
+                        0.13 + 0.36 * center_fraction
                     ) * size[2]
                     top = (
-                        0.44 + 0.40 * center_fraction
+                        0.13 + 0.36 * center_fraction
                     ) * size[2]
                     layer = 0.5 * (w + 1.0)
                     z = bottom + layer * (top - bottom)
@@ -164,6 +160,10 @@ def package_mesh(
 def mailer_shell_mesh(
     size: tuple[float, float, float],
     cells: tuple[int, int] = (18, 13),
+    *,
+    seam_thickness: float | None = None,
+    edge_refinement: float = 1.0,
+    underside_wrinkle: float = .018,
 ) -> Any:
     cells_x, cells_y = cells
     if min(*size, cells_x, cells_y) <= 0:
@@ -173,6 +173,17 @@ def mailer_shell_mesh(
         0.5 * float(size[1]),
         float(size[2]),
     )
+    seam_thickness = .025 * height if seam_thickness is None else float(seam_thickness)
+    if not math.isfinite(seam_thickness) or seam_thickness <= 0:
+        raise ValueError("soft mailer seam thickness must be finite and positive")
+    seam_half = .5 * seam_thickness
+    if not math.isfinite(edge_refinement) or edge_refinement < 1.:
+        raise ValueError("soft mailer edge refinement must be finite and at least one")
+    if not math.isfinite(underside_wrinkle) or underside_wrinkle < 0.:
+        raise ValueError("soft mailer underside wrinkle must be finite and nonnegative")
+    def row_coordinate(iy: int) -> float:
+        v = 2.0 * iy / cells_y - 1.0
+        return math.copysign(1. - (1. - abs(v)) ** edge_refinement, v)
     nx = cells_x + 1
     ny = cells_y + 1
     layer_stride = nx * ny
@@ -183,23 +194,18 @@ def mailer_shell_mesh(
     vertices: list[tuple[float, float, float]] = []
     for layer in range(2):
         for iy in range(ny):
-            v = 2.0 * iy / cells_y - 1.0
+            v = row_coordinate(iy)
             for ix in range(nx):
                 u = 2.0 * ix / cells_x - 1.0
-                center_x = max(0.0, 1.0 - u * u)
-                center_y = max(0.0, 1.0 - v * v)
-                x = half_x * u * (0.93 + 0.07 * center_y)
-                y = half_y * v * (0.93 + 0.07 * center_x)
-                seam_distance = max(
-                    0.0, min(1.0 - abs(u), 1.0 - abs(v))
-                )
-                fill = min(1.0, seam_distance / 0.24)
-                fill = fill * fill * (3.0 - 2.0 * fill)
+                x = half_x * u * (0.94 + 0.06 * v * v)
+                y = half_y * v * (0.94 + 0.06 * u * u)
+                # Continuous pillow curvature and a narrow welded flange.
+                fill = (max(0.0, 1.0 - (u / .985) ** 4)
+                        * max(0.0, 1.0 - (v / .985) ** 4)) ** .40
                 edge_band = 4.0 * fill * (1.0 - fill)
-                # A heat-sealed perimeter starts coplanar. Film irregularity
-                # belongs on the shoulder just inside that flange; placing the
-                # largest opposite-signed wave directly on the free seam made
-                # it curl into a tube as soon as gravity loaded the shell.
+                # Keep both sides of the weld together. Shoulder wrinkles and
+                # a shared corner lift give the perimeter a shallow natural
+                # curve without rolling the two film sheets in opposite ways.
                 seam_wave = (
                     0.003
                     * height
@@ -208,45 +214,50 @@ def mailer_shell_mesh(
                 )
                 if layer == 0:
                     bottom_wrinkle = (
-                        0.018
+                        underside_wrinkle
                         * height
                         * edge_band
                         * math.sin(5.0 * math.pi * u + 2.0 * math.pi * v)
                     )
                     z = (
-                        -0.025 * height
-                        - 0.245 * height * fill
+                        -seam_half
+                        - 0.47 * height * fill
                         + bottom_wrinkle
                         - seam_wave
                     )
                 else:
                     diagonal_crease = (
-                        0.085
+                        0.025
                         * height
                         * math.exp(-90.0 * (u + 0.48 * v - 0.18) ** 2)
                         * fill
                     )
                     cross_crease = (
-                        0.050
+                        0.018
                         * height
                         * math.exp(-110.0 * (u - 0.60 * v + 0.28) ** 2)
                         * fill
                     )
                     top_wrinkle = (
-                        0.040
+                        0.012
                         * height
                         * edge_band
                         * math.sin(5.0 * math.pi * u + 3.0 * math.pi * v)
                     )
+                    corner_fold = (.070 * height
+                        * math.exp(-12. * ((abs(u) - .78) ** 2 + (abs(v) - .72) ** 2))
+                        * math.sin(18. * (abs(u) - abs(v)) + .4) * fill)
                     crown = 0.96 - 0.07 * (0.55 * u * u + 0.45 * v * v)
                     z = (
-                        0.025 * height
-                        + 0.785 * height * fill * crown
+                        seam_half
+                        + 0.53 * height * fill * crown
                         + top_wrinkle
                         - diagonal_crease
                         - cross_crease
                         + seam_wave
+                        + corner_fold
                     )
+                z += .06 * height * u*u*v*v
                 vertices.append((x, y, z))
 
     triangles: list[tuple[int, int, int]] = []
@@ -289,5 +300,12 @@ def mailer_shell_mesh(
     mesh = gobot.SurfaceMesh()
     mesh.vertices = vertices
     mesh.triangles = triangles
+    # Two texture panels keep the label on the front while giving both film
+    # sheets their own plastic surface detail and valid tangent coordinates.
+    mesh.uv0 = [
+        (.5 + .5 * ix / cells_x, .5 * (row_coordinate(iy) + 1.))
+        for iy in range(ny) for ix in range(nx)] + [
+        (.5 * ix / cells_x, .5 * (row_coordinate(iy) + 1.))
+        for iy in range(ny) for ix in range(nx)]
     mesh.validate()
     return mesh

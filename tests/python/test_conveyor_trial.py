@@ -87,6 +87,213 @@ class Context:
 
 
 class ConveyorTrialTest(unittest.TestCase):
+    def test_newton_placement_preserves_the_supported_pouch_span(self):
+        from conveyor_newton_runtime import ConveyorNewtonController, PLACEMENT_RADIUS
+        provider = Mock(tick=0)
+        controller = ConveyorNewtonController(provider)
+        elapsed = 0.
+        for phase, duration, target in controller.segments:
+            if phase == "place":
+                break
+            previous = target
+            elapsed += duration
+        pivot = previous[:, 1:3].copy()
+        pivot[:, 1] -= PLACEMENT_RADIUS
+        for fraction in (.0, .25, .5, .75, 1. - 1.e-8):
+            provider.tick += 1
+            controller.time = elapsed + duration * fraction
+            controller.step(.002)
+            hands = np.array([call.args[2] for call in provider.set_joint_position_targets.call_args_list[-2:]])
+            np.testing.assert_allclose(np.linalg.norm(hands[:, 1:3] - pivot, axis=1),
+                                       PLACEMENT_RADIUS, atol=1.e-8)
+            np.testing.assert_array_equal(hands[:, 6:], previous[:, 6:])
+        np.testing.assert_allclose(hands, target, atol=1.e-8)
+
+    def test_newton_belt_waits_for_hand_clearance_then_accelerates(self):
+        from conveyor_newton_runtime import ConveyorNewtonController
+        provider = Mock(tick=0)
+        controller = ConveyorNewtonController(provider)
+        starts, elapsed = {}, 0.
+        for name, duration, _ in controller.segments:
+            starts[name] = elapsed
+            elapsed += duration
+
+        def speed_at(time):
+            provider.tick += 1
+            controller.time = time
+            controller.step(.002)
+            return provider.set_surface_velocity.call_args.args[2][0]
+
+        for phase in ("transfer", "place_contact", "place", "place_hold", "release", "clear", "settle_after_release"):
+            self.assertEqual(speed_at(starts[phase] + .1), 0.)
+        self.assertAlmostEqual(speed_at(starts["outfeed"]), 0.)
+        self.assertAlmostEqual(speed_at(starts["outfeed"] + .25), .175)
+        self.assertAlmostEqual(speed_at(starts["outfeed"] + .5), .35)
+        # Editor playback can continue past the recorded trajectory.
+        self.assertAlmostEqual(speed_at(controller.duration + .1), .35)
+
+    def test_newton_transfer_rejects_a_bounce_even_when_final_frame_is_flat(self):
+        from conveyor_newton_batch import TrialMetrics
+        snapshot = {"deformables": [{"name": "soft_mailer_blue", "model": 0, "tetrahedra": []}]}
+
+        def check(*, lift=0., fold=0., vertical_speed=0.):
+            metrics = TrialMetrics(snapshot)
+            for i, phase in enumerate(("place_hold", "release", "clear", "outfeed", "outfeed")):
+                q = np.array([[i*.15, .3, .561], [i*.15+.2, .5, .641]])
+                v = np.tile((.35, 0., 0.), (2, 1))
+                if phase == "release":
+                    q[:, 2] += lift
+                    q[1, 2] += fold
+                    v[:, 2] = vertical_speed
+                metrics.update({"deformables": {"soft_mailer_blue": {"positions": q, "velocities": v}},
+                                "time": 21. + i*.5, "soft_contact_count": 1, "peak_soft_penetration": 0.,
+                                "max_soft_penetration": 0., "minimum_tet_volume_ratio": 1.}, phase)
+            return metrics.report()["acceptance"]["conveyor_stability"]
+
+        self.assertTrue(check())
+        self.assertFalse(check(lift=.02))
+        self.assertFalse(check(fold=.05))
+        self.assertFalse(check(vertical_speed=.4))
+
+    def test_newton_transport_rejects_both_velocity_impulses_and_sustained_flutter(self):
+        from conveyor_newton_batch import TrialMetrics
+        snapshot = {"deformables": [{"name": "soft_mailer_blue", "model": 0, "tetrahedra": []}]}
+
+        def check(sustained):
+            metrics = TrialMetrics(snapshot)
+            # A quiet final frame or averaged velocity cannot excuse an
+            # earlier contact impulse, even if bounds remain unchanged.
+            for i in range(16):
+                q = np.array([[i*.01, .3, .561], [i*.01+.2, .5, .641]])
+                v = np.tile((.25, 0., .3 if i == 5 or (sustained and i >= 5) else 0.), (2, 1))
+                metrics.update({"deformables": {"soft_mailer_blue": {"positions": q, "velocities": v}},
+                                "time": 21. + i*.04, "soft_contact_count": 1, "peak_soft_penetration": 0.,
+                                "max_soft_penetration": 0., "minimum_tet_volume_ratio": 1.},
+                               "place_hold" if i == 0 else "outfeed")
+            return metrics.report()
+
+        impulse = check(False)
+        self.assertFalse(impulse["acceptance"]["conveyor_stability"])
+        self.assertAlmostEqual(impulse["conveyor_stability"]["maximum_vertical_rms_speed_m_s"], .3)
+        self.assertFalse(check(True)["acceptance"]["conveyor_stability"])
+
+    def test_newton_transport_rejects_local_fold_jump_with_unchanged_bounds(self):
+        from conveyor_newton_batch import TrialMetrics
+        snapshot = {"deformables": [{"name": "soft_mailer_blue", "model": 0, "tetrahedra": []}]}
+
+        for moving_phase in ("place_hold", "release"):
+            metrics = TrialMetrics(snapshot)
+            q = np.array([[0., .3, .561], [.2, .5, .641], [.1, .4, .59], [.15, .4, .61]])
+            for i, phase in enumerate(("place_hold", moving_phase, "outfeed")):
+                positions = q.copy()
+                positions[:, 0] += i * .01
+                if i == 1:
+                    # Equal opposing displacements preserve center and bounds.
+                    positions[2, 2] += .019
+                    positions[3, 2] -= .019
+                metrics.update({"deformables": {"soft_mailer_blue": {
+                    "positions": positions, "velocities": np.zeros_like(q)}},
+                    "time": 18. + i * .04, "soft_contact_count": 1, "peak_soft_penetration": 0.,
+                    "max_soft_penetration": 0., "minimum_tet_volume_ratio": 1.}, phase)
+            result = metrics.report()
+            self.assertAlmostEqual(result["conveyor_stability"]["maximum_top_rise_m"], 0.)
+            self.assertAlmostEqual(result["conveyor_stability"]["maximum_center_rise_m"], 0.)
+            self.assertFalse(result["acceptance"]["conveyor_stability"])
+
+    def test_newton_transfer_rejects_missed_belt_placement(self):
+        from conveyor_newton_batch import TrialMetrics
+        snapshot = {"deformables": [{"name": "soft_mailer_blue", "model": 0, "tetrahedra": []}]}
+
+        def transfer(*, y=.4, travel=.3):
+            metrics = TrialMetrics(snapshot)
+            for time, x in ((22.3, 0.), (23.8, travel)):
+                q = np.array([[x - .1, y - .1, .56], [x + .1, y + .1, .64]])
+                metrics.update({"deformables": {"soft_mailer_blue": {
+                                    "positions": q, "velocities": np.zeros_like(q)}},
+                                "time": time, "soft_contact_count": 0, "peak_soft_penetration": 0.,
+                                "max_soft_penetration": 0., "minimum_tet_volume_ratio": 1.}, "outfeed")
+            return metrics.report()["acceptance"]["conveyor_transfer"]
+
+        self.assertTrue(transfer())
+        self.assertFalse(transfer(travel=0.))
+        self.assertFalse(transfer(y=-.4))
+
+    def test_newton_unattended_parcel_rejects_late_motion(self):
+        from conveyor_newton_batch import TrialMetrics
+        names = ("soft_pouch_yellow", "soft_pouch_yellow_fill")
+        snapshot = {"deformables": [{"name": name, "model": 0, "tetrahedra": []}
+                                    for name in names]}
+
+        def check(*, displacement=0., bulge=0., speed=0., shape_change=0.):
+            metrics = TrialMetrics(snapshot)
+            for time in (1., 2., 8.):
+                q = np.array([[-.1, -.1, .56], [.1, .1, .63]])
+                velocity = np.zeros_like(q)
+                if time == 8.:
+                    q[:, 0] += displacement
+                    q[1, 2] += bulge
+                    velocity[1, 2] = speed
+                    q[0, 0] += shape_change
+                    q[1, 0] -= shape_change
+                bodies = {name: {"positions": q, "velocities": velocity} for name in names}
+                metrics.update({"deformables": bodies, "time": time, "soft_contact_count": 0,
+                                "peak_soft_penetration": 0., "max_soft_penetration": 0.,
+                                "minimum_tet_volume_ratio": 1.}, "settle_after_release")
+            return metrics.report()["acceptance"]["unattended_parcel_stability"]
+
+        self.assertTrue(check())
+        self.assertFalse(check(displacement=.01))
+        self.assertFalse(check(bulge=.01))
+        self.assertFalse(check(speed=.1))
+        self.assertFalse(check(shape_change=.01))
+
+    def test_newton_recovery_rejects_launch_and_local_jitter(self):
+        from conveyor_newton_batch import TrialMetrics
+        # Six upper-film points under the press pads, plus a lower layer.
+        upper = np.array([(x, -.375, .64) for x in (.025, .070, .115, .205, .250, .295)])
+        vertices = np.concatenate((upper - (0., 0., .08), upper))
+        snapshot = {"deformables": [{"name": "soft_mailer_blue", "model": 1,
+                    "vertices": vertices, "triangles": [], "tetrahedra": [],
+                    "transform": {"matrix": np.eye(4)}}]}
+
+        def report(*, drift=0., jitter=0., slip=False):
+            metrics = TrialMetrics(snapshot)
+            # This fixture measures the same explicit top vertices at each phase.
+            metrics.press_region["soft_mailer_blue"] = np.arange(12) >= 6
+            for phase, time, height in (("settle_and_carton_drop", .6, .08),
+                                        ("press_hold", 2.4, .065), ("recover", 3.5, .08)):
+                q = vertices.copy()
+                q[6:, 2] = config.WORKTABLE_TOP_Z + height
+                velocity = np.zeros_like(q)
+                if phase == "recover":
+                    q[:, 0] += drift
+                    velocity[0, 2] = jitter
+                bodies = {name: {"positions": q, "velocities": velocity}
+                          for name in ("soft_mailer_blue", "soft_mailer_blue_fill")}
+                metrics.update({"deformables": bodies, "time": time, "soft_contact_count": 0,
+                                "peak_soft_penetration": 0., "max_soft_penetration": 0.,
+                                "minimum_tet_volume_ratio": 1.}, phase)
+            for time in (6., 7.2, 7.5):
+                q = vertices + (0., 0., 0. if slip and time == 7.5 else .3)
+                bodies = {name: {"positions": q, "velocities": np.zeros_like(q)}
+                          for name in ("soft_mailer_blue", "soft_mailer_blue_fill")}
+                metrics.update({"deformables": bodies, "time": time, "soft_contact_count": 0,
+                                "peak_soft_penetration": 0., "max_soft_penetration": 0.,
+                                "minimum_tet_volume_ratio": 1.}, "hold")
+            return metrics.report()
+
+        stable = report()
+        self.assertTrue(stable["acceptance"]["press_compression"])
+        self.assertTrue(stable["acceptance"]["height_recovery"])
+        self.assertTrue(stable["acceptance"]["settled_recovery"])
+        self.assertTrue(stable["acceptance"]["lift_and_hold"])
+        slipped = report(slip=True)
+        self.assertGreater(slipped["lift_hold_seconds"], 1.)
+        self.assertFalse(slipped["acceptance"]["lift_and_hold"])
+        for failed in (report(drift=.15), report(jitter=2.)):
+            self.assertTrue(failed["acceptance"]["height_recovery"])
+            self.assertFalse(failed["acceptance"]["settled_recovery"])
+
     def test_play_and_batch_apply_the_same_controls_and_forces(self):
         root, state = fixture()
         batch_context, play_context = Context(state), Context(state)
@@ -95,7 +302,7 @@ class ConveyorTrialTest(unittest.TestCase):
         script = play.Script()
         script.context = play_context
         script.get_root = lambda: play_root
-        with patch.dict("os.environ", {"GOBOT_CONVEYOR_PREVIEW": "0", "GOBOT_CONVEYOR_DROP_ONLY": "0"}):
+        with patch.dict("os.environ", {"GOBOT_CONVEYOR_BACKEND": "superdex", "GOBOT_CONVEYOR_PREVIEW": "0", "GOBOT_CONVEYOR_DROP_ONLY": "0"}):
             script._ready()
         ticks = [0]
         end = 0
@@ -174,7 +381,7 @@ class ConveyorTrialTest(unittest.TestCase):
         root, state = fixture()
         context = Context(state)
         context.load_scene = Mock(return_value=root)
-        args = batch._parser().parse_args(["--steps", "10", "--warmup-steps", "2"])
+        args = batch._parser().parse_args(["--backend", "superdex", "--steps", "10", "--warmup-steps", "2"])
         samples = []
         def observe(sample):
             samples.append(sample)

@@ -1,4 +1,4 @@
-"""Editor Play controller for the native SuperDex conveyor workcell."""
+"""Editor Play controller for the Newton/SuperDex conveyor workcell."""
 
 from __future__ import annotations
 
@@ -74,7 +74,8 @@ def _apply_preview_deformable_meshes(
         spec = specs[name]
         if spec.get("model", "volumetric") == "thin_shell":
             mesh = mailer_shell_mesh(
-                spec["size"], cells
+                spec["size"], cells, seam_thickness=spec.get("seam_thickness"),
+                edge_refinement=spec.get("edge_refinement", 1.),
             )
             body.surface_mesh = mesh
             body.self_collision_enabled = False
@@ -173,9 +174,18 @@ def _soft_package_contact_links(state: dict[str, Any]) -> str:
 
 
 class Script(gobot.NodeScript):
-    """Run one repeating native rigid/deformable package cycle."""
+    """Drive the selected rigid/deformable package runtime during Play."""
 
     def _ready(self) -> None:
+        self._newton_play = None
+        backend = os.environ.get("GOBOT_CONVEYOR_BACKEND", "newton").strip().lower()
+        if backend == "newton":
+            from conveyor_newton_runtime import NewtonConveyorPlay
+            self._newton_play = NewtonConveyorPlay(self)
+            self._newton_play.start()
+            return
+        if backend != "superdex":
+            raise ValueError("GOBOT_CONVEYOR_BACKEND must be newton or superdex")
         self.profile = None
         self.control = None
         self.belt_markers: tuple[Any, ...] = ()
@@ -316,6 +326,8 @@ class Script(gobot.NodeScript):
 
     def _physics_process(self, delta: float) -> None:
         del delta
+        if self._newton_play is not None:
+            return
         if not self.context.has_world:
             return
         input_state = getattr(self.context, "input", None)
@@ -367,8 +379,12 @@ class Script(gobot.NodeScript):
 
     def _process(self, delta: float) -> None:
         del delta
+        if self._newton_play is not None:
+            self._newton_play.process()
 
     def _exit_tree(self) -> None:
+        if self._newton_play is not None:
+            self._newton_play.close()
         clear_debug_arrows()
         if self.context is not None and self.context.has_world:
             try:

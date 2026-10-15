@@ -156,6 +156,34 @@ void DeformableBody3D::ClearRuntimeVertices() {
     runtime_vertices_.clear();
 }
 
+Ref<ArrayMesh> DeformableBody3D::GetRenderMesh() const {
+    const std::vector<Vector3>* authored = nullptr;
+    std::vector<std::uint32_t> indices;
+    std::vector<Vector2> uv;
+    if (model_ == DeformableBodyModel::ThinShell && surface_mesh_.IsValid()) {
+        authored = &surface_mesh_->GetVertices();
+        indices = surface_mesh_->GetTriangles();
+        uv = surface_mesh_->GetUV0();
+    } else if (model_ == DeformableBodyModel::Volumetric && mesh_.IsValid()) {
+        authored = &mesh_->GetVertices();
+        indices = mesh_->GetResolvedSurfaceTriangles();
+    }
+    if (authored == nullptr || indices.empty()) {
+        render_mesh_.Reset();
+        return {};
+    }
+    const auto& vertices = runtime_vertices_.size() == authored->size() ? runtime_vertices_ : *authored;
+    if (!render_mesh_.IsValid()) render_mesh_ = MakeRef<ArrayMesh>();
+    if (render_mesh_->GetVertices() != vertices || render_mesh_->GetIndices() != indices || render_uv0_ != uv) {
+        render_mesh_->SetSurface(vertices, std::move(indices), {}, {}, {}, uv);
+        render_uv0_ = std::move(uv);
+    }
+    return render_mesh_;
+}
+
+void DeformableBody3D::SetMaterial(const Ref<Material>& material) { material_ = material; }
+const Ref<Material>& DeformableBody3D::GetMaterial() const { return material_; }
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
@@ -163,6 +191,7 @@ GOBOT_REGISTRATION {
 
     Class_<gobot::DeformableBody3D>("DeformableBody3D")
             .constructor()(CtorAsRawPtr)
+            .property("material", &gobot::DeformableBody3D::GetMaterial, &gobot::DeformableBody3D::SetMaterial)
             .property("mesh", &gobot::DeformableBody3D::GetMesh,
                       &gobot::DeformableBody3D::SetMesh)
             .property("surface_mesh", &gobot::DeformableBody3D::GetSurfaceMesh,

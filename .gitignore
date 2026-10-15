@@ -77,6 +77,8 @@ examples/newton_g1/assets/*
 /mujoco_uni/
 /warp/
 /Taccel/
+/genesis-world/
+/libuipc-samples/
 
 # Local LLVM/Clang dependency installed from Warp packman.
 /3rdparty/llvm/

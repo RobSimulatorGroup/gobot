@@ -180,6 +180,11 @@ def _shutdown_headless_render_context() -> None:
     _core._shutdown_headless_render_context()
 
 
+def shutdown() -> None:
+    """Release owned offscreen rendering resources before shutting down GPU runtimes."""
+    _shutdown_headless_render_context()
+
+
 __all__ = [
     "CameraSensor",
     "DebugArrow",
@@ -188,6 +193,7 @@ __all__ = [
     "RenderFrame",
     "RenderProduct",
     "capture_rgb",
+    "shutdown",
     "clear_debug_arrows",
     "set_debug_arrows",
     "get_raster_settings",

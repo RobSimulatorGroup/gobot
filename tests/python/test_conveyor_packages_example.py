@@ -190,19 +190,22 @@ def test_scene_is_reproducible() -> None:
             "build_scene.py",
             "conveyor_forces.py",
             "conveyor_config.py",
+            "conveyor_appearance.py",
             "conveyor_control.py",
             "conveyor_metrics.py",
             "conveyor_meshes.py",
             "conveyor_packages.jscn",
             "conveyor_packages_batch.py",
             "conveyor_packages_play.py",
+            "conveyor_newton_runtime.py",
+            "conveyor_newton_batch.py",
             "conveyor_profile.py",
             "project.gobot",
         }
         assert (output / "assets").is_symlink()
         assert (output / "assets").resolve() == (builder.HERE / "assets").resolve()
         imported = subprocess.run(
-            [sys.executable, "-S", "-c",
+            [sys.executable, "-c",
              "from pathlib import Path; import conveyor_packages_play, conveyor_packages_batch, conveyor_config; "
              "assert Path(conveyor_config.__file__).parent == Path.cwd()"],
             cwd=output, capture_output=True, text=True,
@@ -468,7 +471,7 @@ def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
         assert middle_extent > 1.08 * bottom_extent
         assert middle_extent > 1.08 * top_extent
     blue_mesh = _builder()._soft_mailer_shell_mesh(
-        blue_spec["size"], blue_spec["cells"]
+        blue_spec["size"], blue_spec["cells"], seam_thickness=blue_spec.get("seam_thickness"), edge_refinement=blue_spec.get("edge_refinement", 1.), underside_wrinkle=blue_spec.get("underside_wrinkle", .018)
     )
     blue_vertices = np.asarray(blue_mesh.vertices, dtype=np.float64)
     blue_triangles = np.asarray(blue_mesh.triangles, dtype=np.int64)
@@ -969,8 +972,8 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert float(blue_spec["thickness"]) <= 1.5e-3
     assert fill_spec["model"] == "volumetric"
     assert bool(fill_spec["internal_fill"])
-    assert tuple(fill_spec["cells"]) == (12, 9, 5)
-    assert math.isclose(float(fill_spec["size"][2]), 0.070)
+    assert tuple(fill_spec["cells"]) == (8, 6, 2)
+    assert .75 < float(fill_spec["size"][2]) / float(blue_spec["size"][2]) < .9
     assert builder.WORKTABLE_TOP_Z < float(fill_spec["position"][2])
     assert float(fill_spec["position"][2]) < float(blue_spec["position"][2])
     assert not bool(fill_spec["visible"])
@@ -981,9 +984,9 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert float(yellow_spec["size"][2]) < float(blue_spec["size"][2])
     assert yellow_fill_spec["model"] == "volumetric"
     assert bool(yellow_fill_spec["internal_fill"])
-    assert tuple(yellow_fill_spec["cells"]) == (14, 11, 8)
-    assert math.isclose(float(yellow_fill_spec["size"][2]), 0.065)
-    assert math.isclose(float(yellow_fill_spec["side_rounding"]), 0.08)
+    assert tuple(yellow_fill_spec["cells"]) == (8, 6, 2)
+    assert .75 < float(yellow_fill_spec["size"][2]) / float(yellow_spec["size"][2]) < .9
+    assert 0.0 < float(yellow_fill_spec["side_rounding"]) < 0.1
     assert builder.WORKTABLE_TOP_Z < float(yellow_fill_spec["position"][2])
     assert (
         float(yellow_fill_spec["position"][2])
@@ -996,7 +999,7 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert (
         float(yellow_spec["size"][0])
         - float(yellow_fill_spec["size"][0])
-        >= 0.0349
+        >= 0.02
     )
     assert not bool(yellow_fill_spec["visible"])
     assert not (
@@ -1013,7 +1016,7 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     )
 
     blue_mesh = builder._soft_mailer_shell_mesh(
-        blue_spec["size"], blue_spec["cells"]
+        blue_spec["size"], blue_spec["cells"], seam_thickness=blue_spec.get("seam_thickness"), edge_refinement=blue_spec.get("edge_refinement", 1.), underside_wrinkle=blue_spec.get("underside_wrinkle", .018)
     )
     blue_vertices = np.asarray(blue_mesh.vertices, dtype=np.float64)
     blue_triangles = np.asarray(blue_mesh.triangles, dtype=np.int64)
@@ -1032,10 +1035,13 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         ],
         dtype=np.int64,
     )
-    assert float(top_z.max() - bottom_z.min()) > 0.10
-    assert float(np.ptp(top_z)) > 0.06
-    assert float(np.ptp(bottom_z[blue_perimeter])) <= 1.0e-12
-    assert float(np.ptp(top_z[blue_perimeter])) <= 1.0e-12
+    assert 0.07 < float(top_z.max() - bottom_z.min()) < 0.10
+    assert float(np.ptp(top_z)) > 0.04
+    # A filled pillow has volume below the weld, with gently lifted corners.
+    # Both sides of the sealed edge must remain paired rather than curl apart.
+    assert float(blue_spec["position"][2]) + float(bottom_z[blue_perimeter].min()) > builder.WORKTABLE_TOP_Z + .025
+    assert .002 < float(np.ptp(top_z[blue_perimeter])) < .01
+    assert float(np.ptp(top_z[blue_perimeter] - bottom_z[blue_perimeter])) < 1.e-7
     edge_counts: dict[tuple[int, int], int] = {}
     for triangle in blue_triangles:
         for first, second in (
@@ -1051,10 +1057,10 @@ def test_scene_has_play_script_and_leap_hands() -> None:
         + float(bottom_z.min())
         - builder.WORKTABLE_TOP_Z
     )
-    assert math.isclose(blue_bottom_gap, 0.011, abs_tol=1.0e-6)
+    assert .001 <= blue_bottom_gap <= .0011
 
     yellow_mesh = builder._soft_mailer_shell_mesh(
-        yellow_spec["size"], yellow_spec["cells"]
+        yellow_spec["size"], yellow_spec["cells"], seam_thickness=yellow_spec.get("seam_thickness"), edge_refinement=yellow_spec.get("edge_refinement", 1.), underside_wrinkle=yellow_spec.get("underside_wrinkle", .018)
     )
     yellow_vertices = np.asarray(yellow_mesh.vertices, dtype=np.float64)
     yellow_triangles = np.asarray(yellow_mesh.triangles, dtype=np.int64)
@@ -1076,19 +1082,34 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert len(blue_triangles) == 3636
     assert len(yellow_triangles) == 4140
     assert len(yellow_triangles) > len(blue_triangles)
-    assert 0.10 < float(
+    assert 0.06 < float(
         yellow_top_z.max() - yellow_bottom_z.min()
-    ) < 0.14
-    assert float(np.ptp(yellow_bottom_z[yellow_perimeter])) <= 1.0e-12
-    assert float(np.ptp(yellow_top_z[yellow_perimeter])) <= 1.0e-12
+    ) < 0.09
+    assert float(yellow_spec["position"][2]) + float(yellow_bottom_z[yellow_perimeter].min()) > builder.WORKTABLE_TOP_Z + .02
+    assert .002 < float(np.ptp(yellow_top_z[yellow_perimeter])) < .01
+    assert float(np.ptp(yellow_top_z[yellow_perimeter] - yellow_bottom_z[yellow_perimeter])) < 1.e-7
     yellow_bottom_gap = (
         float(yellow_spec["position"][2])
         + float(yellow_bottom_z.min())
         - builder.WORKTABLE_TOP_Z
     )
-    assert math.isclose(
-        yellow_bottom_gap, 0.0091059, abs_tol=1.0e-6
-    )
+    assert .001 <= yellow_bottom_gap <= .0011
+
+    # A fuller pouch must still start without film/content interpenetration.
+    from scipy.interpolate import LinearNDInterpolator
+    for shell_spec, core_spec, vertices in (
+        (blue_spec, fill_spec, blue_vertices),
+        (yellow_spec, yellow_fill_spec, yellow_vertices),
+    ):
+        core = builder._soft_package_mesh(core_spec["size"], core_spec["cells"],
+                                         side_rounding=core_spec["side_rounding"])
+        shell_world = vertices @ _rotation_matrix(np.asarray(shell_spec["rotation_degrees"])).T + shell_spec["position"]
+        core_world = np.asarray(core.vertices) @ _rotation_matrix(np.asarray(core_spec["rotation_degrees"])).T + core_spec["position"]
+        count = len(shell_world) // 2
+        lower = LinearNDInterpolator(shell_world[:count, :2], shell_world[:count, 2])
+        upper = LinearNDInterpolator(shell_world[count:, :2], shell_world[count:, 2])
+        assert np.min(core_world[:, 2] - lower(core_world[:, :2])) >= .002
+        assert np.min(upper(core_world[:, :2]) - core_world[:, 2]) >= .002
 
     properties_by_unique_name = {
         str(node["name"]): node["properties"]
@@ -1108,7 +1129,8 @@ def test_scene_has_play_script_and_leap_hands() -> None:
     assert (
         properties_by_unique_name["leap_left_if_tip_collision"]["collision_layer"],
         properties_by_unique_name["leap_left_if_tip_collision"]["collision_mask"],
-    ) == (builder.HAND_COLLISION_LAYER, builder.HAND_COLLISION_MASK)
+    ) == (builder.HAND_COLLISION_LAYER | builder.HAND_TIP_COLLISION_LAYER,
+          builder.HAND_COLLISION_MASK | builder.HAND_TIP_COLLISION_LAYER)
     assert (
         properties_by_unique_name["soft_mailer_blue"]["collision_layer"],
         properties_by_unique_name["soft_mailer_blue"]["collision_mask"],
@@ -1304,7 +1326,7 @@ def _legacy_quality_profiles_and_belt_schedule() -> None:
     ):
         if spec.get("model", "volumetric") == "thin_shell":
             mesh = _builder()._soft_mailer_shell_mesh(
-                spec["size"], spec["cells"]
+                spec["size"], spec["cells"], seam_thickness=spec.get("seam_thickness"), edge_refinement=spec.get("edge_refinement", 1.), underside_wrinkle=spec.get("underside_wrinkle", .018)
             )
             mass = _surface_mass(mesh, spec["thickness"], spec["density"])
         else:
@@ -1983,7 +2005,7 @@ def test_quality_profiles_and_flip_push_schedule() -> None:
     ):
         if spec.get("model", "volumetric") == "thin_shell":
             mesh = _builder()._soft_mailer_shell_mesh(
-                spec["size"], spec["cells"]
+                spec["size"], spec["cells"], seam_thickness=spec.get("seam_thickness"), edge_refinement=spec.get("edge_refinement", 1.), underside_wrinkle=spec.get("underside_wrinkle", .018)
             )
             mass = _surface_mass(mesh, spec["thickness"], spec["density"])
         else:
@@ -2508,9 +2530,9 @@ def test_editor_preview_uses_runtime_only_coarse_superdex_meshes() -> None:
         for spec in builder.SOFT_PACKAGE_SPECS
     } == authored_cells == {
         "soft_mailer_blue": (34, 25),
-        "soft_mailer_blue_fill": (12, 9, 5),
+        "soft_mailer_blue_fill": (8, 6, 2),
         "soft_pouch_yellow": (36, 27),
-        "soft_pouch_yellow_fill": (14, 11, 8),
+        "soft_pouch_yellow_fill": (8, 6, 2),
     }
     assert play.PREVIEW_NEWTON_ITERATIONS == 16
     assert play.PREVIEW_LINE_SEARCH_ITERATIONS == 6

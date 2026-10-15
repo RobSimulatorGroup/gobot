@@ -5,6 +5,7 @@
  */
 
 #include "gobot/scene/resources/surface_mesh.hpp"
+#include <algorithm>
 
 #include "gobot/core/math/mesh_validation.hpp"
 
@@ -30,6 +31,15 @@ const std::vector<std::uint32_t>& SurfaceMesh::GetTriangles() const {
     return triangles_;
 }
 
+void SurfaceMesh::SetUV0(const std::vector<Vector2>& uv) {
+    uv0_ = uv;
+    MarkChanged();
+}
+
+const std::vector<Vector2>& SurfaceMesh::GetUV0() const {
+    return uv0_;
+}
+
 std::size_t SurfaceMesh::GetVertexCount() const {
     return vertices_.size();
 }
@@ -39,6 +49,11 @@ std::size_t SurfaceMesh::GetTriangleCount() const {
 }
 
 bool SurfaceMesh::Validate(std::string* error) const {
+    if ((!uv0_.empty() && uv0_.size() != vertices_.size()) ||
+        !std::ranges::all_of(uv0_, [](const Vector2& uv) { return uv.allFinite(); })) {
+        if (error) *error = "Surface mesh UVs must be finite and match the vertex count.";
+        return false;
+    }
     return ValidateTriangleMesh(vertices_, triangles_, error);
 }
 
@@ -50,7 +65,8 @@ GOBOT_REGISTRATION {
             .property("vertices", &gobot::SurfaceMesh::GetVertices,
                       &gobot::SurfaceMesh::SetVertices)
             .property("triangles", &gobot::SurfaceMesh::GetTriangles,
-                      &gobot::SurfaceMesh::SetTriangles);
+                      &gobot::SurfaceMesh::SetTriangles)
+            .property("uv0", &gobot::SurfaceMesh::GetUV0, &gobot::SurfaceMesh::SetUV0);
 
     gobot::Type::register_wrapper_converter_for_base_classes<
             gobot::Ref<gobot::SurfaceMesh>, gobot::Ref<gobot::Resource>>();

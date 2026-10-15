@@ -38,6 +38,7 @@ from .newton import (
     NewtonProviderAvailability,
     NewtonRobotLayout,
 )
+from .newton_vbd import NewtonVBDConfig, NewtonVBDProvider
 
 __all__ = [
     "BatchPhysicsProvider",
@@ -58,6 +59,8 @@ __all__ = [
     "MuJoCoIpcProvider",
     "NewtonModelConfig",
     "NewtonProvider",
+    "NewtonVBDConfig",
+    "NewtonVBDProvider",
     "NewtonProviderAvailability",
     "NewtonRobotLayout",
     "ProviderUnavailableError",

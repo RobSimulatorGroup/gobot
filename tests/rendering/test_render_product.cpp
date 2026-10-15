@@ -5,13 +5,52 @@
 #include <gobot/scene/camera_3d.hpp>
 #include <gobot/scene/gaussian_splat_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/deformable_body_3d.hpp>
 #include <gobot/scene/resources/gaussian_splat.hpp>
+#include <gobot/scene/resources/material.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <memory>
 
 namespace gobot {
+
+TEST(RenderProduct, deformable_surface_tracks_runtime_vertices_and_preserves_snapshots) {
+    DeformableBody3D body;
+    body.SetModel(DeformableBodyModel::ThinShell);
+    auto mesh = MakeRef<SurfaceMesh>();
+    mesh->SetVertices({{0, 0, 0}, {1, 0, 0}, {0, 1, 0}});
+    mesh->SetTriangles({0, 1, 2});
+    mesh->SetUV0({{0, 0}, {1, 0}, {0, 1}});
+    ASSERT_TRUE(mesh->Validate());
+    body.SetSurfaceMesh(mesh);
+    const auto before = CaptureRenderSceneSnapshot(&body);
+    ASSERT_EQ(before.visual_meshes.size(), 1);
+    body.SetRuntimeVertices({{0, 0, 1}, {1, 0, 1}, {0, 1, 1}});
+    const auto after = CaptureRenderSceneSnapshot(&body);
+    ASSERT_EQ(after.visual_meshes.size(), 1);
+    EXPECT_EQ(before.visual_meshes[0].mesh_id, after.visual_meshes[0].mesh_id);
+    EXPECT_EQ(before.visual_meshes[0].mesh_topology_revision,
+              after.visual_meshes[0].mesh_topology_revision);
+    EXPECT_NE(before.visual_meshes[0].mesh_revision, after.visual_meshes[0].mesh_revision);
+    EXPECT_FLOAT_EQ(before.visual_meshes[0].GetSurface()->vertices[0].z(), 0);
+    EXPECT_FLOAT_EQ(after.visual_meshes[0].GetSurface()->vertices[0].z(), 1);
+    EXPECT_EQ(after.visual_meshes[0].GetSurface()->uv0, mesh->GetUV0());
+    mesh->SetUV0({{0.2, 0.3}, {0.8, 0.3}, {0.2, 0.9}});
+    EXPECT_EQ(body.GetRenderMesh()->GetSurfaceData()->front().uv0, mesh->GetUV0());
+    EXPECT_FLOAT_EQ(before.visual_meshes[0].GetSurface()->uv0[0].x(), 0);
+    body.ClearRuntimeVertices();
+    EXPECT_FLOAT_EQ(body.GetRenderMesh()->GetVertices()[0].z(), 0);
+    body.SetDebugSurfaceColor(Color(0, 0, 0, 0));
+    EXPECT_TRUE(CaptureRenderSceneSnapshot(&body).visual_meshes.empty());
+    // A regular scene material does not inherit debug-surface visibility.
+    body.SetMaterial(MakeRef<PBRMaterial3D>());
+    EXPECT_EQ(CaptureRenderSceneSnapshot(&body).visual_meshes.size(), 1);
+    body.SetVisible(false);
+    EXPECT_TRUE(CaptureRenderSceneSnapshot(&body).visual_meshes.empty());
+    mesh->SetUV0({{0, 0}});
+    EXPECT_FALSE(mesh->Validate());
+}
 
 TEST(RenderProduct, exposes_requested_cpu_buffers_and_metadata) {
     auto render_server = std::make_unique<RenderServer>();

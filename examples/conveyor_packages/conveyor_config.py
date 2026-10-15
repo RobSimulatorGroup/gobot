@@ -122,6 +122,9 @@ HAND_STAGE_ARMATURE = 0.1
 HAND_FINGER_STIFFNESS = 36.0
 HAND_FINGER_DAMPING = 1.20
 HAND_FRICTION = 3.00
+# Rigid finger housings slide more readily than the grasp pads. Giving every
+# knuckle the pad friction can trap a thin mailer around the housing steps.
+HAND_FRAME_FRICTION = 0.40
 LEAP_TIP_BOUNDS = (
     (-0.0112503, -0.0500004, 0.0023530),
     (0.00958777, -0.0195963, 0.0266643),
@@ -135,6 +138,8 @@ HAND_COLLISION_LAYER = 0b0010
 DEFORMABLE_COLLISION_LAYER = 0b0100
 RIGID_PACKAGE_COLLISION_LAYER = 0b1000
 DEFORMABLE_FILL_COLLISION_LAYER = 0b10000
+# Opposing fingertips must not pass through one another while closing on film.
+HAND_TIP_COLLISION_LAYER = 0b100000
 RIGID_COLLISION_MASK = (
     RIGID_COLLISION_LAYER
     | DEFORMABLE_COLLISION_LAYER
@@ -159,7 +164,9 @@ RIGID_PACKAGE_COLLISION_MASK = (
     | RIGID_PACKAGE_COLLISION_LAYER
 )
 
-BELT_FRAME_LENGTH = 2.70
+# Leave room beyond the scanner for the earlier carton drops. A short belt
+# queues them against the end stop directly in the soft mailer's exit path.
+BELT_FRAME_LENGTH = 3.80
 BELT_SURFACE_LENGTH = BELT_FRAME_LENGTH
 BELT_PROXY_LENGTH = BELT_SURFACE_LENGTH
 BELT_WIDTH = 0.72
@@ -220,28 +227,25 @@ SOFT_PACKAGE_SPECS = (
     {
         "name": "soft_mailer_blue",
         "model": "thin_shell",
-        "size": (0.44, 0.32, 0.13),
+        "size": (0.42, 0.30, 0.090),
         "position": (
             MANIPULATION_STATION_X,
             -0.375,
-            # The lowest film node starts 1 mm outside its 10 mm point-cloud
-            # collider. This avoids a 200 mm impact before the hands arrive.
-            WORKTABLE_TOP_Z + 0.0461,
+            # The underside starts 1 mm above the table; the weld is at mid-height.
+            WORKTABLE_TOP_Z + 0.04442479258775711,
         ),
         "rotation_degrees": (0.0, 0.0, 2.0),
-        # Carry most parcel inertia on the closed film so a fingertip grasp
-        # moves the package as one object; the light inner core only supports
-        # its volume through native deformable contact.
-        # The 0.35 kg total models a filled poly mailer rather than the earlier
-        # 1.12 kg parcel, which could not be rolled realistically by the two
-        # palm contacts while the table supports its weight.
-        "density": 675.3040236312168,
-        "young_modulus": 1.6e5,
+        # A 30 g film surrounds 320 g of compressible contents. Keep the film
+        # light so its contact does not crush the interior during settling.
+        "density": 894.3945848202927,
+        "young_modulus": 1.6e6,
         "poisson_ratio": 0.36,
         "damping": 7.0,
-        "thickness": 1.2e-3,
+        "thickness": 1.2e-4,
         "bending_stiffness": 1.2e-4,
         "cells": (34, 25),
+        # Resolve the narrow sealed edge with multiple rows under a fingertip.
+        "edge_refinement": 1.5,
         "color": (0.10, 0.36, 0.64, 1.0),
         "visible": True,
     },
@@ -249,28 +253,30 @@ SOFT_PACKAGE_SPECS = (
         "name": "soft_mailer_blue_fill",
         "model": "volumetric",
         "internal_fill": True,
-        "size": (0.38, 0.27, 0.070),
+        "size": (0.372, 0.260, 0.078),
         "position": (
             MANIPULATION_STATION_X,
             -0.375,
-            # Keep the core entirely inside the asymmetric closed film. It
-            # falls about 14 mm onto the lower sheet before the two native
-            # deformables make contact and establish the parcel volume.
-            WORKTABLE_TOP_Z + 0.0361,
+            # Fill the shoulders as well as the center of the pouch.
+            # The tapered core starts at least 2 mm inside both film sheets.
+            WORKTABLE_TOP_Z + 0.0434349565005303,
         ),
         "rotation_degrees": (0.0, 0.0, 2.0),
-        "density": 8.942111762007034,
-        "young_modulus": 7.0e3,
+        "density": 58.95802254170512,
+        "young_modulus": 8.0e3,
         "poisson_ratio": 0.43,
         "damping": 7.0,
-        "cells": (12, 9, 5),
+        # Contents have rounded, finite-thickness edges; only the outer film
+        # has a sealed flange. Two thickness cells avoid flat sliver elements.
+        "cells": (8, 6, 2),
+        "side_rounding": 0.03,
         "color": (0.04, 0.08, 0.12, 0.0),
         "visible": False,
     },
     {
         "name": "soft_pouch_yellow",
         "model": "thin_shell",
-        "size": (0.29, 0.205, 0.120),
+        "size": (0.29, 0.205, 0.078),
         # The second mailer starts above the upstream table and settles under
         # its own weight. Its visible film is finer than the blue mailer and
         # encloses a separate soft fill body, avoiding the old solid trapezoid
@@ -278,20 +284,22 @@ SOFT_PACKAGE_SPECS = (
         "position": (
             -0.42,
             0.055,
-            # The generated 8.1059 mm shell radius leaves the same 1 mm
-            # authored contact gap as the blue mailer and rigid carton.
-            WORKTABLE_TOP_Z + 0.0415059,
+            WORKTABLE_TOP_Z + 0.0387949724829197,
         ),
         "rotation_degrees": (0.0, 0.0, 8.0),
-        # Scale payload mass with film area. The previous 0.24 kg shell made
-        # this compact pouch carry almost twice the areal load of the larger
-        # blue mailer, so a real LEAP pinch slid along the seam instead of
-        # lifting it. This density gives a 0.14 kg closed film.
-        "density": 693.9408647017538,
-        "young_modulus": 1.2e5,
+        # The thin film contributes 14 g; the contents contribute 151 g.
+        "density": 901.0155061073148,
+        "young_modulus": 1.2e6,
         "poisson_ratio": 0.38,
         "damping": 6.0,
-        "thickness": 1.1e-3,
+        "thickness": 1.1e-4,
+        # Separate opposing film sheets beyond the 2 mm self-contact margin.
+        # The height-scaled 1.95 mm weld caused delayed spontaneous oscillation.
+        "seam_thickness": .00225,
+        # Avoid putting millimetre-high corrugations into the loaded underside;
+        # they can buckle while the parcel is otherwise resting on the table.
+        # The material's fine crease normals still cover both film faces.
+        "underside_wrinkle": .004,
         # The fine 36 x 27 film needs enough edge bending resistance to keep
         # the unsupported heat-sealed flange flat instead of rolling outward.
         "bending_stiffness": 1.6e-4,
@@ -303,25 +311,19 @@ SOFT_PACKAGE_SPECS = (
         "name": "soft_pouch_yellow_fill",
         "model": "volumetric",
         "internal_fill": True,
-        "size": (0.25, 0.17, 0.065),
+        "size": (0.258, 0.181, 0.068),
         "position": (
             -0.42,
             0.055,
-            # Match the blue mailer's short internal settling distance so the
-            # first shell contact stays below the 1 mm penetration budget.
-            WORKTABLE_TOP_Z + 0.0365059,
+            WORKTABLE_TOP_Z + 0.0376449724829197,
         ),
         "rotation_degrees": (0.0, 0.0, 8.0),
-        # The soft contents contribute another 25 g, for a plausible 165 g
-        # small parcel while retaining enough volume to form a pillow profile.
-        "density": 13.093466369750443,
+        "density": 66.09575886566554,
         "young_modulus": 5.0e3,
         "poisson_ratio": 0.44,
         "damping": 6.0,
-        # Extra through-thickness layers resolve a rounded pillow profile:
-        # the contents bulge at mid-height and taper toward both film sheets.
-        "cells": (14, 11, 8),
-        "side_rounding": 0.08,
+        "cells": (8, 6, 2),
+        "side_rounding": 0.03,
         "color": (0.08, 0.06, 0.02, 0.0),
         "visible": False,
     },

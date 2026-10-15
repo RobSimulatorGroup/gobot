@@ -59,6 +59,14 @@ TEST(EngineContextArtifacts, CompilesOneSnapshotAndPublishesAtomically) {
     body->SetInertiaDiagonal({0.1, 0.1, 0.1});
     root->AddChild(body);
     body->AddChild(shape);
+    PhysicsSceneSnapshot snapshot;
+    ASSERT_TRUE(context.CompilePhysicsSceneSnapshot(root, &snapshot));
+    ASSERT_EQ(snapshot.robots.size(), 1);
+    EXPECT_DOUBLE_EQ(snapshot.robots[0].links[0].mass, 1.0);
+    EXPECT_FALSE(context.HasWorld());
+    EXPECT_FALSE(context.CompilePhysicsSceneSnapshot(nullptr, &snapshot));
+    EXPECT_EQ(snapshot.scene_name, "artifact_world");
+    EXPECT_FALSE(context.CompilePhysicsSceneSnapshot(root, nullptr));
     PhysicsSceneArtifact physics;
     IpcSceneArtifact ipc;
     physics.content = "unchanged physics";

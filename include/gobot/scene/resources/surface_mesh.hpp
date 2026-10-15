@@ -27,6 +27,9 @@ public:
     void SetTriangles(const std::vector<std::uint32_t>& triangles);
     const std::vector<std::uint32_t>& GetTriangles() const;
 
+    void SetUV0(const std::vector<Vector2>& uv);
+    const std::vector<Vector2>& GetUV0() const;
+
     std::size_t GetVertexCount() const;
     std::size_t GetTriangleCount() const;
 
@@ -35,6 +38,7 @@ public:
 private:
     std::vector<Vector3> vertices_;
     std::vector<std::uint32_t> triangles_;
+    std::vector<Vector2> uv0_;
 };
 
 } // namespace gobot

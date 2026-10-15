@@ -1,4 +1,4 @@
-"""Run the native SuperDex conveyor workcell without the editor."""
+"""Run the Newton or native SuperDex conveyor workcell without the editor."""
 
 from __future__ import annotations
 
@@ -22,15 +22,26 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run two floating LEAP Hands and rigid/thin-shell/volumetric "
-            "packages in one native SuperDex physics world."
+            "packages with Newton VBD (default) or native SuperDex."
         )
     )
     parser.add_argument("--scene", type=Path, default=HERE / SCENE_NAME)
+    parser.add_argument("--backend", choices=("newton", "superdex"), default="newton")
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--substeps", type=int, default=8)
+    parser.add_argument("--drop-only", action="store_true")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--video", type=Path)
+    parser.add_argument("--fps", type=int, default=24)
+    parser.add_argument("--width", type=int, default=960)
+    parser.add_argument("--height", type=int, default=640)
+    parser.add_argument("--validate", action="store_true")
     parser.add_argument("--rebuild-scene", action="store_true")
     parser.add_argument(
         "--quality", choices=("interactive", "accurate"), default="interactive"
     )
-    parser.add_argument("--steps", type=int, default=CYCLE_TICKS)
+    parser.add_argument("--steps", type=int)
     parser.add_argument("--warmup-steps", type=int, default=4)
     parser.add_argument("--num-envs", type=int, default=1)
     parser.add_argument(
@@ -103,6 +114,22 @@ def run(
     tick_observer: Callable[[dict[str, Any]], bool] | None = None,
     failure_observer: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    if getattr(args, "backend", "superdex") == "newton":
+        if args.num_envs != 1:
+            raise ValueError("Newton VBD currently supports exactly one environment")
+        if args.steps is not None and args.steps <= 0:
+            raise ValueError("--steps must be positive")
+        if min(args.fps, args.width, args.height) <= 0:
+            raise ValueError("video dimensions and fps must be positive")
+        if args.rebuild_scene:
+            from build_scene import build_scene
+            args.scene = build_scene(args.scene.expanduser().resolve().parent)
+        from conveyor_newton_batch import run as run_newton
+        if args.warmup_steps < 0:
+            raise ValueError("--warmup-steps must be non-negative")
+        return run_newton(args, tick_observer=tick_observer, failure_observer=failure_observer)
+    if args.steps is None:
+        args.steps = CYCLE_TICKS
     _validate_args(args)
     scene_path = args.scene.expanduser().resolve()
     if args.rebuild_scene:
@@ -237,7 +264,11 @@ def run(
 
 
 def main() -> None:
-    print(json.dumps(run(_parser().parse_args()), indent=2, sort_keys=True))
+    args = _parser().parse_args()
+    report = run(args)
+    print(json.dumps({key: value for key, value in report.items() if key != "samples"}, indent=2, sort_keys=True))
+    if report.get("failure") or (args.validate and not report.get("accepted", False)):
+        raise SystemExit("Conveyor acceptance checks failed; inspect the report.")
 
 
 if __name__ == "__main__":
