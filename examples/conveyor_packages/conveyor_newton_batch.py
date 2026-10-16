@@ -11,10 +11,14 @@ import numpy as np
 import gobot
 
 from conveyor_config import WORKTABLE_TOP_Z, BELT_CENTER_Y, BELT_WIDTH
-from conveyor_newton_runtime import create, default_config, prepare_snapshot, scene_sync
+from conveyor_newton_runtime import (create, default_config, prepare_snapshot, scene_sync,
+                                     trajectory, _phase_starts)
 from gobot.sim import SimulationSession
 
-SUPPORTED_TRANSPORT_PHASES = ("place_hold", "release", "clear", "settle_after_release", "outfeed")
+DROP_PHASES = ("drop_hover", "release", "clear", "drop_settle")
+SUPPORTED_TRANSPORT_PHASES = ("settle_after_release", "outfeed")
+LANDING_SETTLE_SECONDS = .2
+MINIMUM_QUIET_TRANSPORT_SECONDS = 1.
 
 
 def _maximum_windowed_vertical_speed(samples, name, window_s):
@@ -46,6 +50,7 @@ class TrialMetrics:
         self.quiet_reference = {}
         self.quiet_previous = {}
         self.transport_previous = {}
+        self.opening_start_time = _phase_starts(trajectory())["release"]
         self.unattended_names = tuple(body["name"] for body in snapshot["deformables"]
                                       if body["name"].startswith("soft_pouch_yellow"))
         for body in snapshot["deformables"]:
@@ -83,7 +88,7 @@ class TrialMetrics:
                              "rms_speed_m_s": float(np.sqrt(np.mean(np.sum(body["velocities"] ** 2, axis=1)))),
                              "vertical_rms_speed_m_s": float(np.sqrt(np.mean(body["velocities"][:, 2] ** 2))),
                              "max_speed_m_s": float(np.linalg.norm(body["velocities"], axis=1).max())}
-            if phase in SUPPORTED_TRANSPORT_PHASES:
+            if phase in (*DROP_PHASES, *SUPPORTED_TRANSPORT_PHASES):
                 previous = self.transport_previous.get(name, q)
                 dz = q[:, 2] - previous[:, 2]
                 parcels[name]["sample_max_vertex_rise_m"] = float(max(0., dz.max()))
@@ -167,15 +172,62 @@ class TrialMetrics:
         checks["conveyor_transfer"] = (transfer is not None
             and transfer["final_center_y_m"] >= BELT_CENTER_Y - .5 * BELT_WIDTH
             and transfer["outfeed_travel_m"] >= .2)
-        transport = [s for s in self.samples if s["phase"] in SUPPORTED_TRANSPORT_PHASES]
-        placed = [s for s in self.samples if s["phase"] == "place_hold"]
+        placement = [s for s in self.samples if s["phase"] in
+                     (*DROP_PHASES, *SUPPORTED_TRANSPORT_PHASES)]
+        checks["running_belt_placement"] = (bool(placement)
+            and any(s["phase"] == "drop_hover" for s in placement)
+            and all(s.get("belt_speed_m_s", 0.) >= .1 for s in placement))
+        # Intentional free fall has its own checks: it must start above the
+        # belt, land promptly, and stay on it without a second launch. The
+        # stricter quiet-transport checks below start after the impact phase.
+        falling = [s for s in placement if blue in s["parcels"] and s["phase"] != "drop_hover"]
+        landing = None
+        transport_start = None
+        if falling and falling[0]["phase"] == "release":
+            contacts = [i for i, s in enumerate(falling)
+                        if s["parcels"][blue]["min"][2] <= WORKTABLE_TOP_Z + .005]
+            if contacts:
+                contact = contacts[0]
+                supported = falling[contact:]
+                centers = np.array([s["parcels"][blue]["center"][2] for s in supported])
+                # An edge-first drop may briefly stand before toppling. Detect
+                # the first broad-face landing from thickness, not a scripted
+                # timeout or a low-velocity sample. Never restart this window
+                # after a later jump: that would hide recurring flutter.
+                rest_height = rest_samples[-1]["parcels"][blue]["height"] if rest_samples else .08
+                broad_face = next((s for s in supported
+                                   if s["parcels"][blue]["height"] <= 1.5 * rest_height), None)
+                if broad_face is not None:
+                    transport_start = broad_face["time"] + LANDING_SETTLE_SECONDS
+                landing = {
+                    "release_clearance_m": falling[0]["parcels"][blue]["min"][2] - WORKTABLE_TOP_Z,
+                    "first_contact_time_s": supported[0]["time"],
+                    "time_to_contact_s": supported[0]["time"] - falling[0]["time"],
+                    "maximum_post_contact_clearance_m": max(s["parcels"][blue]["min"][2] - WORKTABLE_TOP_Z for s in supported),
+                    "maximum_center_rebound_m": float(np.max(centers - np.minimum.accumulate(centers))),
+                    "broad_face_height_limit_m": 1.5 * rest_height,
+                    "first_broad_face_contact_time_s": broad_face["time"] if broad_face else None,
+                    "quiet_transport_start_time_s": transport_start,
+                }
+        checks["free_drop_landing"] = (landing is not None
+            and landing["release_clearance_m"] >= .1
+            and 0. < landing["time_to_contact_s"] <= 1.
+            and landing["maximum_post_contact_clearance_m"] <= .015
+            and landing["maximum_center_rebound_m"] <= .025)
+        transport = [s for s in self.samples if blue in s["parcels"]
+                     and s["phase"] in SUPPORTED_TRANSPORT_PHASES]
+        if falling and falling[0]["phase"] == "release":
+            transport = ([s for s in falling if s["time"] >= transport_start]
+                         if transport_start is not None else [])
+        placed = transport[:1]
         transport_stability = None
         if placed and transport:
-            # Intentional carrying/lowering has vertical motion. Once laid
-            # down, check every sample through opening, withdrawal and outfeed.
-            # Do not wait for the release or settling phase to finish.
+            # A fixed short impact interval follows the first broad-face
+            # landing. Earlier edge contact/toppling remains covered above.
             reference = placed[0]["parcels"][blue]
             transport_stability = {
+                "start_time_s": transport[0]["time"],
+                "duration_s": transport[-1]["time"] - transport[0]["time"],
                 "maximum_center_rise_m": max(s["parcels"][blue]["center"][2] - reference["center"][2] for s in transport),
                 "maximum_top_rise_m": max(s["parcels"][blue]["max"][2] - reference["max"][2] for s in transport),
                 "maximum_bottom_clearance_m": max(s["parcels"][blue]["min"][2] - WORKTABLE_TOP_Z for s in transport),
@@ -189,6 +241,7 @@ class TrialMetrics:
         # vertices as well as the bounds, and retain instantaneous velocity:
         # averaging away a contact impulse does not establish stable motion.
         checks["conveyor_stability"] = (transport_stability is not None
+            and transport_stability["duration_s"] >= MINIMUM_QUIET_TRANSPORT_SECONDS
             and transport_stability["maximum_center_rise_m"] <= .015
             and transport_stability["maximum_top_rise_m"] <= .025
             and transport_stability["maximum_bottom_clearance_m"] <= .005
@@ -235,6 +288,7 @@ class TrialMetrics:
                 "maximum_soft_penetration_m": self.peak_penetration,
                 "minimum_tet_volume_ratio": self.minimum_volume_ratio,
                 "unattended_parcel": unattended, "conveyor_transfer": transfer,
+                "free_drop_landing": landing,
                 "conveyor_stability": transport_stability, "samples": self.samples}
 
 
@@ -259,7 +313,7 @@ def run(args, *, tick_observer=None, failure_observer=None):
         session.reset()
         initial = provider.snapshot_arrays(provider.scene_fields, (0,))
         metrics = TrialMetrics(snapshot)
-        sync, fields = scene_sync(context, root, snapshot)
+        sync, fields = scene_sync(context, root, snapshot, drop_only=controller.drop_only)
         fps = args.fps
         next_frame = 0.
         if args.video:
@@ -285,6 +339,7 @@ def run(args, *, tick_observer=None, failure_observer=None):
                     state = provider.read_state()
                     sample = metrics.update(state, phase)
                     sample["tick"] = tick + 1
+                    sample["belt_speed_m_s"] = controller.belt_speed
                     if phase != previous_phase or tick % 500 == 0:
                         print(f"Newton VBD {phase} | t={completed_time:.3f}s | "
                               f"penetration={sample['max_soft_penetration_m']*1000:.3f}mm", flush=True)
@@ -292,32 +347,25 @@ def run(args, *, tick_observer=None, failure_observer=None):
                         raise RuntimeError(f"Newton VBD tetrahedral inversion at t={completed_time:.3f}s (minimum volume ratio {metrics.minimum_volume_ratio:.5f})")
                 if writer is not None and completed_time >= next_frame:
                     values = provider.snapshot_arrays(fields, (0,))
-                    sync(SimpleNamespace(environments=(0,), fields=tuple(values), buffer=values.__getitem__))
+                    sync(SimpleNamespace(environments=(0,), fields=tuple(values), buffer=values.__getitem__,
+                                         clocks=(SimpleNamespace(time=completed_time),)))
                     wide = phase == "settle_and_carton_drop"
                     eye, target, fov = (((1.35, -1.9, 1.55), (.0, -.1, .65), 55.) if wide else
                                         ((.60, -1.00, 1.04), (.16, -.375, .64), 50.))
                     if phase in ("lift", "hold"):
                         eye = (.8, .6, 1.6)  # Show the printed face as the pouch hangs.
                         target, fov = (.15, -.38, .83), 52.
-                    if phase in ("transfer", "place_contact", "place", *SUPPORTED_TRANSPORT_PHASES):
-                        # Keep the parcel large enough to inspect as it enters
-                        # the belt and travels across the wider workcell.
-                        center = sample["parcels"]["soft_mailer_blue"]["center"]
-                        target = tuple(center)
-                        eye = (center[0] + .95, center[1] - .90, center[2] + .70)
-                        fov = 48.
-                        if phase in ("release", "clear", "settle_after_release", "outfeed"):
-                            # View from upstream and across the belt so the
-                            # preceding cartons do not hide the soft parcel.
-                            eye = (center[0] - .55, center[1] + .85, 1.16)
-                            target, fov = (center[0], center[1], .62), 44.
+                    if phase in ("transfer", *DROP_PHASES, *SUPPORTED_TRANSPORT_PHASES):
+                        # A fixed view makes belt travel visible before contact
+                        # and avoids the scanner post crossing the tracked bag.
+                        eye, target, fov = (.2, 1.65, 1.6), (.8, .42, .70), 55.
                     rgb = gobot.render.capture_rgb(root=root, width=args.width, height=args.height,
                               eye=eye, target=target, fov_y=fov, z_far=8.)
                     from PIL import Image, ImageDraw, ImageFont
                     frame = Image.fromarray(rgb)
                     draw = ImageDraw.Draw(frame)
                     draw.rectangle((0, 0, args.width, 46), fill=(18, 22, 28))
-                    draw.text((16, 12), f"Newton VBD   |   {phase.replace('_', ' ')}   |   {completed_time:.2f} s",
+                    draw.text((16, 12), f"Newton VBD   |   {phase.replace('_', ' ')}   |   {completed_time:.2f} s   |   belt {controller.belt_speed:.2f} m/s",
                               font=ImageFont.load_default(size=18), fill=(235, 238, 242))
                     writer.append_data(np.asarray(frame))
                     next_frame += 1. / fps

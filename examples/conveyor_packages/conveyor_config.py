@@ -166,7 +166,7 @@ RIGID_PACKAGE_COLLISION_MASK = (
 
 # Leave room beyond the scanner for the earlier carton drops. A short belt
 # queues them against the end stop directly in the soft mailer's exit path.
-BELT_FRAME_LENGTH = 3.80
+BELT_FRAME_LENGTH = 4.60
 BELT_SURFACE_LENGTH = BELT_FRAME_LENGTH
 BELT_PROXY_LENGTH = BELT_SURFACE_LENGTH
 BELT_WIDTH = 0.72

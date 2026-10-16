@@ -5,7 +5,8 @@ from dataclasses import asdict
 import json
 import numpy as np
 
-from conveyor_config import HAND_JOINT_NAMES_BY_SIDE, LEAP_ROBOT_NAMES, BELT_ROBOT_NAME, BELT_LINK_NAME
+from conveyor_config import (HAND_JOINT_NAMES_BY_SIDE, LEAP_ROBOT_NAMES,
+                             BELT_ROBOT_NAME, BELT_LINK_NAME, BELT_SURFACE_LENGTH)
 import conveyor_profile as original
 
 # Opposed index/thumb pads approach the raised front weld from the side.
@@ -27,10 +28,30 @@ OPEN_FINGERS = (
     (1.972625782744, 0.000800093619, -0.505999, -0.365999) + (0.,) * 8
     + (1.498946517543, -0.017201115047, 0.301320911733, -0.29469178596),
 )
-# The supported pouch is roughly 30 cm long. Rotate the held edge around its
-# supported bottom instead of shortening that span along a straight chord.
-PLACEMENT_RADIUS = .30
-PLACEMENT_ANGLE = float(np.arccos(1. - .260 / PLACEMENT_RADIUS))
+RUNNING_BELT_SPEED = .12
+BELT_RAMP_SECONDS = .5
+
+
+def _smoothstep(fraction):
+    fraction = float(np.clip(fraction, 0., 1.))
+    return fraction ** 3 * (10. + fraction * (-15. + 6. * fraction))
+
+
+def _ramped_belt_motion(elapsed):
+    """Speed and integrated travel for the same smooth motor startup."""
+    fraction = float(np.clip(elapsed / BELT_RAMP_SECONDS, 0., 1.))
+    integral = fraction ** 4 * (2.5 - 3. * fraction + fraction ** 2)
+    return (RUNNING_BELT_SPEED * _smoothstep(fraction),
+            RUNNING_BELT_SPEED * (BELT_RAMP_SECONDS * integral
+                                 + max(0., elapsed - BELT_RAMP_SECONDS)))
+
+
+def _phase_starts(segments):
+    starts, elapsed = {}, 0.
+    for name, duration, _ in segments:
+        starts[name] = elapsed
+        elapsed += duration
+    return starts
 
 
 def default_config():
@@ -83,16 +104,11 @@ def trajectory():
     behind = contact.copy(); behind[:, 1] -= .06
     approach = behind.copy(); approach[:, 2] += .16
     lift = grip.copy(); lift[:, 2] += .46
-    # Carry the hanging pouch over the stopped belt. First support its bottom,
-    # then lower and draw the held weld back to lay the pouch on its broad face.
-    # Releasing it upright or pushing against knuckle steps stored deformation
-    # that could launch a fold when the hand withdrew.
+    # Stop over the already-running belt and open at a fixed wrist pose.
+    # The pouch falls freely; neither hand follows the belt or lowers the held
+    # weld into contact. Withdraw only after the pads have opened.
     transfer = lift.copy(); transfer[:, 1] += 1.13
-    supported = transfer.copy(); supported[:, 2] -= .195
-    place = supported.copy()
-    place[:, 1] -= PLACEMENT_RADIUS * np.sin(PLACEMENT_ANGLE)
-    place[:, 2] -= .260
-    release = place.copy(); release[:, 6:] = OPEN_FINGERS
+    release = transfer.copy(); release[:, 6:] = OPEN_FINGERS
     clear = release.copy(); clear[:, 1] -= .14; clear[:, 2] += .25
     opened_clear = clear.copy(); opened_clear[:, 6:] = 0.
     # Press with the open fingertip rows over the parcel interior, then recover.
@@ -115,11 +131,10 @@ def trajectory():
         ("lift", 2.4, lift),
         ("hold", 2., lift),
         ("transfer", 3., transfer),
-        ("place_contact", 2., supported),
-        ("place", 2.8, place),
-        ("place_hold", .8, place),
-        ("release", 1., release),
+        ("drop_hover", .4, transfer),
+        ("release", .35, release),
         ("clear", 1., clear),
+        ("drop_settle", 1.65, clear),
         ("settle_after_release", .8, opened_clear),
         ("outfeed", 2., home),
     )
@@ -129,6 +144,7 @@ class ConveyorNewtonController:
     def __init__(self, provider, *, drop_only=False):
         self.provider = provider
         self.segments = trajectory()
+        self.phase_starts = _phase_starts(self.segments)
         self.duration = 1.6 if drop_only else sum(duration for _, duration, _ in self.segments)
         self.drop_only = drop_only
         self.reset((0,))
@@ -139,6 +155,7 @@ class ConveyorNewtonController:
         self.time = 0.
         self.phase = "settle_and_carton_drop"
         self._last_tick = -1
+        self.belt_speed = 0.
         self.provider.set_surface_velocity(BELT_ROBOT_NAME, BELT_LINK_NAME, (0., 0., 0.))
 
     def step(self, dt):
@@ -147,27 +164,21 @@ class ConveyorNewtonController:
             local = 0. if self.drop_only else self.time
             previous = self.segments[0][2]
             command = previous
-            phase_elapsed = 0.
             for name, duration, target in self.segments:
                 self.phase = name
-                phase_elapsed = local
                 if local < duration:
-                    fraction = np.clip(local / duration, 0., 1.)
                     # Zero velocity and acceleration at both endpoints avoid
                     # exciting the hanging pouch when a hand starts or stops.
-                    fraction = fraction ** 3 * (10. + fraction * (-15. + 6. * fraction))
+                    fraction = _smoothstep(local / duration)
                     command = previous + fraction * (target - previous)
-                    if name == "place":
-                        angle = fraction * PLACEMENT_ANGLE
-                        command[:, 1] = previous[:, 1] - PLACEMENT_RADIUS * np.sin(angle)
-                        command[:, 2] = previous[:, 2] + PLACEMENT_RADIUS * (np.cos(angle) - 1.)
                     break
                 local -= duration
                 previous = command = target
             for side, names, targets in zip(LEAP_ROBOT_NAMES, HAND_JOINT_NAMES_BY_SIDE, command, strict=True):
                 self.provider.set_joint_position_targets(side, names, targets)
-            speed = .35 * float(np.clip(phase_elapsed / .5, 0., 1.)) if self.phase == "outfeed" else 0.
-            self.provider.set_surface_velocity(BELT_ROBOT_NAME, BELT_LINK_NAME, (speed, 0., 0.))
+            self.belt_speed = (0. if self.drop_only else
+                               _ramped_belt_motion(self.time - self.phase_starts["transfer"])[0])
+            self.provider.set_surface_velocity(BELT_ROBOT_NAME, BELT_LINK_NAME, (self.belt_speed, 0., 0.))
             self._last_tick = tick
         self.time += dt
 
@@ -188,7 +199,7 @@ def create(snapshot, config=None, drop_only=False):
         raise
 
 
-def scene_sync(context, root, snapshot):
+def scene_sync(context, root, snapshot, *, drop_only=False):
     import gobot
     nodes = {}
     pending = [root]
@@ -212,7 +223,21 @@ def scene_sync(context, root, snapshot):
     soft = [[resolve(b["path"]) for b in snapshot["deformables"]]]
     sync = gobot.sim.SceneSnapshotSync(context, links=links, deformables=soft,
                 vertex_counts=[len(b["vertices"]) for b in snapshot["deformables"]])
-    return sync, tuple(links) + ("deformable.local_vertices",)
+    markers = [(node, tuple(node.position)) for node in nodes.values()
+               if node.name.startswith("belt_marker_")]
+    belt_start = _phase_starts(trajectory())["transfer"]
+
+    def apply(state):
+        sync(state)
+        # Use completed simulation time, never render cadence. Reset and
+        # skipped editor frames therefore retain the correct belt phase.
+        clocks = getattr(state, "clocks", ())
+        if clocks:
+            travel = 0. if drop_only else _ramped_belt_motion(clocks[0].time - belt_start)[1]
+            for marker, origin in markers:
+                x = (origin[0] + travel + .5 * BELT_SURFACE_LENGTH) % BELT_SURFACE_LENGTH - .5 * BELT_SURFACE_LENGTH
+                marker.position = (x, origin[1], origin[2])
+    return apply, tuple(links) + ("deformable.local_vertices",)
 
 
 class NewtonConveyorPlay:
@@ -227,10 +252,11 @@ class NewtonConveyorPlay:
         import os
         context, root = self.script.context, self.script.get_root()
         snapshot = prepare_snapshot(context.compile_physics_scene_snapshot())
-        sync, fields = scene_sync(context, root, snapshot)
+        drop_only = os.environ.get("GOBOT_CONVEYOR_DROP_ONLY", "0") == "1"
+        sync, fields = scene_sync(context, root, snapshot, drop_only=drop_only)
         recipe = gobot.sim.SimulationRuntimeSpec("conveyor_newton_runtime:create", {
             "snapshot": snapshot, "config": asdict(default_config()),
-            "drop_only": os.environ.get("GOBOT_CONVEYOR_DROP_ONLY", "0") == "1"})
+            "drop_only": drop_only})
         self.runtime = gobot.sim.AsyncSimulationSession(recipe,
                 fields=fields, environments=(0,))
         self.play = gobot.sim.ProviderPlaySession(context, self.runtime,

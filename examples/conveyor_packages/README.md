@@ -5,9 +5,9 @@ The default backend is **Newton VBD on CUDA**. Gobot compiles the authored
 LEAP hand joints, rigid cartons, closed film shells and tetrahedral contents
 in one world. The same recipe runs in editor Play and from ordinary Python.
 The reference sequence is pressing/releasing a soft parcel, pinching its edge,
-lifting it onto a stopped conveyor, laying it flat and releasing it before
-the belt starts. Two cartons
-start 25 cm higher for flat and tilted drop trials.
+lifting it over an already running conveyor, then releasing it from stationary
+hands so it drops onto the belt. Two cartons start 25 cm higher for flat and
+tilted drop trials.
 
 The white and yellow mailers have rounded contents supporting both sides of a
 closed film shell, a narrow raised weld, shallow corner folds and printed
@@ -75,21 +75,24 @@ The index and thumb pads enter above and below the raised front weld before
 closing; their opposed faces support the film without piercing it. The white
 film concentrates mesh rows near the sealed edges so a fingertip contacts
 several rows instead of balancing on a few loose flange vertices. The hands
-lift the pouch, hold it, and carry it 1.13 m over the stopped belt. They lower
-until the bottom is supported, then move the held edge along a 30 cm radius
-arc, lowering it 26 cm and drawing it back about 30 cm to lay the parcel on
-its broad face. This preserves the supported span instead of compressing it
-along a straight downward path. A supported pause
-precedes opening the pads. The wrists then retreat and rise before extending
-the remaining fingers. The belt accelerates to 0.35 m/s over 0.5 seconds after
-this clearance and settling interval. No parcel coordinates are prescribed.
+lift the pouch, hold it, and carry it 1.13 m over the running belt. They stop
+with the pouch bottom about 19 cm above the belt, pause for 0.4 seconds, and
+open the pads over 0.35 seconds at a fixed wrist pose. The pouch falls under
+gravity and lands on the moving belt. Once the pads have opened,
+the wrists retreat and rise over 1 second while the pouch lands, then wait
+1.65 seconds for it to settle before extending the remaining fingers. The hands
+do not follow the belt. No parcel coordinates or velocities are prescribed.
 
-This avoids pushing the film against the hand's stepped knuckle housings,
-which could store deformation and release it abruptly on withdrawal. The
-housings use friction 0.4 while the grasp pads retain friction 3.0. The 3.8 m
-conveyor gives the preceding cartons room to move ahead. Hand trajectories
-use quintic interpolation with zero endpoint velocity and acceleration;
-carrying takes 3 seconds, initial lowering 2 seconds and laying down 2.8 seconds.
+The belt accelerates smoothly to 0.12 m/s over 0.5 seconds at the start of
+carrying, before the pouch reaches it, and keeps running through release,
+landing and outfeed. Its visual markers use the integrated motor motion at
+the completed simulation time, including editor reset and skipped presentation
+frames. Hand trajectories use quintic interpolation with zero endpoint velocity
+and acceleration; carrying takes 3 seconds.
+
+The hand housings use friction 0.4 while the grasp pads retain friction 3.0.
+The 4.6 m conveyor gives the preceding cartons room to move ahead instead of
+backing into the pouch at the end stop.
 
 The report samples compression/recovery, continuous lifted hold, maximum soft
 contact penetration, reset error and wall time every 20 completed ticks and at
@@ -118,17 +121,30 @@ be hidden by checking only the initial settling or the final frame.
 A shortened run does not certify the whole motion.
 The full run also requires the white parcel to reach the belt and travel at
 least 20 cm along it during outfeed, rejecting a failed belt placement.
-From the start of the supported pause through opening, hand withdrawal and
-outfeed, the pouch center may rise at most 1.5 cm and its highest point at most
-2.5 cm above the first supported-pause sample. The intentional vertical motion
-during carrying and lowering is excluded from these supported-motion limits.
-Its lowest point must stay within 5 mm of the belt/table surface. Instantaneous
-RMS vertical vertex speed must stay below 15 cm/s. Between measurement samples,
-no vertex may rise more than 5 mm, and RMS vertical displacement must stay below
-2 mm. This catches a moving fold even when the overall bounds are falling.
-The 0.2-second RMS is diagnostic only; averaging does not excuse a velocity spike.
-The height and clearance checks apply to every report sample, so a transient
-jump still fails even if the pouch lands flat in the final frame.
+Every sample from the airborne pause through outfeed must have a commanded
+belt speed of at least 0.10 m/s; starting only after release fails this check.
+The drop must begin with at least 10 cm clearance and make contact within
+1 second of opening. After first contact, the lowest point may rise at most
+1.5 cm above the belt, and the parcel center may rebound at most 2.5 cm above
+its running minimum. These checks include the impact and prevent hiding a
+second launch inside the settling phase.
+
+A pouch dropped edge first can stand briefly before toppling. Quiet-transport
+checks start 0.2 seconds after its first broad-face landing: the first sample
+whose bounding height is at most 1.5 times the original settled thickness.
+This boundary depends on geometry, not low velocity or a scripted phase, and
+never restarts after later motion. At least 1 second of quiet transport must
+be recorded; an upright parcel or a shortened final settling cannot pass.
+The center may rise at most 1.5 cm and the highest point at most 2.5 cm above
+the first quiet-transport sample. The lowest point must stay within 5 mm of
+the belt/table surface. Instantaneous RMS vertical vertex speed must stay below
+15 cm/s. Between measurement samples, no vertex may rise more than 5 mm, and
+RMS vertical displacement must stay below 2 mm. This catches a moving fold
+even when the overall bounds are falling. The 0.2-second RMS is diagnostic
+only; averaging does not excuse a velocity spike. A transient jump after
+settling still fails even if the pouch is flat in the final frame. The separate
+post-contact clearance and rebound checks cover the entire landing/toppling
+interval as well.
 A detected solver failure is recorded in `failure` and makes the CLI exit with
 an error; its partial measurements are retained. Drop-only runs check contact,
 volume, completion and reset without claiming a successful grasp.
