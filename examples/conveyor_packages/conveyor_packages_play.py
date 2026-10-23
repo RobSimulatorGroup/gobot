@@ -202,6 +202,8 @@ class Script(gobot.NodeScript):
         if root is None or root.name != SCENE_ROOT_NAME:
             raise RuntimeError("unexpected conveyor packages scene root")
         nodes = {node.name: node for node in root.children}
+        if "openarm_sharpa" in nodes or "sharpa_left" in nodes:
+            raise ValueError("The Sharpa workcell uses GOBOT_CONVEYOR_BACKEND=newton; build --hand-model leap for SuperDex.")
         preview_node_count = _apply_preview_deformable_meshes(nodes) if self.preview else 0
         self.control = ConveyorControl(self.context, root)
         belt = root.find("conveyor/belt_surface")

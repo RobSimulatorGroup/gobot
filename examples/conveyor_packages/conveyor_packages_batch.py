@@ -21,7 +21,7 @@ from conveyor_profile import CYCLE_TICKS, FIXED_DT, cycle_phase, quality_profile
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run two floating LEAP Hands and rigid/thin-shell/volumetric "
+            "Run a dual-arm Sharpa sorting workcell with rigid/thin-shell/volumetric "
             "packages with Newton VBD (default) or native SuperDex."
         )
     )
@@ -135,7 +135,7 @@ def run(
     if args.rebuild_scene:
         from build_scene import build_scene
 
-        scene_path = build_scene(scene_path.parent)
+        scene_path = build_scene(scene_path.parent, hand_model="leap")
     if not scene_path.is_file():
         raise FileNotFoundError(scene_path)
 
@@ -144,6 +144,8 @@ def run(
     try:
         context.set_project_path(str(scene_path.parent))
         root = context.load_scene("res://" + scene_path.name)
+        if root.find("openarm_sharpa") is not None or root.find("sharpa_left") is not None:
+            raise ValueError("The Sharpa workcell uses --backend newton. Build --hand-model leap for the legacy SuperDex sequence.")
         context.fixed_time_step = FIXED_DT
         context.max_sub_steps = 1
         settings = context.get_superdex_solver_settings()

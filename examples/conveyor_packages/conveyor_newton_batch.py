@@ -301,7 +301,9 @@ def run(args, *, tick_observer=None, failure_observer=None):
         context.set_project_path(str(path.parent))
         root = context.load_scene("res://" + path.name)
         snapshot = prepare_snapshot(context.compile_physics_scene_snapshot())
-        config = replace(default_config(), device=args.device, iterations=args.iterations, substeps=args.substeps)
+        from conveyor_sharpa_runtime import is_sharpa, SharpaMetrics
+        sharpa = is_sharpa(snapshot)
+        config = replace(default_config(snapshot), device=args.device, iterations=args.iterations, substeps=args.substeps)
         start = time.perf_counter()
         components = create(snapshot, asdict(config), drop_only=getattr(args, "drop_only", False))
         provider, controller = components.provider, components.controller
@@ -312,7 +314,7 @@ def run(args, *, tick_observer=None, failure_observer=None):
             session.step()
         session.reset()
         initial = provider.snapshot_arrays(provider.scene_fields, (0,))
-        metrics = TrialMetrics(snapshot)
+        metrics = (SharpaMetrics if sharpa else TrialMetrics)(snapshot)
         sync, fields = scene_sync(context, root, snapshot, drop_only=controller.drop_only)
         fps = args.fps
         next_frame = 0.
@@ -359,13 +361,17 @@ def run(args, *, tick_observer=None, failure_observer=None):
                         # A fixed view makes belt travel visible before contact
                         # and avoids the scanner post crossing the tracked bag.
                         eye, target, fov = (.2, 1.65, 1.6), (.8, .42, .70), 55.
+                    if sharpa:
+                        eye, target, fov = (.10, -1.75, 1.45), (.05, .02, 1.0), 42.
                     rgb = gobot.render.capture_rgb(root=root, width=args.width, height=args.height,
                               eye=eye, target=target, fov_y=fov, z_far=8.)
                     from PIL import Image, ImageDraw, ImageFont
                     frame = Image.fromarray(rgb)
                     draw = ImageDraw.Draw(frame)
                     draw.rectangle((0, 0, args.width, 46), fill=(18, 22, 28))
-                    draw.text((16, 12), f"Newton VBD   |   {phase.replace('_', ' ')}   |   {completed_time:.2f} s   |   belt {controller.belt_speed:.2f} m/s",
+                    caption = (f"OpenArm v2 + Sharpa parcel sorting   |   {completed_time:.2f} s" if sharpa else
+                               f"Newton VBD   |   {phase.replace('_', ' ')}   |   {completed_time:.2f} s   |   belt {controller.belt_speed:.2f} m/s")
+                    draw.text((16, 12), caption,
                               font=ImageFont.load_default(size=18), fill=(235, 238, 242))
                     writer.append_data(np.asarray(frame))
                     next_frame += 1. / fps
@@ -375,6 +381,16 @@ def run(args, *, tick_observer=None, failure_observer=None):
         except Exception as error:
             failure = {"tick": completed_steps, "phase": controller.phase,
                        "error": f"{type(error).__name__}: {error}"}
+            # Rendering can reject an inverted mesh between metric samples.
+            # Preserve the solver's final diagnostics before resetting it.
+            try:
+                diagnostics = provider.read_state()
+                metrics.minimum_volume_ratio = min(metrics.minimum_volume_ratio,
+                    diagnostics["minimum_tet_volume_ratio"])
+                metrics.peak_penetration = max(metrics.peak_penetration,
+                    diagnostics["peak_soft_penetration"])
+            except RuntimeError:
+                pass  # Non-finite state or exhausted contacts cannot be read.
             if failure_observer is not None:
                 failure_observer(failure)
         elapsed = time.perf_counter() - start

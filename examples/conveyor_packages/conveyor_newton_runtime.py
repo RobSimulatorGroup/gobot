@@ -54,12 +54,15 @@ def _phase_starts(segments):
     return starts
 
 
-def default_config():
+def default_config(snapshot=None):
     from gobot.sim.providers.newton_vbd import NewtonVBDConfig
+    from conveyor_sharpa_runtime import is_sharpa
+    arms = snapshot is not None and is_sharpa(snapshot)
     return NewtonVBDConfig(substeps=8, contact_damping=1000.,
                            rigid_soft_contact_damping=2., soft_contact_damping=.3,
                            strain_relaxation_time=.02,
-                           joint_linear_damping=50., joint_angular_damping=.2,
+                           joint_linear_damping=500. if arms else 50.,
+                           joint_angular_damping=2. if arms else .2,
                            soft_contact_capacity=32768,
                            body_particle_contact_capacity=16384)
 
@@ -73,6 +76,9 @@ def prepare_snapshot(snapshot, *, carton_drop_height=.25):
         raise TypeError(f"unsupported snapshot value {type(value).__name__}")
     # Worker recipes contain plain owned data; engine transforms include NumPy matrices.
     result = json.loads(json.dumps(snapshot, default=array_data, allow_nan=False))
+    from conveyor_sharpa_runtime import is_sharpa
+    if is_sharpa(result):
+        return result
     for robot in result["robots"]:
         if robot["name"] not in ("carton_wide", "carton_tall"):
             continue
@@ -190,10 +196,12 @@ class ConveyorNewtonController:
 def create(snapshot, config=None, drop_only=False):
     from gobot.sim import RuntimeComponents
     from gobot.sim.providers.newton_vbd import NewtonVBDConfig, NewtonVBDProvider
-    options = {**asdict(default_config()), **(config or {})}
+    options = {**asdict(default_config(snapshot)), **(config or {})}
     provider = NewtonVBDProvider(snapshot, config=NewtonVBDConfig(**options))
     try:
-        return RuntimeComponents(provider, ConveyorNewtonController(provider, drop_only=drop_only))
+        from conveyor_sharpa_runtime import is_sharpa, SharpaController
+        controller = SharpaController if is_sharpa(snapshot) else ConveyorNewtonController
+        return RuntimeComponents(provider, controller(provider, drop_only=drop_only))
     except Exception:
         provider.close()
         raise
@@ -225,7 +233,13 @@ def scene_sync(context, root, snapshot, *, drop_only=False):
                 vertex_counts=[len(b["vertices"]) for b in snapshot["deformables"]])
     markers = [(node, tuple(node.position)) for node in nodes.values()
                if node.name.startswith("belt_marker_")]
-    belt_start = _phase_starts(trajectory())["transfer"]
+    from conveyor_sharpa_runtime import is_sharpa
+    sharpa = is_sharpa(snapshot)
+    belt_start = 0. if sharpa else _phase_starts(trajectory())["transfer"]
+    belt_length = BELT_SURFACE_LENGTH
+    if sharpa:
+        from conveyor_sharpa import BELT_LENGTH, BELT_SPEED
+        belt_length = BELT_LENGTH
 
     def apply(state):
         sync(state)
@@ -234,8 +248,10 @@ def scene_sync(context, root, snapshot, *, drop_only=False):
         clocks = getattr(state, "clocks", ())
         if clocks:
             travel = 0. if drop_only else _ramped_belt_motion(clocks[0].time - belt_start)[1]
+            if sharpa:
+                travel = BELT_SPEED * clocks[0].time
             for marker, origin in markers:
-                x = (origin[0] + travel + .5 * BELT_SURFACE_LENGTH) % BELT_SURFACE_LENGTH - .5 * BELT_SURFACE_LENGTH
+                x = (origin[0] + travel + .5 * belt_length) % belt_length - .5 * belt_length
                 marker.position = (x, origin[1], origin[2])
     return apply, tuple(links) + ("deformable.local_vertices",)
 
@@ -255,7 +271,7 @@ class NewtonConveyorPlay:
         drop_only = os.environ.get("GOBOT_CONVEYOR_DROP_ONLY", "0") == "1"
         sync, fields = scene_sync(context, root, snapshot, drop_only=drop_only)
         recipe = gobot.sim.SimulationRuntimeSpec("conveyor_newton_runtime:create", {
-            "snapshot": snapshot, "config": asdict(default_config()),
+            "snapshot": snapshot, "config": asdict(default_config(snapshot)),
             "drop_only": drop_only})
         self.runtime = gobot.sim.AsyncSimulationSession(recipe,
                 fields=fields, environments=(0,))

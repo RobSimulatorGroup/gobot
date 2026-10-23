@@ -199,6 +199,11 @@ def test_scene_is_reproducible() -> None:
             "conveyor_packages_play.py",
             "conveyor_newton_runtime.py",
             "conveyor_newton_batch.py",
+            "conveyor_sharpa.py",
+            "conveyor_sharpa_motion.py",
+            "conveyor_sharpa_grasp.py",
+            "conveyor_sharpa_runtime.py",
+            "LEAP.md",
             "conveyor_profile.py",
             "project.gobot",
         }
@@ -677,9 +682,16 @@ def _legacy_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
         assert str(parent["name"]).endswith(expected_link)
 
 
-def test_scene_compiles_to_native_superdex_conveyor_contract() -> None:
+@lru_cache(maxsize=1)
+def _leap_scene():
+    with tempfile.TemporaryDirectory(prefix="gobot-leap-scene-") as temporary:
+        path = _builder().build_scene(Path(temporary), hand_model="leap")
+        return json.loads(path.read_text())
+
+
+def test_legacy_scene_compiles_to_native_superdex_conveyor_contract() -> None:
     builder = _builder()
-    scene = json.loads(SCENE.read_text(encoding="utf-8"))
+    scene = _leap_scene()
     nodes = scene["__NODES__"]
 
     assert not any(node["type"] == "PhysicsCoupling3D" for node in nodes)
@@ -745,9 +757,9 @@ def test_scene_compiles_to_native_superdex_conveyor_contract() -> None:
             assert properties["mesh"] is not None
 
 
-def test_scene_has_play_script_and_leap_hands() -> None:
+def test_legacy_scene_has_play_script_and_leap_hands() -> None:
     builder = _builder()
-    scene = json.loads(SCENE.read_text(encoding="utf-8"))
+    scene = _leap_scene()
     roots = [node for node in scene["__NODES__"] if node["parent"] == -1]
     assert len(roots) == 1
     assert roots[0]["properties"]["script"] == (
@@ -2571,8 +2583,8 @@ def test_runtime_uses_native_superdex_state_and_external_forces() -> None:
 
 def main() -> None:
     test_scene_is_reproducible()
-    test_scene_compiles_to_native_superdex_conveyor_contract()
-    test_scene_has_play_script_and_leap_hands()
+    test_legacy_scene_compiles_to_native_superdex_conveyor_contract()
+    test_legacy_scene_has_play_script_and_leap_hands()
     test_quality_profiles_and_flip_push_schedule()
     test_native_rigid_conveyor_force_is_coulomb_limited()
     test_native_deformable_force_is_nodal_and_belt_local()

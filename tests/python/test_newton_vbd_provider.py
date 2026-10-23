@@ -14,7 +14,25 @@ from gobot.sim.providers._newton_vbd_model import interacts
 EXAMPLE = Path(__file__).resolve().parents[2] / 'examples/conveyor_packages'
 
 
-def test_engine_snapshot_owns_geometry_and_preserves_authored_transforms():
+@pytest.fixture
+def legacy_conveyor_snapshot(tmp_path, monkeypatch):
+    """Keep the existing drop/belt regressions in their authored LEAP workcell."""
+    monkeypatch.syspath_prepend(str(EXAMPLE))
+    from build_scene import build_scene
+    from conveyor_newton_runtime import prepare_snapshot
+    build_scene(tmp_path, hand_model='leap')
+    context = gobot.app.create_context()
+    try:
+        context.set_project_path(str(tmp_path))
+        context.load_scene('res://conveyor_packages.jscn')
+        return prepare_snapshot(context.compile_physics_scene_snapshot())
+    finally:
+        context.clear_scene()
+
+
+def test_engine_snapshot_owns_geometry_and_preserves_authored_transforms(monkeypatch):
+    monkeypatch.syspath_prepend(str(EXAMPLE))
+    from conveyor_sharpa import ROBOT_NAMES, TABLE_LEFT, TABLE_TOP, BELT_CENTER
     context = gobot.app.create_context()
     try:
         context.set_project_path(str(EXAMPLE))
@@ -23,17 +41,20 @@ def test_engine_snapshot_owns_geometry_and_preserves_authored_transforms():
         assert not context.has_world
         assert snapshot['schema_version'] == 1
         assert len(snapshot['deformables']) == 4
+        hand_shapes = 0
         for robot in snapshot['robots']:
-            if not robot['name'].startswith('leap_'):
+            if robot['name'] not in ROBOT_NAMES:
                 continue
             for link in robot['links']:
                 for shape in link['shapes']:
                     # Retain the grasp pads while allowing the housing to slide.
-                    expected = 3. if shape['name'].endswith('_tip_collision') else .4
+                    expected = 2. if 'elastomer' in shape['name'] else .6
                     assert shape['material']['friction'] == pytest.approx(expected)
+                    hand_shapes += 1
+        assert hand_shapes > 0
         table = snapshot['robots'][0]['links'][0]
         assert table['mass'] == 300.
-        np.testing.assert_allclose(table['shapes'][1]['transform']['matrix'][:3, 3], [-.15, -.335, .52])
+        np.testing.assert_allclose(table['shapes'][1]['transform']['matrix'][:3, 3], [(1.30+TABLE_LEFT)/2, BELT_CENTER[1], TABLE_TOP-.04])
         before = deepcopy(snapshot['deformables'][0]['vertices'])
         snapshot['deformables'][0]['vertices'][0] = [99., 99., 99.]
         fresh = context.compile_physics_scene_snapshot()
@@ -190,6 +211,29 @@ def test_folded_film_internal_contacts_have_equal_and_opposite_reactions():
 
 
 @pytest.mark.skipif(os.environ.get('GOBOT_RUN_NEWTON_GPU_TEST') != '1', reason='explicit CUDA opt-in')
+def test_cuda_mesh_contact_builds_sdf_and_supports_a_soft_body():
+    import trimesh
+    snapshot = _small_snapshot()
+    shape = snapshot['robots'][0]['links'][0]['shapes'][0]
+    box = trimesh.creation.box(extents=shape['size'])
+    shape.update(type=5, vertices=box.vertices.tolist(), indices=box.faces.flatten().tolist())
+    provider = NewtonVBDProvider(snapshot, config=NewtonVBDConfig(
+        substeps=8, rigid_soft_contact_damping=2., strain_relaxation_time=.02,
+        rigid_contact_capacity=128, soft_contact_capacity=4096, body_particle_contact_capacity=4096))
+    try:
+        assert len(provider.compiler.meshes) == 1
+        assert next(iter(provider.compiler.meshes.values())).sdf is not None
+        provider.step(nsteps=300)
+        q = provider.state.particle_q.numpy()
+        assert np.isfinite(q).all()
+        assert -.001 < q[:, 2].min() < .005
+        assert np.sqrt(np.mean(provider.state.particle_qd.numpy()**2)) < .02
+        assert provider.read_state()['minimum_tet_volume_ratio'] > .5
+    finally:
+        provider.close()
+
+
+@pytest.mark.skipif(os.environ.get('GOBOT_RUN_NEWTON_GPU_TEST') != '1', reason='explicit CUDA opt-in')
 def test_cuda_belt_contact_transports_and_stops_without_lifting_the_soft_body():
     provider = NewtonVBDProvider(_small_snapshot(), config=NewtonVBDConfig(
         substeps=8, rigid_soft_contact_damping=2., strain_relaxation_time=.02,
@@ -220,18 +264,12 @@ def test_cuda_belt_contact_transports_and_stops_without_lifting_the_soft_body():
 
 
 @pytest.mark.skipif(os.environ.get('GOBOT_RUN_NEWTON_GPU_TEST') != '1', reason='explicit CUDA opt-in')
-def test_cuda_filled_mailer_rides_a_flat_belt_without_local_jumps(monkeypatch):
+def test_cuda_filled_mailer_rides_a_flat_belt_without_local_jumps(monkeypatch, legacy_conveyor_snapshot):
     """Exercise the closed film plus fill, not only a solid soft test block."""
     from dataclasses import replace
     monkeypatch.syspath_prepend(str(EXAMPLE))
-    from conveyor_newton_runtime import default_config, prepare_snapshot
-    context = gobot.app.create_context()
-    try:
-        context.set_project_path(str(EXAMPLE))
-        context.load_scene('res://conveyor_packages.jscn')
-        snapshot = prepare_snapshot(context.compile_physics_scene_snapshot())
-    finally:
-        context.clear_scene()
+    from conveyor_newton_runtime import default_config
+    snapshot = legacy_conveyor_snapshot
     snapshot['robots'] = [r for r in snapshot['robots'] if r['name'] in ('warehouse_frame', 'conveyor')]
     snapshot['deformables'] = [b for b in snapshot['deformables'] if b['name'].startswith('soft_mailer_blue')]
     for body in snapshot['deformables']:
@@ -385,18 +423,12 @@ def test_cuda_unattended_yellow_mailer_stays_quiet_after_initial_settling(monkey
 
 
 @pytest.mark.skipif(os.environ.get('GOBOT_RUN_NEWTON_GPU_TEST') != '1', reason='explicit CUDA opt-in')
-def test_cuda_carton_drop_dissipates_impact_energy(monkeypatch):
+def test_cuda_carton_drop_dissipates_impact_energy(monkeypatch, legacy_conveyor_snapshot):
     from dataclasses import replace
     from scipy.spatial.transform import Rotation
     monkeypatch.syspath_prepend(str(EXAMPLE))
-    from conveyor_newton_runtime import default_config, prepare_snapshot
-    context = gobot.app.create_context()
-    try:
-        context.set_project_path(str(EXAMPLE))
-        context.load_scene('res://conveyor_packages.jscn')
-        snapshot = prepare_snapshot(context.compile_physics_scene_snapshot())
-    finally:
-        context.clear_scene()
+    from conveyor_newton_runtime import default_config
+    snapshot = legacy_conveyor_snapshot
     snapshot['robots'] = [r for r in snapshot['robots'] if not r['name'].startswith('leap_')]
     snapshot['deformables'] = []
     provider = NewtonVBDProvider(snapshot, config=replace(default_config(), rigid_contact_capacity=2048,
@@ -466,7 +498,7 @@ def test_cuda_conveyor_articulation_and_async_scene_lifecycle(monkeypatch):
             assert play._step(.002)
             stepped = complete()
         script._process(.016)
-        palm_field = 'robot.leap_left.link_pose'
+        palm_field = 'robot.openarm_sharpa.link_pose'
         # A stationary hand must not spin as quaternion signs cross zero.
         q = np.asarray(stepped.snapshot.buffer(palm_field))[0, :, 3:]
         rest = initial[palm_field][0, :, 3:]

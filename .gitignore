@@ -82,3 +82,7 @@ examples/newton_g1/assets/*
 
 # Local LLVM/Clang dependency installed from Warp packman.
 /3rdparty/llvm/
+
+# Source and generated robot meshes are assets, not compiler object files.
+!/examples/conveyor_packages/assets/openarm_sharpa/**/*.obj
+!/examples/conveyor_packages/assets/sharpa/**/*.obj

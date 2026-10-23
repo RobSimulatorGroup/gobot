@@ -8,12 +8,16 @@ import math
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Any
 
 import gobot
 import numpy as np
 
 from conveyor_appearance import apply_appearance
+from conveyor_sharpa import (create_workcell, create_arms, PARCEL_POSITIONS,
+                             FILL_POISSON_RATIO, WORK_HEIGHT_OFFSET)
+from conveyor_sharpa_motion import home_configuration
 
 from conveyor_config import (
     HERE,
@@ -811,14 +815,31 @@ def _create_soft_package(root: Any, spec: dict[str, Any]) -> None:
     root.add_child(body)
 
 
-def create_scene() -> Any:
+def create_scene(hand_model="sharpa") -> Any:
     root = gobot.create_node("Node3D", "conveyor_packages")
-    _create_warehouse_frame(root)
-    _create_conveyor(root)
-    _create_leap_hands(root)
-    for spec in RIGID_BOX_SPECS:
+    if hand_model == "sharpa":
+        create_workcell(root, builder=sys.modules[__name__])
+        create_arms(root, home_configuration(), builder=sys.modules[__name__])
+        box_positions = ((.88, -.45), (.99, -.14), (.92, .13))
+        rigid_specs = [dict(s, position=(*p, s["position"][2]+WORK_HEIGHT_OFFSET))
+                       for s, p in zip(RIGID_BOX_SPECS, box_positions, strict=True)]
+        soft_specs = [dict(s, position=(*PARCEL_POSITIONS[s["name"].removesuffix("_fill")], s["position"][2]+WORK_HEIGHT_OFFSET))
+                      for s in SOFT_PACKAGE_SPECS]
+        # Resist local volume collapse under the articulated finger contacts
+        # while retaining the soft fill's Young modulus and damping.
+        for spec in soft_specs:
+            if spec.get("internal_fill", False):
+                spec["poisson_ratio"] = FILL_POISSON_RATIO
+    elif hand_model == "leap":
+        _create_warehouse_frame(root)
+        _create_conveyor(root)
+        _create_leap_hands(root)
+        rigid_specs, soft_specs = RIGID_BOX_SPECS, SOFT_PACKAGE_SPECS
+    else:
+        raise ValueError(f"unknown hand model {hand_model}")
+    for spec in rigid_specs:
         _create_carton(root, spec)
-    for spec in SOFT_PACKAGE_SPECS:
+    for spec in soft_specs:
         _create_soft_package(root, spec)
     # Authored lighting is shared by editor Play and headless capture. A broad
     # ambient term keeps white film readable while the key reveals its creases.
@@ -841,6 +862,34 @@ def create_scene() -> Any:
 def _finalize_scene(scene_path: Path) -> None:
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     apply_appearance(scene, scene_path.parent / "assets" / "parcels")
+    robot_nodes, robot_materials = set(), {}
+    for index, node in enumerate(scene["__NODES__"]):
+        if node["name"] == "openarm_sharpa" or node.get("parent") in robot_nodes:
+            robot_nodes.add(index)
+            if node["type"] != "MeshInstance3D":
+                continue
+            color = node["properties"].get("surface_color")
+            if color is None:
+                continue
+            key = tuple(color[channel] for channel in ("red", "green", "blue", "alpha"))
+            if key not in robot_materials:
+                material = f"openarm_sharpa_material_{len(robot_materials)}"
+                robot_materials[key] = material
+                scene["__SUB_RESOURCES__"].append({"__ID__": material, "__TYPE__": "PBRMaterial3D",
+                    "albedo": color, "roughness": .65 if max(key[:3]) < .15 else .4,
+                    "metallic": .0})
+            node["properties"]["material"] = f"SubResource({robot_materials[key]})"
+    if any(n["name"] == "sharpa_left" for n in scene["__NODES__"]):
+        colors = {"arm": (.26, .32, .38), "hand": (.70, .73, .76), "pad": (.065, .075, .085)}
+        for kind, color in colors.items():
+            scene["__SUB_RESOURCES__"].append({"__ID__": f"sharpa_material_{kind}", "__TYPE__": "PBRMaterial3D",
+                "albedo": dict(zip(("red", "green", "blue", "alpha"), (*color, 1.))),
+                "roughness": .65 if kind == "pad" else .40, "metallic": .15 if kind == "arm" else .0})
+        for node in scene["__NODES__"]:
+            name = node["name"]
+            if node["type"] == "MeshInstance3D" and name.startswith(("iiwa14_", "left_", "right_", "sharpa_mount")):
+                kind = "pad" if "elastomer" in name or "sharpa_mount" in name else "arm" if "iiwa14_" in name else "hand"
+                node["properties"]["material"] = f"SubResource(sharpa_material_{kind})"
     nodes = scene.get("__NODES__", [])
     resources = scene.get("__EXT_RESOURCES__", [])
     if not isinstance(nodes, list) or not isinstance(resources, list):
@@ -942,6 +991,11 @@ def _stage_project(output_dir: Path) -> None:
         "conveyor_packages_play.py",
         "conveyor_newton_runtime.py",
         "conveyor_newton_batch.py",
+        "conveyor_sharpa.py",
+        "conveyor_sharpa_motion.py",
+        "conveyor_sharpa_grasp.py",
+        "conveyor_sharpa_runtime.py",
+        "LEAP.md",
         "conveyor_profile.py",
         "project.gobot",
     ):
@@ -950,13 +1004,13 @@ def _stage_project(output_dir: Path) -> None:
             shutil.copy2(source, output_dir / name)
 
 
-def build_scene(output_dir: Path = HERE) -> Path:
+def build_scene(output_dir: Path = HERE, *, hand_model="sharpa") -> Path:
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     _stage_project(output_dir)
     gobot.app.context().set_project_path(str(output_dir))
     destination = output_dir / SCENE_NAME
-    root = create_scene()
+    root = create_scene(hand_model)
     root.set("script", PLAY_SCRIPT_PATH)
     gobot.save_scene(root, "res://" + SCENE_NAME)
     _finalize_scene(destination)
@@ -966,8 +1020,9 @@ def build_scene(output_dir: Path = HERE) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=HERE)
+    parser.add_argument("--hand-model", choices=("sharpa", "leap"), default="sharpa")
     args = parser.parse_args()
-    print(build_scene(args.output_dir))
+    print(build_scene(args.output_dir, hand_model=args.hand_model))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
+from pathlib import Path
 from scipy.spatial.transform import Rotation
 
 
@@ -168,10 +169,11 @@ class ModelCompiler:
                     kd=self.config.contact_damping,
                     margin=max(0., shape["rest_offset"]), gap=max(self.config.contact_gap, shape["contact_offset"]),
                     restitution=float(material["restitution"]))
-        cfg.configure_sdf(force_sdf=True, max_resolution=64)
+        kind = shape["type"]
+        if kind != 5:
+            cfg.configure_sdf(force_sdf=True, max_resolution=64)
         args = dict(body=body, xform=xform(wp, np.linalg.inv(body_transform) @ matrix(shape["transform"])),
                     cfg=cfg, label=shape["path"])
-        kind = shape["type"]
         if kind == 1:
             size = np.asarray(shape["size"]) / 2
             index = b.add_shape_box(**args, hx=size[0], hy=size[1], hz=size[2])
@@ -185,7 +187,13 @@ class ModelCompiler:
             indices = np.asarray(shape["indices"], dtype=np.int32)
             key = (vertices.tobytes(), indices.tobytes())
             if key not in self.meshes:
-                self.meshes[key] = self.newton.Mesh(vertices, indices)
+                mesh = self.newton.Mesh(vertices, indices)
+                # Newton's mesh-backed shapes own their SDF. ShapeConfig's
+                # sdf_* baking options are only accepted for primitives.
+                mesh.build_sdf(device=self.config.device, max_resolution=128,
+                               margin=.005, narrow_band_range=(-.02, .02),
+                               cache_dir=Path(wp.config.kernel_cache_dir) / "newton_sdf")
+                self.meshes[key] = mesh
             index = b.add_shape_mesh(**args, mesh=self.meshes[key])
         else:
             raise ValueError(f"unsupported shape {shape['path']} type {kind}")

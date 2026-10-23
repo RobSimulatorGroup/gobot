@@ -1,1 +1,8 @@
 tests/fixtures/go1/reference_mujoco_warp_3_10.patch -whitespace
+
+# Preserve upstream robot inputs byte-for-byte, including their whitespace.
+examples/conveyor_packages/assets/openarm_sharpa/source/** -whitespace
+examples/conveyor_packages/assets/sharpa/source/** -whitespace
+# Large Wavefront meshes are reviewed through rendering, not line diffs.
+examples/conveyor_packages/assets/openarm_sharpa/**/*.obj binary -whitespace
+examples/conveyor_packages/assets/sharpa/**/*.obj binary -whitespace
