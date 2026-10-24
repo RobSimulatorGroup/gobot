@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <gtest/gtest.h>
-#include <batch.h>
+#include <limits>
+#include "mujoco_batch.hpp"
+
+using gobot::mujoco_detail::MuJoCoBatch;
 
 namespace {
-using Model = std::unique_ptr<mjModel, mjbatch::Batch::Worker::ModelDelete>;
-using Data = std::unique_ptr<mjData, mjbatch::Batch::Worker::DataDelete>;
+using Model = std::unique_ptr<mjModel, MuJoCoBatch::ModelDelete>;
+using Data = std::unique_ptr<mjData, MuJoCoBatch::DataDelete>;
 
 Model MakeModel() {
     const char* xml = R"(
@@ -29,10 +32,10 @@ Model MakeModel() {
     return model;
 }
 
-TEST(MjbatchCore, ReusedWorkersMatchIndependentMuJoCoWithPerSimulationModels) {
+TEST(MuJoCoBatchTest, ReusedWorkersMatchIndependentMuJoCoWithPerSimulationModels) {
     auto source = MakeModel();
     constexpr int count = 9;
-    mjbatch::Batch batch(source.get(), count);
+    MuJoCoBatch batch(source.get(), count);
     std::vector<Model> models;
     std::vector<Data> data;
     std::vector<int> ids;
@@ -53,15 +56,11 @@ TEST(MjbatchCore, ReusedWorkersMatchIndependentMuJoCoWithPerSimulationModels) {
         ids.push_back(i);
     }
     batch.SetConst(ids);
-    batch.Run(count, 2, [&](int i) { mjbatch::Batch::Forward(batch.Model(i), batch.Data(i)); });
+    for (int i = 0; i < count; ++i) { auto lease = batch.Access(i); MuJoCoBatch::Forward(batch.Model(i), batch.Data(i)); }
     for (int i = 0; i < count; ++i) mj_forward(models[i].get(), data[i].get());
     for (int iteration = 0; iteration < 60; ++iteration) {
         const int threads = iteration < 20 ? 2 : iteration < 40 ? 4 : 1;
-        batch.Run(count, threads, [&](int i) {
-            auto* m = batch.Model(i);
-            auto* d = batch.Data(i);
-            mjbatch::Batch::Step(m, d);
-        });
+        batch.Advance(count, threads, 1);
         EXPECT_EQ(batch.num_threads(), threads);
         for (int i = 0; i < count; ++i) {
             mj_step(models[i].get(), data[i].get());
@@ -81,16 +80,12 @@ TEST(MjbatchCore, ReusedWorkersMatchIndependentMuJoCoWithPerSimulationModels) {
     }
 }
 
-TEST(MjbatchCore, CheckpointRestoresParametersAndExactReplayAfterWorkerChange) {
+TEST(MuJoCoBatchTest, CheckpointRestoresParametersAndExactReplayAfterWorkerChange) {
     auto model = MakeModel();
-    mjbatch::Batch batch(model.get(), 5);
-    batch.Run(5, 2, [&](int i) {
-        mjbatch::Batch::Forward(batch.Model(i), batch.Data(i));
-        batch.Data(i)->ctrl[0] = .3 * i;
-        for (int k = 0; k < 20; ++k) mjbatch::Batch::Step(batch.Model(i), batch.Data(i));
-    });
+    MuJoCoBatch batch(model.get(), 5);
+    batch.Advance(5, 2, 20, [&](int i) { batch.Data(i)->ctrl[0] = .3 * i; });
     const auto snapshot = batch.Capture(3);
-    batch.Run(5, 2, [&](int i) { for (int k = 0; k < 10; ++k) mjbatch::Batch::Step(batch.Model(i), batch.Data(i)); });
+    batch.Advance(5, 2, 10);
     std::vector<mjtNum> expected;
     {
         auto lease = batch.Access(3);
@@ -101,58 +96,80 @@ TEST(MjbatchCore, CheckpointRestoresParametersAndExactReplayAfterWorkerChange) {
     const auto other = batch.Capture(2);
     batch.RestoreSnapshot(3, snapshot);
     EXPECT_EQ(batch.Capture(2), other);
-    batch.Run(5, 1, [&](int i) {
-        if (i == 3) for (int k = 0; k < 10; ++k) mjbatch::Batch::Step(batch.Model(i), batch.Data(i));
-    });
+    batch.Advance(5, 1, 10);
     auto lease = batch.Access(3);
     EXPECT_DOUBLE_EQ(batch.Model(3)->body_mass[1], model->body_mass[1]);
     for (int j = 0; j < model->nq; ++j) EXPECT_DOUBLE_EQ(batch.Data(3)->qpos[j], expected[j]);
 }
 
-TEST(MjbatchCore, WorkerErrorsDoNotDeadlockAndOtherWorldsRemainIndependent) {
+TEST(MuJoCoBatchTest, WorkerErrorsDoNotDeadlockAndOtherWorldsRemainIndependent) {
     auto model = MakeModel();
-    mjbatch::Batch batch(model.get(), 7);
-    mjbatch::Batch other(model.get(), 2);
-    EXPECT_THROW(batch.Run(7, 3, [&](int i) {
+    MuJoCoBatch batch(model.get(), 7);
+    MuJoCoBatch other(model.get(), 2);
+    EXPECT_THROW(batch.Advance(7, 3, 1, [&](int i) {
         if (i == 2) throw std::runtime_error("callback failure");
-        mjbatch::Batch::Step(batch.Model(i), batch.Data(i));
     }), std::runtime_error);
-    EXPECT_THROW(batch.Run(7, 3, [&](int i) {
-        if (i == 4) mjbatch::CheckedCall([](mjModel*, mjData*) { mju_error("native failure"); }, batch.Model(i), batch.Data(i));
-    }), std::runtime_error);
-    EXPECT_NO_THROW(batch.Run(7, 2, [&](int i) {
-        mjbatch::Batch::Reset(batch.Model(i), batch.Data(i));
-        mjbatch::Batch::Step(batch.Model(i), batch.Data(i));
-    }));
+    batch.Run(7, 3, [&](int i) {
+        if (i == 4) batch.Data(i)->qvel[0] = std::numeric_limits<double>::quiet_NaN();
+    });
+    EXPECT_THROW(batch.Advance(7, 3, 1), std::runtime_error);
+    for (int i = 0; i < 7; ++i) {
+        auto lease = batch.Access(i);
+        MuJoCoBatch::Reset(batch.Model(i), batch.Data(i));
+    }
+    EXPECT_NO_THROW(batch.Advance(7, 2, 1));
     auto access = other.Access(0);
     EXPECT_DOUBLE_EQ(other.Data(0)->time, 0);
     EXPECT_THROW(other.Model(1), std::logic_error);
 }
 
-TEST(MjbatchCore, SleepAndInvalidDimensionsAreRejected) {
+TEST(MuJoCoBatchTest, SleepAndInvalidDimensionsAreRejected) {
     auto model = MakeModel();
-    EXPECT_THROW(mjbatch::Batch(model.get(), 0), std::invalid_argument);
+    EXPECT_THROW(MuJoCoBatch(model.get(), 0), std::invalid_argument);
     model->opt.enableflags |= mjENBL_SLEEP;
-    EXPECT_THROW(mjbatch::Batch(model.get(), 2), std::invalid_argument);
+    EXPECT_THROW(MuJoCoBatch(model.get(), 2), std::invalid_argument);
 }
 
-TEST(MjbatchCore, PartialResetPreservesOtherEnvironmentsAndModelOverrides) {
+TEST(MuJoCoBatchTest, PartialResetPreservesOtherEnvironmentsAndModelOverrides) {
     auto model = MakeModel();
-    mjbatch::Batch batch(model.get(), 7);
+    MuJoCoBatch batch(model.get(), 7);
     batch.Run(7, 2, [&](int i) {
         batch.Model(i)->geom_friction[3] = .2 + .1 * i;
         batch.Data(i)->ctrl[0] = .1 * i;
-        for (int k = 0; k < 10; ++k) mjbatch::Batch::Step(batch.Model(i), batch.Data(i));
     });
+    batch.Advance(7, 2, 10);
     const auto before = batch.Capture(4);
     {
         auto lease = batch.Access(3);
-        mjbatch::Batch::Reset(batch.Model(3), batch.Data(3));
-        mjbatch::Batch::Forward(batch.Model(3), batch.Data(3));
+        MuJoCoBatch::Reset(batch.Model(3), batch.Data(3));
+        MuJoCoBatch::Forward(batch.Model(3), batch.Data(3));
         EXPECT_DOUBLE_EQ(batch.Data(3)->time, 0);
         EXPECT_DOUBLE_EQ(batch.Data(3)->ctrl[0], 0);
         EXPECT_DOUBLE_EQ(batch.Model(3)->geom_friction[3], .5);
     }
     EXPECT_EQ(batch.Capture(4), before);
+}
+TEST(MuJoCoBatchTest, MalformedCheckpointDoesNotChangeState) {
+    auto model = MakeModel();
+    MuJoCoBatch batch(model.get(), 3);
+    batch.Advance(3, 2, 8);
+    const auto before = batch.Capture(1);
+    auto truncated = before;
+    truncated.pop_back();
+    EXPECT_THROW(batch.RestoreSnapshot(1, truncated), std::invalid_argument);
+    EXPECT_EQ(batch.Capture(1), before);
+}
+
+TEST(MuJoCoBatchTest, NativeFailureIsReportedWithoutUnwindingEngineCallbacks) {
+    auto model = MakeModel();
+    MuJoCoBatch batch(model.get(), 3);
+    batch.Run(3, 2, [&](int i) {
+        batch.Data(i)->qpos[2] = .05;
+        if (i == 1) batch.Model(i)->opt.solver = 999;
+    });
+    EXPECT_THROW(batch.Advance(3, 2, 1), std::runtime_error);
+    // The valid environments complete even when one native worker fails.
+    auto lease = batch.Access(0);
+    EXPECT_GT(batch.Data(0)->time, 0);
 }
 } // namespace

@@ -15,7 +15,7 @@ ownership and policy/checkpoint contracts.
   -> rsl_rl / other training adapter
 ```
 
-CPU batches use the pinned [mjbatch native core](mjbatch_cpu.md). Warp and
+CPU batches use the [MuJoCo native batch runtime](mujoco_cpu_batch.md). Warp and
 Newton are Python providers consuming a validated schema-v3 artifact from
 `AppContext.compile_scene_artifact()`. Compilation does not install an active
 physics world. Providers validate content digests, producer metadata,
@@ -73,7 +73,7 @@ CPU stepping follows:
 Go1VelocityEnv.step
   -> NativeLocomotionBatchBackend.step_task_inputs
   -> PhysicsWorld::StepRobotBatch
-  -> mjbatch workers and typed state/contact/sensor results
+  -> MuJoCo native batch workers and typed state/contact/sensor results
   -> vectorized NumPy task update
 ```
 

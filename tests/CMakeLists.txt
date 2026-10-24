@@ -14,9 +14,12 @@ mark_as_advanced(
 message(STATUS "gtest configured correctly")
 
 if(GOB_BUILD_MUJOCO)
-    add_executable(test_mjbatch_core physics/test_mjbatch_core.cpp)
-    target_link_libraries(test_mjbatch_core PRIVATE gtest_main gobot_mjbatch)
-    gtest_discover_tests(test_mjbatch_core)
+    find_package(Threads REQUIRED)
+    add_executable(test_mujoco_batch physics/test_mujoco_batch.cpp)
+    target_link_libraries(test_mujoco_batch PRIVATE gtest_main ${GOBOT_MUJOCO_TARGET} Threads::Threads)
+    target_include_directories(test_mujoco_batch PRIVATE "${PROJECT_SOURCE_DIR}/src/gobot/physics/backends")
+    target_compile_features(test_mujoco_batch PRIVATE cxx_std_20)
+    gtest_discover_tests(test_mujoco_batch)
 endif()
 
 add_library(gobot_test_support

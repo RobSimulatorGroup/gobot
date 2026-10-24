@@ -150,7 +150,7 @@
                 "control_upper_limit": 0,
                 "damping": 0,
                 "drive_damping": 0,
-                "drive_mode": "Passive",
+                "drive_mode": "Motor",
                 "drive_stiffness": 0,
                 "effort_limit": 15,
                 "force_lower_limit": 0,

@@ -43,7 +43,7 @@ uv run python examples/conveyor_packages/conveyor_packages_batch.py \
   --output build/conveyor-newton/conveyor-openarm-sharpa.json
 ```
 
-The default backend is Newton VBD on CUDA, pinned to Newton 1.6.0 and Warp
+The default backend is Newton VBD on CUDA, pinned to Newton 1.7.0 and Warp
 1.17.0. The outer step is 2 ms with eight substeps and 20 solver iterations.
 Batch options include `--steps`, `--fps`, `--width`, `--height`, `--substeps`
 and `--iterations`. `--validate` requires full task acceptance; a shortened

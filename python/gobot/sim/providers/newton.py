@@ -27,7 +27,7 @@ from .cache import ContentAddressedCache
 from .warp_cache import prepare_warp_kernel_cache
 
 
-_MJCF_ADAPTER_VERSION = "1"
+_MJCF_ADAPTER_VERSION = "2"
 
 
 @dataclass(frozen=True)
@@ -426,6 +426,10 @@ def _normalize_position_actuators(root: ET.Element) -> bool:
                 continue
             if element.attrib.get("dyntype", "none") != "none":
                 continue
+            # Since MuJoCo 3.17 the canonical general actuator carries its
+            # input type explicitly; the position shortcut already implies it.
+            if element.attrib.get("input", "pos") != "pos":
+                continue
 
             gain = values(element, "gainprm")
             bias = values(element, "biasprm")
@@ -457,6 +461,7 @@ def _normalize_position_actuators(root: ET.Element) -> bool:
                 "biastype",
                 "dyntype",
                 "dynprm",
+                "input",
             ):
                 element.attrib.pop(attribute, None)
             changed = True
@@ -662,6 +667,9 @@ class NewtonProvider(BatchPhysicsProvider):
                 "The installed Newton package does not provide the required ModelBuilder/SolverMuJoCo API."
             )
 
+        from .newton_mujoco_compat import solver_type as compatible_solver_type
+        solver_type = compatible_solver_type(self._newton, self._mujoco, self._bindings.mujoco_warp)
+
         self._wp.init()
         prepare_warp_kernel_cache(self._wp)
         self._wp_device = self._wp.get_device(self._device_name)
@@ -761,8 +769,15 @@ class NewtonProvider(BatchPhysicsProvider):
                 self._num_envs,
                 int(self.artifact.dimensions["nv"]),
             )
+            pipeline_type = getattr(self._newton, "CollisionPipeline", None)
+            self._collision_pipeline = (
+                pipeline_type(self._model)
+                if not self._use_mujoco_contacts and pipeline_type is not None else None
+            )
             self._contacts = (
-                None if self._use_mujoco_contacts else self._model.contacts()
+                None if self._use_mujoco_contacts else
+                self._collision_pipeline.contacts() if self._collision_pipeline is not None else
+                self._model.contacts()
             )
             self._newton.eval_fk(
                 self._model,
@@ -1174,7 +1189,8 @@ class NewtonProvider(BatchPhysicsProvider):
 
         self._state.clear_forces()
         if self._contacts is not None:
-            self._model.collide(self._state, self._contacts)
+            collision = self._collision_pipeline if self._collision_pipeline is not None else self._model
+            collision.collide(self._state, self._contacts)
         self._solver.step(
             self._state,
             self._next_state,
@@ -1439,6 +1455,7 @@ class NewtonProvider(BatchPhysicsProvider):
             self._actuator_modes = ()
             self._use_coord_layout_targets = False
             self._contacts = None
+            self._collision_pipeline = None
             self._control = None
             self._next_state = None
             self._state = None

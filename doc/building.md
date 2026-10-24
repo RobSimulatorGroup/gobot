@@ -46,7 +46,7 @@ configuration needs no CUDA Toolkit:
 ```bash
 git submodule update --init --depth=1 \
   3rdparty/assimp 3rdparty/gli 3rdparty/googletest 3rdparty/imgui \
-  3rdparty/meshoptimizer 3rdparty/mjbatch 3rdparty/project_superdex \
+  3rdparty/meshoptimizer 3rdparty/project_superdex \
   3rdparty/pybind11 3rdparty/rttr 3rdparty/stb
 
 python3 -m venv build/cpu-venv
@@ -75,7 +75,7 @@ Run `deactivate` when finished with the CPU test environment.
 
 | CMake option | Standalone default | Python build default | Details |
 | --- | --- | --- | --- |
-| `GOB_BUILD_MUJOCO` | ON | ON | [MuJoCo SDK and mjbatch](physics_mujoco_setup.md) |
+| `GOB_BUILD_MUJOCO` | ON | ON | [MuJoCo SDK and native batch](physics_mujoco_setup.md) |
 | `GOB_BUILD_SUPERDEX` | ON | ON | Experimental CPU backend; CUDA is separately disabled |
 | `GOB_BUILD_LIBUIPC` | ON | ON | [CUDA IPC solver](libuipc_ipc.md) |
 | `GOB_BUILD_LUISA_RENDERER` | OFF | ON | [CUDA renderer](luisa_rendering_plan.md) |

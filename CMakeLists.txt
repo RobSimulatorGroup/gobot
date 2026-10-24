@@ -81,7 +81,7 @@ set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING
         "Comma-separated NVCC diagnostic IDs suppressed only for the optional libuipc CUDA target")
 set(GOB_GSPLAT_INFERENCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/gsplat_inference/install" CACHE PATH
         "Prebuilt gsplat CUDA inference library install prefix")
-set(GOB_MUJOCO_GIT_TAG "3.12.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
+set(GOB_MUJOCO_GIT_TAG "3.17.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
 if(NOT UNIX OR APPLE)
@@ -275,6 +275,8 @@ if(GOB_ENABLE_TRACY)
     endif()
 endif()
 
+find_package(Threads REQUIRED)
+
 set(GOBOT_MUJOCO_TARGET "")
 if(GOB_BUILD_MUJOCO)
     if(NOT GOB_FORCE_FETCH_MUJOCO)
@@ -367,7 +369,7 @@ if(GOB_BUILD_MUJOCO)
             endforeach()
 
             # PyPI's mujoco package intentionally ships only its SONAME file,
-            # for example libmujoco.so.3.12.0, without a development symlink.
+            # for example libmujoco.so.3.17.0, without a development symlink.
             foreach(GOBOT_MUJOCO_LIBRARY_HINT IN LISTS GOBOT_MUJOCO_LIBRARY_HINTS)
                 set(GOBOT_MUJOCO_VERSIONED_LIBRARY
                     "${GOBOT_MUJOCO_LIBRARY_HINT}/libmujoco.so.${GOB_MUJOCO_GIT_TAG}")
@@ -454,6 +456,27 @@ if(GOB_BUILD_MUJOCO)
     endif()
 
     if(GOBOT_MUJOCO_TARGET)
+        # Imported SDKs can have a matching version string but missing batch
+        # symbols. Probe headers and linkage before compiling engine targets.
+        get_target_property(GOBOT_MUJOCO_IS_IMPORTED ${GOBOT_MUJOCO_TARGET} IMPORTED)
+        if(GOBOT_MUJOCO_IS_IMPORTED)
+            include(CheckCXXSourceCompiles)
+            set(CMAKE_REQUIRED_LIBRARIES ${GOBOT_MUJOCO_TARGET})
+            unset(GOBOT_MUJOCO_HAS_BATCH CACHE)
+            check_cxx_source_compiles("#include <mujoco/mujoco.h>
+#include <mujoco/mjbatch.h>
+#if mjVERSION_HEADER < 3017000
+#error MuJoCo 3.17 or later required
+#endif
+int main() { mjBatchConfig c; mjb_defaultConfig(&c);
+  auto volatile make = &mjb_makeBatch; auto volatile step = &mjb_step; auto volatile apply = &mjb_apply;
+  auto volatile field = &mjb_stateComponent; auto volatile expand = &mjb_expand;
+  return !(make && step && apply && field && expand); }" GOBOT_MUJOCO_HAS_BATCH)
+            unset(CMAKE_REQUIRED_LIBRARIES)
+            if(NOT GOBOT_MUJOCO_HAS_BATCH)
+                message(FATAL_ERROR "Gobot requires MuJoCo 3.17+ with the native mjBatch API. Update GOB_MUJOCO_ROOT and rebuild against the matching Python MuJoCo package.")
+            endif()
+        endif()
         message(STATUS "Gobot MuJoCo backend enabled with target: ${GOBOT_MUJOCO_TARGET}")
     else()
         message(FATAL_ERROR
@@ -801,11 +824,10 @@ add_library(gobot_resource_mjcf OBJECT ${SOURCE_RESOURCE_MJCF})
 gobot_configure_engine_object_target(gobot_resource_mjcf)
 
 if(GOB_BUILD_MUJOCO)
-    include(cmake/GobotMjbatch.cmake)
     target_compile_definitions(gobot_physics_mujoco_cpu PRIVATE GOBOT_HAS_MUJOCO=1)
     target_compile_definitions(gobot_physics_mujoco_compile PRIVATE GOBOT_HAS_MUJOCO=1)
     target_compile_definitions(gobot_resource_mjcf PRIVATE GOBOT_HAS_MUJOCO=1)
-    target_link_libraries(gobot_physics_mujoco_cpu PRIVATE gobot_mjbatch)
+    target_link_libraries(gobot_physics_mujoco_cpu PRIVATE ${GOBOT_MUJOCO_TARGET})
     target_link_libraries(gobot_physics_mujoco_compile PRIVATE ${GOBOT_MUJOCO_TARGET})
     target_link_libraries(gobot_resource_mjcf PRIVATE ${GOBOT_MUJOCO_TARGET})
 endif()
@@ -1123,9 +1145,6 @@ if(mujoco_SOURCE_DIR)
 endif()
 if(GOB_BUILD_SUPERDEX)
     gobot_install_license_files("${GOB_SUPERDEX_SOURCE_DIR}" "project_superdex")
-endif()
-if(GOB_BUILD_MUJOCO)
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/mjbatch" "mjbatch")
 endif()
 if(GOBOT_MUJOCO_LICENSE_SOURCE_DIR)
     gobot_install_license_files("${GOBOT_MUJOCO_LICENSE_SOURCE_DIR}" "mujoco")

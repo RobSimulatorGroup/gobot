@@ -1,453 +1,80 @@
-import math
-import os
-import random
-from importlib.metadata import PackageNotFoundError, version
+"""Editor playback of the single-pole plan; the solver owns no scene objects."""
+from __future__ import annotations
+
+from queue import Empty, Queue
+import threading
 
 import gobot
 
-
 if __package__:
     from .. import cartpole_task as task
+    from ..cartpole_swingup import PlanningCancelled, solve
 else:
     import cartpole_task as task
-
-ROBOT = task.ROBOT
-SLIDER_JOINT, HINGE_JOINT = task.JOINT_NAMES
-FORCE_LIMIT = task.FORCE_LIMIT
-DISTURBANCE_STD = task.DISTURBANCE_STD
-DISTURBANCE_CLIP = task.DISTURBANCE_CLIP
-DISTURBANCE_INTERVAL_TICKS = task.DISTURBANCE_INTERVAL_TICKS
-DISTURBANCE_DURATION_TICKS = task.DISTURBANCE_DURATION_TICKS
-DISTURBANCE_START_TICK = task.DISTURBANCE_START_TICK
-TARGET_CART_POSITION = 0.0
-PRINT_EVERY_TICKS = 240
-DEFAULT_POLICY_PATH = "res://policies/cartpole.onnx"
-TORCH_POLICY_PATH = "res://policies/cartpole.pt"
-INITIAL_CART_POSITION = 0.0
-INITIAL_POLE_ANGLE = 0.0
-DISTURBANCE_ENABLED = True
+    from cartpole_swingup import PlanningCancelled, solve
 
 
-def _parse_version_prefix(value):
-    parts = []
-    for part in str(value).split("."):
-        digits = ""
-        for character in part:
-            if not character.isdigit():
-                break
-            digits += character
-        if not digits:
-            break
-        parts.append(int(digits))
-    return tuple(parts)
-
-
-def _check_onnxruntime_version():
+def _plan_worker(artifact, cancelled, messages):
     try:
-        runtime_version = version("onnxruntime")
-    except PackageNotFoundError as error:
-        raise ImportError("onnxruntime is not installed; install gobot or onnxruntime>=1.19.") from error
-
-    parsed_version = _parse_version_prefix(runtime_version)
-    if parsed_version and parsed_version < (1, 19):
-        raise ImportError(
-            f"onnxruntime {runtime_version} is installed; NumPy 2 playback requires onnxruntime>=1.19."
-        )
-
-
-class OnnxPolicy:
-    def __init__(self, path):
-        _check_onnxruntime_version()
-
-        import numpy as np
-        import onnxruntime as ort
-
-        self.np = np
-        self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
-
-    def action(self, observation):
-        obs = self.np.asarray(observation, dtype=self.np.float32).reshape(1, -1)
-        output = self.session.run([self.output_name], {self.input_name: obs})[0].reshape(-1)
-        return float(self.np.clip(output[0], -FORCE_LIMIT, FORCE_LIMIT))
-
-
-class TorchPolicy:
-    def __init__(self, path):
-        import torch
-
-        self.torch = torch
-        self.device = torch.device("cpu")
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.uses_normalized_action = False
-        self.policy = self._load_policy_module(checkpoint)
-        self.policy.to(self.device)
-        self.policy.eval()
-
-    def action(self, observation):
-        with self.torch.no_grad():
-            observation = self._adapt_observation(observation)
-            obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
-            output = self.policy(obs)
-            if isinstance(output, (tuple, list)):
-                output = output[0]
-            if self.uses_normalized_action:
-                return float(output.reshape(-1)[0].clamp(-1.0, 1.0).cpu().item()) * FORCE_LIMIT
-            return float(output.reshape(-1)[0].clamp(-FORCE_LIMIT, FORCE_LIMIT).cpu().item())
-
-    def _load_policy_module(self, checkpoint):
-        if isinstance(checkpoint, self.torch.nn.Module):
-            return checkpoint
-        if not isinstance(checkpoint, dict):
-            raise TypeError("expected a torch module or checkpoint dictionary")
-
-        state = checkpoint.get("actor_state_dict") or checkpoint.get("state_dict") or checkpoint
-        if not isinstance(state, dict):
-            raise TypeError("checkpoint has no actor_state_dict/state_dict")
-
-        mlp_state = {}
-        for key, value in state.items():
-            mlp_index = str(key).find("mlp.")
-            if mlp_index >= 0:
-                mlp_state[str(key)[mlp_index:]] = value
-        if not mlp_state:
-            raise ValueError("checkpoint has no rsl_rl MLP actor weights")
-
-        activation = checkpoint.get("activation")
-        policy_meta = checkpoint.get("gobot_policy")
-        if activation is None and isinstance(policy_meta, dict):
-            activation = policy_meta.get("activation")
-        self.uses_normalized_action = isinstance(policy_meta, dict)
-        return self._build_mlp(mlp_state, str(activation or "elu"), state)
-
-    def _build_mlp(self, state, activation, checkpoint_state):
-        torch = self.torch
-        linear_indices = sorted(
-            int(key.split(".")[1])
-            for key in state
-            if key.startswith("mlp.") and key.endswith(".weight")
-        )
-        if not linear_indices:
-            raise ValueError("checkpoint has no linear layer weights")
-
-        layers = []
-        last_index = linear_indices[-1]
-        for layer_index in linear_indices:
-            weight = state[f"mlp.{layer_index}.weight"]
-            bias = state[f"mlp.{layer_index}.bias"]
-            layers.append(torch.nn.Linear(int(weight.shape[1]), int(weight.shape[0])))
-            if bias.shape[0] != weight.shape[0]:
-                raise ValueError(f"invalid bias shape for layer {layer_index}")
-            if layer_index != last_index:
-                layers.append(self._activation_module(activation))
-
-        class MlpPolicy(torch.nn.Module):
-            def __init__(self, modules):
-                super().__init__()
-                self.mlp = torch.nn.Sequential(*modules)
-
-            def forward(self, x):
-                return self.mlp(x)
-
-        module = MlpPolicy(layers)
-        module.load_state_dict(state, strict=False)
-        self.input_size = int(layers[0].in_features)
-        if "obs_normalizer._mean" in checkpoint_state:
-            mean = checkpoint_state["obs_normalizer._mean"].detach().to(dtype=self.torch.float32)
-            std = checkpoint_state.get("obs_normalizer._std", self.torch.ones_like(mean)).detach().to(dtype=self.torch.float32)
-            std = self.torch.clamp(std, min=1.0e-6)
-            module = self.torch.nn.Sequential(self._Normalizer(mean, std), module)
-        return module
-
-    def _activation_module(self, activation):
-        name = activation.lower()
-        if name == "elu":
-            return self.torch.nn.ELU()
-        if name == "relu":
-            return self.torch.nn.ReLU()
-        if name == "tanh":
-            return self.torch.nn.Tanh()
-        raise ValueError(f"unsupported policy activation: {activation}")
-
-    class _Normalizer:
-        def __new__(cls, mean, std):
-            import torch
-
-            class Normalizer(torch.nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.register_buffer("mean", mean)
-                    self.register_buffer("std", std)
-
-                def forward(self, x):
-                    return (x - self.mean) / self.std
-
-            return Normalizer()
-
-    def _adapt_observation(self, observation):
-        if len(observation) == self.input_size:
-            return observation
-        if self.input_size == 5 and len(observation) == 7:
-            cos_theta, sin_theta, x, x_dot, theta_dot, target, pos_error = observation
-            theta = math.atan2(sin_theta, cos_theta)
-            return [x, x_dot, theta, theta_dot, target - x]
-        raise ValueError(f"policy expects {self.input_size} observations, got {len(observation)}")
-
-
-def _resolve_project_path(context, path):
-    if path.startswith("res://"):
-        project_path = context.project_path if context is not None else ""
-        path = os.path.join(project_path, path.removeprefix("res://"))
-    return path
-
-
-
-def _wrap_angle(value):
-    return math.atan2(math.sin(float(value)), math.cos(float(value)))
-
-
-def _clamp(value, low, high):
-    return max(low, min(high, float(value)))
-
-
-def _find_node_by_name(node, name):
-    if node is None:
-        return None
-    if node.name == name:
-        return node
-    for child in node.children:
-        found = _find_node_by_name(child, name)
-        if found is not None:
-            return found
-    return None
+        plan = solve(artifact, cancelled=cancelled.is_set,
+                     progress=lambda text: messages.put(("progress", text)))
+        if not cancelled.is_set():
+            messages.put(("plan", plan))
+    except PlanningCancelled:
+        pass
+    except Exception as error:
+        if not cancelled.is_set():
+            messages.put(("error", str(error)))
 
 
 class Script(gobot.NodeScript):
     def _ready(self):
-        self.robot = self._find_robot()
-        task.configure_robot(self.robot)
-        self.context.fixed_time_step = task.FIXED_DT
-        self.slider = self._find_joint(SLIDER_JOINT, ("rail/slider", "slider"))
-        self.hinge = self._find_joint(HINGE_JOINT, ("rail/slider/cart/hinge", "cart/hinge", "hinge"))
-        self.target_cart_position = TARGET_CART_POSITION
-        self.previous_x = float(self.slider.joint_position)
-        self.previous_theta = _wrap_angle(float(self.hinge.joint_position))
-        self.observation = self._observation(0.0)
-        self.policy = self._load_policy()
-        self.rng = random.Random(int(os.environ.get("GOBOT_CARTPOLE_DISTURBANCE_SEED", "42")))
-        self.ticks = 0
-        self.playing = True
-        self.world_controls_ready = False
-
-        print(
-            "CartPole RL policy playback started. policy={} force_limit={:.1f}N disturbance_std={:.3f}Nm".format(
-                "loaded" if self.policy is not None else "missing",
-                FORCE_LIMIT,
-                DISTURBANCE_STD if DISTURBANCE_ENABLED else 0.0,
-            )
-        )
+        self.joints = task.configure_context(self.context)
+        artifact = self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        self.cancelled = threading.Event()
+        self.messages = Queue()
+        self.plan = None
+        self.tick = 0
+        self.started = False
+        self.force = 0.0
+        self.worker = threading.Thread(target=_plan_worker,
+                                       args=(artifact, self.cancelled, self.messages), daemon=True)
+        self.worker.start()
+        print("Cartpole: solving a four-second swing-up from the hanging pose.")
 
     def _process(self, delta):
-        pass
+        del delta
+        while True:
+            try:
+                kind, value = self.messages.get_nowait()
+            except Empty:
+                break
+            if kind == "progress":
+                print(value)
+            elif kind == "error":
+                raise RuntimeError(f"Cartpole planning failed: {value}")
+            else:
+                self.plan = value
+                print(f"Cartpole: playing swing-up, cost={value.cost:.4f}.")
 
     def _physics_process(self, delta):
-        if not self.playing:
-            return
-        if not self._ensure_world_controls():
-            return
-
-        self.observation = self._observation(delta)
-        action = 0.0
-        if self.policy is not None:
-            action = self.policy.action(self.observation)
-        action = _clamp(action, -FORCE_LIMIT, FORCE_LIMIT)
-        effort = action
-        self.slider.set_effort_target(effort)
-        disturbance = self._sample_disturbance()
-        if disturbance != 0.0:
-            self.hinge.set_effort_target(disturbance)
-        else:
-            self.hinge.set_passive()
-
-        self.ticks += 1
-        if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
-            self._print_state("tick", action, effort, disturbance)
-
-    def reset(self):
-        self.previous_x = float(self.slider.joint_position)
-        self.previous_theta = _wrap_angle(float(self.hinge.joint_position))
-        self.observation = self._observation(0.0)
-        self.ticks = 0
-        self.playing = True
-        self.world_controls_ready = False
-
-    def pause(self):
-        self.playing = False
-
-    def play(self):
-        self.playing = True
-
-    def set_target(self, position):
-        self.target_cart_position = float(position)
-
-    def _load_policy(self):
-        path = os.environ.get("GOBOT_CARTPOLE_POLICY", DEFAULT_POLICY_PATH)
-        if not path:
-            print("CartPole RL policy disabled; set GOBOT_CARTPOLE_POLICY to a .onnx or .pt policy to enable playback.")
-            return None
-        path = _resolve_project_path(self.context, path)
-        if not path or not os.path.exists(path):
-            fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
-            if os.path.exists(fallback):
-                print(
-                    "CartPole ONNX policy not found at '{}'. Falling back to '{}' "
-                    "requires torch/rsl-rl-lib from the complete Gobot installation.".format(
-                        path or "<empty>", fallback
-                    )
-                )
-                path = fallback
-            else:
-                print(
-                    "CartPole RL policy not found at '{}'; set GOBOT_CARTPOLE_POLICY to a .onnx or .pt policy.".format(
-                        path or "<empty>"
-                    )
-                )
-                return None
-        extension = os.path.splitext(path)[1].lower()
-        if extension == ".onnx":
-            try:
-                print(f"CartPole RL loading ONNX policy: {path}")
-                return OnnxPolicy(path)
-            except ImportError as error:
-                print("CartPole ONNX policy load failed: onnxruntime>=1.19 is required for NumPy 2 policy playback.")
-                print(f"CartPole ONNX import error: {error}")
-                fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
-                if os.path.exists(fallback) and path != fallback:
-                    print(f"CartPole RL falling back to Torch checkpoint: {fallback}")
-                    path = fallback
-                    extension = ".pt"
-                else:
-                    return None
-            except Exception as error:
-                print(f"CartPole ONNX policy load failed: {error}")
-                return None
-        if extension != ".pt":
-            print(f"CartPole RL policy format '{extension or '<none>'}' is unsupported; use .onnx or .pt.")
-            return None
-        try:
-            print(f"CartPole RL loading Torch policy: {path}")
-            return TorchPolicy(path)
-        except ImportError as error:
-            print("CartPole Torch policy load failed: PyTorch is unavailable in this environment.")
-            print(f"CartPole Torch import error: {error}")
-            return None
-        except Exception as error:
-            print(f"CartPole RL policy load failed: {error}")
-            return None
-
-    def _ensure_world_controls(self):
-        if self.world_controls_ready:
-            return True
+        del delta
         if not self.context.has_world:
-            return False
-        self.slider.reset_runtime_state(INITIAL_CART_POSITION, 0.0)
-        self.hinge.reset_runtime_state(INITIAL_POLE_ANGLE, 0.0)
-        self.hinge.set_passive()
-        self.world_controls_ready = True
-        self.previous_x = INITIAL_CART_POSITION
-        self.previous_theta = INITIAL_POLE_ANGLE
-        self.observation = self._observation(0.0)
-        self._print_state("origin", 0.0, 0.0, 0.0)
-        return True
+            return
+        if self.plan is None or not self.started:
+            task.reset(self.joints)
+            if self.plan is None:
+                return
+            self.started = True
+        if self.tick % task.SUBSTEPS == 0:
+            self.force = self.plan.force(self.tick // task.SUBSTEPS, task.state(self.joints))
+        self.joints[0].set_effort_target(self.force)
+        self.joints[1].set_passive()
+        if self.tick == task.HORIZON * task.SUBSTEPS:
+            print("Cartpole: swing-up complete; LQR balance active.")
+        self.tick += 1
 
-    def _print_state(self, label, action, effort, disturbance):
-        cos_theta, sin_theta, x, x_dot, theta_dot, target, pos_error = self.observation
-        theta = math.atan2(sin_theta, cos_theta)
-        print(
-            "CartPole RL {} t={:.2f}s cart_position={:.3f}m x_dot={:.3f}m/s "
-            "theta={:.4f}rad theta_dot={:.3f}rad/s target={:.3f}m error={:.3f}m "
-            "action={:.3f} applied_force={:.3f}N "
-            "pole_noise={:.4f}Nm".format(
-                label,
-                self.context.simulation_time,
-                x,
-                x_dot,
-                theta,
-                theta_dot,
-                target,
-                pos_error,
-                action,
-                effort,
-                disturbance,
-            )
-        )
-
-    def _sample_disturbance(self):
-        if not DISTURBANCE_ENABLED or DISTURBANCE_STD <= 0.0:
-            return 0.0
-        if self.ticks < DISTURBANCE_START_TICK:
-            return 0.0
-        if DISTURBANCE_INTERVAL_TICKS > 0:
-            offset = (self.ticks - DISTURBANCE_START_TICK) % DISTURBANCE_INTERVAL_TICKS
-            if offset >= max(1, DISTURBANCE_DURATION_TICKS):
-                return 0.0
-        value = self.rng.gauss(0.0, DISTURBANCE_STD)
-        if DISTURBANCE_CLIP > 0.0:
-            value = _clamp(value, -DISTURBANCE_CLIP, DISTURBANCE_CLIP)
-        return value
-
-    def _find_robot(self):
-        root = self.get_root()
-        if root is None:
-            raise RuntimeError("CartPole script has no scene root")
-        if root.name == ROBOT:
-            return root
-        robot = root.find(ROBOT) or _find_node_by_name(root, ROBOT)
-        if robot is None:
-            raise RuntimeError(f"scene has no robot node '{ROBOT}'")
-        return robot
-
-    def _find_joint(self, name, paths):
-        for path in paths:
-            node = self.robot.find(path)
-            if node is not None:
-                return node
-        node = _find_node_by_name(self.robot, name)
-        if node is None:
-            raise RuntimeError(f"robot '{self.robot.name}' has no joint '{name}'")
-        return node
-
-    def _observation(self, delta):
-        runtime_joints = self._runtime_joint_states()
-        if runtime_joints:
-            slider = runtime_joints.get(SLIDER_JOINT)
-            hinge = runtime_joints.get(HINGE_JOINT)
-            if slider is not None and hinge is not None:
-                x = float(slider.get("position", 0.0))
-                theta = _wrap_angle(float(hinge.get("position", 0.0)))
-                x_dot = float(slider.get("velocity", 0.0))
-                theta_dot = float(hinge.get("velocity", 0.0))
-                self.previous_x = x
-                self.previous_theta = theta
-                return task.observation((x, theta), (x_dot, theta_dot), self.target_cart_position).tolist()
-
-        x = float(self.slider.joint_position)
-        theta = _wrap_angle(float(self.hinge.joint_position))
-        if delta > 0.0:
-            x_dot = (x - self.previous_x) / float(delta)
-            theta_dot = _wrap_angle(theta - self.previous_theta) / float(delta)
-        else:
-            x_dot = 0.0
-            theta_dot = 0.0
-        self.previous_x = x
-        self.previous_theta = theta
-        return task.observation((x, theta), (x_dot, theta_dot), self.target_cart_position).tolist()
-
-    def _runtime_joint_states(self):
-        if not self.context.has_world:
-            return None
-        return {
-            SLIDER_JOINT: self.slider.get_runtime_state(),
-            HINGE_JOINT: self.hinge.get_runtime_state(),
-        }
+    def _exit_tree(self):
+        if hasattr(self, "cancelled"):
+            self.cancelled.set()
+        self.plan = None

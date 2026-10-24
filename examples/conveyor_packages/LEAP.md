@@ -53,7 +53,7 @@ uv run python examples/conveyor_packages/conveyor_packages_batch.py \
 ```
 
 Rebuild/install Gobot after changing the C++ snapshot or rendering code. The
-project dependency currently pins Newton 1.6.0 and Warp 1.17.0. CUDA is required
+project dependency currently pins Newton 1.7.0 and Warp 1.17.0. CUDA is required
 by the default configuration; there is no silent CPU fallback. First startup
 compiles Warp kernels and SDF contact assets. Subsequent runs reuse the cache.
 Accuracy takes priority over real time: the default outer step is 2 ms with

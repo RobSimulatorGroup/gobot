@@ -1,4 +1,16 @@
-# Physics dependency update — 2026-09-12
+# Native MuJoCo batch update — 2026-10-24
+
+MuJoCo and MuJoCo Warp are pinned to 3.17.0; Newton is pinned to 1.7.0 with
+its ONNX extra. Gobot declares the simulation dependencies explicitly and uses a
+local Newton solver subclass to adapt the removed MuJoCo Warp mean-inertia
+statistics. Warp remains 1.17.0. The archived mjbatch submodule is replaced by
+MuJoCo's native C runtime. Rebuild native Gobot binaries when updating this stack.
+See [CPU batching](mujoco_cpu_batch.md) and [setup](physics_mujoco_setup.md).
+
+The earlier dependency update and validation records below describe their
+original versions; reference traces and acceptance tolerances remain historical.
+
+## Physics dependency update — 2026-09-12
 
 Gobot pins released Python packages and integrates upstream SDK changes into
 its existing adaptation branches. SceneTree/.jscn remains the authoring source.
@@ -148,3 +160,29 @@ with `world_ready=true`, `faulted=false` and no error. The recorded smoke is
 not a full rope-twisting cycle. Eight cache recovery regressions and 21 Newton
 provider checks passed (29 tests; the optional GPU case was not enabled in
 that unit-test run).
+
+## Native batch migration validation — 2026-10-24
+
+- Rebuilt the complete editable package with `uv sync`; native and Python
+  MuJoCo versions both resolve to 3.17.0.
+- Native batch tests (7), PhysicsServer (45), SimulationServer (51), joint
+  controllers (10), locomotion runtimes (10), and ScenePlaySession (14) passed.
+  The MuJoCo-disabled build also compiled and passed its PhysicsServer suite.
+- The single-pole tests (6) passed, including native numerical parity,
+  finite-difference/cost derivatives, deterministic plans across worker counts,
+  failed-candidate isolation, cancellation, and four-second swing-up followed
+  by ten seconds of balance through Gobot.
+- Editor Play completed 6005 physics ticks at 240 Hz, logged successful swing-up
+  and LQR balance, and reported no fault. The standalone CLI also passed.
+- Go1 CPU standing/sensors and the CPU velocity-environment suite passed.
+  MuJoCo Warp's real GPU cartpole parity/reset/checkpoint/graph test and the
+  Go1 GPU environment's short CPU-parity, reset and device-contract checks passed.
+- Newton's 21 provider tests, including real GPU tests for both contact modes,
+  passed. The related build/example/IPC unit suite passed 55 tests; all five
+  cold-import/IPC runtime tests then passed with GPU cases enabled. The final
+  focused Newton/cartpole run passed 28 tests, including the version guard.
+- Full G1 policy validation is blocked before backend construction by an
+  existing generated torso collision mesh: `mesh_0019.ply` has three triangles
+  failing the existing finite/non-degenerate check. The shared scene compiler
+  and mesh validator are unchanged by this migration. The asset, validation
+  threshold and historical policy reference tolerances were not modified.

@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "mujoco==3.12.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mujoco==3.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "packaging>=23.2",
     "scikit-build-core>=1.0.3",
 ]
@@ -20,10 +20,10 @@ authors = [
 dependencies = [
     "imageio>=2.34",
     "imageio-ffmpeg>=0.5",
-    "mujoco==3.12.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "mujoco-warp==3.12.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    # Keep the shared MuJoCo stack within Newton's supported sim dependency set.
-    "newton[sim,onnx]==1.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mujoco==3.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mujoco-warp==3.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    # Gobot owns the shared simulation versions and adapts Newton 1.7 to MuJoCo 3.17.
+    "newton[onnx]==1.7.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "numpy>=2,<3",
     "nvidia-cublas-cu12>=12.8,<13; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "nvidia-cuda-runtime-cu12>=12.8,<13; sys_platform == 'linux' and platform_machine == 'x86_64'",
@@ -73,12 +73,6 @@ cmake.version = ">=3.27"
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/gobot", "python/gobot_cli"]
-sdist.include = [
-    "3rdparty/mjbatch/LICENSE",
-    "3rdparty/mjbatch/src/mjbatch/csrc/*.h",
-    "cmake/GobotMjbatch.cmake",
-    "cmake/patches/mjbatch-native.patch",
-]
 
 [tool.scikit-build.install]
 components = ["python"]
@@ -96,4 +90,4 @@ GOB_BUILD_OPENUSD = "ON"
 GOB_BUNDLE_OPENUSD_RUNTIME = "ON"
 GOB_FETCH_MUJOCO = "OFF"
 GOB_FORCE_FETCH_MUJOCO = "OFF"
-GOB_MUJOCO_GIT_TAG = "3.12.0"
+GOB_MUJOCO_GIT_TAG = "3.17.0"

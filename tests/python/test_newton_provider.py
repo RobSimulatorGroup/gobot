@@ -1524,7 +1524,7 @@ def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
         "<joint name='robot_joint' type='slide'/>"
         "<geom type='sphere' size='0.1'/></body></worldbody><actuator>"
         "<general name='robot_joint_position' joint='robot_joint' ctrllimited='false' "
-        "forcerange='-12 12' forcelimited='true' biastype='affine' "
+        "forcerange='-12 12' forcelimited='true' biastype='affine' input='pos' "
         "gainprm='150 0 0' biasprm='0 -150 -5 0'/>"
         "<general name='robot_joint_affine' joint='robot_joint' biastype='affine' "
         "gainprm='150 0 0' biasprm='0 -150 -5 0'/></actuator></mujoco>"
@@ -1554,6 +1554,7 @@ def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
         assert position.attrib["forcerange"] == "-12 12"
         assert "gainprm" not in position.attrib
         assert "biasprm" not in position.attrib
+        assert "input" not in position.attrib
         direct = imported.find("./actuator/general")
         assert direct is not None
         assert direct.attrib["name"] == "robot_joint_affine"
@@ -1561,6 +1562,21 @@ def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
         assert direct.attrib["biasprm"] == "0 -150 -5 0"
     finally:
         provider.close()
+
+
+def test_mujoco317_solver_adapter_requires_matching_versions():
+    from gobot.sim.providers.newton_mujoco_compat import solver_type
+
+    base = type("UnmodifiedSolver", (), {})
+    fake_newton = SimpleNamespace(__version__="1.7.0", solvers=SimpleNamespace(SolverMuJoCo=base))
+    fake_mujoco = SimpleNamespace(mj_versionString=lambda: "3.12.0")
+    assert solver_type(fake_newton, fake_mujoco, SimpleNamespace(__version__="3.12.0")) is base
+    try:
+        solver_type(fake_newton, fake_mujoco, SimpleNamespace(__version__="3.17.0"))
+    except RuntimeError as error:
+        assert "matching MuJoCo/Warp 3.17.0" in str(error)
+    else:
+        raise AssertionError("the 3.17 adapter accepted a different MuJoCo runtime")
 
 
 def test_direct_artifact_is_revalidated():

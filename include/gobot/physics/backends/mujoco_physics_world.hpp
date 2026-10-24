@@ -15,7 +15,7 @@
 #include "gobot/physics/joint_controller.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
-namespace mjbatch { class Batch; }
+namespace gobot::mujoco_detail { class MuJoCoBatch; }
 #endif
 
 namespace gobot {
@@ -278,7 +278,7 @@ private:
 
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
-    std::unique_ptr<mjbatch::Batch> batch_runtime_;
+    std::unique_ptr<mujoco_detail::MuJoCoBatch> batch_runtime_;
     std::vector<PhysicsSceneState> environment_states_;
     std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;

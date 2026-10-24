@@ -29,7 +29,7 @@
 
 #ifdef GOBOT_HAS_MUJOCO
 #include <mujoco/mujoco.h>
-#include <batch.h>
+#include "mujoco_batch.hpp"
 #endif
 
 namespace gobot {
@@ -64,7 +64,7 @@ PhysicsStepResult AdvanceMuJoCo(mjModel* model, mjData* data, RealType delta_tim
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
         try {
-            mjbatch::Batch::Step(model, data);
+            mujoco_detail::MuJoCoBatch::Step(model, data);
         } catch (const std::exception& error) {
             return {.state_valid = false, .error = error.what()};
         }
@@ -413,14 +413,14 @@ void MuJoCoPhysicsWorld::Reset() {
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     auto* model = static_cast<mjModel*>(ModelForEnvironment(0));
     auto* data = static_cast<mjData*>(DataForEnvironment(0));
     if (model && data) {
         if (!environment_states_.empty()) {
             environment_states_[0] = scene_state_;
         }
-        mjbatch::Batch::Reset(model, data);
+        mujoco_detail::MuJoCoBatch::Reset(model, data);
         SyncStateToMuJoCo(0);
         SyncStateFromMuJoCo(0);
     }
@@ -452,7 +452,7 @@ void MuJoCoPhysicsWorld::ClearExternalForces() {
     PhysicsWorld::ClearExternalForces();
 #ifdef GOBOT_HAS_MUJOCO
     for (std::size_t environment_index = 0; environment_index < GetEnvironmentCount(); ++environment_index) {
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
         auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
         if (model != nullptr && model->nbody > 0) {
             auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
@@ -467,7 +467,7 @@ void MuJoCoPhysicsWorld::ClearExternalForces() {
 MuJoCoPhysicsWorld::Diagnostics MuJoCoPhysicsWorld::GetDiagnostics() const {
     Diagnostics diagnostics;
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     const auto* model = static_cast<const mjModel*>(model_);
     if (model == nullptr) {
         return diagnostics;
@@ -544,7 +544,7 @@ bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previou
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     if (ModelForEnvironment(0) && DataForEnvironment(0)) {
         if (!environment_states_.empty()) {
             environment_states_[0] = scene_state_;
@@ -569,7 +569,7 @@ PhysicsStepResult MuJoCoPhysicsWorld::Step(RealType delta_time) {
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     auto* model = static_cast<mjModel*>(ModelForEnvironment(0));
     auto* data = static_cast<mjData*>(DataForEnvironment(0));
     if (!model || !data) {
@@ -617,7 +617,7 @@ bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count
         return false;
     }
     try {
-        batch_runtime_ = std::make_unique<mjbatch::Batch>(model, static_cast<int>(environment_count));
+        batch_runtime_ = std::make_unique<mujoco_detail::MuJoCoBatch>(model, static_cast<int>(environment_count));
     } catch (const std::exception& error) {
         SetLastError(error.what());
         return false;
@@ -636,10 +636,10 @@ bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count
         }
     }
     for (std::size_t i = 0; i < environment_count; ++i) {
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(i));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(i));
         auto* environment_model = static_cast<mjModel*>(ModelForEnvironment(i));
         auto* environment_data = static_cast<mjData*>(DataForEnvironment(i));
-        mjbatch::Batch::Reset(environment_model, environment_data);
+        mujoco_detail::MuJoCoBatch::Reset(environment_model, environment_data);
         SyncStateToMuJoCo(i);
         SyncStateFromMuJoCo(i);
     }
@@ -710,7 +710,7 @@ bool MuJoCoPhysicsWorld::RestoreCheckpoint(
             SetLastError(error.what());
             return false;
         }
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
         EnvironmentState(environment_index) = checkpoint->scene_states_[environment_index];
         for (std::size_t binding_index = 0; binding_index < joint_bindings_.size();
              ++binding_index) {
@@ -763,7 +763,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
         return false;
     }
 
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -777,7 +777,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
             binding.controllers[environment_index].Reset();
         }
     }
-    mjbatch::Batch::Reset(model, data);
+    mujoco_detail::MuJoCoBatch::Reset(model, data);
     SyncStateToMuJoCo(environment_index);
     SyncStateFromMuJoCo(environment_index);
     last_error_.clear();
@@ -796,7 +796,7 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
         return false;
     }
 
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -898,17 +898,18 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
         return false;
     }
 
-    const bool stepped = RunEnvironmentBatchTask(
-            environment_count,
-            worker_count,
-            [this, delta_time, ticks](std::size_t environment_index) {
-                for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                    const auto result = StepEnvironmentTick(environment_index, delta_time);
-                    if (!result.completed) throw std::runtime_error(result.error);
-                }
-                SyncStateFromMuJoCo(environment_index);
-            });
-    if (!stepped) {
+    try {
+        batch_runtime_->Advance(static_cast<int>(environment_count),
+                static_cast<int>(ResolveBatchWorkerCount(worker_count, environment_count)), ticks,
+                [this, delta_time](int environment_index) {
+                    auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+                    ApplyMuJoCoOptions(&model->opt, settings_);
+                    model->opt.timestep = delta_time;
+                    ApplyControlsToMuJoCo(environment_index, delta_time);
+                    ApplyExternalForcesToMuJoCo(environment_index);
+                }, {}, [this](int environment_index) { SyncStateFromMuJoCo(environment_index); });
+    } catch (const std::exception& error) {
+        SetLastError(error.what());
         return false;
     }
 
@@ -940,7 +941,7 @@ bool MuJoCoPhysicsWorld::ResetJointState(const std::string& robot_name,
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     if (ModelForEnvironment(0) && DataForEnvironment(0)) {
         if (!environment_states_.empty()) {
             environment_states_[0] = scene_state_;
@@ -1001,7 +1002,7 @@ bool MuJoCoPhysicsWorld::ResetLinkState(const std::string& robot_name,
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     if (ModelForEnvironment(0) && DataForEnvironment(0)) {
         if (!environment_states_.empty()) {
             environment_states_[0] = scene_state_;
@@ -1089,7 +1090,7 @@ bool MuJoCoPhysicsWorld::WriteEnvironmentLinkVelocity(std::size_t environment_in
         return false;
     }
 
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (model == nullptr || data == nullptr) {
@@ -1185,7 +1186,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentRobotStates(const std::vector<PhysicsEn
 
     for (const PhysicsEnvironmentRobotResetState& reset_state : reset_states) {
         const std::size_t environment_index = reset_state.environment_index;
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
         auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
         auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
         if (!model || !data) {
@@ -1199,7 +1200,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentRobotStates(const std::vector<PhysicsEn
                 binding.controllers[environment_index].Reset();
             }
         }
-        mjbatch::Batch::Reset(model, data);
+        mujoco_detail::MuJoCoBatch::Reset(model, data);
         if (!ResetLinkStateIn(state,
                               reset_state.robot_name,
                               reset_state.base_link_name,
@@ -1729,7 +1730,7 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
             environment_count,
             request.worker_count,
             [&](std::size_t environment_index) {
-                mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+                mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
                 auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
                 auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
                 if (env_model == nullptr || data == nullptr) {
@@ -1852,19 +1853,22 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
         SetLastError(error.what());
         return false;
     }
-    const bool stepped = RunEnvironmentBatchTask(
-            environment_count, request.worker_count, [&](std::size_t environment_index) {
-                auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-                auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
-                if (constants_changed_by_environment[environment_index]) {
-                    mjbatch::Batch::Forward(env_model, data);
-                }
-                for (std::uint64_t tick = 0; tick < request.ticks; ++tick) {
-                    const auto result = AdvanceMuJoCo(env_model, data, settings_.fixed_time_step);
-                    if (!result.completed) throw std::runtime_error(result.error);
-                    if (!request.collect_contact_history) {
-                        continue;
-                    }
+    // Forward and step run inside the native error trap, outside engine
+    // callbacks. Capture each tick's contacts before its workspace is reused.
+    try {
+        for (std::size_t i = 0; i < environment_count; ++i) {
+            if (constants_changed_by_environment[i] || request.ticks == 0) {
+                auto access = batch_runtime_->Access(static_cast<int>(i));
+                mujoco_detail::MuJoCoBatch::Forward(batch_runtime_->Model(i), batch_runtime_->Data(i));
+            }
+        }
+        std::vector<std::uint64_t> completed_ticks(environment_count, 0);
+        batch_runtime_->Advance(static_cast<int>(environment_count),
+                static_cast<int>(ResolveBatchWorkerCount(request.worker_count, environment_count)),
+                request.ticks, {}, [&](int environment_index) {
+                    if (!request.collect_contact_history || request.ticks == 0) return;
+                    const std::uint64_t tick = completed_ticks[environment_index]++;
+                    auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
                     std::span<std::uint8_t> active_links(
                             active_link_scratch);
                     active_links = active_links.subspan(environment_index * link_count, link_count);
@@ -1952,19 +1956,16 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
                         contact_shape_group_history[history_offset] = active_shape_groups[group_index];
                     }
                     self_contact_tick_count[environment_index] += self_contact ? 1 : 0;
-                }
-                if (request.ticks == 0) {
-                    mjbatch::Batch::Forward(env_model, data);
-                }
-            });
-    if (!stepped) {
+                });
+    } catch (const std::exception& error) {
+        SetLastError(error.what());
         return false;
     }
 
     std::vector<std::size_t> contact_counts(environment_count, 0);
     std::size_t max_contact_count = 0;
     for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
         auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
         auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
         if (env_model == nullptr || data == nullptr) {
@@ -2112,7 +2113,7 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
     };
 
     const auto extract_environment_state = [&](std::size_t environment_index) {
-        mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+        mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
         auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
         auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
         if (env_model == nullptr || data == nullptr) {
@@ -2410,7 +2411,7 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrain");
 #ifdef GOBOT_HAS_MUJOCO
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), 0);
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), 0);
     if (ModelForEnvironment(0) && DataForEnvironment(0)) {
         return RaycastTerrainWithMuJoCo(query, 0);
     }
@@ -2440,7 +2441,7 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRayc
     result.point = query.origin + direction * query.max_distance;
     result.distance = query.max_distance;
 
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -2782,7 +2783,7 @@ PhysicsStepResult MuJoCoPhysicsWorld::StepEnvironmentTick(std::size_t environmen
     if (!std::isfinite(delta_time) || delta_time <= 0) {
         return {.state_valid = false, .error = "MuJoCo timestep must be finite and positive."};
     }
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (model == nullptr || data == nullptr) {
@@ -2803,7 +2804,7 @@ PhysicsStepResult MuJoCoPhysicsWorld::StepEnvironmentTick(std::size_t environmen
 }
 
 void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, RealType delta_time) {
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -2974,7 +2975,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
 }
 
 void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo(std::size_t environment_index) {
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (model == nullptr || data == nullptr || model->nbody <= 0) {
@@ -3082,7 +3083,7 @@ void MuJoCoPhysicsWorld::FreeModel() {
 
 void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -3209,7 +3210,7 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
 
 void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateToMuJoCo");
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -3330,7 +3331,7 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
         data->qvel[dof + 5] = angular_velocity_body.z();
     }
 
-    mjbatch::Batch::Forward(model, data);
+    mujoco_detail::MuJoCoBatch::Forward(model, data);
     UpdateSensorGlobalTransformsAndRaycastSensors(EnvironmentState(environment_index),
                                                   static_cast<RealType>(data->time),
                                                   environment_index);
@@ -3338,7 +3339,7 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
 
 void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncContactsFromMuJoCo");
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     PhysicsSceneState& state = EnvironmentState(environment_index);
@@ -3460,7 +3461,7 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
 
 void MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo(std::size_t environment_index) {
     GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo");
-    mjbatch::Batch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
+    mujoco_detail::MuJoCoBatch::Lease runtime_access(batch_runtime_.get(), static_cast<int>(environment_index));
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     PhysicsSceneState& state = EnvironmentState(environment_index);

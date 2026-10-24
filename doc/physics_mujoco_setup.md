@@ -1,52 +1,36 @@
 # MuJoCo setup
 
-MuJoCo CPU is enabled by default. Gobot currently pins MuJoCo **3.12.0** in
-`CMakeLists.txt` and `pyproject.toml`. See [build and test](building.md) for a
-complete CPU configuration.
+MuJoCo CPU is enabled by default. Gobot pins **MuJoCo 3.17.0** for both the C++
+SDK and Python package, and uses its native `mjBatch` runtime. The standalone
+mjbatch dependency and patch utility are no longer required.
 
-## Python builds
+For the complete Python environment, run `uv sync` from the repository root.
+This rebuilds Gobot against the same MuJoCo library as the Python package.
+Updating only the Python wheel leaves the older Gobot binary incompatible.
 
-Python builds use the pinned `mujoco` wheel's headers and shared library from
-the build environment. They disable CMake's source-fetch fallback. CPU batches
-also use the pinned `3rdparty/mjbatch` native headers; the build backend
-initializes that submodule automatically. No mjbatch Python package is needed.
+For standalone CMake, provide the installed SDK or allow source fetching:
 
-## Standalone CMake
-
-Initialize mjbatch, then provide an installed MuJoCo SDK or let CMake discover
-the selected Python environment's wheel:
-
-```bash
-git submodule update --init 3rdparty/mjbatch
-cmake -S . -B build/cpu \
+```sh
+cmake -S . -B build \
   -DGOB_BUILD_MUJOCO=ON \
-  -DGOB_BUILD_LIBUIPC=OFF \
-  -DGOB_MUJOCO_ROOT=/path/to/mujoco
+  -DGOB_MUJOCO_ROOT="$PWD/.venv/lib/python3.13/site-packages/mujoco"
+cmake --build build -j
 ```
 
-`GOB_MUJOCO_ROOT` accepts a CMake install prefix or an SDK with `include/` and
-`lib/` or `bin/`. A package prefix can also be supplied through
-`CMAKE_PREFIX_PATH`. Dynamic SDK libraries must be visible at runtime, for
-example through `LD_LIBRARY_PATH=/path/to/mujoco/lib`.
-
-| Option | Effect |
+| Setting | Effect |
 | --- | --- |
-| `GOB_BUILD_MUJOCO=OFF` | Disable MuJoCo and mjbatch |
-| `GOB_FETCH_MUJOCO=ON` | Fetch the pinned source when no local package is found; standalone default |
-| `GOB_FORCE_FETCH_MUJOCO=ON` | Force a native source build even if an SDK is available |
-| `GOB_FETCH_MUJOCO=OFF` | Require a local SDK/package; Python build default |
-| `GOB_MUJOCO_GIT_TAG` | Select the fetched release; keep it aligned with the Python dependency |
+| `GOB_BUILD_MUJOCO=OFF` | Build without MuJoCo support |
+| `GOB_MUJOCO_ROOT` | Prefer this SDK or Python wheel directory |
+| `GOB_FETCH_MUJOCO=ON` | Fetch the pinned release if no SDK is found |
+| `GOB_FORCE_FETCH_MUJOCO=ON` | Build the pinned source instead of a discovered SDK |
+| `GOB_MUJOCO_GIT_TAG` | Fetched release, default `3.17.0` |
 
-A fetched build may download MuJoCo's own dependencies. The
-[mjbatch adapter](mjbatch_cpu.md) requires the system `patch` utility and leaves
-the upstream submodule unchanged.
+Configuration rejects SDKs without the native batch API. Keep source and Python
+versions aligned. See [CPU batching](mujoco_cpu_batch.md) for ownership, checkpoint
+and thread-count behavior.
 
-## Verify simulation
-
-Load a robot scene, select **MuJoCo CPU** in the Physics panel, confirm
-**Available**, then **Build World** and **Step**. Check the frame counter and
-joint state. Falling requires a floating base; contact requires a floor.
-
-The backend compiles authored Gobot nodes and resources. `Robot3D.source_path`
-is import provenance and is never reopened during simulation. See
-[MJCF equivalence](mjcf_equivalence.md) for import checks.
+Gobot pins MuJoCo Warp 3.17.0 and Newton 1.7.0. It requests Newton's ONNX extra
+and owns the simulation dependency pins itself, because Newton's optional `sim`
+extra still selects an older MuJoCo release. A provider-local solver subclass
+adapts Newton's mean-inertia statistics and reset-mask handling to the new stack;
+installed Newton modules are not modified. This adaptation is version checked.

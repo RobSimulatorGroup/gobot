@@ -52,9 +52,9 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     ):
         assert f'{define} = "ON"' in pyproject
     for requirement in (
-        '"mujoco==3.12.0;',
-        '"mujoco-warp==3.12.0;',
-        '"newton[sim,onnx]==1.6.0;',
+        '"mujoco==3.17.0;',
+        '"mujoco-warp==3.17.0;',
+        '"newton[onnx]==1.7.0;',
         '"nvidia-cublas-cu12>=12.8,<13;',
         '"nvidia-cuda-runtime-cu12>=12.8,<13;',
         '"nvidia-cusolver-cu12>=11.7,<12;',

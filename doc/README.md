@@ -13,7 +13,7 @@ Commands in these guides run from the repository root unless stated otherwise.
 | Engine ownership and API contracts | [Architecture](architecture.md) |
 | CPU and CUDA training contracts and roadmap | [MuJoCo RL](mujoco_rl_plan.md) |
 | MuJoCo SDK configuration | [MuJoCo setup](physics_mujoco_setup.md) |
-| Native CPU batch integration | [mjbatch](mjbatch_cpu.md) |
+| Native CPU batch integration | [MuJoCo native batch](mujoco_cpu_batch.md) |
 | Import and runtime parity | [MJCF equivalence](mjcf_equivalence.md) |
 | USD import and Newton provider | [Newton and OpenUSD](newton_openusd.md) |
 | CUDA viewport and camera outputs | [Luisa rendering](luisa_rendering_plan.md) |
