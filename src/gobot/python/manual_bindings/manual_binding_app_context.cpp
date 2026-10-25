@@ -417,7 +417,11 @@ public:
                              std::vector<std::string> trunk_head_shape_patterns,
                              bool terminate_on_thigh_contact,
                              double ground_force_threshold,
-                             double self_collision_force_threshold)
+                             double self_collision_force_threshold,
+                             std::vector<std::vector<std::string>> foot_shape_groups,
+                             std::string imu_sensor,
+                             std::string angular_momentum_sensor,
+                             std::string randomization_link)
         : world_(std::move(world)),
           robot_name_(std::move(robot_name)),
           base_link_(std::move(base_link)),
@@ -427,6 +431,10 @@ public:
           foot_height_sensor_names_(std::move(foot_height_sensor_names)),
           foot_contact_sensor_names_(std::move(foot_contact_sensor_names)),
           height_scan_sensor_(std::move(height_scan_sensor)),
+          imu_sensor_(std::move(imu_sensor)),
+          angular_momentum_sensor_(std::move(angular_momentum_sensor)),
+          randomization_link_(randomization_link.empty() ? base_link_ : std::move(randomization_link)),
+          foot_shape_groups_(std::move(foot_shape_groups)),
           thigh_shape_patterns_(CompileContactPatterns(thigh_shape_patterns)),
           shank_shape_patterns_(CompileContactPatterns(shank_shape_patterns)),
           trunk_head_shape_patterns_(CompileContactPatterns(trunk_head_shape_patterns)),
@@ -436,6 +444,14 @@ public:
         Initialize();
         AllocateBuffers();
         Refresh();
+    }
+
+    std::vector<std::string> CommandRandomState() const {
+        return batch_runtime_.CommandRuntime().SaveRandomState();
+    }
+
+    void RestoreCommandRandomState(const std::vector<std::string>& states) {
+        batch_runtime_.CommandRuntime().RestoreRandomState(states);
     }
 
     ~PyLocomotionBatchView() = default;
@@ -544,6 +560,8 @@ public:
                 VectorArrayView(batch_runtime_.BaseAngularVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["gyro"] =
                 VectorArrayView(batch_runtime_.BaseAngularVelocitiesBody(), {EnvDim(), 3}, owner, false);
+        arrays["angular_momentum"] =
+                VectorArrayView(batch_runtime_.AngularMomentum(), {EnvDim(), 3}, owner, false);
         arrays["projected_gravity"] =
                 VectorArrayView(batch_runtime_.ProjectedGravity(), {EnvDim(), 3}, owner, false);
         arrays["gravity"] =
@@ -797,7 +815,7 @@ public:
         batch_runtime_.CommandRuntime().SetStepResamplingEnabled(enabled);
     }
 
-    void StepTaskInputs(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
+    void StepTaskInputs(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency, bool post_step_sensing) {
         ResetStepProfile();
         const TimePoint total_begin = Clock::now();
         TimePoint phase_begin = Clock::now();
@@ -805,6 +823,19 @@ public:
         SetProfileMs(kStepProfilePrepareAction, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
         RunPhysicsBatch(ticks, workers, true, true);
+        if (post_step_sensing && ticks > 0) {
+            // mj_step integrates qpos after its kinematic/sensor stages. Refresh
+            // the end-of-control-step state while retaining the substep history.
+            auto history = std::move(physics_state_);
+            RunPhysicsBatch(0, workers, false, false);
+            physics_state_.link_contact_tick_count = std::move(history.link_contact_tick_count);
+            physics_state_.shape_contact_tick_count = std::move(history.shape_contact_tick_count);
+            physics_state_.contact_shape_group_names = std::move(history.contact_shape_group_names);
+            physics_state_.contact_shape_group_tick_count = std::move(history.contact_shape_group_tick_count);
+            physics_state_.contact_history_tick_count = history.contact_history_tick_count;
+            physics_state_.contact_shape_group_history = std::move(history.contact_shape_group_history);
+            physics_state_.self_contact_tick_count = std::move(history.self_contact_tick_count);
+        }
         SetProfileMs(kStepProfileMjStep, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
         batch_runtime_.UpdateState(physics_state_);
@@ -1060,6 +1091,10 @@ private:
         }
         link_count_ = link_names_.size();
 
+        if (!foot_shape_groups_.empty() && foot_shape_groups_.size() != foot_link_names_.size()) {
+            throw std::invalid_argument("foot_shape_groups must have one group per foot");
+        }
+        const bool infer_foot_shapes = foot_shape_groups_.empty();
         foot_link_indices_.reserve(foot_link_names_.size());
         foot_shape_names_.reserve(foot_link_names_.size());
         for (std::size_t foot_index = 0; foot_index < foot_link_names_.size(); ++foot_index) {
@@ -1074,7 +1109,16 @@ private:
             const std::string_view sensor_name = foot_index < foot_contact_sensor_names_.size()
                                                          ? std::string_view(foot_contact_sensor_names_[foot_index])
                                                          : std::string_view();
-            foot_shape_names_.push_back(FootGeomNameFromSensorOrLinkName(sensor_name, link_name));
+            if (infer_foot_shapes) {
+                foot_shape_groups_.push_back({FootGeomNameFromSensorOrLinkName(sensor_name, link_name)});
+            }
+            for (const auto& shape_name : foot_shape_groups_[foot_index]) {
+                const auto& shapes = robot_snapshot->links[find_link(link_name)].collision_shapes;
+                if (std::none_of(shapes.begin(), shapes.end(), [&](const auto& shape) { return shape.name == shape_name; })) {
+                    throw std::runtime_error("foot collision shape is missing from link: " + shape_name);
+                }
+                foot_shape_names_.push_back(shape_name);
+            }
         }
         foot_count_ = foot_link_indices_.size();
 
@@ -1147,9 +1191,15 @@ private:
                 break;
             }
         }
-        if (fallback_imu != invalid_index) {
+        if (!imu_sensor_.empty()) {
+            imu_sensor_index_ = add_sensor(imu_sensor_);
+        } else if (fallback_imu != invalid_index) {
             imu_sensor_index_ = add_sensor(robot_snapshot->sensors[fallback_imu].name);
         }
+        if (!angular_momentum_sensor_.empty()) {
+            angular_momentum_sensor_index_ = add_sensor(angular_momentum_sensor_);
+        }
+        find_link(randomization_link_);
     }
 
     LocomotionBatchStateLayout MakeStateLayout() const {
@@ -1160,11 +1210,12 @@ private:
         layout.link_names = link_names_;
         layout.sensor_names = sensor_names_;
         layout.foot_link_indices = foot_link_indices_;
-        layout.foot_shape_names = foot_shape_names_;
+        layout.foot_shape_groups = foot_shape_groups_;
         layout.foot_height_sensor_indices = foot_height_sensor_indices_;
         layout.foot_contact_sensor_indices = foot_contact_sensor_indices_;
         layout.height_scan_sensor_index = height_scan_sensor_index_;
         layout.imu_sensor_index = imu_sensor_index_;
+        layout.angular_momentum_sensor_index = angular_momentum_sensor_index_;
         layout.height_scan_count = height_scan_count_;
         layout.terminate_on_thigh_contact = terminate_on_thigh_contact_;
         return layout;
@@ -1273,9 +1324,9 @@ private:
                     LocomotionBatchRuntime::kTrunkHeadContactGroup,
                     trunk_head_shape_names_,
                     ground_force_threshold_);
-            for (std::size_t foot_index = 0; foot_index < foot_shape_names_.size(); ++foot_index) {
+            for (std::size_t foot_index = 0; foot_index < foot_shape_groups_.size(); ++foot_index) {
                 add_contact_group(LocomotionBatchRuntime::FootContactGroupName(foot_index),
-                                  {foot_shape_names_[foot_index]},
+                                  foot_shape_groups_[foot_index],
                                   0.0);
             }
         }
@@ -1285,7 +1336,7 @@ private:
 
         request.joint_position_stiffness.assign(joint_kp_.begin(), joint_kp_.end());
         request.joint_velocity_damping.assign(joint_kd_.begin(), joint_kd_.end());
-        request.override_link_names = {base_link_};
+        request.override_link_names = {randomization_link_};
         request.link_mass_delta.assign(environment_count_, 0.0);
         request.link_center_of_mass_offset.assign(environment_count_ * 3, 0.0);
         request.override_shape_names = foot_shape_names_;
@@ -1344,6 +1395,10 @@ private:
     std::vector<std::string> foot_height_sensor_names_;
     std::vector<std::string> foot_contact_sensor_names_;
     std::string height_scan_sensor_;
+    std::string imu_sensor_;
+    std::string angular_momentum_sensor_;
+    std::string randomization_link_;
+    std::vector<std::vector<std::string>> foot_shape_groups_;
     std::vector<std::string> sensor_names_;
     std::unordered_map<std::string, std::size_t> sensor_index_by_name_;
     std::vector<std::regex> thigh_shape_patterns_;
@@ -1367,6 +1422,7 @@ private:
     std::vector<std::size_t> foot_contact_sensor_indices_;
     std::size_t height_scan_sensor_index_{std::numeric_limits<std::size_t>::max()};
     std::size_t imu_sensor_index_{std::numeric_limits<std::size_t>::max()};
+    std::size_t angular_momentum_sensor_index_{std::numeric_limits<std::size_t>::max()};
     PhysicsRobotBatchStepResult physics_state_;
     std::vector<float> action_;
     std::vector<float> submitted_action_;
@@ -1400,6 +1456,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
             module,
             "_LocomotionBatchView")
             .def("arrays", &PyLocomotionBatchView::Arrays)
+            .def("command_random_state", &PyLocomotionBatchView::CommandRandomState)
+            .def("restore_command_random_state", &PyLocomotionBatchView::RestoreCommandRandomState)
             .def("terrain_heights",
                  &PyLocomotionBatchView::TerrainHeights,
                  py::arg("points"),
@@ -1420,6 +1478,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("ticks") = 1,
                  py::arg("workers") = 0,
                  py::arg("simulate_action_latency") = false,
+                 py::arg("post_step_sensing") = false,
                  py::call_guard<py::gil_scoped_release>())
             .def("configure_command",
                  &PyLocomotionBatchView::ConfigureCommand,
@@ -2067,7 +2126,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                     bool terminate_on_thigh_contact,
                                                     double ground_force_threshold,
                                                     double self_collision_force_threshold,
-                                                    const std::vector<std::string>& link_names) {
+                                                    const std::vector<std::string>& link_names,
+                                                    const std::vector<std::vector<std::string>>& foot_shape_groups,
+                                                    const std::string& imu_sensor,
+                                                    const std::string& angular_momentum_sensor,
+                                                    const std::string& randomization_link) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
@@ -2090,7 +2153,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                                trunk_head_shape_patterns,
                                                                terminate_on_thigh_contact,
                                                                ground_force_threshold,
-                                                               self_collision_force_threshold);
+                                                               self_collision_force_threshold,
+                                                               foot_shape_groups, imu_sensor,
+                                                               angular_momentum_sensor, randomization_link);
             }, py::arg("robot"),
                py::arg("base_link"),
                py::arg("joint_names"),
@@ -2104,7 +2169,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                py::arg("terminate_on_thigh_contact") = true,
                py::arg("ground_force_threshold") = 50.0,
                py::arg("self_collision_force_threshold") = 20.0,
-               py::arg("link_names") = std::vector<std::string>{})
+               py::arg("link_names") = std::vector<std::string>{},
+               py::arg("foot_shape_groups") = std::vector<std::vector<std::string>>{},
+               py::arg("imu_sensor") = "",
+               py::arg("angular_momentum_sensor") = "",
+               py::arg("randomization_link") = "")
             .def_property_readonly("batch_env_count", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {

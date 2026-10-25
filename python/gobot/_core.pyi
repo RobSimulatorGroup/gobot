@@ -322,6 +322,10 @@ class AppContext:
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
         link_names: Sequence[str] = (),
+        foot_shape_groups: Sequence[Sequence[str]] = (),
+        imu_sensor: str = "",
+        angular_momentum_sensor: str = "",
+        randomization_link: str = "",
     ) -> Any: ...
     def reset_batch_env(self, env_id: int) -> None: ...
     def step_batch_env(self, env_id: int, ticks: int = 1) -> None: ...

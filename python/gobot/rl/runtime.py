@@ -210,6 +210,10 @@ class LocomotionBatchSpec:
     task_flag_count: int = 0
     actor_obs_dim: int = 0
     critic_obs_dim: int = 0
+    foot_shape_groups: Sequence[Sequence[str]] = ()
+    imu_sensor: str = ""
+    angular_momentum_sensor: str = ""
+    randomization_link: str = ""
 
 
 class _NativeLocomotionBatchArrays:
@@ -516,6 +520,10 @@ class NativeLocomotionBatchBackend:
             self.ground_force_threshold,
             self.self_collision_force_threshold,
             link_names=list(self.runtime.link_names),
+            foot_shape_groups=[list(group) for group in self.spec.foot_shape_groups],
+            imu_sensor=self.spec.imu_sensor,
+            angular_momentum_sensor=self.spec.angular_momentum_sensor,
+            randomization_link=self.spec.randomization_link,
         )
         self._arrays = {str(name): np.asarray(value) for name, value in dict(self._view.arrays()).items()}
         self._arrays.update(self._allocate_task_arrays())
@@ -622,6 +630,14 @@ class NativeLocomotionBatchBackend:
             int(seed),
         )
 
+    def command_random_state(self) -> list[str]:
+        self._require_view()
+        return list(self._view.command_random_state())
+
+    def restore_command_random_state(self, states: Sequence[str]) -> None:
+        self._require_view()
+        self._view.restore_command_random_state(list(states))
+
     def set_command_ranges(
         self,
         *,
@@ -711,13 +727,13 @@ class NativeLocomotionBatchBackend:
             raise RuntimeError("Gobot native locomotion batch view has no command frame update API")
         update()
 
-    def step_task_inputs(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
+    def step_task_inputs(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False, post_step_sensing: bool = False) -> dict[str, Any]:
         self._require_view()
         step_task_inputs = getattr(self._view, "step_task_inputs", None)
         if step_task_inputs is None:
             raise RuntimeError("Gobot native locomotion batch view has no task-input step")
         np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
-        step_task_inputs(int(nsteps), int(workers), bool(simulate_action_latency))
+        step_task_inputs(int(nsteps), int(workers), bool(simulate_action_latency), bool(post_step_sensing))
         return {}
 
     def step_profile(self) -> dict[str, float]:

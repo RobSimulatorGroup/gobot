@@ -80,17 +80,20 @@ LocomotionBatchRuntime::LocomotionBatchRuntime(
     link_count_ = state_layout_.link_names.size();
     height_scan_count_ = state_layout_.height_scan_count;
     has_state_layout_ = true;
+    if (state_layout_.foot_shape_groups.empty()) {
+        for (const auto& name : state_layout_.foot_shape_names) {
+            state_layout_.foot_shape_groups.push_back({name});
+        }
+    }
     ValidateStateLayout();
     AllocateStateBuffers();
 
     for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
-        const bool inserted = foot_index_by_shape_.emplace(
-                state_layout_.foot_shape_names[foot_index],
-                foot_index).second;
-        if (!inserted) {
-            throw std::invalid_argument(fmt::format(
-                    "foot shape '{}' is assigned to more than one foot",
-                    state_layout_.foot_shape_names[foot_index]));
+        for (const auto& shape : state_layout_.foot_shape_groups[foot_index]) {
+            if (!foot_index_by_shape_.emplace(shape, foot_index).second) {
+                throw std::invalid_argument(fmt::format(
+                        "foot shape '{}' is assigned more than once", shape));
+            }
         }
     }
 }
@@ -138,8 +141,8 @@ void LocomotionBatchRuntime::ValidateStateLayout() const {
     if (state_layout_.base_link.empty()) {
         throw std::invalid_argument("locomotion state layout base_link must not be empty");
     }
-    if (state_layout_.foot_shape_names.size() != foot_count_) {
-        throw std::invalid_argument("foot_shape_names must have one entry per foot");
+    if (state_layout_.foot_shape_groups.size() != foot_count_) {
+        throw std::invalid_argument("foot_shape_groups must have one entry per foot");
     }
     if (state_layout_.foot_height_sensor_indices.size() > foot_count_) {
         throw std::invalid_argument("foot_height_sensor_indices cannot contain more entries than feet");
@@ -154,8 +157,11 @@ void LocomotionBatchRuntime::ValidateStateLayout() const {
                     state_layout_.foot_link_indices[foot_index],
                     link_count_));
         }
-        if (state_layout_.foot_shape_names[foot_index].empty()) {
-            throw std::invalid_argument("foot_shape_names must not contain empty names");
+        if (state_layout_.foot_shape_groups[foot_index].empty() ||
+            std::any_of(state_layout_.foot_shape_groups[foot_index].begin(),
+                        state_layout_.foot_shape_groups[foot_index].end(),
+                        [](const auto& name) { return name.empty(); })) {
+            throw std::invalid_argument("foot_shape_groups must not contain empty groups or names");
         }
     }
 
@@ -181,6 +187,7 @@ void LocomotionBatchRuntime::ValidateStateLayout() const {
             sensor_count,
             "height scan sensor");
     RequireSensorIndex(state_layout_.imu_sensor_index, sensor_count, "IMU sensor");
+    RequireSensorIndex(state_layout_.angular_momentum_sensor_index, sensor_count, "angular momentum sensor");
     if (height_scan_count_ > 0 &&
         state_layout_.height_scan_sensor_index == LocomotionBatchStateLayout::kInvalidIndex) {
         throw std::invalid_argument("height_scan_count requires a height scan sensor index");
@@ -194,6 +201,7 @@ void LocomotionBatchRuntime::AllocateStateBuffers() {
     base_angular_velocities_.assign(environment_count_ * 3, 0.0f);
     base_linear_velocities_body_.assign(environment_count_ * 3, 0.0f);
     base_angular_velocities_body_.assign(environment_count_ * 3, 0.0f);
+    angular_momentum_.assign(environment_count_ * 3, 0.0f);
     projected_gravity_.assign(environment_count_ * 3, 0.0f);
     up_vectors_.assign(environment_count_ * 3, 0.0f);
     base_heights_.assign(environment_count_, 0.0f);
@@ -296,6 +304,10 @@ void LocomotionBatchRuntime::ValidatePhysicsState(
             environment_count_,
             "self_contact_tick_count");
 
+    if (state_layout_.angular_momentum_sensor_index != LocomotionBatchStateLayout::kInvalidIndex &&
+        physics_state.sensor_value_count[state_layout_.angular_momentum_sensor_index] < 3) {
+        throw std::invalid_argument("angular momentum sensor must provide three values");
+    }
     for (const std::size_t sensor_index : state_layout_.foot_height_sensor_indices) {
         if (physics_state.max_sensor_values == 0 ||
             physics_state.sensor_value_count[sensor_index] < 1) {
@@ -418,6 +430,13 @@ void LocomotionBatchRuntime::UpdateState(
             }
         }
 
+        if (state_layout_.angular_momentum_sensor_index != LocomotionBatchStateLayout::kInvalidIndex) {
+            const auto offset = (environment_index * sensor_count +
+                                 state_layout_.angular_momentum_sensor_index) * physics_state.max_sensor_values;
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                angular_momentum_[environment3 + axis] = static_cast<float>(physics_state.sensor_values[offset + axis]);
+            }
+        }
         for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
             const std::size_t offset = environment_index * joint_count_ + joint_index;
             joint_positions_[offset] = static_cast<float>(physics_state.joint_position[offset]);
@@ -718,6 +737,8 @@ std::span<float> LocomotionBatchRuntime::BaseAngularVelocitiesBody() {
 std::span<const float> LocomotionBatchRuntime::BaseAngularVelocitiesBody() const {
     return base_angular_velocities_body_;
 }
+std::span<float> LocomotionBatchRuntime::AngularMomentum() { return angular_momentum_; }
+std::span<const float> LocomotionBatchRuntime::AngularMomentum() const { return angular_momentum_; }
 std::span<float> LocomotionBatchRuntime::ProjectedGravity() { return projected_gravity_; }
 std::span<const float> LocomotionBatchRuntime::ProjectedGravity() const { return projected_gravity_; }
 std::span<float> LocomotionBatchRuntime::UpVectors() { return up_vectors_; }

@@ -1,0 +1,9 @@
+The collision preset, G1 motor/posture configuration and command-progress
+curriculum are adapted from mjlab (https://github.com/mujocolab/mjlab),
+commit 8bb2bc9e187797689ec82c78c35019afd2fd0376, licensed under Apache-2.0.
+See the repository LICENSE for the Apache License, Version 2.0.
+
+Adaptations include Gobot scene serialization, preserved articulated hands with
+fixed targets, explicit multi-shape foot groups, and CPU/Warp batch execution.
+The original Unitree meshes/MJCF are supplied separately by the user and are
+not included in this derived preset.

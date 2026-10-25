@@ -292,7 +292,11 @@ _OVERFLOW_NAMES = {
     1 << 5: "height-field contacts",
     1 << 6: "contact-match sensors",
     1 << 7: "island dofs (nvmax)",
+    1 << 8: "EPA horizon buffer",
+    1 << 11: "tactile collision pairs",
 }
+
+_SOLVER_LIMIT_MASK = (1 << 9) | (1 << 10)
 
 _CONTACT_FIELD_BITS = {
     "found": 0,
@@ -445,6 +449,10 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         # can still be replayed on the current Torch stream at runtime.
         with self._wp.ScopedDevice(self._wp_device):
             self._model = self._mjw.put_model(self._mj_model)
+            # MuJoCo 3.17 records finite solver-budget exhaustion in overflow as
+            # diagnostics. These bits do not indicate discarded contacts/data.
+            if hasattr(self._model.opt, "warn_overflow"):
+                self._model.opt.warn_overflow &= ~_SOLVER_LIMIT_MASK
             if contact_sensor_maxmatch is not None:
                 self._model.opt.contact_sensor_maxmatch = int(contact_sensor_maxmatch)
             if ls_parallel is not None:
@@ -858,11 +866,12 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         overflow = self._arrays.get("overflow")
         if overflow is None:
             return
-        active = self._torch.nonzero(overflow != 0, as_tuple=False).flatten()
+        capacity_overflow = overflow & ~_SOLVER_LIMIT_MASK
+        active = self._torch.nonzero(capacity_overflow != 0, as_tuple=False).flatten()
         if active.numel() == 0:
             return
         world_ids = active[:10].detach().cpu().tolist()
-        values = overflow[active[:10]].detach().cpu().tolist()
+        values = capacity_overflow[active[:10]].detach().cpu().tolist()
         details = []
         for world_id, mask in zip(world_ids, values, strict=True):
             names = [name for flag, name in _OVERFLOW_NAMES.items() if int(mask) & flag]
@@ -871,6 +880,15 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             "MuJoCo Warp fixed capacity overflow; increase nconmax/njmax/njmax_nnz and rebuild the "
             f"session ({'; '.join(details)})."
         )
+
+    def solver_limit_counts(self) -> Mapping[str, int]:
+        """Host diagnostics for worlds reaching the finite solver iteration budget."""
+        self._require_open()
+        flags = self._arrays.get("overflow")
+        if flags is None:
+            return {"iterations": 0, "line_search_iterations": 0}
+        return {name: int(((flags & bit) != 0).sum().item())
+                for name, bit in (("iterations", 1 << 9), ("line_search_iterations", 1 << 10))}
 
     def assert_finite(self, names: Sequence[str] = ("qpos", "qvel")) -> None:
         self._require_open()
