@@ -154,6 +154,8 @@ private:
 
     void DrawPlayToolbar();
 
+    void SelectRuntimePoseControl();
+
     void DrawViewMenu();
 
     void DrawPanelViewMenuItems(Node* node);
@@ -226,6 +228,7 @@ private:
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
     bool scene_dirty_{false};
+    bool reset_layout_requested_{false};
     std::uint64_t scene_change_version_{0};
     bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};

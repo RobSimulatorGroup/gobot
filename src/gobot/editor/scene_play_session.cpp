@@ -234,6 +234,7 @@ bool ScenePlaySession::AttachRuntimeSceneToTree(Node* edited_scene_root) {
 }
 
 void ScenePlaySession::DestroyRuntimeScene() {
+    if (context_) context_->ClearRuntimePoseTargets();
     runtime_holder_ = runtime_holder_id_ == ObjectID{}
                               ? nullptr
                               : Object::PointerCastTo<Node>(ObjectDB::GetInstance(runtime_holder_id_));

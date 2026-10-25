@@ -534,6 +534,7 @@ void RegisterManualIpcSceneBindings(
         PyDeformableBody3DClass& deformable_body_class,
         PyTactileSensor3DClass& tactile_sensor_class);
 void RegisterManualIpcSolverBindings(py::module_& module);
+void RegisterManualTactileBindings(py::module_& module);
 void RegisterManualModuleFunctions(py::module_& module);
 
 } // namespace gobot::python

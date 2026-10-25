@@ -1,4 +1,5 @@
 #include "manual_bindings_internal.hpp"
+#include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
@@ -66,6 +67,8 @@ std::vector<Ref<ArrayMesh>> CollectBuiltInArrayMeshes(Node* root) {
                     dynamic_pointer_cast<ConvexMeshShape3D>(collision->GetShape());
             if (shape.IsValid()) {
                 mesh = shape->GetMesh();
+            } else if (const auto triangle = dynamic_pointer_cast<TriangleMeshShape3D>(collision->GetShape()); triangle.IsValid()) {
+                mesh = triangle->GetMesh();
             }
         }
 

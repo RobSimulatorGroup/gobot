@@ -273,6 +273,7 @@ struct ContactElementRecord {
     std::uint32_t contact_type{0};
     std::uint32_t contact_affinity{0};
     bool always_enabled{false};
+    bool deformable{false};
 };
 
 struct WorkspaceLease {
@@ -752,6 +753,13 @@ public:
         auto engine_config = Engine::default_config();
         engine_config["gpu"]["device"] = config.device_index;
         std::filesystem::path workspace = ResolveWorkspace(config);
+        if (!external_affine_proxies_ && !manifest.value("tactile_sensors", Json::array()).empty()) {
+            // Each tactile session owns its initial-state dump, including when
+            // a new Play starts before the old worker finishes retiring.
+            workspace /= "tactile_" + MakeBatchWorkspaceSuffix();
+            tactile_workspace_.path = workspace;
+            tactile_workspace_.owned = true;
+        }
         if (!workspace_suffix.empty()) {
             workspace /= workspace_suffix;
         }
@@ -820,13 +828,35 @@ public:
 
         const Json deformable_attachments =
                 manifest.value("deformable_attachments", Json::array());
-        const std::vector<DeformableAttachmentSpec> attachment_specs =
+        std::vector<DeformableAttachmentSpec> attachment_specs =
                 ParseDeformableAttachments(
                         manifest.value("deformable_bodies", Json::array()),
                         manifest.value("couplings", Json::array()),
                         deformable_attachments);
-        BuildDeformables(manifest.value("deformable_bodies", Json::array()),
-                         attachment_specs, contact, subscenes);
+        Json bodies = manifest.value("deformable_bodies", Json::array());
+        const auto sensors = manifest.value("tactile_sensors", Json::array());
+        for (const auto& sensor : sensors) {
+            const auto path = sensor.at("path").get<std::string>();
+            Json body = sensor;
+            body["mesh_blob"] = sensor.at("gel_mesh_blob");
+            body["model"] = "volumetric";
+            body["self_collision"] = false;
+            body["kinematic"] = false;
+            body["tactile_gel"] = true;
+            if (!sensor.at("attachment").is_null()) {
+                DeformableAttachmentSpec spec;
+                spec.deformable_path = path;
+                spec.rigid_link_path = sensor.at("attachment").at("link_path").get<std::string>();
+                spec.strength_rate = sensor.value("attachment_strength", 10000.0);
+                for (auto index : sensor.at("stick_vertex_indices"))
+                    spec.vertex_indices.push_back(index.get<IndexT>());
+                attachment_specs.push_back(std::move(spec));
+                body["stick_vertex_indices"] = Json::array();
+            }
+            bodies.push_back(std::move(body));
+        }
+        has_tactile_ = !sensors.empty();
+        BuildDeformables(bodies, attachment_specs, contact, subscenes, config);
         const Json affine_robots = external_affine_proxies_
                                            ? SelectExternalAffineRobots(manifest)
                                            : manifest.value("robots", Json::array());
@@ -846,10 +876,10 @@ public:
         ResolveDeformableBackendLayout();
         InitializeAccessors();
         InitializeContactForceExport(config.fixed_time_step);
-        if (external_affine_proxies_) {
+        if (external_affine_proxies_ || has_tactile_) {
             if (world_->frame() != 0 || !world_->dump()) {
                 throw std::runtime_error(
-                        "libuipc batch solver could not snapshot its initial state");
+                        "libuipc solver could not snapshot its initial state");
             }
             initial_state_dumped_ = true;
         }
@@ -898,6 +928,18 @@ public:
     }
 
     void Reset() {
+        if (has_tactile_) {
+            if (!initial_state_dumped_ || !world_->recover(0))
+                throw std::runtime_error("libuipc could not recover the tactile initial state");
+            for (const auto& [path, target] : affine_targets_) target->value = target->initial;
+            for (const auto& [path, target] : joint_targets_) target->value = target->initial;
+            attachment_target_transforms_ = initial_affine_transforms_;
+            world_->retrieve();
+            frame_ = world_->frame();
+            if (frame_ != 0) throw std::runtime_error("invalid tactile reset frame");
+            Refresh(false);
+            return;
+        }
         if (fem_accessor_ != nullptr) {
             auto position = fem_state_->vertices().find<Vector3>(uipc::builtin::position);
             auto velocity = fem_state_->vertices().find<Vector3>(uipc::builtin::velocity);
@@ -1862,7 +1904,8 @@ private:
             const Json& bodies,
             const std::vector<DeformableAttachmentSpec>& attachment_specs,
             const ContactElement& contact,
-            const std::vector<SubsceneElement>& subscenes) {
+            const std::vector<SubsceneElement>& subscenes,
+            const IpcSolverModuleConfig& config) {
         if (!bodies.is_array()) {
             throw std::runtime_error("IPC deformable body table must be an array");
         }
@@ -1873,6 +1916,7 @@ private:
         SoftPositionConstraint attachment_constraint;
         auto object = scene_->objects().create("gobot_deformables");
         attachment_aims_by_geometry_.clear();
+        tactile_contact_elements_.resize(environment_count_);
         std::size_t global_vertex_offset = 0;
         for (std::size_t environment = 0; environment < environment_count_;
              ++environment) {
@@ -1948,6 +1992,21 @@ private:
                 external_force.apply_to(mesh, Vector3::Zero());
                 std::vector<DeformableAttachmentAim> geometry_aims;
                 bool has_attachment_constraint = false;
+                if (body.value("tactile_gel", false)) {
+                    const auto stick = body.at("stick_vertex_indices").get<std::vector<IndexT>>();
+                    if (!stick.empty()) {
+                        attachment_constraint.apply_to(mesh, body.value("attachment_strength", 10000.0));
+                        has_attachment_constraint = true;
+                        auto constrained = mesh.vertices().find<IndexT>(uipc::builtin::is_constrained);
+                        auto aim = mesh.vertices().find<Vector3>(uipc::builtin::aim_position);
+                        for (auto vertex : stick) {
+                            if (vertex < 0 || static_cast<std::size_t>(vertex) >= decoded_vertices.size())
+                                throw std::runtime_error("tactile backing vertex is out of range");
+                            view(*constrained)[vertex] = 1;
+                            view(*aim)[vertex] = decoded_vertices[vertex];
+                        }
+                    }
+                }
                 for (const DeformableAttachmentSpec& attachment :
                      attachment_specs) {
                     if (attachment.deformable_path != path) {
@@ -1983,7 +2042,22 @@ private:
                                         attachment.strength_rate});
                     }
                 }
-                contact.apply_to(mesh);
+                if (body.value("tactile_gel", false)) {
+                    auto gel_contact = scene_->contact_tabular().create(fmt::format("{}@gel_{}", path, environment));
+                    ContactElementRecord record{body.value("friction_coefficient", 1.0), gel_contact,
+                        body.value("collision_layer", 1U), body.value("collision_mask", 0xffffffffU), false, true};
+                    scene_->contact_tabular().insert(gel_contact, contact,
+                        config.friction_coefficient * std::sqrt(record.friction), config.contact_resistance, true);
+                    for (const auto& other : tactile_contact_elements_[environment])
+                        scene_->contact_tabular().insert(gel_contact, other.element,
+                            config.friction_coefficient * std::sqrt(record.friction * other.friction),
+                            config.contact_resistance, ContactMasksMatch(record, other));
+                    scene_->contact_tabular().insert(gel_contact, gel_contact, 0.0, 0.0, false);
+                    gel_contact.apply_to(mesh);
+                    tactile_contact_elements_[environment].push_back(record);
+                } else {
+                    contact.apply_to(mesh);
+                }
                 subscenes[environment].apply_to(mesh);
                 auto self_collision = mesh.meta().find<IndexT>(
                         uipc::builtin::self_collision);
@@ -2137,7 +2211,7 @@ private:
                     // MuJoCo owns rigid-static pairs. The fixed collider is
                     // present in IPC only for deformable-static contact.
                     const bool enabled =
-                            other.always_enabled &&
+                            (other.always_enabled || other.deformable) &&
                             ContactMasksMatch(static_record, other);
                     scene_->contact_tabular().insert(
                             static_contact, other.element,
@@ -2176,6 +2250,8 @@ private:
         std::vector<ContactElementRecord> contact_elements;
         contact_elements.push_back(
                 ContactElementRecord{1.0, contact, 0U, 0U, true});
+        contact_elements.insert(contact_elements.end(), tactile_contact_elements_[environment].begin(),
+                                tactile_contact_elements_[environment].end());
         for (const Json& robot : robots) {
             const std::size_t external_contact_count = contact_elements.size();
             const Json& joints = robot.at("joints");
@@ -2306,7 +2382,7 @@ private:
                 for (std::size_t index = 0; index < external_contact_count; ++index) {
                     const ContactElementRecord& other = contact_elements[index];
                     const bool contact_enabled =
-                            external_affine_proxies_ && index != 0
+                            external_affine_proxies_ && index != 0 && !other.deformable
                                     ? false
                                     : ContactMasksMatch(link_contact_record,
                                                         other);
@@ -3026,6 +3102,7 @@ private:
     }
 
     std::unordered_map<std::string, IpcSolverArtifactBlobView> blobs_;
+    WorkspaceLease tactile_workspace_;
     std::unique_ptr<Engine> engine_;
     std::unique_ptr<World> world_;
     std::unique_ptr<Scene> scene_;
@@ -3091,6 +3168,8 @@ private:
     bool contact_forces_current_{true};
     bool device_buffers_bound_{false};
     bool initial_state_dumped_{false};
+    bool has_tactile_{false};
+    std::vector<std::vector<ContactElementRecord>> tactile_contact_elements_;
 };
 
 IpcSolverDeviceBufferView OffsetDeviceBuffer(

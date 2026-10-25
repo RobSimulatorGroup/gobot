@@ -376,6 +376,25 @@ void Node3DEditor::OnImGuizmo() {
 
     if (Editor::GetInstance()->IsScenePlaySessionRunning()) {
         editing_ = false;
+        auto* editor=Editor::GetInstance();
+        auto* context=editor->GetEngineContext();
+        Node3D* target=nullptr;
+        for(Node* node=editor->GetSelected();node && context;node=node->GetParent()) {
+            if(context->HasRuntimePoseTarget(node->GetInstanceId())) { target=Object::PointerCastTo<Node3D>(node);break; }
+        }
+        if(target && editor->IsRuntimeNode(target) && imguizmo_operation_!=InvalidGuizmoOperation()) {
+            imguizmo_operation_=ImGuizmo::TRANSLATE;
+            Matrix4 matrix=context->GetRuntimePoseTarget(target->GetInstanceId()).value_or(target->GetGlobalTransform()).matrix();
+            float model[16];for(int i=0;i<16;++i) model[i]=float(matrix.data()[i]);
+            Matrix4 view=camera3d_->GetViewMatrix(),projection=camera3d_->GetProjectionMatrix();
+            float snap[3]={.0001f,.0001f,.0001f};
+            if(ImGuizmo::Manipulate(view.data(),projection.data(),ImGuizmo::TRANSLATE,ImGuizmo::LOCAL,
+                                   model,nullptr,snap_guizmo_?snap:nullptr)) {
+                for(int i=0;i<16;++i) matrix.data()[i]=RealType(model[i]);
+                context->SetRuntimePoseTarget(target->GetInstanceId(),Affine3(matrix));
+            }
+            editing_=ImGuizmo::IsUsing();
+        }
         DrawViewManipulator(view_manipulate_position, view_manipulate_size);
         return;
     }

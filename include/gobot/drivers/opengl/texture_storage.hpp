@@ -116,6 +116,8 @@ public:
     // texture related
 
     RID TextureAllocate() override;
+    void* GetTextureNativeHandle(RID texture) override;
+    void TextureSetLinearFilter(RID texture, bool linear) override;
 
     void TextureFree(RID p_rid) override;
 

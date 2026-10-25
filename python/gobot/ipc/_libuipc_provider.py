@@ -230,10 +230,6 @@ class LibuipcProvider:
             raise TypeError("config must be a LibuipcConfig")
         self.artifact = validate_ipc_artifact(artifact)
         self.config = config or LibuipcConfig()
-        if self.artifact.tactile_sensors:
-            raise ValueError(
-                "libuipc does not yet consume Gobot tactile sensor artifacts"
-            )
         self._closed = False
         self._generation = 1
         self._bound_context: Any | None = None
@@ -263,6 +259,8 @@ class LibuipcProvider:
                 }
             )
             self._validate_arrays()
+            self._initialize_tactile()
+            self._update_tactile_frames()
         except Exception:
             self._close_session()
             raise
@@ -277,6 +275,88 @@ class LibuipcProvider:
                 fingerprint, sort_keys=True, separators=(",", ":"), allow_nan=False
             ).encode("utf-8")
         ).hexdigest()
+
+    def _initialize_tactile(self) -> None:
+        import numpy as np
+        import struct
+
+        self._tactile_processors = {}
+        self._tactile_frames = {}
+        self._tactile_frame_tick = None
+        bodies = {entry["path"]: entry for entry in self._deformable_bodies}
+        manifest = json.loads(self.artifact.manifest)
+        plain_sensors = {entry["path"]: entry for entry in manifest["tactile_sensors"]}
+        affine_offsets = {entry["path"]: int(entry["element_offset"]) for entry in self._affine_bodies}
+        self._tactile_colliders = []
+        for robot in manifest["robots"]:
+            for link in robot["links"]:
+                for shape in link["collision_shapes"]:
+                    if shape.get("disabled") or shape["shape_type"] != "triangle_mesh":
+                        continue
+                    blob = self.artifact.blobs[shape["mesh_blob"]]
+                    _, nv, nt = struct.unpack_from("<III", blob, 8)
+                    points = np.frombuffer(blob, dtype="<f8", count=nv*3, offset=20).reshape(nv,3)
+                    triangles = np.frombuffer(blob, dtype="<u4", count=nt*3, offset=20+nv*24).copy()
+                    local = np.asarray(shape["link_transform"]["matrix_row_major"],dtype=np.float64).reshape(4,4)
+                    points = points @ local[:3,:3].T + local[:3,3]
+                    self._tactile_colliders.append((link["path"], affine_offsets[link["path"]], shape, points, triangles))
+        for sensor in self.artifact.tactile_sensors:
+            if not sensor["enabled"]:
+                continue
+            blob = self.artifact.blobs[sensor["gel_mesh_blob"]]
+            _, vertex_count, tet_count, triangle_count = struct.unpack_from("<IIII", blob, 8)
+            offset = 24
+            vertices = np.frombuffer(blob, dtype="<f8", count=vertex_count*3, offset=offset).reshape(-1,3)
+            offset += vertex_count*24
+            tets = np.frombuffer(blob, dtype="<u4", count=tet_count*4, offset=offset)
+            offset += tet_count*16
+            surface = np.frombuffer(blob, dtype="<u4", count=triangle_count*3, offset=offset)
+            processor = _core._TactileSensorProcessor(plain_sensors[sensor["path"]], vertices, tets.tolist(), surface.tolist())
+            body = bodies[sensor["path"]]
+            begin = int(body["element_offset"])
+            self._tactile_processors[sensor["path"]] = (sensor, processor, slice(begin,begin+vertex_count))
+
+    def _update_tactile_frames(self) -> None:
+        import numpy as np
+
+        if not self._tactile_processors:
+            return
+        tick = int(self._session.diagnostics["frame"])
+        if self._tactile_frame_tick == tick:
+            return
+        for path, (sensor, processor, indices) in self._tactile_processors.items():
+            transform = np.asarray(sensor["transform"]["matrix_row_major"], dtype=np.float64).reshape(4,4)
+            attachment = sensor.get("attachment")
+            if attachment:
+                body = next(entry for entry in self._affine_bodies if entry["path"]==attachment["link_path"])
+                transform = self._arrays["affine_transforms"][int(body["element_offset"])] @ np.asarray(
+                    attachment["transform"]["matrix_row_major"],dtype=np.float64).reshape(4,4)
+            contact_vertices, contact_triangles = [], []
+            vertex_offset = 0
+            for link_path, body_index, shape, points, triangles in self._tactile_colliders:
+                if attachment and link_path == attachment["link_path"]:
+                    continue
+                if not ((sensor["collision_layer"] & shape["collision_mask"]) or
+                        (shape["collision_layer"] & sensor["collision_mask"])):
+                    continue
+                body_pose = self._arrays["affine_transforms"][body_index]
+                contact_vertices.append(points @ body_pose[:3,:3].T + body_pose[:3,3])
+                contact_triangles.extend((triangles+vertex_offset).tolist())
+                vertex_offset += len(points)
+            self._tactile_frames[path] = MappingProxyType(processor.process(
+                self._arrays["positions"][indices], self._arrays["contact_forces"][indices],
+                transform, tick, tick*self.fixed_time_step,
+                np.concatenate(contact_vertices) if contact_vertices else None, contact_triangles))
+        self._tactile_frame_tick = tick
+
+    @property
+    def tactile_frames(self) -> Mapping[str, Mapping[str, Any]]:
+        """Read-only CPU tactile results, keyed by authored sensor path, from the completed step."""
+        self._require_open()
+        # Optical processing is sampled by the consumer/publication cadence.
+        # It never adds an extra physics step or synchronizes the editor thread.
+        self._update_tactile_frames()
+        return MappingProxyType(self._tactile_frames)
 
     @classmethod
     def availability(
@@ -324,6 +404,8 @@ class LibuipcProvider:
             str(entry["path"]): int(entry["vertex_count"])
             for entry in self.artifact.deformable_bodies
         }
+        expected_deformables.update({str(entry["path"]): int(entry["gel_vertex_count"])
+                for entry in self.artifact.tactile_sensors})
         actual_deformables = {
             str(entry["path"]): int(entry["element_count"])
             for entry in self._deformable_bodies
@@ -457,6 +539,7 @@ class LibuipcProvider:
         if isinstance(nsteps, bool) or count <= 0:
             raise ValueError("libuipc step count must be positive")
         self._session.step(count)
+        self._tactile_frame_tick = None
         return self.diagnostics
 
     def reset(
@@ -477,6 +560,7 @@ class LibuipcProvider:
                     "libuipc has one environment and supports only a full reset"
                 )
         self._session.reset()
+        self._tactile_frame_tick = None
         return self.diagnostics
 
     def set_affine_target(self, path: str, transform: Any) -> None:

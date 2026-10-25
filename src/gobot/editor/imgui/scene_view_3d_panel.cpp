@@ -465,9 +465,7 @@ void SceneView3DPanel::OnImGuiContent()
     auto* node3d_editor = Node3DEditor::GetInstance();
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
     ImGuizmo::SetGizmoSizeClipSpace(0.13f);
-    if (!Editor::GetInstance()->IsScenePlaySessionRunning()) {
-        node3d_editor->OnImGuizmo();
-    }
+    node3d_editor->OnImGuizmo();
 
     const ImVec2 toolbar_position{scene_view_position.x + 8.0f, scene_view_position.y + 8.0f};
     const ImVec2 toolbar_size = GetToolBarSize(toolbar_position);
@@ -481,7 +479,8 @@ void SceneView3DPanel::OnImGuiContent()
         input->SetControlFocus(false);
     } else {
         const bool viewport_clicked =
-                mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+                mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                !ImGuizmo::IsUsing() && !ImGuizmo::IsOver();
         const bool viewport_accepts_keyboard =
                 !ImGuiBlocksViewportInput();
         if (viewport_clicked && viewport_accepts_keyboard) {
@@ -644,7 +643,8 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                 drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
             }
         } else if (runtime_playing) {
-            if (auto* link = FindNearestAncestorLink(hovered_node_)) {
+            if (auto* link = FindNearestAncestorLink(hovered_node_);
+                link && !Editor::GetInstance()->GetEngineContext()->HasRuntimePoseTarget(link->GetInstanceId())) {
                 dragged_force_link_ = link;
                 drag_force_joint_ = FindNearestAncestorJoint(link);
                 drag_force_local_point_ = LinkLocalPoint(link, drag_force_point_);
@@ -1025,7 +1025,9 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
     };
 
     auto draw_operation_button = [&](const char* id, const char* icon, const char* tooltip, uint32_t operation) {
-        draw_toolbar_button(id, icon, tooltip, node3d_editor->GetImGuizmoOperation() == operation, true, [&]() {
+        const bool enabled=!Editor::GetInstance()->IsScenePlaySessionRunning() ||
+                operation==Node3DEditor::InvalidGuizmoOperation() || operation==ImGuizmo::TRANSLATE;
+        draw_toolbar_button(id, icon, tooltip, node3d_editor->GetImGuizmoOperation() == operation, enabled, [&]() {
             node3d_editor->SetImGuizmoOperation(operation);
         });
     };

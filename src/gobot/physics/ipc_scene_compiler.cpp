@@ -619,6 +619,10 @@ private:
         }
         tactile_sensors_.push_back({
                 {"attachment", std::move(attachment)},
+                {"attachment_strength", config.attachment_strength},
+                {"sensor_period", sensor.sensor_period},
+                {"camera_intrinsics", Vector4Json(config.camera_intrinsics)},
+                {"camera_transform", TransformJson(config.camera_transform)},
                 {"collision_layer", data.collision_layer},
                 {"collision_mask", data.collision_mask},
                 {"coat_vertex_indices", config.coat_vertex_indices},
@@ -644,6 +648,17 @@ private:
                 {"stick_vertex_indices", config.stick_vertex_indices},
                 {"transform", TransformJson(sensor.global_transform)},
                 {"young_modulus", config.young_modulus}});
+        if (data.optical_calibration) {
+            const auto& optics = *data.optical_calibration;
+            if (!optics.Validate(&validation_error)) return SetCompileError(error, validation_error);
+            if (optics.width != config.image_width || optics.height != config.image_height)
+                return SetCompileError(error, "tactile calibration and sensor resolutions differ");
+            tactile_sensors_.back()["optical_calibration"] = {
+                {"width", optics.width}, {"height", optics.height}, {"bins", optics.bins},
+                {"pixel_size", optics.pixel_size},
+                {"calibration_width", optics.calibration_width}, {"calibration_height", optics.calibration_height},
+                {"coefficients", optics.coefficients}, {"background", optics.background}};
+        }
         return true;
     }
 
@@ -753,6 +768,7 @@ private:
             const auto vertex_count = collision.vertices.size();
             const auto triangle_count = collision.indices.size() / 3;
             compiled["mesh_blob"] = blob_id;
+            compiled["convex"] = collision.convex;
             compiled["shape_type"] = "triangle_mesh";
             compiled["triangle_count"] = triangle_count;
             compiled["vertex_count"] = vertex_count;

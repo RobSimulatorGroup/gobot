@@ -1,0 +1,23 @@
+{
+  "main_scene": "res://gelsight_press.jscn",
+  "editor_scene_views": {
+    "res://gelsight_press.jscn": {
+      "eye": [
+        0.055,
+        -0.07,
+        0.06
+      ],
+      "at": [
+        0,
+        0,
+        -0.008
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "fov_y": 40
+    }
+  }
+}

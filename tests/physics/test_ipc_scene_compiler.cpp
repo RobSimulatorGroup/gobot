@@ -22,6 +22,7 @@
 #include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
+#include <gobot/scene/resources/triangle_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/surface_mesh.hpp>
 #include <gobot/scene/resources/tetrahedral_mesh.hpp>
 #include <gobot/scene/rigid_body_3d.hpp>
@@ -808,4 +809,26 @@ TEST(TestIpcSceneCompiler, rejects_cross_robot_joint_paths_with_matching_names) 
     EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(scene, &artifact, &error));
     EXPECT_NE(error.find("outside its robot"), std::string::npos);
     EXPECT_EQ(artifact.manifest, original);
+}
+
+
+TEST(TestIpcSceneCompiler, triangle_shape_preserves_nonconvex_topology) {
+    auto* root=gobot::Object::New<gobot::Node3D>();root->SetName("world");
+    auto* body=gobot::Object::New<gobot::RigidBody3D>();body->SetName("ring");root->AddChild(body);
+    auto mesh=gobot::MakeRef<gobot::ArrayMesh>();
+    const std::vector<gobot::Vector3> vertices{{-2,-2,0},{2,-2,0},{2,2,0},{-2,2,0},
+                                            {-1,-1,0},{1,-1,0},{1,1,0},{-1,1,0}};
+    const std::vector<std::uint32_t> indices{0,1,4,1,5,4,1,2,5,2,6,5,2,3,6,3,7,6,3,0,7,0,4,7};
+    mesh->SetSurface(vertices,indices);
+    auto shape=gobot::MakeRef<gobot::TriangleMeshShape3D>();shape->SetMesh(mesh);
+    auto* collision=gobot::Object::New<gobot::CollisionShape3D>();collision->SetName("Collision");collision->SetShape(shape);body->AddChild(collision);
+    gobot::CompiledPhysicsScene captured;std::string error;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root,&captured,&error))<<error;
+    const auto& data=captured.snapshot.robots[0].links[0].collision_shapes[0];
+    EXPECT_FALSE(data.convex);EXPECT_EQ(data.indices,indices);EXPECT_EQ(data.vertices,vertices);
+    gobot::IpcSceneArtifact artifact;ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(captured.snapshot,&artifact,&error))<<error;
+    const auto manifest=nlohmann::json::parse(artifact.manifest);
+    const auto& output=manifest["robots"][0]["links"][0]["collision_shapes"][0];
+    EXPECT_FALSE(output["convex"].get<bool>());EXPECT_EQ(output["triangle_count"],8);
+    gobot::Object::Delete(root);
 }

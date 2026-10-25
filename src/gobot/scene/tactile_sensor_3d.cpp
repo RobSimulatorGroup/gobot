@@ -10,6 +10,15 @@
 
 namespace gobot {
 
+void TactileSensorConfig::SetCameraIntrinsics(const Vector4& value) { parameters_.camera_intrinsics=value; MarkChanged(); }
+const Vector4& TactileSensorConfig::GetCameraIntrinsics() const { return parameters_.camera_intrinsics; }
+void TactileSensorConfig::SetCameraTransform(const Affine3& value) { parameters_.camera_transform=value; MarkChanged(); }
+const Affine3& TactileSensorConfig::GetCameraTransform() const { return parameters_.camera_transform; }
+void TactileSensorConfig::SetAttachmentStrength(const RealType& value) { parameters_.attachment_strength=value; MarkChanged(); }
+const RealType& TactileSensorConfig::GetAttachmentStrength() const { return parameters_.attachment_strength; }
+void TactileSensorConfig::SetOpticalCalibration(const Ref<TactileOpticalCalibration>& v) { optical_calibration_=v; MarkChanged(); }
+const Ref<TactileOpticalCalibration>& TactileSensorConfig::GetOpticalCalibration() const { return optical_calibration_; }
+
 void TactileSensorConfig::SetImageWidth(std::uint32_t image_width) {
     parameters_.image_width = image_width;
     MarkChanged();
@@ -163,6 +172,21 @@ bool TactileSensorConfig::Validate(const TetrahedralMesh& gel_mesh, std::string*
     return parameters_.Validate(gel_mesh.GetVertexCount(), gel_mesh.GetTetrahedronCount(), error);
 }
 
+void TactileSensor3D::SetRuntimeFrame(std::shared_ptr<const TactileSensorFrame> frame) {
+    runtime_frame_ = std::move(frame);
+}
+const std::shared_ptr<const TactileSensorFrame>& TactileSensor3D::GetRuntimeFrame() const { return runtime_frame_; }
+Ref<ArrayMesh> TactileSensor3D::GetRenderMesh() const {
+    if (!gel_mesh_.IsValid()) return {};
+    const auto& vertices = runtime_frame_ ? runtime_frame_->local_vertices : gel_mesh_->GetVertices();
+    if (vertices.size() != gel_mesh_->GetVertexCount()) return {};
+    const auto indices = gel_mesh_->GetResolvedSurfaceTriangles();
+    if (!render_mesh_.IsValid()) render_mesh_ = MakeRef<ArrayMesh>();
+    if (render_mesh_->GetVertices() != vertices || render_mesh_->GetIndices() != indices)
+        render_mesh_->SetSurface(vertices, indices);
+    return render_mesh_;
+}
+
 void TactileSensor3D::SetConfig(const Ref<TactileSensorConfig>& config) {
     config_ = config;
 }
@@ -200,6 +224,10 @@ std::uint32_t TactileSensor3D::GetCollisionMask() const {
 GOBOT_REGISTRATION {
     Class_<gobot::TactileSensorConfig>("TactileSensorConfig")
             .constructor()(CtorAsRawPtr)
+            .property("camera_intrinsics", &gobot::TactileSensorConfig::GetCameraIntrinsics, &gobot::TactileSensorConfig::SetCameraIntrinsics)
+            .property("camera_transform", &gobot::TactileSensorConfig::GetCameraTransform, &gobot::TactileSensorConfig::SetCameraTransform)
+            .property("attachment_strength", &gobot::TactileSensorConfig::GetAttachmentStrength, &gobot::TactileSensorConfig::SetAttachmentStrength)
+            .property("optical_calibration", &gobot::TactileSensorConfig::GetOpticalCalibration, &gobot::TactileSensorConfig::SetOpticalCalibration)
             .property("image_width", &gobot::TactileSensorConfig::GetImageWidth,
                       &gobot::TactileSensorConfig::SetImageWidth)
             .property("image_height", &gobot::TactileSensorConfig::GetImageHeight,

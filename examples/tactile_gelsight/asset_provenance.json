@@ -1,0 +1,25 @@
+{
+  "repository": "univtac/UniVTAC",
+  "revision": "0dafa10262e22f486f160a55d6f11aeab12d8e7b",
+  "sensor": "GelSight Mini",
+  "frame": "gel top centered, +Z outward, metres",
+  "vertices": 169,
+  "tetrahedra": 424,
+  "markers": 63,
+  "source_sha256": {
+    "gobot-gelsight-case.usd": "8bd3544aeb6c079818943a08fb0369a45c6446efeaab95fa50e0fcbe5da370b5",
+    "gobot-gelsight-gel.usd": "d055c15b020aab286fcc768778b6adc3833043e6f983471418d31022da13fa0e",
+    "polycalib.npz": "596341551a4eb3927b19d14bc1a3fe5e5ff5ac95207b8064c090442e1e294b56",
+    "dataPack.npz": "a728d126e6c6bea277ad2511c459af2f684829143be9d9d9cfce49932a169bc1"
+  },
+  "contactor": {
+    "type": "torus",
+    "major_radius_m": 0.005,
+    "tube_radius_m": 0.002,
+    "collision": "single closed triangle mesh",
+    "segments": [
+      64,
+      24
+    ]
+  }
+}

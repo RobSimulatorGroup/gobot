@@ -55,6 +55,7 @@ package_add_test(test_ref_counted core/test_ref_counted.cpp )
 package_add_test(test_registration core/test_registration.cpp )
 package_add_test(test_project_setting core/test_project_setting.cpp )
 package_add_test(test_resource core/io/test_resource.cpp)
+package_add_test(test_image core/io/test_image.cpp)
 package_add_test(test_matrix core/math/test_matrix.cpp)
 package_add_test(test_geometry core/math/test_geometry.cpp)
 package_add_test(test_pcg_random core/math/test_pcg_random.cpp)
@@ -62,6 +63,7 @@ package_add_test(test_string_utils core/test_string_utils.cpp)
 package_add_test(test_input core/test_input.cpp)
 package_add_test(test_event core/test_event.cpp)
 package_add_test(test_engine_context main/test_engine_context.cpp)
+package_add_test(test_tactile_sensor_processor simulation/test_tactile_sensor_processor.cpp)
 package_add_test(test_physics_debug_preview simulation/test_physics_debug_preview.cpp)
 package_add_test(test_physics_step_result simulation/test_physics_step_result.cpp)
 # The session contract is independently testable without Gobot, SDKs or Python.
@@ -515,6 +517,18 @@ set_tests_properties(test_python_mujoco_ipc_provider
             SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(NAME test_python_tactile_scene
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_tactile_scene.py)
+set_tests_properties(test_python_tactile_scene PROPERTIES
+        ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}" WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME test_python_tactile_gelsight
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_tactile_gelsight.py)
+set_tests_properties(test_python_tactile_gelsight PROPERTIES
+        ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+        RESOURCE_LOCK gobot_cuda SKIP_RETURN_CODE 77
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 if(GOB_BUILD_LIBUIPC)
     add_test(
             NAME test_python_libuipc_gpu

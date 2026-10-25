@@ -936,6 +936,7 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/manual_bindings/manual_binding_helpers.cpp
         src/gobot/python/manual_bindings/manual_binding_ipc_scene.cpp
         src/gobot/python/manual_bindings/manual_binding_ipc_solver.cpp
+        src/gobot/python/manual_bindings/manual_binding_tactile.cpp
         src/gobot/python/manual_bindings/manual_binding_module_functions.cpp
         src/gobot/python/manual_bindings/manual_binding_robot.cpp
         src/gobot/python/manual_bindings/manual_binding_scene_nodes.cpp

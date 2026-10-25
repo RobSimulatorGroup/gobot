@@ -646,7 +646,7 @@ int Image::GetDstImageSize(int width, int height, ImageFormat format, int& mipma
 
         size += s;
 
-        if (mipmaps >= 0) {
+        if (mipmaps_index >= 0) {
             w = std::max(minw, w >> 1);
             h = std::max(minh, h >> 1);
         } else {

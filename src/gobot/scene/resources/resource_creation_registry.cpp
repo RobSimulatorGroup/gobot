@@ -12,6 +12,7 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
+#include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/material.hpp"
@@ -26,6 +27,7 @@
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/resources/terrain_generator_config.hpp"
 #include "gobot/scene/tactile_sensor_3d.hpp"
+#include "gobot/scene/resources/tactile_optical_calibration.hpp"
 
 namespace gobot {
 
@@ -124,6 +126,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     if (expected_type == Type::get<CylinderShape3D>()) {
         return resource.DynamicPointerCast<CylinderShape3D>();
     }
+    if (expected_type == Type::get<TriangleMeshShape3D>()) {
+        return resource.DynamicPointerCast<TriangleMeshShape3D>();
+    }
     if (expected_type == Type::get<ConvexMeshShape3D>()) {
         return resource.DynamicPointerCast<ConvexMeshShape3D>();
     }
@@ -141,6 +146,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<SurfaceMesh>()) {
         return resource.DynamicPointerCast<SurfaceMesh>();
+    }
+    if (expected_type == Type::get<TactileOpticalCalibration>()) {
+        return resource.DynamicPointerCast<TactileOpticalCalibration>();
     }
     if (expected_type == Type::get<TactileSensorConfig>()) {
         return resource.DynamicPointerCast<TactileSensorConfig>();
@@ -344,6 +352,13 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
     });
 
     RegisterResourceType({
+        "TriangleMeshShape3D", "TriangleMeshShape3D", "Shape3D",
+        "Triangle collision surface preserving holes and concavity; requires a supporting backend.",
+        Type::get<TriangleMeshShape3D>(),
+        []() -> Ref<Resource> { return CreateResourceRef<TriangleMeshShape3D>(); }
+    });
+
+    RegisterResourceType({
         "ConvexMeshShape3D",
         "ConvexMeshShape3D",
         "Shape3D",
@@ -386,6 +401,13 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Triangle surface mesh for thin-shell deformable simulation.",
         Type::get<SurfaceMesh>(),
         []() -> Ref<Resource> { return CreateResourceRef<SurfaceMesh>(); }
+    });
+
+    RegisterResourceType({
+        "TactileOpticalCalibration", "TactileOpticalCalibration", "Resource",
+        "Calibrated RGB response and background for a tactile sensor.",
+        Type::get<TactileOpticalCalibration>(),
+        []() -> Ref<Resource> { return CreateResourceRef<TactileOpticalCalibration>(); }
     });
 
     RegisterResourceType({

@@ -18,6 +18,11 @@ struct GOBOT_EXPORT TactileSensorParameters {
     RealType near_plane{0.0};
     RealType far_plane{0.05};
     RealType pixel_size{7.9375e-5};
+    // Camera-to-sensor transform; +Z is the optical axis, image v is -Y.
+    // Zero focal lengths retain the legacy orthographic pixel_size projection.
+    Vector4 camera_intrinsics{Vector4::Zero()}; // fx, fy, cx, cy
+    Affine3 camera_transform{Affine3::Identity()};
+    RealType attachment_strength{10000.0};
     RealType density{1000.0};
     RealType young_modulus{500000.0};
     RealType poisson_ratio{0.4};

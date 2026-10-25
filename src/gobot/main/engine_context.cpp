@@ -1,4 +1,6 @@
 #include "gobot/main/engine_context.hpp"
+#include "gobot/scene/node_3d.hpp"
+#include <cmath>
 
 #include <utility>
 
@@ -522,7 +524,47 @@ void EngineContext::AttachOwnedSceneToRuntimeTree() {
     runtime_scene_owner_->Attach(scene_root_);
 }
 
+bool EngineContext::RegisterRuntimePoseTarget(Node3D* node, const Vector3& lower, const Vector3& upper) {
+    if (!node || !lower.allFinite() || !upper.allFinite() || (lower.array()>upper.array()).any()) return false;
+    const auto belongs_to=[&](const Node* root) {
+        if (!root) return false;
+        for(Node* ancestor=node;ancestor;ancestor=ancestor->GetParent()) if(ancestor==root) return true;
+        return false;
+    };
+    const Node* runtime_root=simulation_server_ && simulation_server_->HasExternalSession()
+            ? simulation_server_->GetSceneRoot() : nullptr;
+    if (!belongs_to(scene_root_) && !belongs_to(runtime_root)) return false;
+    runtime_pose_targets_.insert_or_assign(node->GetInstanceId(), RuntimePoseTarget{lower, upper, std::nullopt});
+    return true;
+}
+
+bool EngineContext::HasRuntimePoseTarget(ObjectID node) const { return runtime_pose_targets_.contains(node); }
+
+std::optional<Affine3> EngineContext::GetRuntimePoseTarget(ObjectID node) const {
+    const auto found=runtime_pose_targets_.find(node);
+    return found==runtime_pose_targets_.end() ? std::nullopt : found->second.transform;
+}
+
+bool EngineContext::SetRuntimePoseTarget(ObjectID node, const Affine3& transform) {
+    const auto found=runtime_pose_targets_.find(node);
+    if (found==runtime_pose_targets_.end() || !transform.matrix().allFinite() ||
+        !(transform.linear().transpose()*transform.linear()).isApprox(Matrix3::Identity(),1e-4) ||
+        std::abs(transform.linear().determinant()-1)>1e-4 ||
+        !transform.matrix().row(3).isApprox(Vector4{0,0,0,1}.transpose(),1e-6)) return false;
+    Affine3 clamped=transform;
+    clamped.translation()=transform.translation().cwiseMax(found->second.lower).cwiseMin(found->second.upper);
+    found->second.transform=clamped;
+    return true;
+}
+
+void EngineContext::ClearRuntimePoseTarget(ObjectID node) {
+    if (auto found=runtime_pose_targets_.find(node); found!=runtime_pose_targets_.end()) found->second.transform.reset();
+}
+
+void EngineContext::ClearRuntimePoseTargets() { runtime_pose_targets_.clear(); }
+
 void EngineContext::AdvanceSceneEpoch() {
+    runtime_pose_targets_.clear();
     ++scene_epoch_;
     if (scene_epoch_ == 0) {
         scene_epoch_ = 1;

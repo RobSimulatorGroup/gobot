@@ -45,6 +45,10 @@ public:
     // texture
     virtual RID TextureAllocate() = 0;
 
+    virtual void* GetTextureNativeHandle(RID texture) { return nullptr; }
+
+    virtual void TextureSetLinearFilter(RID texture, bool linear) {}
+
     virtual void Texture2DInitialize(RID texture, const Ref<Image>& image) = 0;
 
     virtual void TextureSetData(RID texture, const Ref<Image>& image, int layer = 0) = 0;

@@ -2,6 +2,7 @@
 
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
+#include "gobot/scene/tactile_sensor_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/gaussian_splat_3d.hpp"
@@ -393,6 +394,19 @@ void CollectNodeRenderItems(const Node* node,
         }
     }
 
+    if (const auto* tactile = Object::PointerCastTo<TactileSensor3D>(node); tactile && visible) {
+        auto mesh = tactile->GetRenderMesh();
+        if (mesh.IsValid()) {
+            const auto first = items.visual_meshes.size();
+            AppendMeshItems(items, tactile->GetInstanceId(), instance_id, semantic_id,
+                            relative_path, semantic_label, mesh, node_transform.matrix(),
+                            {}, {}, Color{0.72f, 0.62f, 0.82f, 1.0f});
+            for (auto i=first; i<items.visual_meshes.size(); ++i) {
+                items.visual_meshes[i].material.double_sided = true;
+                items.visual_meshes[i].material.roughness = 0.35;
+            }
+        }
+    }
     const auto* deformable = Object::PointerCastTo<DeformableBody3D>(node);
     if (deformable && visible &&
         (deformable->GetMaterial().IsValid() || deformable->GetDebugSurfaceColor().alpha() > 0)) {

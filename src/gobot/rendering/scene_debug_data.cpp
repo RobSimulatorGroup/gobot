@@ -4,6 +4,7 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
+#include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include <algorithm>
@@ -265,6 +266,9 @@ void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<flo
         } else if (Ref<ConvexMeshShape3D> convex_mesh = dynamic_pointer_cast<ConvexMeshShape3D>(item.shape);
                    convex_mesh.IsValid()) {
             AppendTriangleMeshLines(vertices, item.transform, convex_mesh->GetMesh());
+        } else if (Ref<TriangleMeshShape3D> triangle_mesh = dynamic_pointer_cast<TriangleMeshShape3D>(item.shape);
+                   triangle_mesh.IsValid()) {
+            AppendTriangleMeshLines(vertices, item.transform, triangle_mesh->GetMesh());
         }
     }
 }

@@ -30,6 +30,7 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
+#include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/rigid_body_3d.hpp"
@@ -275,8 +276,12 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
         snapshot.type = PhysicsShapeType::Cylinder;
         snapshot.radius = cylinder->GetRadius();
         snapshot.height = cylinder->GetHeight();
-    } else if (const auto convex_mesh = dynamic_pointer_cast<ConvexMeshShape3D>(shape)) {
-        const Ref<Mesh>& mesh = convex_mesh->GetMesh();
+    } else if (dynamic_pointer_cast<ConvexMeshShape3D>(shape).IsValid() ||
+               dynamic_pointer_cast<TriangleMeshShape3D>(shape).IsValid()) {
+        const auto convex = dynamic_pointer_cast<ConvexMeshShape3D>(shape);
+        snapshot.convex = convex.IsValid();
+        const Ref<Mesh>& mesh = snapshot.convex ? convex->GetMesh() :
+                dynamic_pointer_cast<TriangleMeshShape3D>(shape)->GetMesh();
         const std::shared_ptr<const MeshSurfaceList> surfaces =
                 mesh.IsValid() ? mesh->GetSurfaceData() : nullptr;
         if (!surfaces) {
@@ -416,6 +421,8 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
         }
         if (const auto& config = tactile->GetConfig(); config.IsValid()) {
             data.parameters = config->GetParameters();
+            if (config->GetOpticalCalibration().IsValid())
+                data.optical_calibration = config->GetOpticalCalibration()->GetData();
         }
         for (const Node* ancestor = sensor->GetParent(); ancestor; ancestor = ancestor->GetParent()) {
             if (const auto* link = Object::PointerCastTo<Link3D>(ancestor)) {

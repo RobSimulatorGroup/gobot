@@ -35,6 +35,14 @@ bool TactileSensorParameters::Validate(
         !std::isfinite(friction_coefficient) || friction_coefficient < 0.0) {
         return SetValidationError(error, "tactile gel material parameters are invalid");
     }
+    if (!camera_intrinsics.allFinite() || !camera_transform.matrix().allFinite() ||
+        camera_intrinsics.x() < 0 || camera_intrinsics.y() < 0 ||
+        ((camera_intrinsics.x() == 0) != (camera_intrinsics.y() == 0)) ||
+        !(camera_transform.linear().transpose()*camera_transform.linear()).isApprox(Matrix3::Identity(), 1e-5) ||
+        std::abs(camera_transform.linear().determinant() - 1.0) > 1e-5 ||
+        !std::isfinite(attachment_strength) || attachment_strength <= 0) {
+        return SetValidationError(error, "tactile camera or attachment parameters are invalid");
+    }
     if (rgb_model.empty()) {
         return SetValidationError(error, "tactile RGB model name must not be empty");
     }

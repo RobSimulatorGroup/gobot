@@ -74,7 +74,7 @@ triangle-mesh collision geometry, and driven revolute/prismatic articulation.
 Loose `CollisionShape3D` nodes outside `Link3D` hierarchies compile as fixed IPC
 colliders and never enter affine target or wrench arrays. `Terrain3D` remains
 explicitly unsupported by the IPC compiler. Additional joint types and limits,
-tactile image products, and articulated force feedback remain Gobot adapter
+batched tactile output, and articulated force feedback remain Gobot adapter
 work; they do not change the public scene ownership boundary.
 
 Schema v4 includes canonical `couplings` and `static_colliders` tables. Entries are sorted by coupling
@@ -125,9 +125,19 @@ read-only NumPy arrays. `contact_forces` contains the physical libuipc contact
 force accumulated at each deformable vertex, in newtons; it is not normalized
 or display-scaled by the provider.
 
-Tactile artifacts are rejected instead of being silently ignored. Tactile image
-products remain native adapter work and are not currently exposed by
-`gobot.ipc`.
+Single-world `LibuipcProvider` accepts `TactileSensor3D` artifacts. The native
+solver creates a StableNeoHookean gel with explicit backing constraints; Gobot's
+independent C++ processor produces calibrated RGB, marker motion, pressure and
+shear from completed state. Triangle-mesh contactors provide a high-resolution
+contact depth map and TAXIM optical indentation; raw FEM gel depth and
+indentation remain separate outputs. `TriangleMeshShape3D` retains mesh holes
+and concavity in IPC, while unsupported convexifying backends reject it. Read-only CPU results
+are available as `provider.tactile_frames[authored_sensor_path]`. The editor
+example is `examples/tactile_gelsight`, with a dockable Tactile panel. Tactile
+sessions reset from a full native frame-zero checkpoint. The single-world module
+ABI is v5; older modules are explicitly rejected.
+
+Batched tactile artifacts remain unsupported and are rejected explicitly.
 
 ## MuJoCo + libuipc Batch Co-simulation
 

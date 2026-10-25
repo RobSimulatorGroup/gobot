@@ -757,6 +757,12 @@ private:
 
 bool ModelBuilder::Compile() {
     scene_artifact_ = {};
+    for (const auto& shape : scene_snapshot_.loose_collision_shapes) {
+        if (!shape.disabled && shape.type == PhysicsShapeType::Mesh && !shape.convex) {
+            SetLastError("MuJoCo does not preserve non-convex TriangleMeshShape3D contacts: " + shape.scene_path);
+            return false;
+        }
+    }
 
     std::vector<std::size_t> robot_indices;
     for (std::size_t robot_index = 0; robot_index < scene_snapshot_.robots.size(); ++robot_index) {
@@ -997,6 +1003,10 @@ bool ModelBuilder::AddAuthoredRobotToSpec(void* parent_spec_ptr,
 
         for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {
             const PhysicsShapeSnapshot& shape = link.collision_shapes[shape_index];
+            if (!shape.disabled && shape.type == PhysicsShapeType::Mesh && !shape.convex) {
+                SetLastError("MuJoCo does not preserve non-convex TriangleMeshShape3D contacts: " + shape.scene_path);
+                return false;
+            }
             const std::string shape_name = shape.name.empty()
                                                    ? fmt::format("{}{}_geom_{}", prefix, link.name, shape_index)
                                                    : prefix + SanitizeMuJoCoName(shape.name);

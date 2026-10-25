@@ -1811,6 +1811,29 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 py::cast(&context, py::return_value_policy::reference)
                         .attr("apply_link_poses")(std::move(links), std::move(poses));
             }, py::arg("links"), py::arg("poses"))
+            .def("register_runtime_pose_target", [](EngineContext& context, const PyNode3DHandle& handle,
+                                                     const py::handle& lower, const py::handle& upper) {
+                if (!context.RegisterRuntimePoseTarget(handle.ResolveAs<Node3D>(), PythonToVector3(lower), PythonToVector3(upper)))
+                    throw py::value_error("runtime pose target requires a node in the active scene and finite ordered bounds");
+            }, py::arg("node"), py::arg("lower"), py::arg("upper"))
+            .def("get_runtime_pose_target", [](EngineContext& context, const PyNode3DHandle& handle) -> py::object {
+                const auto value=context.GetRuntimePoseTarget(handle.ResolveAs<Node3D>()->GetInstanceId());
+                if (!value) return py::none();
+                py::array_t<RealType> result({4,4});
+                for (int r=0;r<4;++r) for(int c=0;c<4;++c) result.mutable_at(r,c)=value->matrix()(r,c);
+                return result;
+            }, py::arg("node"))
+            .def("set_runtime_pose_target", [](EngineContext& context, const PyNode3DHandle& handle,
+                    py::array_t<RealType,py::array::c_style|py::array::forcecast> values) {
+                if (values.ndim()!=2 || values.shape(0)!=4 || values.shape(1)!=4) throw py::value_error("pose target must be a 4x4 matrix");
+                Affine3 transform;
+                for(int r=0;r<4;++r) for(int c=0;c<4;++c) transform.matrix()(r,c)=values.at(r,c);
+                if (!context.SetRuntimePoseTarget(handle.ResolveAs<Node3D>()->GetInstanceId(),transform))
+                    throw py::value_error("pose target must be registered and contain a finite rigid transform");
+            }, py::arg("node"), py::arg("transform"))
+            .def("clear_runtime_pose_target", [](EngineContext& context, const PyNode3DHandle& handle) {
+                context.ClearRuntimePoseTarget(handle.ResolveAs<Node3D>()->GetInstanceId());
+            }, py::arg("node"))
             .def("apply_deformable_vertices", [](EngineContext& context,
                                                   const std::vector<PyDeformableBody3DHandle>& bodies,
                                                   py::array_t<RealType,

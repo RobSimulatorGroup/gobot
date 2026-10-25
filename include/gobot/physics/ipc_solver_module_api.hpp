@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_IPC_SOLVER_MODULE_ABI_VERSION = 4;
+inline constexpr std::uint32_t GOBOT_IPC_SOLVER_MODULE_ABI_VERSION = 5;
 
 struct IpcSolverArtifactBlobView {
     const char* id{nullptr};

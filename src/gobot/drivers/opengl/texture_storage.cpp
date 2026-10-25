@@ -44,6 +44,18 @@ TextureStorage::~TextureStorage() {
 
 }
 
+void* TextureStorage::GetTextureNativeHandle(RID rid) {
+    auto* texture = GetTexture(rid);
+    return texture ? reinterpret_cast<void*>(static_cast<std::uintptr_t>(texture->tex_id)) : nullptr;
+}
+
+void TextureStorage::TextureSetLinearFilter(RID rid, bool linear) {
+    auto* texture = GetTexture(rid);
+    if (!texture) return;
+    glTextureParameteri(texture->tex_id, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+    glTextureParameteri(texture->tex_id, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+}
+
 RID TextureStorage::TextureAllocate() {
     return texture_owner_.AllocateRID();
 }
@@ -223,7 +235,7 @@ void TextureStorage::TextureSetData(RID p_texture, const Ref<Image> &p_image, in
         if (initialize) {
             glTextureStorage3D(texture->tex_id, mipmaps, internal_format, w, h, texture->layers);
         }
-    } else  {
+    } else if (initialize) {
         glTextureStorage2D(texture->tex_id, mipmaps, internal_format, w, h);
     }
     for (int i = 0; i < mipmaps; i++) {
@@ -233,7 +245,7 @@ void TextureStorage::TextureSetData(RID p_texture, const Ref<Image> &p_image, in
         if (texture->target == GL_TEXTURE_2D_ARRAY) {
             glTextureSubImage3D(texture->tex_id, i, 0, 0, 0, w, h, p_layer, format, type, &read[ofs]);
         } else {
-            glTextureSubImage2D(texture->tex_id, i, 0, 0, w, h, internal_format, type, &read[ofs]);
+            glTextureSubImage2D(texture->tex_id, i, 0, 0, w, h, format, type, &read[ofs]);
         }
 
         tsize += size;
@@ -377,11 +389,11 @@ void TextureStorage::Texture2DInitialize(RID texture_id, const Ref<Image> &image
     texture.target = GL_TEXTURE_2D;
     GetGLImageAndFormat(Ref<Image>(), texture.format, texture.real_format, texture.gl_format_cache,
                         texture.gl_internal_format_cache, texture.gl_type_cache, texture.compressed, false);
-    texture.total_data_size = image->GetImageDataSize(texture.width, texture.height, texture.format, texture.mipmaps);
+    texture.total_data_size = image->GetImageDataSize(texture.width, texture.height, texture.format, image->HasMipmaps());
     texture.active = true;
-    glGenTextures(1, &texture.tex_id);
+    glCreateTextures(GL_TEXTURE_2D, 1, &texture.tex_id);
     texture_owner_.InitializeRID(texture_id, texture);
-    TextureSetData(texture_id, image);
+    TextureSetData(texture_id, image, 0, true);
 }
 
 

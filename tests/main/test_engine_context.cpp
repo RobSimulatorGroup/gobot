@@ -198,3 +198,26 @@ TEST_F(EngineContextIsolation, SceneBindingLifecycleStaysWithinItsContext) {
 }
 
 } // namespace gobot
+
+TEST(EngineContextRuntimeTargets, ClampControlTargetsWithoutMutatingSceneOrUndoHistory) {
+    gobot::SimulationServer simulation;
+    gobot::EngineContext context(nullptr,&simulation);
+    auto* root=gobot::Object::New<gobot::Node3D>();
+    auto* body=gobot::Object::New<gobot::Node3D>();root->AddChild(body);
+    context.SetSceneRoot(root,true);
+    const auto id=body->GetInstanceId();
+    const auto version=context.GetSceneCommandVersion();
+    ASSERT_TRUE(context.RegisterRuntimePoseTarget(body,{-1,-2,.004},{1,2,.03}));
+    EXPECT_FALSE(context.GetRuntimePoseTarget(id));
+    auto target=gobot::Affine3::Identity();target.translation()=gobot::Vector3{4,-4,-1};
+    ASSERT_TRUE(context.SetRuntimePoseTarget(id,target));
+    ASSERT_TRUE(context.GetRuntimePoseTarget(id));
+    EXPECT_TRUE(context.GetRuntimePoseTarget(id)->translation().isApprox(gobot::Vector3{1,-2,.004}));
+    EXPECT_TRUE(body->GetTransform().matrix().isIdentity());
+    EXPECT_EQ(context.GetSceneCommandVersion(),version);EXPECT_FALSE(context.IsSceneDirty());
+    EXPECT_FALSE(context.CanUndoSceneCommand());
+    target.linear()*=2;EXPECT_FALSE(context.SetRuntimePoseTarget(id,target));
+    context.ClearRuntimePoseTarget(id);EXPECT_FALSE(context.GetRuntimePoseTarget(id));
+    EXPECT_TRUE(context.HasRuntimePoseTarget(id));
+    context.ClearScene();EXPECT_FALSE(context.HasRuntimePoseTarget(id));
+}

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -15,6 +17,7 @@
 namespace gobot {
 
 class Node;
+class Node3D;
 class ProjectSettings;
 class RuntimeSceneOwner;
 class SimulationServer;
@@ -87,6 +90,15 @@ public:
     SimulationServer* GetSimulationServer() const;
     const std::string& GetLastError() const;
 
+    // Owner-thread control targets. Updating a target never edits scene transforms
+    // or enters the authoring undo stack; a runtime controller consumes it.
+    bool RegisterRuntimePoseTarget(Node3D* node, const Vector3& lower, const Vector3& upper);
+    bool HasRuntimePoseTarget(ObjectID node) const;
+    std::optional<Affine3> GetRuntimePoseTarget(ObjectID node) const;
+    bool SetRuntimePoseTarget(ObjectID node, const Affine3& transform);
+    void ClearRuntimePoseTarget(ObjectID node);
+    void ClearRuntimePoseTargets();
+
     void SetDebugArrows(std::vector<DebugArrow> arrows);
     const std::vector<DebugArrow>& GetDebugArrows() const;
     void ClearDebugArrows();
@@ -138,6 +150,11 @@ private:
     LoadSceneCallback load_scene_callback_;
     SceneBindingCallback scene_binding_callback_;
     SceneCommandStack scene_command_stack_;
+    struct RuntimePoseTarget {
+        Vector3 lower, upper;
+        std::optional<Affine3> transform;
+    };
+    std::unordered_map<ObjectID, RuntimePoseTarget> runtime_pose_targets_;
 };
 
 } // namespace gobot

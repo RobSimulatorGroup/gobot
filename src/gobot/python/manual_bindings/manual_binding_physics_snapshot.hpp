@@ -47,6 +47,7 @@ inline py::dict PhysicsSnapshotShape(const PhysicsShapeSnapshot& shape) {
     result["contact_offset"] = shape.contact_offset;
     result["rest_offset"] = shape.rest_offset;
     result["disabled"] = shape.disabled;
+    result["convex"] = shape.convex;
     return result;
 }
 

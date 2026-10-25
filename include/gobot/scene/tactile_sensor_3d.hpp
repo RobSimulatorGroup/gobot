@@ -14,6 +14,9 @@
 #include "gobot/core/tactile_sensor_parameters.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/core/tactile_sensor_frame.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/tactile_optical_calibration.hpp"
 
 namespace gobot {
 
@@ -71,12 +74,22 @@ public:
     void SetRgbModel(const std::string& rgb_model);
     const std::string& GetRgbModel() const;
 
+    void SetCameraIntrinsics(const Vector4& value);
+    const Vector4& GetCameraIntrinsics() const;
+    void SetCameraTransform(const Affine3& value);
+    const Affine3& GetCameraTransform() const;
+    void SetAttachmentStrength(const RealType& value);
+    const RealType& GetAttachmentStrength() const;
+    void SetOpticalCalibration(const Ref<TactileOpticalCalibration>& value);
+    const Ref<TactileOpticalCalibration>& GetOpticalCalibration() const;
+
     const TactileSensorParameters& GetParameters() const { return parameters_; }
 
     bool Validate(const TetrahedralMesh& gel_mesh, std::string* error = nullptr) const;
 
 private:
     TactileSensorParameters parameters_;
+    Ref<TactileOpticalCalibration> optical_calibration_;
 };
 
 class GOBOT_EXPORT TactileSensor3D : public Sensor3D {
@@ -84,6 +97,9 @@ class GOBOT_EXPORT TactileSensor3D : public Sensor3D {
 
 public:
     TactileSensor3D() = default;
+    void SetRuntimeFrame(std::shared_ptr<const TactileSensorFrame> frame);
+    const std::shared_ptr<const TactileSensorFrame>& GetRuntimeFrame() const;
+    Ref<ArrayMesh> GetRenderMesh() const;
 
     void SetConfig(const Ref<TactileSensorConfig>& config);
     const Ref<TactileSensorConfig>& GetConfig() const;
@@ -98,6 +114,8 @@ public:
     std::uint32_t GetCollisionMask() const;
 
 private:
+    std::shared_ptr<const TactileSensorFrame> runtime_frame_;
+    mutable Ref<ArrayMesh> render_mesh_;
     Ref<TactileSensorConfig> config_;
     Ref<TetrahedralMesh> gel_mesh_;
     std::uint32_t collision_layer_{1};

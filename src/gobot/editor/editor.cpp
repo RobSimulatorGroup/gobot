@@ -30,6 +30,8 @@
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/physics_panel.hpp"
+#include "gobot/editor/imgui/tactile_panel.hpp"
+#include "imgui_extension/gizmos/ImGuizmo.h"
 #include "gobot/editor/imgui/python_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
@@ -149,6 +151,7 @@ Editor::Editor() {
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<PhysicsPanel>());
+    AddChild(Object::New<TactilePanel>());
     resource_panel_ = Object::New<ResourcePanel>();
     AddChild(resource_panel_);
 
@@ -765,6 +768,20 @@ std::string Editor::GetSceneViewTitle() const {
     return title;
 }
 
+void Editor::SelectRuntimePoseControl() {
+    std::vector<Node*> controls;
+    const auto visit = [&](auto&& self, Node* node) -> void {
+        if (!node) return;
+        if (engine_context_->HasRuntimePoseTarget(node->GetInstanceId())) controls.push_back(node);
+        for (int i=0; i<node->GetChildCount(); ++i) self(self,node->GetChild(i));
+    };
+    visit(visit,scene_play_session_->GetRuntimeRoot());
+    if (controls.size()==1) {
+        SetSelected(controls.front());
+        node3d_editor_->SetImGuizmoOperation(ImGuizmo::TRANSLATE);
+    }
+}
+
 bool Editor::StartScenePlaySession() {
     if (scene_play_session_ == nullptr) {
         RequestPlayError("Scene Play Session is unavailable.");
@@ -774,6 +791,7 @@ bool Editor::StartScenePlaySession() {
         RequestPlayError(scene_play_session_->GetLastError());
         return false;
     }
+    SelectRuntimePoseControl();
     if (auto* input = Input::GetInstanceOrNull()) {
         input->SetControlFocus(true);
     }
@@ -895,7 +913,10 @@ bool Editor::ResetScenePlaySession() {
     if (scene_play_session_ == nullptr) {
         return false;
     }
+    // Reset replaces the runtime clone; never retain a selected pointer into it.
+    if (IsRuntimeNode(selected_)) SetSelected(GetEditedSceneRoot());
     const bool running = scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
+    if (running) SelectRuntimePoseControl();
     if (running && SimulationServer::HasInstance()) {
         SimulationServer* simulation = SimulationServer::GetInstance();
         if (simulation->HasExternalSession()) {
@@ -1110,6 +1131,8 @@ void Editor::DrawViewMenu() {
     }
 
     DrawPanelViewMenuItems(this);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Reset Layout")) reset_layout_requested_ = true;
     ImGui::EndMenu();
 }
 
@@ -1527,29 +1550,33 @@ void Editor::BeginDockSpace() {
 
     ImGuiID DockspaceID = ImGui::GetID("gobot_dockspace_v2");
 
-    if(!ImGui::DockBuilderGetNode(DockspaceID)) {
+    if(reset_layout_requested_ || !ImGui::DockBuilderGetNode(DockspaceID)) {
+        reset_layout_requested_ = false;
         ImGui::DockBuilderRemoveNode(DockspaceID); // Clear out existing layout
         ImGui::DockBuilderAddNode(DockspaceID);    // Add empty node
         ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize);
 
         ImGuiID dock_main_id = DockspaceID;
-        ImGuiID DockLeft     = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.2f, nullptr, &dock_main_id);
-        ImGuiID DockRight    = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
+        ImGuiID dock_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.14f, nullptr, &dock_main_id);
+        ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.42f, nullptr, &dock_main_id);
+        ImGuiID dock_resources = ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.40f, nullptr, &dock_left);
+        ImGuiID dock_tactile = ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.55f, nullptr, &dock_right);
+        ImGuiID dock_python = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.35f, nullptr, &dock_main_id);
+        ImGuiID dock_console = ImGui::DockBuilderSplitNode(dock_python, ImGuiDir_Down, 0.43f, nullptr, &dock_python);
 
-        ImGuiID DockingBottomLeftChild  = ImGui::DockBuilderSplitNode(DockLeft, ImGuiDir_Down, 0.4f, nullptr, &DockLeft);
-
-        ImGuiID DockMiddle       = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.8f, nullptr, &dock_main_id);
-        ImGuiID DockBottomMiddle = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Down, 0.3f, nullptr, &DockMiddle);
-
-        ImGui::DockBuilderDockWindow("###scene_view3d", DockMiddle);
-        ImGui::DockBuilderDockWindow("###python", DockMiddle);
-        ImGui::DockBuilderDockWindow("###inspector", DockRight);
-        ImGui::DockBuilderDockWindow("###physics", DockRight);
-        ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
-        ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);
-        ImGui::DockBuilderDockWindow("###scene_editor", DockLeft);
+        ImGui::DockBuilderDockWindow("###scene_view3d", dock_main_id);
+        ImGui::DockBuilderDockWindow("###python", dock_python);
+        ImGui::DockBuilderDockWindow("###inspector", dock_right);
+        ImGui::DockBuilderDockWindow("###tactile", dock_tactile);
+        ImGui::DockBuilderDockWindow("###physics", dock_tactile);
+        ImGui::DockBuilderDockWindow("###console", dock_console);
+        ImGui::DockBuilderDockWindow("###resources", dock_resources);
+        ImGui::DockBuilderDockWindow("###scene_editor", dock_left);
 
         ImGui::DockBuilderFinish(DockspaceID);
+        for (int i=0; i<GetChildCount(); ++i) {
+            if (auto* panel=Object::PointerCastTo<TactilePanel>(GetChild(i))) panel->RequestFocus();
+        }
     }
 
     // Submit the DockSpace

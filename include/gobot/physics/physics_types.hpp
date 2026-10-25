@@ -18,6 +18,7 @@
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/robotics_types.hpp"
 #include "gobot/core/tactile_sensor_parameters.hpp"
+#include "gobot/core/tactile_optical_data.hpp"
 #include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
@@ -200,6 +201,7 @@ struct PhysicsShapeSnapshot {
     std::string scene_path;
     std::uint64_t stable_id{0};
     PhysicsShapeType type{PhysicsShapeType::Unknown};
+    bool convex{true};
     Affine3 global_transform{Affine3::Identity()};
     Vector3 box_size{Vector3::Ones()};
     RealType radius{0.0};
@@ -236,6 +238,7 @@ struct PhysicsTactileSnapshot {
     std::vector<std::uint32_t> gel_tetrahedra;
     std::vector<std::uint32_t> gel_surface_triangles;
     std::optional<TactileSensorParameters> parameters;
+    std::optional<TactileOpticalData> optical_calibration;
     std::string attachment_link_path;
     Affine3 attachment_transform{Affine3::Identity()};
     std::uint32_t collision_layer{1};
