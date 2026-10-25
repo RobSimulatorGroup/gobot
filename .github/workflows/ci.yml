@@ -33,7 +33,6 @@ jobs:
           3rdparty/googletest \
           3rdparty/imgui \
           3rdparty/meshoptimizer \
-          3rdparty/mjbatch \
           3rdparty/project_superdex \
           3rdparty/pybind11 \
           3rdparty/rttr \
@@ -116,7 +115,6 @@ jobs:
           3rdparty/googletest \
           3rdparty/imgui \
           3rdparty/meshoptimizer \
-          3rdparty/mjbatch \
           3rdparty/onetbb \
           3rdparty/openusd \
           3rdparty/pybind11 \
