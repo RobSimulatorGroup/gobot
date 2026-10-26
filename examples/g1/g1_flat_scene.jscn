@@ -1,0 +1,198 @@
+{
+  "__EXT_RESOURCES__": [
+    {
+      "__ID__": "2_Jr8iE",
+      "__PATH__": "res://g1.jscn",
+      "__TYPE__": "PackedScene"
+    },
+    {
+      "__ID__": "1_ZQA7c",
+      "__PATH__": "res://scripts/g1.py",
+      "__TYPE__": "PythonScript"
+    },
+    {
+      "__ID__": "3_terrain",
+      "__PATH__": "res://terrain/flat_terrain.jres",
+      "__TYPE__": "TerrainGeneratorConfig"
+    }
+  ],
+  "__META_TYPE__": "SCENE",
+  "__NODES__": [
+    {
+      "name": "g1_scene",
+      "parent": -1,
+      "properties": {
+        "position": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "rotation_degrees": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "scale": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "script": "ExtResource(1_ZQA7c)",
+        "visible": true
+      },
+      "type": "Node3D"
+    },
+    {
+      "instance": "ExtResource(2_Jr8iE)",
+      "name": "g1",
+      "parent": 0,
+      "properties": {
+        "mode": "Motion",
+        "position": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "rotation_degrees": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "scale": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "script": null,
+        "source_path": "res://assets/xml/go1.xml",
+        "visible": true
+      },
+      "type": "Robot3D"
+    },
+    {
+      "name": "terrain_world",
+      "parent": 0,
+      "properties": {
+        "position": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "rotation_degrees": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "scale": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "script": null,
+        "visible": true
+      },
+      "type": "Node3D"
+    },
+    {
+      "name": "terrain",
+      "parent": 2,
+      "properties": {
+        "color_mode": "Palette",
+        "generator_config": "ExtResource(3_terrain)",
+        "position": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "rotation_degrees": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "scale": {
+          "matrix_data": {
+            "cols": 1,
+            "rows": 3,
+            "storage": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "script": null,
+        "visible": true
+      },
+      "type": "Terrain3D"
+    }
+  ],
+  "__TYPE__": "PackedScene",
+  "__VERSION__": 3,
+  "__SUB_RESOURCES__": []
+}

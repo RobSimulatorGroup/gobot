@@ -34,7 +34,7 @@ from gobot.rl.locomotion.math import (
 
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .gait import bound_gait_score_numpy
-from .terms import posture_std
+from .terms import posture_std, locomotion_failure_mask
 from .curriculum import progress_masks
 from .scene import prepare_velocity_scene
 from .training_state import (
@@ -164,6 +164,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         max_difficulty = max(float(np.max(self._spawn_difficulties)), 1.0e-6)
         self._spawn_levels = np.clip(self._spawn_difficulties / max_difficulty, 0.0, 1.0).astype(np.float32)
 
+        if cfg.capture_transitions:
+            from gobot.sim.providers import CompiledSceneArtifact
+            self.compiled_artifact = CompiledSceneArtifact.from_mapping(self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu))
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
 
         self._scene_link_names = tuple(_node_names_by_type(self.robot, "Link3D"))
@@ -515,6 +518,11 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         done_envs = terminated | time_outs
         reset_reason = np.where(terminated, 1, np.where(terrain_out, 3, np.where(time_outs, 2, 0))).astype(np.int64)
         self._episode_returns += rewards
+        transition_state = transition_obs = None
+        if self.cfg_obj.capture_transitions:
+            transition_state = {key: value.copy() for key, value in self.locomotion_state().items()}
+            a, c = self._build_generic_velocity_observations(batch_state)
+            transition_obs = {"actor": a.copy(), "critic": c.copy()}
         reset_env_ids = np.flatnonzero(done_envs).astype(np.int64)
         if reset_env_ids.size:
             for env_id in reset_env_ids:
@@ -534,6 +542,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         if reset_env_ids.size:
             batch_state = self.backend.state
         self.backend.advance_commands()
+        self._limit_running_commands()
         self._apply_pushes()
         batch_state = self.backend.state
         self._mark_profile(profile_marks, "termination_reset")
@@ -581,6 +590,10 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         )
         if reward_terms:
             self._state.info["reward_terms"] = reward_terms
+        if transition_obs is not None:
+            self._state.final_observation = transition_obs
+            self._state.info.update(transition_observation=transition_obs, transition_state=transition_state,
+                                    final_observation=transition_obs, _final_observation=done_envs)
         self.step_counter += 1
         timing = self._state.info.setdefault("timing", {})
         timing["env_step_total_ms"] = (self.perf_counter() - step_t0) * 1000.0
@@ -611,6 +624,14 @@ class CpuVelocityEnv(LocomotionBatchEnv):
     def terrain_type_names(self):
         return tuple(entry["name"] for entry in self._terrain_config["sub_terrains"])
 
+    def _limit_running_commands(self):
+        if not self.cfg_obj.running_terrain_types:
+            return
+        allowed = np.isin(self._spawn_type_cols, self.cfg_obj.running_terrain_types)
+        allowed &= (self._spawn_type_cols == 0) | (self._spawn_env_levels <= self.cfg_obj.max_running_terrain_level)
+        self.backend.state.command[~allowed, 0] = np.minimum(self.backend.state.command[~allowed, 0], 1.2)
+        self.backend.state.command_is_run_env[~allowed] = False
+
     def set_command(self, command):
         value = np.asarray(command, dtype=np.float32)
         if value.shape not in ((3,), (self.num_envs, 3)) or not np.isfinite(value).all():
@@ -622,8 +643,14 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
     def locomotion_state(self):
         state = self.backend.state
-        return {name: getattr(state, name) for name in ("base_position", "base_quaternion", "base_linear_velocity_body",
-                "base_angular_velocity_body", "joint_position", "joint_velocity", "foot_contact", "foot_velocity", "angular_momentum")}
+        result = {name: getattr(state, name) for name in ("base_position", "base_quaternion", "base_linear_velocity_body",
+                "base_angular_velocity_body", "joint_position", "joint_velocity", "foot_contact", "foot_velocity", "angular_momentum", "foot_position")}
+        result["base_clearance"] = state.height_scan[:, self._height_scan_dim // 2]
+        result.update(foot_force=np.asarray(state.foot_contact_force), command=self.command_b,
+                      terrain_level=self._spawn_env_levels, terrain_type=self._spawn_type_cols)
+        if self.cfg_obj.state_link_names:
+            result["link_position"] = state.link_position[:, [self._batch_link_index[name] for name in self.cfg_obj.state_link_names]]
+        return result
 
     @property
     def terrain_assignments(self):
@@ -1342,9 +1369,11 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
 
-        terminated = np.asarray(state.illegal_contact_count, dtype=np.float32) > 0.0
-        if self.cfg_obj.fall_angle is not None:
-            terminated |= np.asarray(state.projected_gravity)[:, 2] > -math.cos(self.cfg_obj.fall_angle)
+        terminated = locomotion_failure_mask(np.asarray(state.projected_gravity)[:, 2],
+            np.asarray(state.height_scan)[:, self._height_scan_dim // 2],
+            np.asarray(state.illegal_contact_count), np.asarray(state.trunk_head_collision_count),
+            fall_angle=self.cfg_obj.fall_angle, min_clearance=self.cfg_obj.min_base_clearance,
+            terminate_on_trunk=self.cfg_obj.illegal_contact.terminate_on_trunk_contact)
         np.copyto(state.terminated, terminated.astype(np.uint8))
         np.copyto(state.velocity_error, np.linalg.norm(command[:, :2] - lin_vel[:, :2], axis=1).astype(np.float32))
         np.copyto(state.foot_slip, (foot_slip * active).astype(np.float32))
@@ -1521,6 +1550,11 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             spawn = self._spawn_origins[spawn_index].copy()
             terrain_origin = spawn.copy()
             spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
+            spawn[:2] += np.asarray(self.cfg_obj.spawn_offset_xy)
+            if any(self.cfg_obj.spawn_offset_xy):
+                spawn[2] = self.backend.terrain_heights(spawn[None, :])[0]
+                if not np.isfinite(spawn[2]):
+                    raise RuntimeError("evaluation spawn is outside terrain collision geometry")
             z_lo, z_hi = self.cfg_obj.reset_z_range
             base_z = float(spawn[2]) + self.cfg_obj.base_clearance + float(self._rng.uniform(z_lo, z_hi))
             reset_lin_vel = np.zeros(3, dtype=np.float32)
@@ -1694,9 +1728,13 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             move_up, move_down = progress_masks(np.asarray(distance), np.asarray(required), self._terrain_patch_size()[0])
             if self.common_step_counter == 0:
                 move_up = move_down = False
+        if reset_reason == 1:
+            move_up = False
         level = int(self._spawn_env_levels[env_id]) + (1 if move_up else 0) - (1 if move_down else 0)
         if level >= rows:
             level = int(self._rng.integers(0, rows))
+        if self.cfg_obj.max_terrain_level is not None:
+            level = min(level, self.cfg_obj.max_terrain_level)
         self._spawn_env_levels[env_id] = int(np.clip(level, 0, max(rows - 1, 0)))
         self._terrain_curriculum_limits[env_id] = float(self._spawn_env_levels[env_id]) / max(float(rows - 1), 1.0)
 

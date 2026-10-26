@@ -6,6 +6,8 @@
 #include <fstream>
 
 #include <gobot/core/io/resource_format_mjcf.hpp>
+#include <gobot/physics/physics_server.hpp>
+#include <gobot/physics/physics_scene_compiler.hpp>
 #include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
@@ -569,4 +571,39 @@ TEST(TestResourceFormatMJCF, imports_go1_imu_velocimeter_as_imu_sensor_node) {
             gobot::Vector3(-0.01592, -0.06659, -0.00617), 1.0e-9));
 
     gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, preserves_collision_exclusions_through_scene_and_physics_compilation) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+    auto loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    auto scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(
+            loader->Load((std::filesystem::current_path() / "tests/fixtures/mjcf/collision_exclusions.xml").string()));
+    ASSERT_TRUE(scene.IsValid());
+    auto* root = scene->Instantiate();
+    auto* robot = gobot::Object::PointerCastTo<gobot::Robot3D>(root);
+    ASSERT_NE(robot, nullptr);
+    const std::vector<std::array<std::string, 2>> expected{{"first", "second"}};
+    EXPECT_EQ(robot->GetCollisionExclusions(), expected);
+    auto packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(robot));
+    auto* clone = gobot::Object::PointerCastTo<gobot::Robot3D>(packed->Instantiate());
+    ASSERT_NE(clone, nullptr);
+    EXPECT_EQ(clone->GetCollisionExclusions(), expected);
+    gobot::PhysicsSceneArtifact artifact;
+    std::string error;
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
+            gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error)) << error;
+    EXPECT_NE(artifact.content.find("<exclude"), std::string::npos);
+    EXPECT_NE(artifact.content.find("body1=\"excluded_links_first\""), std::string::npos);
+    clone->SetCollisionExclusions({{"first", "missing_link"}});
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    EXPECT_FALSE(gobot::PhysicsServer::CompileSceneArtifact(
+            gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error));
+    EXPECT_NE(error.find("Invalid collision exclusion"), std::string::npos);
+    gobot::Object::Delete(clone);
+    gobot::Object::Delete(root);
 }

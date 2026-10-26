@@ -95,3 +95,65 @@ def g1_velocity_cfg(*, project_path=None, play=False):
         cfg.push_enabled = False
         cfg.terrain_curriculum = False
     return cfg
+
+
+def g1_amp_cfg(*, project_path=None, stage="rough", play=False):
+    """Human motion prior task; same policy/robot contract across training terrain stages."""
+    if stage not in {"flat", "rough", "mixed"}:
+        raise ValueError(f"unknown G1 AMP stage {stage!r}")
+    cfg = g1_velocity_cfg(project_path=project_path, play=play)
+    cfg.name = "g1_amp_velocity"
+    cfg.task_version = "g1_amp_velocity_v2"
+    cfg.scene_path = "res://g1_flat_scene.jscn" if stage == "flat" else "res://g1_scene.jscn"
+    cfg.robot_resource_path = "res://g1.jscn"
+    cfg.capture_transitions = True
+    cfg.state_link_names = ("left_ankle_roll_link", "right_ankle_roll_link", "left_wrist_yaw_link", "right_wrist_yaw_link")
+    cfg.observations.history_length = 10
+    cfg.action_clip = 5.
+    cfg.min_base_clearance = .45
+    cfg.illegal_contact.terminate_on_thigh = True
+    cfg.illegal_contact.terminate_on_trunk_contact = True
+    cfg.illegal_contact.thigh_shape_patterns = (r".*_(?:hip|thigh)_collision",)
+    cfg.illegal_contact.shank_shape_patterns = (r".*_(?:shin|linkage_brace)_collision",)
+    cfg.illegal_contact.trunk_head_shape_patterns = (r"(?:pelvis|torso|head)_collision",
+        r".*_(?:hand|wrist|elbow_yaw|shoulder_yaw)_collision")
+    cfg.rewards.shank_collision = -.2
+    cfg.rewards.trunk_head_collision = -1.
+    cfg.command_curriculum = ()
+    cfg.run_command_curriculum = ()
+    cfg.command.ranges.lin_vel_x = (-.3, 1.2 if stage == "rough" else 2.2)
+    cfg.command.ranges.lin_vel_y = (-.3, .3)
+    cfg.command.ranges.ang_vel_z = (-.6, .6)
+    cfg.command.rel_forward_envs = .5
+    cfg.command.rel_run_envs = .0 if stage == "rough" else .2
+    cfg.command.run_velocity_x = (1.6, 2.2)
+    cfg.running_terrain_types = (0, 3, 4) if stage == "mixed" else ()
+    cfg.max_running_terrain_level = 2
+    cfg.rewards.track_linear_velocity = 6.
+    cfg.rewards.air_time = .3
+    cfg.rewards.pose = 1.
+    cfg.rewards.foot_clearance = -2.
+    cfg.rewards.foot_swing_height = -.25
+    cfg.rewards.action_rate_l2 = -.05
+    cfg.rewards.angular_momentum = -.02
+    cfg.domain_randomization.foot_friction_slide_range = (.4, 1.4)
+    cfg.domain_randomization.encoder_bias_range = (-.01, .01)
+    cfg.push_interval_range_s = (5., 10.)
+    cfg.push_velocity_ranges = {"x": (-.3, .3), "y": (-.3, .3), "z": (0., 0.),
+                                "roll": (0., 0.), "pitch": (0., 0.), "yaw": (0., 0.)}
+    if stage == "flat":
+        from gobot.rl.locomotion.command import VelocityCommandStage
+        cfg.command.ranges.lin_vel_x = (-.1, 1.)
+        cfg.command.ranges.lin_vel_y = (-.15, .15)
+        cfg.command.ranges.ang_vel_z = (-.3, .3)
+        cfg.command.rel_run_envs = 0.
+        cfg.command_curriculum = (
+            VelocityCommandStage(step=0),
+            VelocityCommandStage(step=48_000, lin_vel_x=(-.3, 1.5), lin_vel_y=(-.3, .3), ang_vel_z=(-.6, .6)),
+            VelocityCommandStage(step=120_000, lin_vel_x=(-.3, 2.2)),
+        )
+        cfg.domain_randomization.enabled = False
+        cfg.push_enabled = False
+        cfg.max_init_terrain_level = 0
+        cfg.max_terrain_level = 0
+    return cfg

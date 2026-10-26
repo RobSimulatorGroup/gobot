@@ -69,6 +69,7 @@ VELOCITY_REWARD_TERM_NAMES: tuple[str, ...] = (
 
 @dataclass
 class VelocityObservationCfg:
+    history_length: int = 1
     height_scan_sensor: str = "terrain_scan"
     terrain_scan_max_distance: float = 5.0
     actor_noise: bool = True
@@ -132,6 +133,7 @@ class VelocityRewardCfg:
 class VelocityIllegalContactCfg:
     enabled: bool = True
     terminate_on_thigh: bool = True
+    terminate_on_trunk_contact: bool = False
     ground_force_threshold: float = 10.0
     self_collision_force_threshold: float = 10.0
     thigh_shape_patterns: tuple[str, ...] = (r".*_thigh_collision[123]",)
@@ -185,9 +187,16 @@ class VelocityTaskCfg:
     robot: LocomotionRobotCfg | None = None
     task_version: str = "velocity_v1"
     post_step_sensing: bool = True
+    capture_transitions: bool = False
+    state_link_names: tuple[str, ...] = ()
+    robot_resource_path: str | None = None
+    max_terrain_level: int | None = None
+    running_terrain_types: tuple[int, ...] = ()
+    max_running_terrain_level: int = 2
     terrain_node_path: str = "terrain_world/terrain"
     curriculum_mode: Literal["legacy", "command_progress"] = "legacy"
     fall_angle: float | None = None
+    min_base_clearance: float | None = None
     nconmax: int = 35
     njmax: int = 1500
     gait_foot_indices: tuple[int, ...] = ()
@@ -213,6 +222,7 @@ class VelocityTaskCfg:
     episode_length_s: float = 20.0
     base_clearance: float = 0.278
     spawn_jitter: float = 0.5
+    spawn_offset_xy: tuple[float, float] = (0., 0.)
     reset_z_range: tuple[float, float] = (0.01, 0.05)
     randomize_reset_yaw: bool = True
     # Controls spawn-level progression over the authored terrain grid. Geometry

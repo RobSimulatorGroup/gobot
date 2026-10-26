@@ -359,6 +359,12 @@ class RslRlVecEnvWrapper:
                 self._timeouts_buf,
                 self._timeouts_staging,
             )
+        if "transition_observation" in info:
+            for key in ("transition_observation", "transition_state", "final_observation", "_final_observation", "motion_pair"):
+                if key in info:
+                    value = info[key]
+                    extras[key] = ({k: self.torch.as_tensor(v, device=self.device) for k, v in value.items()}
+                                   if isinstance(value, Mapping) else self.torch.as_tensor(value, device=self.device))
         log = info.get("log", {})
         if isinstance(log, Mapping):
             extras["log"] = {

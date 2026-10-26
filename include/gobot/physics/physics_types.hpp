@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -332,6 +333,7 @@ struct PhysicsRobotSnapshot {
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
     std::vector<PhysicsSensorSnapshot> sensors;
+    std::vector<std::array<std::string, 2>> collision_exclusions;
 };
 
 struct PhysicsDeformableSnapshot {

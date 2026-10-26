@@ -7,3 +7,16 @@ Adaptations include Gobot scene serialization, preserved articulated hands with
 fixed targets, explicit multi-shape foot groups, and CPU/Warp batch execution.
 The original Unitree meshes/MJCF are supplied separately by the user and are
 not included in this derived preset.
+
+Motion preprocessing and validation design were cross-checked against:
+- supermimic_vibed, a1508d42c9d1699a52e8233ab16d08c488441ab9 (MIT).
+- Uni-SuperMimic, faf7818 (Apache-2.0, preserving the upstream MIT notice).
+No Isaac Lab or UniLab runtime is imported by this Gobot task.
+
+AMP loss and style reward: Peng et al., "AMP: Adversarial Motion Priors for
+Stylized Physics-Based Character Control", SIGGRAPH 2021, equations 7-8.
+SuperMimic reference: Liao et al., arXiv:2610.28480, 2026. The world-model
+algorithm is not implemented here; it informed reference-data and contract checks.
+
+Downloaded LAFAN1/G1 data remains a separate, untracked asset. Its source,
+revision, checksums, and license are retained in assets/motions/source.json.

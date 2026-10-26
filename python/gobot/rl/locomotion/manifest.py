@@ -13,6 +13,10 @@ def build_policy_manifest(
 ) -> PolicyManifest:
     task_metadata = env.task_runtime_metadata
     scene_digest = scene_bundle_digest(project_path, cfg.scene_path)
+    contract_digest = scene_digest
+    if cfg.robot_resource_path:
+        from .contract import robot_physics_digest
+        contract_digest = robot_physics_digest(env.compiled_artifact, cfg.robot_name)
     return PolicyManifest(
         task_name=str(cfg.name),
         task_version=str(task_metadata.version),
@@ -35,13 +39,18 @@ def build_policy_manifest(
         },
         model={
             "type": "mlp",
+            "obs_normalizer_eps": 1.e-2,
             "activation": str(train_cfg.get("actor", {}).get("activation", "elu")),
             "hidden_dims": tuple(train_cfg.get("actor", {}).get("hidden_dims", ())),
         },
         scene_path=str(cfg.scene_path),
-        scene_digest=scene_digest,
+        scene_digest=contract_digest,
         extras={
             "robot_name": str(cfg.robot_name),
+            "scene_digest_kind": "robot_physics_v1" if cfg.robot_resource_path else "scene_bundle",
+            "training_scene_digest": scene_digest,
+            "history_length": cfg.observations.history_length,
+
             "post_step_sensing": cfg.post_step_sensing,
             "base_link": str(cfg.base_link),
             "training_backend": str(task_metadata.backend),
@@ -66,10 +75,19 @@ def build_policy_manifest(
 
 
 def validate_policy(manifest, env, cfg):
+    if manifest.extras.get("scene_digest_kind") == "robot_physics_v1":
+        from .contract import robot_physics_digest
+        digest = robot_physics_digest(env.compiled_artifact, cfg.robot_name)
+    else:
+        digest = scene_bundle_digest(Path(cfg.project_path), cfg.scene_path)
     manifest.validate_runtime(observation_spec=env.observation_spec, action_spec=env.action_spec,
         joint_names=env.joint_names, physics_dt=env.physics_dt, decimation=env.decimation,
         task_name=cfg.name, task_version=cfg.task_version,
-        scene_digest=scene_bundle_digest(Path(cfg.project_path), cfg.scene_path))
+        scene_digest=digest)
+    if manifest.control.get("action_clip") != cfg.action_clip:
+        raise ValueError("policy action clipping does not match the runtime")
+    if int(manifest.extras.get("history_length", 1)) != cfg.observations.history_length:
+        raise ValueError("policy observation history does not match the runtime")
     if bool(manifest.extras.get("post_step_sensing", False)) != cfg.post_step_sensing:
         raise ValueError("policy sensor timing does not match the task")
     if dict(manifest.extras.get("solver_settings", {})) != dict(cfg.mujoco_solver_settings):

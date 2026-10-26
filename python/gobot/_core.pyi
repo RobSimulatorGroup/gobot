@@ -473,6 +473,7 @@ class VelocityCommandDebug3D(Node3D):
 
 
 class Robot3D(Node3D):
+    collision_exclusions: list[tuple[str, str]]
     source_path: str
     mode: RobotMode
 

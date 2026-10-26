@@ -41,10 +41,15 @@ def make_velocity_env(cfg, *, backend="mujoco-cpu", num_envs=64, device=None, se
     """Create a typed velocity environment from an authored scene and robot profile."""
     if backend == "mujoco-cpu":
         from .cpu_env import CpuVelocityEnv
-        return CpuVelocityEnv(cfg, num_envs=num_envs, device=device or "cpu", seed=seed, **kwargs)
-    if backend == "mujoco-warp":
+        env = CpuVelocityEnv(cfg, num_envs=num_envs, device=device or "cpu", seed=seed, **kwargs)
+    elif backend == "mujoco-warp":
         from .warp_env import WarpVelocityEnv
-        return WarpVelocityEnv(cfg, num_envs=num_envs, device=device or "cuda:0", seed=seed, **kwargs)
-    raise ValueError(f"unsupported velocity backend {backend!r}")
+        env = WarpVelocityEnv(cfg, num_envs=num_envs, device=device or "cuda:0", seed=seed, **kwargs)
+    else:
+        raise ValueError(f"unsupported velocity backend {backend!r}")
+    if cfg.observations.history_length > 1:
+        from .history import HistoryVelocityEnv
+        return HistoryVelocityEnv(env, cfg.observations.history_length)
+    return env
 
 __all__ += ["FootCfg", "LocomotionRobotCfg", "VelocityTaskCfg", "make_velocity_env"]

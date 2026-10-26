@@ -1,248 +1,248 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "46_JRUb1",
-            "__PATH__": "res://assets/meshes/right_hand_middle_0_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "45_lUddM",
-            "__PATH__": "res://assets/meshes/right_hand_thumb_2_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "48_d5i84",
-            "__PATH__": "res://assets/meshes/right_hand_index_0_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "44_Q9XNV",
-            "__PATH__": "res://assets/meshes/right_hand_thumb_1_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "40_olZaR",
-            "__PATH__": "res://assets/meshes/right_wrist_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "39_Q1w14",
-            "__PATH__": "res://assets/meshes/right_wrist_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "37_RzuWZ",
-            "__PATH__": "res://assets/meshes/right_shoulder_yaw_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "36_mBloU",
-            "__PATH__": "res://assets/meshes/right_shoulder_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "47_GxCOk",
-            "__PATH__": "res://assets/meshes/right_hand_middle_1_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "35_DIb4t",
-            "__PATH__": "res://assets/meshes/right_shoulder_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "41_TE4va",
-            "__PATH__": "res://assets/meshes/right_wrist_yaw_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "34_6xdHA",
-            "__PATH__": "res://assets/meshes/left_hand_index_1_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "33_sfOEZ",
-            "__PATH__": "res://assets/meshes/left_hand_index_0_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "30_7PwLk",
-            "__PATH__": "res://assets/meshes/left_hand_thumb_2_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "10_fnq7M",
-            "__PATH__": "res://assets/meshes/right_hip_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "8_jSs0v",
-            "__PATH__": "res://assets/meshes/left_ankle_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "11_X631c",
-            "__PATH__": "res://assets/meshes/right_hip_yaw_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "23_qbI99",
-            "__PATH__": "res://assets/meshes/left_elbow_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "14_G0V8M",
-            "__PATH__": "res://assets/meshes/right_ankle_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "12_N0uxe",
-            "__PATH__": "res://assets/meshes/right_knee_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "15_8wrOE",
-            "__PATH__": "res://assets/meshes/waist_yaw_link_rev_1_0.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "3_lxaCW",
-            "__PATH__": "res://assets/meshes/left_hip_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "5_ryqwg",
-            "__PATH__": "res://assets/meshes/left_hip_yaw_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "4_768kf",
-            "__PATH__": "res://assets/meshes/left_hip_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "2_kLCuo",
-            "__PATH__": "res://assets/meshes/pelvis_contour_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "17_VRdQM",
-            "__PATH__": "res://assets/meshes/torso_link_rev_1_0.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "16_FJKFc",
-            "__PATH__": "res://assets/meshes/waist_roll_link_rev_1_0.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "9_D5bQ5",
-            "__PATH__": "res://assets/meshes/right_hip_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "20_uwMOF",
-            "__PATH__": "res://assets/meshes/left_shoulder_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "18_k1glu",
-            "__PATH__": "res://assets/meshes/logo_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "19_Th8Ss",
-            "__PATH__": "res://assets/meshes/head_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "42_djpX0",
-            "__PATH__": "res://assets/meshes/right_hand_palm_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "7_HVAK5",
-            "__PATH__": "res://assets/meshes/left_ankle_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "28_GP9oG",
-            "__PATH__": "res://assets/meshes/left_hand_thumb_0_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "24_YRsyz",
-            "__PATH__": "res://assets/meshes/left_wrist_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "32_p4WvE",
-            "__PATH__": "res://assets/meshes/left_hand_middle_1_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "27_crIVB",
-            "__PATH__": "res://assets/meshes/left_hand_palm_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "21_zQYqd",
-            "__PATH__": "res://assets/meshes/left_shoulder_roll_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "6_21Hnz",
-            "__PATH__": "res://assets/meshes/left_knee_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "29_elJ7M",
-            "__PATH__": "res://assets/meshes/left_hand_thumb_1_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "22_OyZDL",
-            "__PATH__": "res://assets/meshes/left_shoulder_yaw_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "49_q5s8V",
+            "__ID__": "49_RLpfN",
             "__PATH__": "res://assets/meshes/right_hand_index_1_link.STL",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "43_QKJNz",
+            "__ID__": "44_wNMFt",
+            "__PATH__": "res://assets/meshes/right_hand_thumb_1_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "43_cNDiv",
             "__PATH__": "res://assets/meshes/right_hand_thumb_0_link.STL",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "13_WmOQK",
-            "__PATH__": "res://assets/meshes/right_ankle_pitch_link.STL",
+            "__ID__": "39_P4pkk",
+            "__PATH__": "res://assets/meshes/right_wrist_roll_link.STL",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "1_Roc68",
-            "__PATH__": "res://assets/meshes/pelvis.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "25_2j7jr",
-            "__PATH__": "res://assets/meshes/left_wrist_pitch_link.STL",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "38_6bdVQ",
+            "__ID__": "38_usbEu",
             "__PATH__": "res://assets/meshes/right_elbow_link.STL",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "31_q0GOv",
+            "__ID__": "37_u4pFw",
+            "__PATH__": "res://assets/meshes/right_shoulder_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "35_zYm9H",
+            "__PATH__": "res://assets/meshes/right_shoulder_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "30_ybGrR",
+            "__PATH__": "res://assets/meshes/left_hand_thumb_2_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "11_mPc3b",
+            "__PATH__": "res://assets/meshes/right_hip_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "45_NDeL1",
+            "__PATH__": "res://assets/meshes/right_hand_thumb_2_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "5_orOEs",
+            "__PATH__": "res://assets/meshes/left_hip_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "47_m09OO",
+            "__PATH__": "res://assets/meshes/right_hand_middle_1_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "40_aapL7",
+            "__PATH__": "res://assets/meshes/right_wrist_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "2_3jfrq",
+            "__PATH__": "res://assets/meshes/pelvis_contour_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "16_eR1gY",
+            "__PATH__": "res://assets/meshes/waist_roll_link_rev_1_0.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "32_AgdhB",
+            "__PATH__": "res://assets/meshes/left_hand_middle_1_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "9_WAzcd",
+            "__PATH__": "res://assets/meshes/right_hip_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "6_zOuEr",
+            "__PATH__": "res://assets/meshes/left_knee_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "8_sVrG1",
+            "__PATH__": "res://assets/meshes/left_ankle_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "31_FDTMi",
             "__PATH__": "res://assets/meshes/left_hand_middle_0_link.STL",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "26_xiJ4I",
+            "__ID__": "1_9S3uM",
+            "__PATH__": "res://assets/meshes/pelvis.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "33_kqvD5",
+            "__PATH__": "res://assets/meshes/left_hand_index_0_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "7_OH7cx",
+            "__PATH__": "res://assets/meshes/left_ankle_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "4_BFAZr",
+            "__PATH__": "res://assets/meshes/left_hip_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "20_AtUaH",
+            "__PATH__": "res://assets/meshes/left_shoulder_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "48_i67en",
+            "__PATH__": "res://assets/meshes/right_hand_index_0_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "41_P0HLw",
+            "__PATH__": "res://assets/meshes/right_wrist_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "3_K0XOu",
+            "__PATH__": "res://assets/meshes/left_hip_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "12_2sqiM",
+            "__PATH__": "res://assets/meshes/right_knee_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "14_Fpu8e",
+            "__PATH__": "res://assets/meshes/right_ankle_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "15_GPIDl",
+            "__PATH__": "res://assets/meshes/waist_yaw_link_rev_1_0.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "10_YG5Io",
+            "__PATH__": "res://assets/meshes/right_hip_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "17_Bf8XH",
+            "__PATH__": "res://assets/meshes/torso_link_rev_1_0.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "36_bS6m3",
+            "__PATH__": "res://assets/meshes/right_shoulder_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "34_4jM5b",
+            "__PATH__": "res://assets/meshes/left_hand_index_1_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "13_PwAgD",
+            "__PATH__": "res://assets/meshes/right_ankle_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "18_90vIU",
+            "__PATH__": "res://assets/meshes/logo_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "42_iCe4C",
+            "__PATH__": "res://assets/meshes/right_hand_palm_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "19_cCTv7",
+            "__PATH__": "res://assets/meshes/head_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "21_wvx6q",
+            "__PATH__": "res://assets/meshes/left_shoulder_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "46_nkvTR",
+            "__PATH__": "res://assets/meshes/right_hand_middle_0_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "22_MIoSL",
+            "__PATH__": "res://assets/meshes/left_shoulder_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "24_k2rUd",
+            "__PATH__": "res://assets/meshes/left_wrist_roll_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "23_LJHLZ",
+            "__PATH__": "res://assets/meshes/left_elbow_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "25_IOIh8",
+            "__PATH__": "res://assets/meshes/left_wrist_pitch_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "26_ocX9x",
             "__PATH__": "res://assets/meshes/left_wrist_yaw_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "27_ZHQyW",
+            "__PATH__": "res://assets/meshes/left_hand_palm_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "29_trFSV",
+            "__PATH__": "res://assets/meshes/left_hand_thumb_1_link.STL",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "28_35P6I",
+            "__PATH__": "res://assets/meshes/left_hand_thumb_0_link.STL",
             "__TYPE__": "ArrayMesh"
         }
     ],
@@ -252,6 +252,24 @@
             "name": "g1",
             "parent": -1,
             "properties": {
+                "collision_exclusions": [
+                    [
+                        "pelvis",
+                        "left_hip_roll_link"
+                    ],
+                    [
+                        "pelvis",
+                        "right_hip_roll_link"
+                    ],
+                    [
+                        "left_elbow_link",
+                        "left_wrist_pitch_link"
+                    ],
+                    [
+                        "right_elbow_link",
+                        "right_wrist_pitch_link"
+                    ]
+                ],
                 "mode": "Assembly",
                 "position": {
                     "matrix_data": {
@@ -471,8 +489,8 @@
             "parent": 2,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_WQkdb)",
-                "mesh": "ExtResource(1_Roc68)",
+                "material": "SubResource(PBRMaterial3D_mfJBE)",
+                "mesh": "ExtResource(1_9S3uM)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -524,8 +542,8 @@
             "parent": 2,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_2Cbhz)",
-                "mesh": "ExtResource(2_kLCuo)",
+                "material": "SubResource(PBRMaterial3D_HgJ9q)",
+                "mesh": "ExtResource(2_3jfrq)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -580,7 +598,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_58g9T)",
+                "physics_material": "SubResource(PhysicsMaterial3D_r9akW)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -617,7 +635,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(SphereShape3D_XmIpK)",
+                "shape": "SubResource(SphereShape3D_6BFKa)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -800,8 +818,8 @@
             "parent": 7,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_cp3hY)",
-                "mesh": "ExtResource(3_lxaCW)",
+                "material": "SubResource(PBRMaterial3D_i5Yea)",
+                "mesh": "ExtResource(3_K0XOu)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1026,8 +1044,8 @@
             "parent": 10,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_AcFu9)",
-                "mesh": "ExtResource(4_768kf)",
+                "material": "SubResource(PBRMaterial3D_hR4Dd)",
+                "mesh": "ExtResource(4_BFAZr)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1082,7 +1100,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_0j54q)",
+                "physics_material": "SubResource(PhysicsMaterial3D_3RJUv)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1119,7 +1137,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_Ux5ht)",
+                "shape": "SubResource(CapsuleShape3D_8LlrM)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1302,8 +1320,8 @@
             "parent": 14,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_DmuQc)",
-                "mesh": "ExtResource(5_ryqwg)",
+                "material": "SubResource(PBRMaterial3D_ip91o)",
+                "mesh": "ExtResource(5_orOEs)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1358,7 +1376,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_qkFQM)",
+                "physics_material": "SubResource(PhysicsMaterial3D_GmyWw)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1395,7 +1413,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_zzOdG)",
+                "shape": "SubResource(CapsuleShape3D_wgroR)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1578,8 +1596,8 @@
             "parent": 18,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_c46Vl)",
-                "mesh": "ExtResource(6_21Hnz)",
+                "material": "SubResource(PBRMaterial3D_QcXZm)",
+                "mesh": "ExtResource(6_zOuEr)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1634,7 +1652,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_jO662)",
+                "physics_material": "SubResource(PhysicsMaterial3D_jrTao)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1671,7 +1689,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_jmRhN)",
+                "shape": "SubResource(CapsuleShape3D_MnvTR)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1684,7 +1702,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_j7woe)",
+                "physics_material": "SubResource(PhysicsMaterial3D_xv0CF)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1721,7 +1739,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_lrv81)",
+                "shape": "SubResource(CapsuleShape3D_PElk2)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1904,8 +1922,8 @@
             "parent": 23,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_e5OIC)",
-                "mesh": "ExtResource(7_HVAK5)",
+                "material": "SubResource(PBRMaterial3D_VPt7w)",
+                "mesh": "ExtResource(7_OH7cx)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2130,8 +2148,8 @@
             "parent": 26,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_zzThz)",
-                "mesh": "ExtResource(8_jSs0v)",
+                "material": "SubResource(PBRMaterial3D_dktCy)",
+                "mesh": "ExtResource(8_sVrG1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2186,7 +2204,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_6M9fy)",
+                "physics_material": "SubResource(PhysicsMaterial3D_ad9DS)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2223,7 +2241,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_2Zssx)",
+                "shape": "SubResource(CapsuleShape3D_RN0FG)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2236,7 +2254,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_1xlbt)",
+                "physics_material": "SubResource(PhysicsMaterial3D_gUOzk)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2273,7 +2291,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_tFdNO)",
+                "shape": "SubResource(CapsuleShape3D_WCet3)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2286,7 +2304,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_Heh5D)",
+                "physics_material": "SubResource(PhysicsMaterial3D_EyGfe)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2323,7 +2341,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_GkzzX)",
+                "shape": "SubResource(CapsuleShape3D_9LVE1)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2336,7 +2354,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_8Tt1O)",
+                "physics_material": "SubResource(PhysicsMaterial3D_yey5m)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2373,7 +2391,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_ZGMxl)",
+                "shape": "SubResource(CapsuleShape3D_nX7ge)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2386,7 +2404,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_0U81A)",
+                "physics_material": "SubResource(PhysicsMaterial3D_Uzks3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2423,7 +2441,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_BxDbv)",
+                "shape": "SubResource(CapsuleShape3D_74yvu)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2436,7 +2454,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_WvXTI)",
+                "physics_material": "SubResource(PhysicsMaterial3D_IsaWz)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2473,7 +2491,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_Va8CG)",
+                "shape": "SubResource(CapsuleShape3D_STJBS)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2486,7 +2504,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_10TQw)",
+                "physics_material": "SubResource(PhysicsMaterial3D_RCTXX)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2523,7 +2541,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_xmBNP)",
+                "shape": "SubResource(CapsuleShape3D_4oGwk)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2913,8 +2931,8 @@
             "parent": 38,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_rO1Cr)",
-                "mesh": "ExtResource(9_D5bQ5)",
+                "material": "SubResource(PBRMaterial3D_edb28)",
+                "mesh": "ExtResource(9_WAzcd)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3139,8 +3157,8 @@
             "parent": 41,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_7c4q1)",
-                "mesh": "ExtResource(10_fnq7M)",
+                "material": "SubResource(PBRMaterial3D_lEbMh)",
+                "mesh": "ExtResource(10_YG5Io)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3195,7 +3213,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_OHJc3)",
+                "physics_material": "SubResource(PhysicsMaterial3D_ZaHcF)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3232,7 +3250,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_yAq4r)",
+                "shape": "SubResource(CapsuleShape3D_WLLX9)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3415,8 +3433,8 @@
             "parent": 45,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_yGNS7)",
-                "mesh": "ExtResource(11_X631c)",
+                "material": "SubResource(PBRMaterial3D_xOqTL)",
+                "mesh": "ExtResource(11_mPc3b)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3471,7 +3489,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_FoJH7)",
+                "physics_material": "SubResource(PhysicsMaterial3D_KhVt7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3508,7 +3526,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_8tT6W)",
+                "shape": "SubResource(CapsuleShape3D_5DocA)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3691,8 +3709,8 @@
             "parent": 49,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_Ei5tg)",
-                "mesh": "ExtResource(12_N0uxe)",
+                "material": "SubResource(PBRMaterial3D_6hI5T)",
+                "mesh": "ExtResource(12_2sqiM)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3747,7 +3765,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_tvxX6)",
+                "physics_material": "SubResource(PhysicsMaterial3D_TTqgf)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3784,7 +3802,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_o3Jr8)",
+                "shape": "SubResource(CapsuleShape3D_R9SFU)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3797,7 +3815,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_GAatb)",
+                "physics_material": "SubResource(PhysicsMaterial3D_ffhf9)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3834,7 +3852,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_TrEnj)",
+                "shape": "SubResource(CapsuleShape3D_YG2lv)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4017,8 +4035,8 @@
             "parent": 54,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_jhPtO)",
-                "mesh": "ExtResource(13_WmOQK)",
+                "material": "SubResource(PBRMaterial3D_cdw70)",
+                "mesh": "ExtResource(13_PwAgD)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4243,8 +4261,8 @@
             "parent": 57,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_VCT90)",
-                "mesh": "ExtResource(14_G0V8M)",
+                "material": "SubResource(PBRMaterial3D_W9U9p)",
+                "mesh": "ExtResource(14_Fpu8e)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4299,7 +4317,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_lKGFS)",
+                "physics_material": "SubResource(PhysicsMaterial3D_KSPHY)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4336,7 +4354,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_cp9sY)",
+                "shape": "SubResource(CapsuleShape3D_4N2an)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4349,7 +4367,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_0t7rR)",
+                "physics_material": "SubResource(PhysicsMaterial3D_zqX3l)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4386,7 +4404,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_NhCDe)",
+                "shape": "SubResource(CapsuleShape3D_KtqBC)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4399,7 +4417,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_Uvz3c)",
+                "physics_material": "SubResource(PhysicsMaterial3D_bxnx5)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4436,7 +4454,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_HcpHl)",
+                "shape": "SubResource(CapsuleShape3D_0QCwu)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4449,7 +4467,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_amtRe)",
+                "physics_material": "SubResource(PhysicsMaterial3D_gKo6L)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4486,7 +4504,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_4kLjL)",
+                "shape": "SubResource(CapsuleShape3D_Qcom9)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4499,7 +4517,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_1pXNo)",
+                "physics_material": "SubResource(PhysicsMaterial3D_UuqhR)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4536,7 +4554,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_74bza)",
+                "shape": "SubResource(CapsuleShape3D_IAxuN)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4549,7 +4567,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_mbbiV)",
+                "physics_material": "SubResource(PhysicsMaterial3D_zveW6)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4586,7 +4604,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_oUiD1)",
+                "shape": "SubResource(CapsuleShape3D_Rdtwp)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4599,7 +4617,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_y9cpS)",
+                "physics_material": "SubResource(PhysicsMaterial3D_N1aZe)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4636,7 +4654,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_TL0ty)",
+                "shape": "SubResource(CapsuleShape3D_6BJsg)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5026,8 +5044,8 @@
             "parent": 69,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_pRnig)",
-                "mesh": "ExtResource(15_8wrOE)",
+                "material": "SubResource(PBRMaterial3D_gKcXW)",
+                "mesh": "ExtResource(15_GPIDl)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5252,8 +5270,8 @@
             "parent": 72,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_i8cMX)",
-                "mesh": "ExtResource(16_FJKFc)",
+                "material": "SubResource(PBRMaterial3D_1S44P)",
+                "mesh": "ExtResource(16_eR1gY)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5478,8 +5496,8 @@
             "parent": 75,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_DVlRv)",
-                "mesh": "ExtResource(17_VRdQM)",
+                "material": "SubResource(PBRMaterial3D_m4sS7)",
+                "mesh": "ExtResource(17_Bf8XH)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5531,8 +5549,8 @@
             "parent": 75,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_dg4vW)",
-                "mesh": "ExtResource(18_k1glu)",
+                "material": "SubResource(PBRMaterial3D_fZhIM)",
+                "mesh": "ExtResource(18_90vIU)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5584,8 +5602,8 @@
             "parent": 75,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_AHMwL)",
-                "mesh": "ExtResource(19_Th8Ss)",
+                "material": "SubResource(PBRMaterial3D_wXPLd)",
+                "mesh": "ExtResource(19_cCTv7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5640,7 +5658,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_p2Pfb)",
+                "physics_material": "SubResource(PhysicsMaterial3D_l8q3m)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5677,7 +5695,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_pcJ9j)",
+                "shape": "SubResource(CapsuleShape3D_8jlKK)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5690,7 +5708,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_LY9Zw)",
+                "physics_material": "SubResource(PhysicsMaterial3D_9bMGE)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5727,7 +5745,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(SphereShape3D_KMeYI)",
+                "shape": "SubResource(SphereShape3D_k2R3Z)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5910,8 +5928,8 @@
             "parent": 82,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_PIWwn)",
-                "mesh": "ExtResource(20_uwMOF)",
+                "material": "SubResource(PBRMaterial3D_2RVy5)",
+                "mesh": "ExtResource(20_AtUaH)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6136,8 +6154,8 @@
             "parent": 85,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_VEyLG)",
-                "mesh": "ExtResource(21_zQYqd)",
+                "material": "SubResource(PBRMaterial3D_U6FsC)",
+                "mesh": "ExtResource(21_wvx6q)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6362,8 +6380,8 @@
             "parent": 88,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_cYuxo)",
-                "mesh": "ExtResource(22_OyZDL)",
+                "material": "SubResource(PBRMaterial3D_cs0pa)",
+                "mesh": "ExtResource(22_MIoSL)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6418,7 +6436,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_sSLOC)",
+                "physics_material": "SubResource(PhysicsMaterial3D_fG2at)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6455,7 +6473,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_J2RlJ)",
+                "shape": "SubResource(CapsuleShape3D_qpyB8)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -6638,8 +6656,8 @@
             "parent": 92,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_CvEdl)",
-                "mesh": "ExtResource(23_qbI99)",
+                "material": "SubResource(PBRMaterial3D_tvfNZ)",
+                "mesh": "ExtResource(23_LJHLZ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6694,7 +6712,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_oHJ1i)",
+                "physics_material": "SubResource(PhysicsMaterial3D_Tw78k)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6731,7 +6749,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_tdfQK)",
+                "shape": "SubResource(CapsuleShape3D_geH2Y)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -6914,8 +6932,8 @@
             "parent": 96,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_EZUEB)",
-                "mesh": "ExtResource(24_YRsyz)",
+                "material": "SubResource(PBRMaterial3D_pWFy3)",
+                "mesh": "ExtResource(24_k2rUd)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7140,8 +7158,8 @@
             "parent": 99,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_slpEx)",
-                "mesh": "ExtResource(25_2j7jr)",
+                "material": "SubResource(PBRMaterial3D_MKmOx)",
+                "mesh": "ExtResource(25_IOIh8)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7196,7 +7214,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_dJzQQ)",
+                "physics_material": "SubResource(PhysicsMaterial3D_HcIAc)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7233,7 +7251,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_qtv8k)",
+                "shape": "SubResource(CapsuleShape3D_zdv2y)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -7416,8 +7434,8 @@
             "parent": 103,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_ySarP)",
-                "mesh": "ExtResource(26_xiJ4I)",
+                "material": "SubResource(PBRMaterial3D_cba44)",
+                "mesh": "ExtResource(26_ocX9x)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7469,8 +7487,8 @@
             "parent": 103,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_DvOv2)",
-                "mesh": "ExtResource(27_crIVB)",
+                "material": "SubResource(PBRMaterial3D_Xff6Z)",
+                "mesh": "ExtResource(27_ZHQyW)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7525,7 +7543,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_5eR0U)",
+                "physics_material": "SubResource(PhysicsMaterial3D_9z2k1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7562,7 +7580,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_LJkDS)",
+                "shape": "SubResource(CapsuleShape3D_jTIZo)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -7745,8 +7763,8 @@
             "parent": 108,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_pH8TL)",
-                "mesh": "ExtResource(28_GP9oG)",
+                "material": "SubResource(PBRMaterial3D_E5Hoc)",
+                "mesh": "ExtResource(28_35P6I)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -7971,8 +7989,8 @@
             "parent": 111,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_HRatH)",
-                "mesh": "ExtResource(29_elJ7M)",
+                "material": "SubResource(PBRMaterial3D_xQDuv)",
+                "mesh": "ExtResource(29_trFSV)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -8197,8 +8215,8 @@
             "parent": 114,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_0yige)",
-                "mesh": "ExtResource(30_7PwLk)",
+                "material": "SubResource(PBRMaterial3D_eTRxk)",
+                "mesh": "ExtResource(30_ybGrR)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -8423,8 +8441,8 @@
             "parent": 117,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_DKPqF)",
-                "mesh": "ExtResource(31_q0GOv)",
+                "material": "SubResource(PBRMaterial3D_zgYw4)",
+                "mesh": "ExtResource(31_FDTMi)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -8649,8 +8667,8 @@
             "parent": 120,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_6WIqk)",
-                "mesh": "ExtResource(32_p4WvE)",
+                "material": "SubResource(PBRMaterial3D_YOAtF)",
+                "mesh": "ExtResource(32_AgdhB)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -8875,8 +8893,8 @@
             "parent": 123,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_f93DI)",
-                "mesh": "ExtResource(33_sfOEZ)",
+                "material": "SubResource(PBRMaterial3D_2Muw1)",
+                "mesh": "ExtResource(33_kqvD5)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9101,8 +9119,8 @@
             "parent": 126,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_vvezR)",
-                "mesh": "ExtResource(34_6xdHA)",
+                "material": "SubResource(PBRMaterial3D_EMcr6)",
+                "mesh": "ExtResource(34_4jM5b)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9327,8 +9345,8 @@
             "parent": 129,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_VKT3g)",
-                "mesh": "ExtResource(35_DIb4t)",
+                "material": "SubResource(PBRMaterial3D_ZRbwy)",
+                "mesh": "ExtResource(35_zYm9H)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9553,8 +9571,8 @@
             "parent": 132,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_Xg3Fj)",
-                "mesh": "ExtResource(36_mBloU)",
+                "material": "SubResource(PBRMaterial3D_PEAb9)",
+                "mesh": "ExtResource(36_bS6m3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9779,8 +9797,8 @@
             "parent": 135,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_COlJx)",
-                "mesh": "ExtResource(37_RzuWZ)",
+                "material": "SubResource(PBRMaterial3D_H8Aow)",
+                "mesh": "ExtResource(37_u4pFw)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9835,7 +9853,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_e3VqG)",
+                "physics_material": "SubResource(PhysicsMaterial3D_9OEM7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -9872,7 +9890,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_RUj7q)",
+                "shape": "SubResource(CapsuleShape3D_hiZG4)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -10055,8 +10073,8 @@
             "parent": 139,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_fBMF4)",
-                "mesh": "ExtResource(38_6bdVQ)",
+                "material": "SubResource(PBRMaterial3D_L4aAE)",
+                "mesh": "ExtResource(38_usbEu)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10111,7 +10129,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_AaH3Q)",
+                "physics_material": "SubResource(PhysicsMaterial3D_rF2G5)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10148,7 +10166,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_DjEdJ)",
+                "shape": "SubResource(CapsuleShape3D_PZkwl)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -10331,8 +10349,8 @@
             "parent": 143,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_Zvog4)",
-                "mesh": "ExtResource(39_Q1w14)",
+                "material": "SubResource(PBRMaterial3D_1QSVy)",
+                "mesh": "ExtResource(39_P4pkk)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10557,8 +10575,8 @@
             "parent": 146,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_3klGU)",
-                "mesh": "ExtResource(40_olZaR)",
+                "material": "SubResource(PBRMaterial3D_7qrcR)",
+                "mesh": "ExtResource(40_aapL7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10613,7 +10631,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_9y0SZ)",
+                "physics_material": "SubResource(PhysicsMaterial3D_nuZv1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10650,7 +10668,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_pZUQG)",
+                "shape": "SubResource(CapsuleShape3D_rtl43)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -10833,8 +10851,8 @@
             "parent": 150,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_On0qF)",
-                "mesh": "ExtResource(41_TE4va)",
+                "material": "SubResource(PBRMaterial3D_g2Z76)",
+                "mesh": "ExtResource(41_P0HLw)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10886,8 +10904,8 @@
             "parent": 150,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_U6JZt)",
-                "mesh": "ExtResource(42_djpX0)",
+                "material": "SubResource(PBRMaterial3D_hkohe)",
+                "mesh": "ExtResource(42_iCe4C)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10942,7 +10960,7 @@
                 "collision_mask": 1,
                 "contact_offset": 0.0,
                 "disabled": false,
-                "physics_material": "SubResource(PhysicsMaterial3D_WMbO0)",
+                "physics_material": "SubResource(PhysicsMaterial3D_13e8w)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -10979,7 +10997,7 @@
                 },
                 "script": null,
                 "semantic_label": "",
-                "shape": "SubResource(CapsuleShape3D_w4BgH)",
+                "shape": "SubResource(CapsuleShape3D_WMw1i)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -11162,8 +11180,8 @@
             "parent": 155,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_3noAs)",
-                "mesh": "ExtResource(43_QKJNz)",
+                "material": "SubResource(PBRMaterial3D_cSAgn)",
+                "mesh": "ExtResource(43_cNDiv)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -11388,8 +11406,8 @@
             "parent": 158,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_MkrT7)",
-                "mesh": "ExtResource(44_Q9XNV)",
+                "material": "SubResource(PBRMaterial3D_tisSc)",
+                "mesh": "ExtResource(44_wNMFt)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -11614,8 +11632,8 @@
             "parent": 161,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_dz4jJ)",
-                "mesh": "ExtResource(45_lUddM)",
+                "material": "SubResource(PBRMaterial3D_LKfKx)",
+                "mesh": "ExtResource(45_NDeL1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -11840,8 +11858,8 @@
             "parent": 164,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_pbfcx)",
-                "mesh": "ExtResource(46_JRUb1)",
+                "material": "SubResource(PBRMaterial3D_CrE7D)",
+                "mesh": "ExtResource(46_nkvTR)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -12066,8 +12084,8 @@
             "parent": 167,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_ezfag)",
-                "mesh": "ExtResource(47_GxCOk)",
+                "material": "SubResource(PBRMaterial3D_AkeA0)",
+                "mesh": "ExtResource(47_m09OO)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -12292,8 +12310,8 @@
             "parent": 170,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_CGAL5)",
-                "mesh": "ExtResource(48_d5i84)",
+                "material": "SubResource(PBRMaterial3D_ABiHm)",
+                "mesh": "ExtResource(48_i67en)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -12518,8 +12536,8 @@
             "parent": 173,
             "properties": {
                 "cast_shadow": true,
-                "material": "SubResource(PBRMaterial3D_xXIIA)",
-                "mesh": "ExtResource(49_q5s8V)",
+                "material": "SubResource(PBRMaterial3D_Yfeej)",
+                "mesh": "ExtResource(49_RLpfN)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -12756,7 +12774,7 @@
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_WQkdb",
+            "__ID__": "PBRMaterial3D_mfJBE",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12786,7 +12804,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_2Cbhz",
+            "__ID__": "PBRMaterial3D_HgJ9q",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12816,13 +12834,13 @@
             "specular": 0.5
         },
         {
-            "__ID__": "SphereShape3D_XmIpK",
+            "__ID__": "SphereShape3D_6BFKa",
             "__TYPE__": "SphereShape3D",
             "radius": 0.07000000029802322,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_58g9T",
+            "__ID__": "PhysicsMaterial3D_r9akW",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -12833,7 +12851,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_cp3hY",
+            "__ID__": "PBRMaterial3D_i5Yea",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12863,7 +12881,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_AcFu9",
+            "__ID__": "PBRMaterial3D_hR4Dd",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12893,14 +12911,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_Ux5ht",
+            "__ID__": "CapsuleShape3D_8LlrM",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07999999821186066,
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_0j54q",
+            "__ID__": "PhysicsMaterial3D_3RJUv",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -12911,7 +12929,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_DmuQc",
+            "__ID__": "PBRMaterial3D_ip91o",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12941,14 +12959,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_zzOdG",
+            "__ID__": "CapsuleShape3D_wgroR",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.15231546759605408,
             "radius": 0.054999999701976776,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_qkFQM",
+            "__ID__": "PhysicsMaterial3D_GmyWw",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -12959,7 +12977,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_c46Vl",
+            "__ID__": "PBRMaterial3D_QcXZm",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -12989,14 +13007,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_jmRhN",
+            "__ID__": "CapsuleShape3D_MnvTR",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.15000000596046448,
             "radius": 0.04500000178813934,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_jO662",
+            "__ID__": "PhysicsMaterial3D_jrTao",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13007,14 +13025,14 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "CapsuleShape3D_lrv81",
+            "__ID__": "CapsuleShape3D_PElk2",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07999999821186066,
             "radius": 0.029999999329447746,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_j7woe",
+            "__ID__": "PhysicsMaterial3D_xv0CF",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13025,7 +13043,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_e5OIC",
+            "__ID__": "PBRMaterial3D_VPt7w",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13055,7 +13073,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_zzThz",
+            "__ID__": "PBRMaterial3D_dktCy",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13085,14 +13103,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_2Zssx",
+            "__ID__": "CapsuleShape3D_RN0FG",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.05000999942421913,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_6M9fy",
+            "__ID__": "PhysicsMaterial3D_ad9DS",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13103,14 +13121,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_tFdNO",
+            "__ID__": "CapsuleShape3D_WCet3",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.16699999570846558,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_1xlbt",
+            "__ID__": "PhysicsMaterial3D_gUOzk",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13121,14 +13139,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_GkzzX",
+            "__ID__": "CapsuleShape3D_9LVE1",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.18199999630451202,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_Heh5D",
+            "__ID__": "PhysicsMaterial3D_EyGfe",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13139,14 +13157,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_ZGMxl",
+            "__ID__": "CapsuleShape3D_nX7ge",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1860000044107437,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_8Tt1O",
+            "__ID__": "PhysicsMaterial3D_yey5m",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13157,14 +13175,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_BxDbv",
+            "__ID__": "CapsuleShape3D_74yvu",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.18199999630451202,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_0U81A",
+            "__ID__": "PhysicsMaterial3D_Uzks3",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13175,14 +13193,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_Va8CG",
+            "__ID__": "CapsuleShape3D_STJBS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.16699999570846558,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_WvXTI",
+            "__ID__": "PhysicsMaterial3D_IsaWz",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13193,14 +13211,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_xmBNP",
+            "__ID__": "CapsuleShape3D_4oGwk",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.05000000074505806,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_10TQw",
+            "__ID__": "PhysicsMaterial3D_RCTXX",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13211,7 +13229,7 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "PBRMaterial3D_rO1Cr",
+            "__ID__": "PBRMaterial3D_edb28",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13241,7 +13259,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_7c4q1",
+            "__ID__": "PBRMaterial3D_lEbMh",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13271,14 +13289,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_yAq4r",
+            "__ID__": "CapsuleShape3D_WLLX9",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07999999821186066,
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_OHJc3",
+            "__ID__": "PhysicsMaterial3D_ZaHcF",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13289,7 +13307,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_yGNS7",
+            "__ID__": "PBRMaterial3D_xOqTL",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13319,14 +13337,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_8tT6W",
+            "__ID__": "CapsuleShape3D_5DocA",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.15231546759605408,
             "radius": 0.054999999701976776,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_FoJH7",
+            "__ID__": "PhysicsMaterial3D_KhVt7",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13337,7 +13355,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_Ei5tg",
+            "__ID__": "PBRMaterial3D_6hI5T",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13367,14 +13385,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_o3Jr8",
+            "__ID__": "CapsuleShape3D_R9SFU",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.15000000596046448,
             "radius": 0.04500000178813934,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_tvxX6",
+            "__ID__": "PhysicsMaterial3D_TTqgf",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13385,14 +13403,14 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "CapsuleShape3D_TrEnj",
+            "__ID__": "CapsuleShape3D_YG2lv",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07999999821186066,
             "radius": 0.029999999329447746,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_GAatb",
+            "__ID__": "PhysicsMaterial3D_ffhf9",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13403,7 +13421,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_jhPtO",
+            "__ID__": "PBRMaterial3D_cdw70",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13433,7 +13451,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_VCT90",
+            "__ID__": "PBRMaterial3D_W9U9p",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13463,14 +13481,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_cp9sY",
+            "__ID__": "CapsuleShape3D_4N2an",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.05000000074505806,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_lKGFS",
+            "__ID__": "PhysicsMaterial3D_KSPHY",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13481,14 +13499,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_NhCDe",
+            "__ID__": "CapsuleShape3D_KtqBC",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.16699999570846558,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_0t7rR",
+            "__ID__": "PhysicsMaterial3D_zqX3l",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13499,14 +13517,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_HcpHl",
+            "__ID__": "CapsuleShape3D_0QCwu",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.18199999630451202,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_Uvz3c",
+            "__ID__": "PhysicsMaterial3D_bxnx5",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13517,14 +13535,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_4kLjL",
+            "__ID__": "CapsuleShape3D_Qcom9",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1860000044107437,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_amtRe",
+            "__ID__": "PhysicsMaterial3D_gKo6L",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13535,14 +13553,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_74bza",
+            "__ID__": "CapsuleShape3D_IAxuN",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.18199999630451202,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_1pXNo",
+            "__ID__": "PhysicsMaterial3D_UuqhR",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13553,14 +13571,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_oUiD1",
+            "__ID__": "CapsuleShape3D_Rdtwp",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.16699999570846558,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_mbbiV",
+            "__ID__": "PhysicsMaterial3D_zveW6",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13571,14 +13589,14 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "CapsuleShape3D_TL0ty",
+            "__ID__": "CapsuleShape3D_6BJsg",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.05000000074505806,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_y9cpS",
+            "__ID__": "PhysicsMaterial3D_N1aZe",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
@@ -13589,7 +13607,7 @@
             "torsional_friction": 0.0
         },
         {
-            "__ID__": "PBRMaterial3D_pRnig",
+            "__ID__": "PBRMaterial3D_gKcXW",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13619,7 +13637,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_i8cMX",
+            "__ID__": "PBRMaterial3D_1S44P",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13649,7 +13667,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_DVlRv",
+            "__ID__": "PBRMaterial3D_m4sS7",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13679,7 +13697,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_dg4vW",
+            "__ID__": "PBRMaterial3D_fZhIM",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13709,7 +13727,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_AHMwL",
+            "__ID__": "PBRMaterial3D_wXPLd",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13739,14 +13757,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_pcJ9j",
+            "__ID__": "CapsuleShape3D_8jlKK",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.11999999731779099,
             "radius": 0.09000000357627869,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_p2Pfb",
+            "__ID__": "PhysicsMaterial3D_l8q3m",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13757,13 +13775,13 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "SphereShape3D_KMeYI",
+            "__ID__": "SphereShape3D_k2R3Z",
             "__TYPE__": "SphereShape3D",
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_LY9Zw",
+            "__ID__": "PhysicsMaterial3D_9bMGE",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13774,7 +13792,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_PIWwn",
+            "__ID__": "PBRMaterial3D_2RVy5",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13804,7 +13822,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_VEyLG",
+            "__ID__": "PBRMaterial3D_U6FsC",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13834,7 +13852,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_cYuxo",
+            "__ID__": "PBRMaterial3D_cs0pa",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13864,14 +13882,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_J2RlJ",
+            "__ID__": "CapsuleShape3D_qpyB8",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.12999999523162842,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_sSLOC",
+            "__ID__": "PhysicsMaterial3D_fG2at",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13882,7 +13900,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_CvEdl",
+            "__ID__": "PBRMaterial3D_tvfNZ",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13912,14 +13930,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_tdfQK",
+            "__ID__": "CapsuleShape3D_geH2Y",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.09000000357627869,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_oHJ1i",
+            "__ID__": "PhysicsMaterial3D_Tw78k",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -13930,7 +13948,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_EZUEB",
+            "__ID__": "PBRMaterial3D_pWFy3",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13960,7 +13978,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_slpEx",
+            "__ID__": "PBRMaterial3D_MKmOx",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -13990,14 +14008,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_qtv8k",
+            "__ID__": "CapsuleShape3D_zdv2y",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07000000029802322,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_dJzQQ",
+            "__ID__": "PhysicsMaterial3D_HcIAc",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14008,7 +14026,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_ySarP",
+            "__ID__": "PBRMaterial3D_cba44",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14038,7 +14056,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_DvOv2",
+            "__ID__": "PBRMaterial3D_Xff6Z",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14068,14 +14086,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_LJkDS",
+            "__ID__": "CapsuleShape3D_jTIZo",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.08246210962533951,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_5eR0U",
+            "__ID__": "PhysicsMaterial3D_9z2k1",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14086,7 +14104,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_pH8TL",
+            "__ID__": "PBRMaterial3D_E5Hoc",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14116,7 +14134,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_HRatH",
+            "__ID__": "PBRMaterial3D_xQDuv",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14146,7 +14164,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_0yige",
+            "__ID__": "PBRMaterial3D_eTRxk",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14176,7 +14194,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_DKPqF",
+            "__ID__": "PBRMaterial3D_zgYw4",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14206,7 +14224,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_6WIqk",
+            "__ID__": "PBRMaterial3D_YOAtF",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14236,7 +14254,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_f93DI",
+            "__ID__": "PBRMaterial3D_2Muw1",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14266,7 +14284,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_vvezR",
+            "__ID__": "PBRMaterial3D_EMcr6",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14296,7 +14314,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_VKT3g",
+            "__ID__": "PBRMaterial3D_ZRbwy",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14326,7 +14344,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_Xg3Fj",
+            "__ID__": "PBRMaterial3D_PEAb9",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14356,7 +14374,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_COlJx",
+            "__ID__": "PBRMaterial3D_H8Aow",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14386,14 +14404,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_RUj7q",
+            "__ID__": "CapsuleShape3D_hiZG4",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.12999999523162842,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_e3VqG",
+            "__ID__": "PhysicsMaterial3D_9OEM7",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14404,7 +14422,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_fBMF4",
+            "__ID__": "PBRMaterial3D_L4aAE",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14434,14 +14452,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_DjEdJ",
+            "__ID__": "CapsuleShape3D_PZkwl",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.09000000357627869,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_AaH3Q",
+            "__ID__": "PhysicsMaterial3D_rF2G5",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14452,7 +14470,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_Zvog4",
+            "__ID__": "PBRMaterial3D_1QSVy",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14482,7 +14500,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_3klGU",
+            "__ID__": "PBRMaterial3D_7qrcR",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14512,14 +14530,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_pZUQG",
+            "__ID__": "CapsuleShape3D_rtl43",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07000000029802322,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_9y0SZ",
+            "__ID__": "PhysicsMaterial3D_nuZv1",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14530,7 +14548,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_On0qF",
+            "__ID__": "PBRMaterial3D_g2Z76",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14560,7 +14578,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_U6JZt",
+            "__ID__": "PBRMaterial3D_hkohe",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14590,14 +14608,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_w4BgH",
+            "__ID__": "CapsuleShape3D_WMw1i",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.08246210962533951,
             "radius": 0.03500000014901161,
             "resource_name": ""
         },
         {
-            "__ID__": "PhysicsMaterial3D_WMbO0",
+            "__ID__": "PhysicsMaterial3D_13e8w",
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.00039999998989515007,
             "contact_damping": 1.0,
@@ -14608,7 +14626,7 @@
             "torsional_friction": 0.004999999888241291
         },
         {
-            "__ID__": "PBRMaterial3D_3noAs",
+            "__ID__": "PBRMaterial3D_cSAgn",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14638,7 +14656,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_MkrT7",
+            "__ID__": "PBRMaterial3D_tisSc",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14668,7 +14686,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_dz4jJ",
+            "__ID__": "PBRMaterial3D_LKfKx",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14698,7 +14716,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_pbfcx",
+            "__ID__": "PBRMaterial3D_CrE7D",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14728,7 +14746,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_ezfag",
+            "__ID__": "PBRMaterial3D_AkeA0",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14758,7 +14776,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_CGAL5",
+            "__ID__": "PBRMaterial3D_ABiHm",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -14788,7 +14806,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_xXIIA",
+            "__ID__": "PBRMaterial3D_Yfeej",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,

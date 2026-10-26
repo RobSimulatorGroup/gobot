@@ -53,8 +53,9 @@ class CheckpointPolicy(torch.nn.Module):
         if std is None:
             variance = normalizer_tensor(actor_state, "obs_normalizer._var")
             if variance is not None:
-                std = torch.sqrt(torch.clamp(variance, min=1.0e-12))
+                std = torch.sqrt(torch.clamp(variance, min=0.0))
         self.use_obs_normalizer = mean is not None
+        self.obs_normalizer_eps = float(manifest.model.get("obs_normalizer_eps", 1.e-2))
         if mean is None:
             mean = torch.zeros((self.obs_size,), dtype=torch.float32)
         if std is None:
@@ -64,11 +65,11 @@ class CheckpointPolicy(torch.nn.Module):
                 "checkpoint observation normalizer dimension does not match policy manifest"
             )
         self.register_buffer("obs_mean", mean.reshape(1, -1))
-        self.register_buffer("obs_std", std.reshape(1, -1).clamp_min(1.0e-6))
+        self.register_buffer("obs_std", std.reshape(1, -1))
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         if self.use_obs_normalizer:
-            obs = (obs - self.obs_mean) / self.obs_std
+            obs = (obs - self.obs_mean) / (self.obs_std + self.obs_normalizer_eps)
         return self.mlp(obs)
 
 

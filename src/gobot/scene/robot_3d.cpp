@@ -21,6 +21,14 @@ const std::string& Robot3D::GetSourcePath() const {
     return source_path_;
 }
 
+void Robot3D::SetCollisionExclusions(std::vector<std::array<std::string, 2>> exclusions) {
+    collision_exclusions_ = std::move(exclusions);
+}
+
+const std::vector<std::array<std::string, 2>>& Robot3D::GetCollisionExclusions() const {
+    return collision_exclusions_;
+}
+
 void Robot3D::SetMode(RobotMode mode) {
     if (mode_ == mode) {
         return;
@@ -60,6 +68,7 @@ GOBOT_REGISTRATION {
 
     Class_<Robot3D>("Robot3D")
             .constructor()(CtorAsRawPtr)
+            .property("collision_exclusions", &Robot3D::GetCollisionExclusions, &Robot3D::SetCollisionExclusions)
             .property("mode", &Robot3D::GetMode, &Robot3D::SetMode)
             .property("source_path", &Robot3D::GetSourcePath, &Robot3D::SetSourcePath);
 

@@ -40,6 +40,15 @@ def prepare(asset_root=None, project_path=None):
                 body.remove(geom)
         for attrs in preset.get(body.get('name'), ()):
             ET.SubElement(body, 'geom', attrs)
+    # mjlab's overlapping neighboring link proxies require these exclusions.
+    contact = root.find('contact')
+    if contact is not None:
+        root.remove(contact)
+    contact = ET.SubElement(root, 'contact')
+    for first, second in (("left_elbow_link", "left_wrist_pitch_link"),
+                          ("right_elbow_link", "right_wrist_pitch_link"),
+                          ("pelvis", "right_hip_roll_link"), ("pelvis", "left_hip_roll_link")):
+        ET.SubElement(contact, 'exclude', body1=first, body2=second)
     for tag in ('sensor', 'keyframe'):
         element = root.find(tag)
         if element is not None:
