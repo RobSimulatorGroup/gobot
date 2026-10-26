@@ -1,0 +1,23 @@
+{
+  "main_scene": "res://g1_scene.jscn",
+  "editor_scene_views": {
+    "res://g1_scene.jscn": {
+      "at": [
+        -2.0,
+        0.0,
+        1.0
+      ],
+      "eye": [
+        4.0,
+        -6.0,
+        4.0
+      ],
+      "up": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "fov_y": 45.0
+    }
+  }
+}

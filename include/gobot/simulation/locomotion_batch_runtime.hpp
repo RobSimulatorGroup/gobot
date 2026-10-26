@@ -30,11 +30,13 @@ struct GOBOT_EXPORT LocomotionBatchStateLayout {
     std::vector<std::string> link_names;
     std::vector<std::string> sensor_names;
     std::vector<std::size_t> foot_link_indices;
-    std::vector<std::string> foot_shape_names;
+    std::vector<std::string> foot_shape_names; // Legacy singleton groups.
+    std::vector<std::vector<std::string>> foot_shape_groups;
     std::vector<std::size_t> foot_height_sensor_indices;
     std::vector<std::size_t> foot_contact_sensor_indices;
     std::size_t height_scan_sensor_index{kInvalidIndex};
     std::size_t imu_sensor_index{kInvalidIndex};
+    std::size_t angular_momentum_sensor_index{kInvalidIndex};
     std::size_t height_scan_count{0};
     bool terminate_on_thigh_contact{true};
 };
@@ -97,6 +99,9 @@ public:
 
     std::span<float> BaseAngularVelocitiesBody();
     std::span<const float> BaseAngularVelocitiesBody() const;
+
+    std::span<float> AngularMomentum();
+    std::span<const float> AngularMomentum() const;
 
     std::span<float> ProjectedGravity();
     std::span<const float> ProjectedGravity() const;
@@ -214,6 +219,7 @@ private:
     std::vector<float> base_angular_velocities_;
     std::vector<float> base_linear_velocities_body_;
     std::vector<float> base_angular_velocities_body_;
+    std::vector<float> angular_momentum_;
     std::vector<float> projected_gravity_;
     std::vector<float> up_vectors_;
     std::vector<float> base_heights_;

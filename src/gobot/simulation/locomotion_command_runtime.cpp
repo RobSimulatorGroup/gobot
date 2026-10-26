@@ -7,6 +7,8 @@
 #include "gobot/simulation/locomotion_command_runtime.hpp"
 
 #include <algorithm>
+#include <sstream>
+#include <stdexcept>
 #include <cmath>
 #include <stdexcept>
 
@@ -47,6 +49,31 @@ void LocomotionCommandRuntime::Allocate(std::size_t environment_count) {
     run_environment_mask_.assign(environment_count_, 0);
     ranges_.assign(kRangeCount, 0.0f);
     SeedEnvironmentGenerators(config_.seed);
+}
+
+std::vector<std::string> LocomotionCommandRuntime::SaveRandomState() const {
+    std::vector<std::string> states;
+    states.reserve(environment_rngs_.size());
+    for (const auto& generator : environment_rngs_) {
+        std::ostringstream stream;
+        stream << generator;
+        states.push_back(stream.str());
+    }
+    return states;
+}
+
+void LocomotionCommandRuntime::RestoreRandomState(const std::vector<std::string>& states) {
+    if (states.size() != environment_rngs_.size()) {
+        throw std::invalid_argument("command RNG state must have one entry per environment");
+    }
+    auto generators = environment_rngs_;
+    for (std::size_t index = 0; index < states.size(); ++index) {
+        std::istringstream stream(states[index]);
+        if (!(stream >> generators[index])) {
+            throw std::invalid_argument("invalid command RNG state");
+        }
+    }
+    environment_rngs_ = std::move(generators);
 }
 
 std::size_t LocomotionCommandRuntime::GetEnvironmentCount() const {

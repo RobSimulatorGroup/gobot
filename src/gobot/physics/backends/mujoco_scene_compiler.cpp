@@ -1031,6 +1031,21 @@ bool ModelBuilder::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         AddJointActuators(parent_spec, joint, prefix + joint.name);
     }
 
+    for (const auto& pair : robot.collision_exclusions) {
+        if (pair[0] == pair[1] || !bodies.contains(pair[0]) || !bodies.contains(pair[1])) {
+            SetLastError(fmt::format("Invalid collision exclusion in robot '{}': '{}' / '{}'.",
+                                    robot.name, pair[0], pair[1]));
+            return false;
+        }
+        mjsExclude* exclusion = mjs_addExclude(parent_spec);
+        if (!exclusion) {
+            SetLastError("MuJoCo failed to allocate a collision exclusion.");
+            return false;
+        }
+        mjs_setString(exclusion->bodyname1, (prefix + pair[0]).c_str());
+        mjs_setString(exclusion->bodyname2, (prefix + pair[1]).c_str());
+    }
+
     LOG_INFO("Added authored Gobot {} '{}' to MuJoCo spec with prefix '{}'.",
              robot.standalone_rigid_body ? "RigidBody3D" : "Robot3D",
              robot.name,

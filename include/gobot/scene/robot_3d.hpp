@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <array>
 #include <string>
+#include <vector>
 
 #include "gobot/scene/node_3d.hpp"
 
@@ -27,6 +29,11 @@ public:
 
     const std::string& GetSourcePath() const;
 
+    // Named link pairs whose geometries are allowed to overlap within the robot.
+    void SetCollisionExclusions(std::vector<std::array<std::string, 2>> exclusions);
+
+    const std::vector<std::array<std::string, 2>>& GetCollisionExclusions() const;
+
     void SetMode(RobotMode mode);
 
     RobotMode GetMode() const;
@@ -35,6 +42,7 @@ private:
     void SetJointMotionModeRecursive(Node* node, bool enabled);
 
     std::string source_path_;
+    std::vector<std::array<std::string, 2>> collision_exclusions_;
     RobotMode mode_{RobotMode::Assembly};
 };
 

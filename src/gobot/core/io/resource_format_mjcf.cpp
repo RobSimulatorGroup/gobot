@@ -1101,7 +1101,17 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
 
     const std::string model_name = ReadMJCFModelName(xml);
     const std::unordered_map<int, std::string> mesh_paths = BuildMeshAssetPaths(input_path);
-    const int robot_index = state->AddNode(MakeRobotNode(model_name, original_path.empty() ? path : original_path));
+    auto robot_node = MakeRobotNode(model_name, original_path.empty() ? path : original_path);
+    std::vector<std::array<std::string, 2>> exclusions;
+    for (int i = 0; i < model->nexclude; ++i) {
+        const int signature = model->exclude_signature[i];
+        const int first = signature >> 16;
+        const int second = signature & 0xffff;
+        exclusions.push_back({GetMuJoCoName(model.get(), mjOBJ_BODY, first, fmt::format("body_{}", first)),
+                              GetMuJoCoName(model.get(), mjOBJ_BODY, second, fmt::format("body_{}", second))});
+    }
+    AddProperty(robot_node, "collision_exclusions", exclusions);
+    const int robot_index = state->AddNode(robot_node);
 
     std::unordered_map<int, int> body_to_link_node;
     std::unordered_map<int, SceneState::NodeData> joint_nodes;

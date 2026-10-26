@@ -740,6 +740,7 @@ void CollectSceneNodes(const Node* node,
     if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.name = robot->GetName();
+        robot_snapshot.collision_exclusions = robot->GetCollisionExclusions();
         robot_snapshot.scene_path = CanonicalScenePath(robot);
         robot_snapshot.global_transform = global_transform;
         PhysicsRobotSceneBinding scene_binding;

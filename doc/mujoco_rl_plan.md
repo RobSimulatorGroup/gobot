@@ -21,8 +21,11 @@ Newton are Python providers consuming a validated schema-v3 artifact from
 physics world. Providers validate content digests, producer metadata,
 dimensions, topology, and the explicit control map.
 
-Training tasks live under `examples/`; they define observations, rewards,
-termination, commands, and curriculum in Python. C++ supplies generic controls,
+Robot/task presets live under `examples/`; reusable velocity task implementations
+live in `gobot.rl.locomotion`. `LocomotionRobotCfg`, `VelocityTaskCfg`, and
+`make_velocity_env` share CPU/Warp observations, reward configuration, termination,
+commands and curriculum. See [G1](../examples/g1/README.md) and the
+[shared tools](../examples/locomotion/README.md). C++ supplies generic controls,
 stepping, sensors, and state extraction. The old string-dispatched
 `ManagerBasedEnv`, task-JSON `NativeVectorEnv`, and Go1 LLVM/JIT task path have
 been removed. Future task APIs should retain the typed batch boundary.
@@ -145,3 +148,9 @@ Required regression coverage:
 - Clear capacity/non-finite diagnostics and deterministic provider shutdown.
 - Play lifecycle callbacks, native/external exclusion, failure pausing, and
   preservation of authored scene data.
+
+G1 velocity tasks use post-step sensing: update kinematics/sensors after the
+last integration substep, preserving the completed substep contact history.
+Legacy Go1 presets retain their original timing. New manifests record sensor
+timing and held-joint targets. Native command RNG streams are included in CPU
+training checkpoints for same-size resume.

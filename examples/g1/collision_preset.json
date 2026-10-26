@@ -1,0 +1,338 @@
+{
+  "source": "mjlab 8bb2bc9e unitree_g1/xmls/g1.xml, Apache-2.0",
+  "bodies": {
+    "pelvis": [
+      {
+        "name": "pelvis_collision",
+        "type": "sphere",
+        "size": "0.07",
+        "pos": "0 0 -0.08",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_hip_roll_link": [
+      {
+        "name": "left_hip_collision",
+        "size": "0.06",
+        "fromto": "0.02 0 0 0.02 0 -0.08",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_hip_yaw_link": [
+      {
+        "name": "left_thigh_collision",
+        "size": "0.055",
+        "fromto": "-0.0 0 -0.03 -0.06 0 -0.17",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_knee_link": [
+      {
+        "name": "left_shin_collision",
+        "size": "0.045",
+        "fromto": "0.01 0 0 0.01 0 -0.15",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_linkage_brace_collision",
+        "size": "0.03",
+        "fromto": "0.01 0 -0.2 0.01 0 -0.28",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_ankle_roll_link": [
+      {
+        "name": "left_foot1_collision",
+        "fromto": "0.1 -0.026 -0.025 0.05 -0.027 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot2_collision",
+        "fromto": "-0.044 -0.018 -0.025 0.123 -0.018 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot3_collision",
+        "fromto": "-0.052 -0.01 -0.025 0.13 -0.01 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot4_collision",
+        "fromto": "-0.054 0 -0.025 0.132 0 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot5_collision",
+        "fromto": "-0.052 0.01 -0.025 0.13 0.01 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot6_collision",
+        "fromto": "-0.044 0.018 -0.025 0.123 0.018 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "left_foot7_collision",
+        "fromto": "0.1 0.026 -0.025 0.05 0.026 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_hip_roll_link": [
+      {
+        "name": "right_hip_collision",
+        "size": "0.06",
+        "fromto": "0.02 0 0 0.02 0 -0.08",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_hip_yaw_link": [
+      {
+        "name": "right_thigh_collision",
+        "size": "0.055",
+        "fromto": "-0.0 0 -0.03 -0.06 0 -0.17",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_knee_link": [
+      {
+        "name": "right_shin_collision",
+        "size": "0.045",
+        "fromto": "0.01 0 0 0.01 0 -0.15",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_linkage_brace_collision",
+        "size": "0.03",
+        "fromto": "0.01 0 -0.2 0.01 0 -0.28",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_ankle_roll_link": [
+      {
+        "name": "right_foot1_collision",
+        "fromto": "0.1 -0.026 -0.025 0.05 -0.026 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot2_collision",
+        "fromto": "-0.044 -0.018 -0.025 0.123 -0.018 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot3_collision",
+        "fromto": "-0.052 -0.01 -0.025 0.13 -0.01 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot4_collision",
+        "fromto": "-0.054 0 -0.025 0.132 0 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot5_collision",
+        "fromto": "-0.052 0.01 -0.025 0.13 0.01 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot6_collision",
+        "fromto": "-0.044 0.018 -0.025 0.123 0.018 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "right_foot7_collision",
+        "fromto": "0.1 0.026 -0.025 0.05 0.026 -0.025",
+        "type": "capsule",
+        "size": "0.01",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "torso_link": [
+      {
+        "name": "torso_collision",
+        "size": "0.09",
+        "fromto": "0.01 0 0.08 0.01 0 0.2",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      },
+      {
+        "name": "head_collision",
+        "type": "sphere",
+        "size": "0.06",
+        "pos": "0 0 .43",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_shoulder_yaw_link": [
+      {
+        "name": "left_shoulder_yaw_collision",
+        "size": "0.035",
+        "fromto": "0 0 -0.08 0 0 0.05",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_elbow_link": [
+      {
+        "name": "left_elbow_yaw_collision",
+        "size": "0.035",
+        "fromto": "-0.01 0 -0.01 0.08 0 -0.01",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_wrist_pitch_link": [
+      {
+        "name": "left_wrist_collision",
+        "size": "0.035",
+        "fromto": "-0.01 0 0 0.06 0 0",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "left_wrist_yaw_link": [
+      {
+        "name": "left_hand_collision",
+        "size": "0.035",
+        "fromto": "0.07 0 0 0.15 -0.02 0",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_shoulder_yaw_link": [
+      {
+        "name": "right_shoulder_yaw_collision",
+        "size": "0.035",
+        "fromto": "0 0 -0.08 0 0 0.05",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_elbow_link": [
+      {
+        "name": "right_elbow_yaw_collision",
+        "size": "0.035",
+        "fromto": "-0.01 0 -0.01 0.08 0 -0.01",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_wrist_pitch_link": [
+      {
+        "name": "right_wrist_collision",
+        "size": "0.035",
+        "fromto": "-0.01 0 0 0.06 0 0",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ],
+    "right_wrist_yaw_link": [
+      {
+        "name": "right_hand_collision",
+        "size": "0.035",
+        "fromto": "0.07 0 0 0.15 0.02 0",
+        "type": "capsule",
+        "contype": "1",
+        "conaffinity": "1",
+        "group": "3"
+      }
+    ]
+  }
+}
