@@ -54,7 +54,8 @@ enum class PhysicsShapeType {
     Sphere,
     Cylinder,
     Capsule,
-    Mesh
+    Mesh,
+    Plane
 };
 
 enum class PhysicsLinkRole {
@@ -195,6 +196,7 @@ struct PhysicsMaterialSnapshot {
     RealType restitution{0.0};
     RealType contact_compliance{0.0};
     RealType contact_damping{1.0};
+    std::string contact_friction_mode{"auto"};
 };
 
 struct PhysicsShapeSnapshot {
@@ -553,6 +555,7 @@ struct PhysicsRobotBatchStepRequest {
     bool collect_contact_history{false};
     std::uint64_t ticks{1};
     std::size_t worker_count{0};
+    bool kinematic_readback{false};
 };
 
 struct PhysicsRobotBatchStepResult {

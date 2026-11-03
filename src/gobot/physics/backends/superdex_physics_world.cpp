@@ -345,6 +345,7 @@ struct TriangleMeshBuilder {
                 return indices.size() % 3 == 0;
             }
             case PhysicsShapeType::Unknown:
+            case PhysicsShapeType::Plane:
                 return false;
         }
         return false;

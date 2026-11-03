@@ -2394,7 +2394,12 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                        const std::vector<std::string>& sensor_names,
                                                        py::array_t<RealType, py::array::c_style | py::array::forcecast> target_positions,
                                                        std::uint64_t ticks,
-                                                       std::size_t workers) {
+                                                       std::size_t workers,
+                                                       const std::vector<std::string>& override_link_names,
+                                                       const py::object& link_center_of_mass_offset,
+                                                       const std::vector<std::string>& override_shape_names,
+                                                       const py::object& shape_friction,
+                                                       bool kinematic_readback) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
@@ -2426,6 +2431,32 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 request.target_positions = std::move(targets);
                 request.ticks = ticks;
                 request.worker_count = workers;
+                request.kinematic_readback = kinematic_readback;
+                const auto read_vectors = [environment_count](const py::object& value,
+                                                               std::size_t count,
+                                                               const char* label) {
+                    std::vector<RealType> result;
+                    if (value.is_none()) {
+                        if (count != 0) throw std::invalid_argument(std::string(label) + " requires values for every named entry");
+                        return result;
+                    }
+                    auto array = py::array_t<RealType, py::array::c_style | py::array::forcecast>::ensure(value);
+                    if (!array || array.ndim() != 3 ||
+                        static_cast<std::size_t>(array.shape(0)) != environment_count ||
+                        static_cast<std::size_t>(array.shape(1)) != count || array.shape(2) != 3) {
+                        throw std::invalid_argument(std::string(label) + " must have shape [num_envs, num_names, 3]");
+                    }
+                    result.assign(array.data(), array.data() + array.size());
+                    if (!std::all_of(result.begin(), result.end(), [](RealType number) { return std::isfinite(number); })) {
+                        throw std::invalid_argument(std::string(label) + " must contain finite values");
+                    }
+                    return result;
+                };
+                request.override_link_names = override_link_names;
+                request.link_center_of_mass_offset = read_vectors(
+                        link_center_of_mass_offset, override_link_names.size(), "center-of-mass offsets");
+                request.override_shape_names = override_shape_names;
+                request.shape_friction = read_vectors(shape_friction, override_shape_names.size(), "shape friction");
                 PhysicsRobotBatchStepResult arrays;
                 {
                     py::gil_scoped_release release;
@@ -2442,7 +2473,12 @@ void RegisterManualAppContextBindings(py::module_& module) {
                py::arg("sensor_names"),
                py::arg("target_positions"),
                py::arg("ticks") = 1,
-               py::arg("workers") = 0)
+               py::arg("workers") = 0,
+               py::arg("override_link_names") = std::vector<std::string>{},
+               py::arg("link_center_of_mass_offset") = py::none(),
+               py::arg("override_shape_names") = std::vector<std::string>{},
+               py::arg("shape_friction") = py::none(),
+               py::arg("kinematic_readback") = false)
             .def("_reset_batch_robot_states", [](EngineContext& context,
                                                  const std::vector<std::size_t>& env_ids,
                                                  const std::string& robot,

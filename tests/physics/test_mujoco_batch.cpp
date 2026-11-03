@@ -102,6 +102,48 @@ TEST(MuJoCoBatchTest, CheckpointRestoresParametersAndExactReplayAfterWorkerChang
     for (int j = 0; j < model->nq; ++j) EXPECT_DOUBLE_EQ(batch.Data(3)->qpos[j], expected[j]);
 }
 
+TEST(MuJoCoBatchTest, KinematicReadbackPreservesIntegrationContactsAndFutureTrajectory) {
+    auto model = MakeModel();
+    MuJoCoBatch batch(model.get(), 2);
+    MuJoCoBatch control(model.get(), 2);
+    batch.Advance(2, 2, 200);
+    control.Advance(2, 2, 200);
+    const auto untouched = batch.Capture(1);
+    {
+        auto lease = batch.Access(0);
+        auto* m = batch.Model(0);
+        auto* d = batch.Data(0);
+        std::vector<mjtNum> before(mj_stateSize(m, mjSTATE_INTEGRATION));
+        std::vector<mjtNum> after(before.size());
+        mj_getState(m, d, before.data(), mjSTATE_INTEGRATION);
+        const std::vector<mjtNum> acceleration(d->qacc, d->qacc + m->nv);
+        const auto contacts = batch.Contacts(0);
+        MuJoCoBatch::RefreshKinematics(m, d);
+        mj_getState(m, d, after.data(), mjSTATE_INTEGRATION);
+        EXPECT_EQ(before, after);
+        EXPECT_EQ(acceleration, std::vector<mjtNum>(d->qacc, d->qacc + m->nv));
+        ASSERT_EQ(contacts.size(), batch.Contacts(0).size());
+        for (std::size_t i = 0; i < contacts.size(); ++i) {
+            EXPECT_EQ(contacts[i].force, batch.Contacts(0)[i].force);
+            EXPECT_EQ(contacts[i].value.dist, batch.Contacts(0)[i].value.dist);
+        }
+        EXPECT_NEAR(d->xpos[5], d->qpos[2], 1.e-12);
+    }
+    EXPECT_EQ(untouched, batch.Capture(1));
+    batch.Advance(2, 2, 10);
+    control.Advance(2, 2, 10);
+    for (int i = 0; i < 2; ++i) {
+        std::vector<mjtNum> actual;
+        {
+            auto left = batch.Access(i);
+            actual.assign(batch.Data(i)->qpos, batch.Data(i)->qpos + model->nq);
+        }
+        auto right = control.Access(i);
+        for (int j = 0; j < model->nq; ++j)
+            EXPECT_DOUBLE_EQ(actual[j], control.Data(i)->qpos[j]);
+    }
+}
+
 TEST(MuJoCoBatchTest, WorkerErrorsDoNotDeadlockAndOtherWorldsRemainIndependent) {
     auto model = MakeModel();
     MuJoCoBatch batch(model.get(), 7);

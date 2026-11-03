@@ -166,6 +166,7 @@ class _MuJoCoWarpRobotViewAdapter:
         self.provider.set_joint_controls(self.layout, controls)
 
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
+        kinematics_only = bool(state.pop("kinematics_only", False))
         qpos = self.provider.arrays["qpos"].clone()
         qvel = self.provider.arrays["qvel"].clone()
         ctrl = self.provider.arrays["ctrl"].clone()
@@ -210,7 +211,10 @@ class _MuJoCoWarpRobotViewAdapter:
         copy_columns(ctrl, self.controls, state.pop("controls", None), "controls")
         if state:
             raise TypeError("unexpected robot reset fields: " + ", ".join(sorted(state)))
-        return self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl)
+        result = self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl, forward=not kinematics_only)
+        if kinematics_only:
+            self.provider.refresh_kinematics()
+        return result
 
 
 @dataclass(frozen=True)
@@ -352,6 +356,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         contact_sensor_maxmatch: int | None = None,
         ls_parallel: bool | None = True,
         capture_graphs: bool = True,
+        deterministic: bool = False,
         overflow_check_interval: int = 256,
         strict_mujoco_version: bool = True,
         contact_sensors: Sequence[MuJoCoWarpContactSensorSpec] = (),
@@ -410,6 +415,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 "contact_sensor_maxmatch": contact_sensor_maxmatch,
                 "ls_parallel": ls_parallel,
                 "capture_graphs": self._capture_enabled,
+                "deterministic": bool(deterministic),
                 "contact_sensors": self._contact_specs,
                 "raycast_sensors": self._raycast_specs,
             },
@@ -449,6 +455,10 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         # can still be replayed on the current Torch stream at runtime.
         with self._wp.ScopedDevice(self._wp_device):
             self._model = self._mjw.put_model(self._mj_model)
+            if deterministic:
+                if not hasattr(self._model.opt, "deterministic"):
+                    raise ProviderUnavailableError("this Warp runtime has no deterministic execution option")
+                self._model.opt.deterministic = True
             # MuJoCo 3.17 records finite solver-budget exhaustion in overflow as
             # diagnostics. These bits do not indicate discarded contacts/data.
             if hasattr(self._model.opt, "warn_overflow"):
@@ -544,7 +554,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         """Whether every runtime CUDA graph was captured successfully."""
 
         self._require_open()
-        required = ("step", "forward", "reset", "sense")
+        required = ("step", "forward", "reset", "sense", "kinematics")
         return self._capture_enabled and all(
             name in self._graphs for name in required
         )
@@ -668,6 +678,21 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._validate_storage()
         with self._stream_scope():
             self._launch_or_call("forward", self._mjw.forward)
+        return self._arrays
+
+    def refresh_kinematics(self) -> Mapping[str, Any]:
+        """Refresh final poses/velocities without solving new contacts or forces.
+
+        Keep completed-substep contact data and solver state intact while reading
+        the post-integration generalized coordinates.
+        """
+        self._require_open()
+        self._validate_storage()
+        with self._stream_scope():
+            if self._capture_enabled:
+                self._wp.capture_launch(self._graphs["kinematics"])
+            else:
+                self._kinematics_kernel()
         return self._arrays
 
     def sense(self) -> Mapping[str, Any]:
@@ -1238,6 +1263,13 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             runtime.ray_pnt_tensor.copy_(runtime.world_origins)
             runtime.ray_vec_tensor.copy_(runtime.world_rays)
 
+    def _kinematics_kernel(self) -> None:
+        self._mjw.kinematics(self._model, self._data)
+        self._mjw.com_pos(self._model, self._data)
+        self._mjw.com_vel(self._model, self._data)
+        self._mjw.sensor_pos(self._model, self._data)
+        self._mjw.sensor_vel(self._model, self._data)
+
     def _sense_kernel(self) -> None:
         self._mjw.sensor_pos(self._model, self._data)
         self._mjw.sensor_vel(self._model, self._data)
@@ -1321,6 +1353,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
     def _capture_all_graphs(self) -> None:
         self._graphs["step"] = self._capture(lambda: self._mjw.step(self._model, self._data))
         self._graphs["forward"] = self._capture(lambda: self._mjw.forward(self._model, self._data))
+        self._graphs["kinematics"] = self._capture(self._kinematics_kernel)
         self._graphs["reset"] = self._capture(
             lambda: self._mjw.reset_data(self._model, self._data, reset=self._reset_mask)
         )

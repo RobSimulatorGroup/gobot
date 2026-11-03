@@ -1,0 +1,62 @@
+{
+  "version": "g1_tracking_deterministic_v1",
+  "implementation_reference": "Motphys/Uni-SuperMimic@faf7818e8abac3ec6abb8f00e6e904d3577f800b",
+  "control_dt": 0.02,
+  "physics_dt": 0.005,
+  "decimation": 4,
+  "history_frames": 10,
+  "future_goal_frames": 10,
+  "bptt_horizon": 32,
+  "world_model_window": 8,
+  "policy_joint_count": 29,
+  "teacher_observation_dim": 99,
+  "goal_frame_dim": 73,
+  "source_motion_fps": 30.0,
+  "state_velocity_frame": "world_link_origin",
+  "teacher_quaternion_order": "wxyz",
+  "provider_quaternion_order": "xyzw",
+  "training_exploration_action_clip": 20.0,
+  "environment_action_clip": null,
+  "evaluation_sliding_friction": 1.0,
+  "reward_includes_dt": true,
+  "evaluation": {
+    "start": "first_frame_each_clip",
+    "actor_normalization": "frozen",
+    "observation_noise": false,
+    "action_noise": false,
+    "domain_randomization": false,
+    "return_denominator": "complete_clip_maximum_return",
+    "mean_return_max_drop": 0.02,
+    "allow_new_failed_clips": false,
+    "full_library_quality_is_separate": true
+  },
+  "splits": {
+    "coverage40": {
+      "purpose": "engineering_parity_and_library_coverage",
+      "subjects": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "subject_split_v1": {
+      "train": [
+        1,
+        2,
+        3
+      ],
+      "validation": [
+        4
+      ],
+      "final_holdout": [
+        5
+      ],
+      "reject_all_library_ancestry": true
+    }
+  },
+  "warp_determinism": "contacts_constraints_atomics_all",
+  "torch_deterministic_algorithms": true,
+  "cublas_workspace_config": ":4096:8"
+}

@@ -8,6 +8,7 @@
 
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/math/math_defs.hpp"
+#include <string>
 
 namespace gobot {
 
@@ -35,6 +36,9 @@ public:
     void SetContactDamping(RealType value);
     RealType GetContactDamping() const;
 
+    void SetContactFrictionMode(const std::string& value);
+    const std::string& GetContactFrictionMode() const;
+
 private:
     RealType sliding_friction_{1.0};
     RealType torsional_friction_{0.005};
@@ -42,6 +46,7 @@ private:
     RealType restitution_{0.0};
     RealType contact_compliance_{0.0};
     RealType contact_damping_{1.0};
+    std::string contact_friction_mode_{"auto"};
 };
 
 } // namespace gobot

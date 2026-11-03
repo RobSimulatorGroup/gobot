@@ -117,6 +117,7 @@ public:
 
     static void Step(mjModel* m, mjData* d) { CurrentOperation(m, d, Operation::Step); }
     static void Forward(mjModel* m, mjData* d) { CurrentOperation(m, d, Operation::Forward); }
+    static void RefreshKinematics(mjModel* m, mjData* d) { CurrentOperation(m, d, Operation::Kinematics); }
     static void Reset(mjModel* m, mjData* d) { CurrentOperation(m, d, Operation::Reset); }
 
     // These callbacks do engine work only. Physics calls belong in Advance so
@@ -163,7 +164,7 @@ public:
     }
 
 private:
-    enum class Operation { Step, Forward, Reset };
+    enum class Operation { Step, Forward, Reset, Kinematics };
     struct Call {
         MuJoCoBatch* owner;
         std::uint64_t ticks;
@@ -308,6 +309,16 @@ private:
         self->ModelView(&model, sim);
         self->LoadOutputs(data, sim);
         if (call->raw) {
+            if (call->operation == Operation::Kinematics) {
+                mj_kinematics(&model, data);
+                mj_comPos(&model, data);
+                mj_comVel(&model, data);
+                mj_sensorPos(&model, data);
+                mj_sensorVel(&model, data);
+                // Keep the completed-substep contacts and force workspace.
+                self->SaveOutputs(data, sim);
+                return;
+            }
             if (call->operation == Operation::Step) mj_step(&model, data);
             else mj_forward(&model, data);
             self->Cache(&model, data, sim);

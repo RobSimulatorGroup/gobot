@@ -29,3 +29,26 @@ inspection/evaluation boundary without requiring access to environment internals
 Use `set_terrain_assignments(levels, types, fixed=True)` to keep evaluation or
 playback resets in the selected cells. NumPy CPU arrays and Torch CUDA tensors
 retain their native backend.
+
+## Full SuperMimic reference (2026-10-28)
+
+The separate `supermimic_reference.py` runner tests Uni-SuperMimic's complete
+world-model/BPTT pipeline with pinned physics and all 40 motion clips. It is not
+AMP. ModelScope asset preparation is provided by `reference_assets.py`; all assets
+are checksummed, including the existing 18 clips after newline normalization.
+See [reference configuration, validation, live status and limits](../../doc/supermimic_reference_status.md).
+The local full-network benchmark and checkpoint resume passed; the bounded formal
+reference run uses 512 environments and automatically evaluates full-clip coverage.
+A tracking checkpoint still requires separate velocity/terrain admission.
+`supermimic_video.py --watch --run-dir <run>` records fixed walking/running/sprinting
+windows every 15 minutes and on completion. The current video and next recording
+are listed in `<run>/videos/latest.json` and `watch_status.json`.
+
+## Gobot SuperMimic tracking
+
+The scene-authored port, randomized training, checkpoint recovery, frozen-actor
+forks and independent validation are available through `examples.g1.train_tracking`.
+Full-network smoke training has run in Gobot; full-library migration admission
+is still pending. See the [G1 tracking workflow](../g1/README.md),
+[measured port status](../../doc/supermimic_port_status.md), and
+[cluster job instructions](cluster/README.md).

@@ -121,7 +121,10 @@ class BatchSimulationRuntime:
             list(self.sensor_names),
         )
 
-    def step_and_robot_state(self, target_positions: Any, ticks: int, *, workers: int = 0) -> Any:
+    def step_and_robot_state(self, target_positions: Any, ticks: int, *, workers: int = 0,
+                             override_link_names: Sequence[str] = (), link_center_of_mass_offset: Any = None,
+                             override_shape_names: Sequence[str] = (), shape_friction: Any = None,
+                             kinematic_readback: bool = False) -> Any:
         targets = np.asarray(target_positions, dtype=np.float64)
         return self.context._step_batch_and_get_robot_state(
             self.robot,
@@ -132,6 +135,11 @@ class BatchSimulationRuntime:
             targets,
             int(ticks),
             int(workers),
+            list(override_link_names),
+            None if link_center_of_mass_offset is None else np.asarray(link_center_of_mass_offset, dtype=np.float64),
+            list(override_shape_names),
+            None if shape_friction is None else np.asarray(shape_friction, dtype=np.float64),
+            bool(kinematic_readback),
         )
 
     def reset_robot_states(
