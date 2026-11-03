@@ -87,6 +87,7 @@ def test_timeout_uses_final_value():
     alg.actor = alg.critic = Model()
     alg.device = 'cpu'; alg.gamma = .99; alg.rnd = None
     alg.prior_cfg = MotionPriorCfg(dataset='', weight=0., fall_penalty=0.)
+    alg.fall_penalty = 0.
     alg.reference = SimpleNamespace(mean=torch.zeros(158), std=torch.ones(158), generator=torch.Generator().manual_seed(1))
     alg.discriminator = lambda pair: torch.zeros(len(pair), 2)
     alg._remember = lambda pair, gait: None

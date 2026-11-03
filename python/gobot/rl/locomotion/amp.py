@@ -8,15 +8,16 @@ from dataclasses import asdict
 import torch
 from torch import nn
 from tensordict import TensorDict
-from rsl_rl.algorithms import PPO
+from .transition_ppo import TransitionPPO
 from .motion import MotionDataset, MotionPriorCfg
 
 
-class MotionPriorPPO(PPO):
+class MotionPriorPPO(TransitionPPO):
     def __init__(self, *args, motion_prior_cfg=None, **kwargs):
-        super().__init__(*args, **kwargs)
         self.prior_cfg = MotionPriorCfg(**motion_prior_cfg)
-        self.reference = MotionDataset(self.prior_cfg.dataset, device=self.device)
+        super().__init__(*args, fall_penalty=self.prior_cfg.fall_penalty, **kwargs)
+        self.reference = MotionDataset(self.prior_cfg.dataset,device=self.device,seed=self.prior_cfg.seed,
+            tolerances=(self.prior_cfg.speed_tolerance,self.prior_cfg.lateral_tolerance,self.prior_cfg.yaw_tolerance))
         self.discriminator = nn.Sequential(nn.Linear(self.reference.pairs.shape[1], 512), nn.ELU(),
                                            nn.Linear(512, 256), nn.ELU(), nn.Linear(256, 2)).to(self.device)
         self.disc_optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=self.prior_cfg.learning_rate)
@@ -24,15 +25,19 @@ class MotionPriorPPO(PPO):
         self.replay_gait = torch.empty(self.prior_cfg.replay_capacity, dtype=torch.long, device=self.device)
         self.replay_size = self.replay_cursor = 0
         self.motion_reward_mean = 0.
+        self.style_raw_mean = 0.
+        self.update_count = 0
+        self.replay_command = torch.empty(self.prior_cfg.replay_capacity,3,device=self.device)
 
     def _normalize(self, pairs):
         return ((pairs - self.reference.mean) / self.reference.std).clamp(-10, 10)
 
-    def _remember(self, pair, gait):
+    def _remember(self, pair, gait, command):
         count = min(len(pair), len(self.replay))
         ids = (torch.arange(count, device=self.device) + self.replay_cursor) % len(self.replay)
         self.replay[ids] = pair[-count:]
         self.replay_gait[ids] = gait[-count:]
+        self.replay_command[ids] = command[-count:]
         self.replay_cursor = (self.replay_cursor + count) % len(self.replay)
         self.replay_size = min(len(self.replay), self.replay_size + count)
 
@@ -45,37 +50,36 @@ class MotionPriorPPO(PPO):
         with torch.no_grad():
             score = self.discriminator(self._normalize(pair))
             style = (1 - .25 * (score - 1).square()).clamp(min=0)
+            if hasattr(self.reference, "supported_heads"):
+                style = style * self.reference.supported_heads(command)
             style = style[:, 0] * (1 - blend) + style[:, 1] * blend
-            active = command[:, :2].norm(dim=1) > .1
-            # Relax imitation on difficult terrain and non-forward maneuvers.
+            active = (command[:, 0] >= .2) & (command[:, 1].abs() <= .15) & (command[:, 2].abs() <= .35)
             level_weight = 1 - .75 * (state["terrain_level"].float() / 9).clamp(0, 1)
-            maneuver_weight = torch.where(command[:, 0] > .1, 1., .25)
-            addition = cfg.weight * .02 * style * active * level_weight * maneuver_weight
-            failure = dones & ~extras.get("time_outs", torch.zeros_like(dones))
-            # A failure is an event cost, not a per-second regularizer. Without it,
-            # early termination can avoid future costs during initial exploration.
-            combined = rewards + addition - cfg.fall_penalty * failure
+            ramp = min(1., getattr(self, 'update_count', 0) / max(cfg.warmup_updates, 1))
+            addition = cfg.weight * .02 * ramp * style * active * level_weight
             self.motion_reward_mean = float(addition.mean())
+            self.style_raw_mean = float(style[active].mean()) if bool(active.any()) else 0.
             gait = (torch.rand(blend.shape, device=self.device, generator=self.reference.generator) < blend).long()
-            self._remember(pair, gait)
-            # RSL's default timeout path uses V(s_t). Use V(s_{t+1}) before reset.
-            timeouts = extras.get("time_outs")
-            if timeouts is not None:
-                terminal = TensorDict(extras["final_observation"], batch_size=[len(rewards)], device=self.device)
-                value = self.critic(terminal).squeeze(-1)
-                combined = combined + self.gamma * value * timeouts
-        forwarded = {key: value for key, value in extras.items() if key != "time_outs"}
-        super().process_env_step(obs, combined, dones, forwarded)
+            if bool(active.any()):
+                self._remember(pair[active], gait[active], command[active])
+        super().process_env_step(obs, rewards + addition, dones, extras)
 
     def update(self):
         result = super().update()
-        if self.prior_cfg.weight == 0:
+        if result.get("update_rejected",0):
+            return {**result,"amp":0.,"amp_reward":self.motion_reward_mean,"amp_style_raw":self.style_raw_mean}
+        self.update_count += 1
+        if self.prior_cfg.weight == 0 or self.replay_size == 0:
             return {**result, "amp": 0., "amp_reward": 0.}
         loss_sum = real_sum = fake_sum = 0.
         cfg = self.prior_cfg
         for _ in range(cfg.updates_per_iteration):
-            real, labels = self.reference.sample(cfg.batch_size)
             ids = torch.randint(self.replay_size, (cfg.batch_size,), device=self.device, generator=self.reference.generator)
+            labels = self.replay_gait[ids]
+            real, supported = self.reference.sample_matching(labels, self.replay_command[ids])
+            if not bool(supported.any()):
+                continue
+            ids, labels, real = ids[supported], labels[supported], real[supported]
             fake_raw = self.replay[ids]
             # Both distributions must set the feature scale. Expert-only scaling
             # lets constant mocap wrists trivially identify every noisy policy.
@@ -85,11 +89,12 @@ class MotionPriorPPO(PPO):
                 variance = mixture.var(0, unbiased=False)
                 delta = mean - self.reference.mean
                 running_var = .99 * self.reference.std.square() + .01 * variance + .0099 * delta.square()
-                self.reference.mean.lerp_(mean, .01)
-                self.reference.std.copy_(running_var.sqrt().clamp_min(.05))
+                if _ == 0:
+                    self.reference.mean.lerp_(mean, .01)
+                    self.reference.std.copy_(running_var.sqrt().clamp_min(.05))
             real = self._normalize(real).detach().requires_grad_(True)
             fake = self._normalize(fake_raw)
-            rows = torch.arange(cfg.batch_size, device=self.device)
+            rows = torch.arange(len(real), device=self.device)
             real_score = self.discriminator(real)[rows, labels]
             fake_score = self.discriminator(fake)[rows, self.replay_gait[ids]]
             gradient = torch.autograd.grad(real_score.sum(), real, create_graph=True)[0]
@@ -107,7 +112,7 @@ class MotionPriorPPO(PPO):
         result.update(amp=loss_sum / cfg.updates_per_iteration,
                       amp_expert_score=real_sum / cfg.updates_per_iteration,
                       amp_policy_score=fake_sum / cfg.updates_per_iteration,
-                      amp_reward=self.motion_reward_mean)
+                      amp_reward=self.motion_reward_mean, amp_style_raw=self.style_raw_mean)
         return result
 
     def save(self):
@@ -117,6 +122,8 @@ class MotionPriorPPO(PPO):
             "mean": self.reference.mean, "std": self.reference.std,
             "replay": self.replay[:self.replay_size].clone(), "replay_gait": self.replay_gait[:self.replay_size].clone(),
             "replay_size": self.replay_size, "replay_cursor": self.replay_cursor,
+            "replay_command": self.replay_command[:self.replay_size].clone(), "update_count": self.update_count,
+            "sampler_signature": self.reference.sampler_signature,
             "sampler_rng": self.reference.generator.get_state(),
         }}
 
@@ -125,6 +132,8 @@ class MotionPriorPPO(PPO):
         saved = loaded_dict.get("motion_prior")
         if saved is None:
             raise ValueError("AMP resume requires discriminator and replay state")
+        if saved.get("sampler_signature") != self.reference.sampler_signature:
+            raise ValueError("AMP sampler configuration changed; use an explicit fork")
         if saved["dataset_digest"] != self.reference.digest:
             raise ValueError("AMP checkpoint motion dataset mismatch")
         if len(saved["replay"]) > len(self.replay):
@@ -137,5 +146,7 @@ class MotionPriorPPO(PPO):
         self.replay_cursor = int(saved["replay_cursor"])
         self.replay[:self.replay_size] = saved["replay"]
         self.replay_gait[:self.replay_size] = saved["replay_gait"]
+        self.replay_command[:self.replay_size] = saved["replay_command"]
+        self.update_count = int(saved["update_count"])
         self.reference.generator.set_state(saved["sampler_rng"].cpu())
         return restored

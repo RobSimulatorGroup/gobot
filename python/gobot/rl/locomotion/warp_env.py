@@ -40,7 +40,7 @@ from .training_state import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .terms import posture_std, locomotion_failure_mask
 from .math import find_node_by_name
-from .curriculum import progress_masks
+from .curriculum import progress_masks, directed_increment
 
 
 
@@ -325,7 +325,7 @@ class WarpVelocityEnv:
             ("run_progress", "bound_gait")
             if self.cfg_obj.training_profile == "run"
             else ()
-        )
+        ) + (("command_progress", "body_lin_vel_z") if cfg.rewards.adaptive_tracking else ())
         self._foot_count = len(self.cfg_obj.foot_names)
         self._gait_foot_indices = torch.tensor(
             self.cfg_obj.gait_foot_indices,
@@ -593,6 +593,7 @@ class WarpVelocityEnv:
         self._is_world_env = torch.zeros_like(self._is_heading_env)
         self._is_forward_env = torch.zeros_like(self._is_heading_env)
         self._is_run_env = torch.zeros_like(self._is_heading_env)
+        self._command_mode = torch.full((self.num_envs,),6,dtype=torch.long,device=self._torch_device)
         self._command_counter = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
@@ -605,6 +606,8 @@ class WarpVelocityEnv:
             self.num_envs, dtype=torch.float32, device=self._torch_device
         )
         self._commanded_displacement = torch.zeros((self.num_envs, 2), device=self._torch_device)
+        self._commanded_path = torch.zeros(self.num_envs, device=self._torch_device)
+        self._directed_progress = torch.zeros_like(self._commanded_path)
         self._episode_start_xy = torch.zeros(
             (self.num_envs, 2), dtype=torch.float32, device=self._torch_device
         )
@@ -1011,12 +1014,18 @@ class WarpVelocityEnv:
         if self.cfg_obj.curriculum_mode == "command_progress":
             command = torch.zeros_like(self._command)
             command[:, :2] = self._command[:, :2]
-            self._commanded_displacement.add_(_quat_apply(self._arrays["xquat"][:, self._base_body_id], command)[:, :2] * self.step_dt)
+            world_command = _quat_apply(self._arrays["xquat"][:, self._base_body_id], command)[:, :2]
+            progress_start = self._arrays["qpos"][:, :2].clone()
+            command_speed = world_command.norm(dim=1)
+            self._commanded_path.add_(command_speed * self.step_dt)
         for _ in range(self.decimation):
             self.provider.step(nsteps=1)
             self._update_contact_state_substep()
         self._profile_mark(profile_marks, "physics")
 
+        if self.cfg_obj.curriculum_mode == "command_progress":
+            delta = self._arrays["qpos"][:, :2] - progress_start
+            self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
         if self.cfg_obj.post_step_sensing:
@@ -1210,6 +1219,9 @@ class WarpVelocityEnv:
         if value.shape not in ((3,), (self.num_envs, 3)) or not bool(torch.isfinite(value).all()):
             raise ValueError("command must be finite with shape (3,) or (num_envs, 3)")
         self._command.copy_(value)
+        if self.cfg_obj.command.source == "external":
+            self._command_world.copy_(self._command)
+            self._is_standing_env.copy_((self._command.abs() <= 1.e-6).all(dim=1))
         self._compute_observations()
 
     def locomotion_state(self):
@@ -1224,6 +1236,8 @@ class WarpVelocityEnv:
                 "angular_momentum": self._arrays["sensordata"][:, self._sensor_slices[2]],
                 "foot_position": self._arrays["site_xpos"].index_select(1, self._site_ids),
                 "foot_force": self._feet_contact["force"],
+                "command_mode": self._command_mode,
+                "joint_effort": self._arrays["qfrc_actuator"].index_select(1, self._joint_dof_ids),
                 "base_clearance": self._terrain_scan_height[:, self._height_scan_dim // 2],
                 "command": self._command,
                 "terrain_level": self._terrain_levels,
@@ -1308,9 +1322,10 @@ class WarpVelocityEnv:
         if self._held_layout is not None:
             self._reset_qpos[env_ids[:, None], list(self._held_layout.joint_qpos_addresses)] = self._held_targets[env_ids]
             self._reset_ctrl[env_ids[:, None], list(self._held_layout.actuator_ids)] = self._held_targets[env_ids]
+        self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
-            mask, reference_root, reference_joints = self._reference_initializer.sample(count, self._generator)
+            mask, reference_root, reference_joints = self._reference_initializer.sample(count, self._generator, self._command[env_ids])
             reference_ids = env_ids[mask]
             q = reference_joints[mask, :self.num_actions]
             self._reset_qpos[reference_ids, 2] = origins[mask, 2] + reference_root[mask, 2]
@@ -1344,6 +1359,7 @@ class WarpVelocityEnv:
 
         self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode == "command_progress" else origins[:, :2]
         self._commanded_displacement[env_ids] = 0.
+        self._commanded_path[env_ids] = self._directed_progress[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
         self._episode_returns[env_ids] = 0.0
         self._reset_reasons[env_ids] = reasons
@@ -1358,7 +1374,6 @@ class WarpVelocityEnv:
             self._previous_action[reference_ids] = self._action[reference_ids]
         self._foot_peak_height[env_ids] = 0.0
         self._reset_contact_state(env_ids)
-        self._reset_commands(env_ids)
         self._reset_push_timers(env_ids)
 
     def _reset_contact_state(self, env_ids: torch.Tensor) -> None:
@@ -1384,10 +1399,7 @@ class WarpVelocityEnv:
         )
         move_down = (distance < command_distance) & ~move_up
         if self.cfg_obj.curriculum_mode == "command_progress":
-            distance = torch.linalg.vector_norm(position - self._episode_start_xy[env_ids], dim=1)
-            time_left = ((self.max_episode_length - self.episode_length_buf[env_ids]) * self.step_dt).clamp(min=0.)
-            required = torch.linalg.vector_norm(self._commanded_displacement[env_ids], dim=1) + torch.linalg.vector_norm(self._command[env_ids, :2], dim=1) * time_left
-            move_up, move_down = progress_masks(distance, required, patch_size[0])
+            move_up, move_down = progress_masks(self._directed_progress[env_ids], self._commanded_path[env_ids], patch_size[0])
             if self.common_step_counter == 0:
                 move_up.zero_()
                 move_down.zero_()
@@ -1445,9 +1457,37 @@ class WarpVelocityEnv:
             return
         cfg = self.cfg_obj.command
         count = int(env_ids.numel())
+        if cfg.source == "external":
+            self._command_mode[env_ids] = 7
+            self._is_heading_env[env_ids] = False
+            self._is_world_env[env_ids] = False
+            self._is_forward_env[env_ids] = False
+            self._is_run_env[env_ids] = False
+            self._is_standing_env[env_ids] = (self._command[env_ids].abs() <= 1.e-6).all(dim=1)
+            return
         self._command_time_left[env_ids] = self._uniform(
             (count,), *cfg.resampling_time_range
         )
+        if cfg.source == "external" or cfg.mode_probabilities is not None:
+            from .command import sample_categorical_commands
+            command,modes=sample_categorical_commands(cfg,count,self._uniform,self._torch_device)
+            if self.cfg_obj.running_terrain_types:
+                allowed=torch.zeros(count,dtype=torch.bool,device=self._torch_device)
+                for kind in self.cfg_obj.running_terrain_types:allowed |= self._terrain_types[env_ids]==kind
+                allowed &= (self._terrain_types[env_ids]==0)|(self._terrain_levels[env_ids]<=self.cfg_obj.max_running_terrain_level)
+                command[:,0]=torch.where(allowed,command[:,0],command[:,0].clamp(max=1.2))
+                modes=torch.where((modes==5)&~allowed,0,modes)
+            self._command[env_ids]=command
+            self._command_world[env_ids]=command
+            self._command_mode[env_ids]=modes
+            self._is_heading_env[env_ids]=False
+            self._is_world_env[env_ids]=False
+            self._is_forward_env[env_ids]=modes==0
+            self._is_standing_env[env_ids]=modes==2
+            self._is_run_env[env_ids]=modes==5
+            self._command_counter[env_ids]+=1
+            return
+        self._command_mode[env_ids]=6
         self._command[env_ids, 0] = self._uniform((count,), *cfg.ranges.lin_vel_x)
         self._command[env_ids, 1] = self._uniform((count,), *cfg.ranges.lin_vel_y)
         self._command[env_ids, 2] = self._uniform((count,), *cfg.ranges.ang_vel_z)
@@ -1472,6 +1512,8 @@ class WarpVelocityEnv:
         if forward_ids.numel() > 0:
             self._command[forward_ids, 0] = self._command[forward_ids, 0].abs().clamp(min=0.3)
             self._command[forward_ids, 1:] = 0.0
+            self._is_heading_env[forward_ids] = False
+            self._is_world_env[forward_ids] = False
         self._is_run_env[env_ids] = (
             self._uniform((count,), 0.0, 1.0) <= float(cfg.rel_run_envs)
         )
@@ -1496,6 +1538,7 @@ class WarpVelocityEnv:
         self._command_counter[env_ids] += 1
 
     def _compute_commands(self, *, dt: float) -> None:
+        if self.cfg_obj.command.source == "external": return
         self._command_time_left.sub_(float(dt))
         resample_ids = torch.nonzero(self._command_time_left <= 0.0, as_tuple=False).flatten()
         self._resample_commands(resample_ids)
@@ -1748,7 +1791,7 @@ class WarpVelocityEnv:
             (self._command[:, 2] - angular_body[:, 2]).square()
             + angular_body[:, :2].square().sum(dim=1)
         )
-        terrain_normal = self._terrain_normal_world()
+        terrain_normal = self._terrain_normal_world() if reward_cfg.upright_reference == "terrain" else self._terrain_up_world
         terrain_up_body = _quat_apply_inverse(self._arrays["xquat"][:, self._torso_body_id], terrain_normal)
         upright_error = terrain_up_body[:, :2].square().sum(dim=1)
         pose_std = torch.where(
@@ -1820,16 +1863,18 @@ class WarpVelocityEnv:
 
         terms = self._reward_terms
         terms.zero_()
-        terms[:, 0] = self._reward_weights[0] * torch.exp(
-            -linear_error / max(float(reward_cfg.lin_vel_std) ** 2, 1.0e-6)
-        )
-        terms[:, 1] = self._reward_weights[1] * torch.exp(
-            -angular_error / max(float(reward_cfg.ang_vel_std) ** 2, 1.0e-6)
-        )
+        if reward_cfg.adaptive_tracking:
+            from .terms import adaptive_tracking_terms
+            linear_tracking,yaw_tracking,progress = adaptive_tracking_terms(self._command,linear_body,angular_body,reward_cfg,torch)
+        else:
+            linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
+            yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
+        terms[:,0] = self._reward_weights[0] * linear_tracking
+        terms[:,1] = self._reward_weights[1] * yaw_tracking
         terms[:, 2] = self._reward_weights[2] * torch.exp(
             -upright_error / max(float(reward_cfg.upright_std) ** 2, 1.0e-6)
         )
-        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error)
+        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error) * torch.where(active>0,reward_cfg.moving_pose_scale,1.)
         torso_ang = self._arrays["cvel"][:, self._torso_body_id, :3]
         terms[:, 4] = self._reward_weights[4] * torso_ang[:, :2].square().sum(dim=1)
         terms[:, 5] = self._reward_weights[5] * self._arrays["sensordata"][:, self._sensor_slices[2]].square().sum(dim=1)
@@ -1870,7 +1915,11 @@ class WarpVelocityEnv:
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
-        torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        if reward_cfg.adaptive_tracking:
+            terms[:,self._reward_term_names.index("command_progress")] = reward_cfg.command_progress*progress
+            terms[:,self._reward_term_names.index("body_lin_vel_z")] = reward_cfg.body_lin_vel_z*linear_body[:,2].square()
+        else:
+            torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 

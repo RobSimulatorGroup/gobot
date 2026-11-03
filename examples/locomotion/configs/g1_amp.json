@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "robot": "g1",
+  "recipe": "natural",
+  "stage": "flat_gait",
+  "seed": 42,
+  "num_envs": 1024,
+  "iterations": 10000,
+  "hours": 0.75,
+  "budget_hours": 24.0,
+  "learning_rate": 0.0003,
+  "entropy_coef": 0.003,
+  "save_interval": 100,
+  "eval_interval": 500,
+  "eval_envs": 64,
+  "eval_steps": 600,
+  "reference_reset_probability": 0.5,
+  "motion_dataset": "examples/g1/assets/motions/locomotion.npz",
+  "style_weight": 2.0,
+  "eval_seed": 71,
+  "patience": 3
+}

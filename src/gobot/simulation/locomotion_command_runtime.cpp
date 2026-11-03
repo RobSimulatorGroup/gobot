@@ -47,6 +47,7 @@ void LocomotionCommandRuntime::Allocate(std::size_t environment_count) {
     world_environment_mask_.assign(environment_count_, 0);
     forward_environment_mask_.assign(environment_count_, 0);
     run_environment_mask_.assign(environment_count_, 0);
+    command_modes_.assign(environment_count_, 6);
     ranges_.assign(kRangeCount, 0.0f);
     SeedEnvironmentGenerators(config_.seed);
 }
@@ -81,6 +82,19 @@ std::size_t LocomotionCommandRuntime::GetEnvironmentCount() const {
 }
 
 void LocomotionCommandRuntime::Configure(const LocomotionCommandConfig& config) {
+    RealType probability_sum = 0;
+    for (const auto weight : config.mode_probabilities) {
+        if (!std::isfinite(weight) || weight < 0) {
+            throw std::invalid_argument("command probabilities must be finite and nonnegative");
+        }
+        probability_sum += weight;
+    }
+    if (probability_sum > 0 && std::abs(probability_sum - 1.0) > 1.e-6) {
+        throw std::invalid_argument("command probabilities must sum to one");
+    }
+    if (config.minimum_forward_velocity <= 0 || config.minimum_moving_velocity <= 0) {
+        throw std::invalid_argument("minimum command speeds must be positive");
+    }
     config_ = config;
     config_.step_dt = std::max<RealType>(config.step_dt, 1.0e-9);
     const auto resampling_time = OrderedRange(config.resampling_time);
@@ -186,7 +200,7 @@ void LocomotionCommandRuntime::SetCommands(
         heading_targets_[environment_index] = heading_targets[row];
         heading_errors_[environment_index] = 0.0f;
         time_left_[environment_index] = time_left[row];
-        heading_environment_mask_[environment_index] = config_.heading_command ? 1 : 0;
+        heading_environment_mask_[environment_index] = config_.heading_command && !config_.external_commands ? 1 : 0;
         standing_environment_mask_[environment_index] =
                 std::abs(commands[source + 0]) <= 1.0e-6f &&
                 std::abs(commands[source + 1]) <= 1.0e-6f &&
@@ -282,6 +296,58 @@ float LocomotionCommandRuntime::Uniform(std::size_t environment_index, float low
 
 void LocomotionCommandRuntime::Resample(std::size_t environment_index) {
     const std::size_t offset = environment_index * kCommandDimension;
+    // An external command belongs to the caller and survives episode resets.
+    if (config_.external_commands) {
+        command_modes_[environment_index] = 7;
+        heading_environment_mask_[environment_index] = 0;
+        world_environment_mask_[environment_index] = 0;
+        forward_environment_mask_[environment_index] = 0;
+        run_environment_mask_[environment_index] = 0;
+        standing_environment_mask_[environment_index] =
+                std::abs(commands_[offset]) <= 1.0e-6f &&
+                std::abs(commands_[offset + 1]) <= 1.0e-6f &&
+                std::abs(commands_[offset + 2]) <= 1.0e-6f ? 1 : 0;
+        return;
+    }
+    command_modes_[environment_index] = 6;
+    RealType total = 0;
+    for (const auto weight : config_.mode_probabilities) total += weight;
+    if (config_.external_commands || total > 0) {
+        std::size_t mode = 7;
+        if (!config_.external_commands) {
+            const float draw = Uniform(environment_index, 0.0f, 1.0f);
+            RealType cumulative = 0;
+            for (mode = 0; mode < 5; ++mode) {
+                cumulative += config_.mode_probabilities[mode];
+                if (draw < cumulative) break;
+            }
+        }
+        command_modes_[environment_index] = static_cast<std::uint8_t>(mode);
+        heading_environment_mask_[environment_index] = 0;
+        world_environment_mask_[environment_index] = 0;
+        standing_environment_mask_[environment_index] = mode == 2 ? 1 : 0;
+        forward_environment_mask_[environment_index] = mode == 0 ? 1 : 0;
+        run_environment_mask_[environment_index] = mode == 5 ? 1 : 0;
+        for (std::size_t axis = 0; axis < 3; ++axis) commands_[offset + axis] = 0;
+        const float minimum = static_cast<float>(config_.minimum_moving_velocity);
+        if (mode == 0) {
+            const float low = static_cast<float>(config_.minimum_forward_velocity);
+            commands_[offset] = Uniform(environment_index, low, std::max(low, ranges_[LinearVelocityXMax]));
+        } else if (mode == 1 || mode == 4) {
+            const std::size_t axis = mode == 1 ? 2 : 1;
+            const float maximum = mode == 1 ? std::max(std::abs(ranges_[AngularVelocityZMin]), std::abs(ranges_[AngularVelocityZMax]))
+                                           : std::max(std::abs(ranges_[LinearVelocityYMin]), std::abs(ranges_[LinearVelocityYMax]));
+            const float sign = Uniform(environment_index, 0.0f, 1.0f) < 0.5f ? -1.0f : 1.0f;
+            commands_[offset + axis] = sign * Uniform(environment_index, minimum, std::max(minimum, maximum));
+        } else if (mode == 3) {
+            commands_[offset] = -Uniform(environment_index, minimum, std::max(minimum, -ranges_[LinearVelocityXMin]));
+        } else if (mode == 5) {
+            commands_[offset] = Uniform(environment_index, static_cast<float>(config_.run_velocity_x[0]), static_cast<float>(config_.run_velocity_x[1]));
+        }
+        for (std::size_t axis = 0; axis < 3; ++axis) world_commands_[offset + axis] = commands_[offset + axis];
+        heading_targets_[environment_index] = heading_errors_[environment_index] = 0;
+        return;
+    }
     commands_[offset + 0] = Uniform(
             environment_index, ranges_[LinearVelocityXMin], ranges_[LinearVelocityXMax]);
     commands_[offset + 1] = Uniform(
@@ -326,6 +392,8 @@ void LocomotionCommandRuntime::Resample(std::size_t environment_index) {
         commands_[offset + 0] = std::max(std::abs(commands_[offset + 0]), 0.3f);
         commands_[offset + 1] = 0.0f;
         commands_[offset + 2] = 0.0f;
+        heading_environment_mask_[environment_index] = 0;
+        world_environment_mask_[environment_index] = 0;
     }
     run_environment_mask_[environment_index] =
             Uniform(environment_index, 0.0f, 1.0f) <=
@@ -365,6 +433,7 @@ float LocomotionCommandRuntime::WrapToPi(float value) {
 }
 
 void LocomotionCommandRuntime::AdvanceTimersAndResample() {
+    if (config_.external_commands) return;
     for (std::size_t environment_index = 0; environment_index < environment_count_; ++environment_index) {
         time_left_[environment_index] -= static_cast<float>(config_.step_dt);
         if (time_left_[environment_index] <= 0.0f) {
@@ -473,5 +542,8 @@ std::span<const std::uint8_t> LocomotionCommandRuntime::RunEnvironmentMask() con
 }
 std::span<float> LocomotionCommandRuntime::Ranges() { return ranges_; }
 std::span<const float> LocomotionCommandRuntime::Ranges() const { return ranges_; }
+
+std::span<std::uint8_t> LocomotionCommandRuntime::CommandModes() { return command_modes_; }
+std::span<const std::uint8_t> LocomotionCommandRuntime::CommandModes() const { return command_modes_; }
 
 } // namespace gobot

@@ -202,7 +202,7 @@ def apply_training_profile(
         cfg.gait_joint_indices = tuple(tuple(range(i, i + 3)) for i in range(0, 12, 3))
         cfg.rewards.track_linear_velocity = 4.0
         cfg.rewards.run_progress = 4.0
-        cfg.rewards.bound_gait = 3.0
+        cfg.rewards.bound_gait = 0.0
     return cfg
 
 

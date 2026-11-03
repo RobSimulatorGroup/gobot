@@ -203,9 +203,11 @@ class RslRlVecEnvWrapper:
         return int(self.env.max_episode_length)
 
     def reset(self, seed: int | None = None):
-        obs, _ = self.env.reset(seed=seed)
+        self.env.reset(seed=seed)
         self._sync_steps_from_core()
-        return self._tensor_obs(obs)
+        # reset() may return user-owned snapshots. Training reads the persistent
+        # state buffers, just as get_observations() and step() do.
+        return self.get_observations()
 
     def get_observations(self):
         return self._tensor_obs(self._core_state().obs)

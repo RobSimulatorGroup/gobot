@@ -121,6 +121,7 @@ def rollout(env, action_fn, *, command=(.8, 0., 0.), steps=1000, cell_exit=True,
 
 
 def fixed_commands(cfg):
+    cfg.command.source = "external"
     cfg.command_curriculum = ()
     cfg.command.rel_standing_envs = cfg.command.rel_heading_envs = 0.
     cfg.command.rel_world_envs = cfg.command.rel_forward_envs = cfg.command.rel_run_envs = 0.

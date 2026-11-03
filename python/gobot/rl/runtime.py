@@ -603,6 +603,10 @@ class NativeLocomotionBatchBackend:
         heading_control_stiffness: float,
         zero_small_xy_threshold: float,
         seed: int,
+        mode_probabilities: Sequence[float] | None = None,
+        external_commands: bool = False,
+        minimum_forward_velocity: float = .3,
+        minimum_moving_velocity: float = .1,
     ) -> None:
         self._require_view()
         if not hasattr(self._view, "configure_command"):
@@ -636,6 +640,8 @@ class NativeLocomotionBatchBackend:
             float(heading_control_stiffness),
             float(zero_small_xy_threshold),
             int(seed),
+            tuple(mode_probabilities) if mode_probabilities is not None else (0.,)*6,
+            bool(external_commands), float(minimum_forward_velocity), float(minimum_moving_velocity),
         )
 
     def command_random_state(self) -> list[str]:

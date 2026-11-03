@@ -638,7 +638,7 @@ def test_go1_run_training_profile_reserves_high_speed_forward_commands():
     ]
     assert cfg.rewards.track_linear_velocity == 4.0
     assert cfg.rewards.run_progress == 4.0
-    assert cfg.rewards.bound_gait == 3.0
+    assert cfg.rewards.bound_gait == 0.0  # Running must not penalize diagonal trot.
 
 
 def test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command():
@@ -1182,7 +1182,7 @@ def test_rsl_rl_wrapper_preserves_device_native_torch_buffers():
             self.last_actions = None
 
         def reset(self, seed=None):
-            return self.state.obs, {}
+            return {key: value.clone() for key, value in self.state.obs.items()}, {}
 
         def step(self, actions):
             self.last_actions = actions
@@ -1196,6 +1196,10 @@ def test_rsl_rl_wrapper_preserves_device_native_torch_buffers():
 
     env = TorchEnv()
     wrapper = RslRlVecEnvWrapper(env, device="cpu")
+    for _ in range(20):
+        reset_obs = wrapper.reset()
+        assert reset_obs["actor"].data_ptr() == env.state.obs["actor"].data_ptr()
+    assert wrapper.memory_profile()["native_obs_tensordicts"] == 1
     actions = torch.zeros((2, 3), dtype=torch.float32)
     obs, reward, done, extras = wrapper.step(actions)
 

@@ -8,13 +8,14 @@ from scipy.spatial.transform import Rotation
 from gobot.rl.locomotion.gait_metrics import BipedGaitMetrics
 
 
-def build_reference(path):
+def build_reference(path, *, split="holdout"):
     windows = []
     with np.load(path, allow_pickle=False) as data:
         metadata = json.loads(str(data['metadata']))
         dt = metadata['dt']
         for i, clip in enumerate(metadata['clips']):
-            if clip['split'] != 'holdout': continue
+            actual_split = 'validation' if 'subject4' in clip['name'] else clip['split']
+            if actual_split != split: continue
             root = data[f'root_{i}']; features = data[f'features_{i}']
             local = features[:, -12:].reshape(-1, 4, 3)[:, :2]
             rotation = Rotation.from_quat(root[:, [4, 5, 6, 3]]).as_matrix()
@@ -44,7 +45,7 @@ def build_reference(path):
                 lo, hi = np.percentile([w[key] for w in chosen], [5, 95])
                 entry[key] = [float(lo * .8), float(hi * 1.2)]
             ranges.append(entry)
-    return {'source': metadata['source'], 'protocol': 'heldout_subject5_6s_windows_3s_stride_kinematic_contacts',
+    return {'source': metadata['source'], 'protocol': f'{split}_6s_windows_3s_stride_kinematic_contacts',
             'contact_height_tolerance_m': .03, 'contact_speed_threshold_m_s': .4, 'ranges': ranges, 'windows': windows}
 
 
