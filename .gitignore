@@ -86,3 +86,8 @@ examples/newton_g1/assets/*
 # Source and generated robot meshes are assets, not compiler object files.
 !/examples/conveyor_packages/assets/openarm_sharpa/**/*.obj
 !/examples/conveyor_packages/assets/sharpa/**/*.obj
+
+# Prepared G1 meshes are copied from the shared Unitree source by examples.g1.prepare.
+/examples/g1/assets/
+/examples/g1/logs/
+/examples/g1/policies/

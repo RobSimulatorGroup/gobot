@@ -29,6 +29,10 @@ observation/action specs; its scene digest also covers terrain resources.
 
 ## Train
 
+The shared `python -m examples.locomotion.train --robot go1` workflow also
+supports this preset. See [shared tools](../locomotion/README.md); Go1 and
+[G1](../g1/README.md) use the same typed velocity environment implementations.
+
 Small CPU smoke run (64 environments):
 
 ```bash

@@ -7,6 +7,7 @@
 #include "gobot/scene/resources/physics_material_3d.hpp"
 
 #include "gobot/core/registration.hpp"
+#include "gobot/log.hpp"
 
 namespace gobot {
 
@@ -27,6 +28,22 @@ GOBOT_PHYSICS_MATERIAL_PROPERTY(ContactCompliance, contact_compliance_)
 GOBOT_PHYSICS_MATERIAL_PROPERTY(ContactDamping, contact_damping_)
 
 #undef GOBOT_PHYSICS_MATERIAL_PROPERTY
+
+void PhysicsMaterial3D::SetContactFrictionMode(const std::string& value) {
+    if (value != "auto" && value != "frictionless" && value != "sliding" &&
+        value != "sliding_torsional" && value != "sliding_torsional_rolling") {
+        LOG_ERROR("Unsupported contact friction mode '{}'.", value);
+        return;
+    }
+    if (contact_friction_mode_ != value) {
+        contact_friction_mode_ = value;
+        MarkChanged();
+    }
+}
+
+const std::string& PhysicsMaterial3D::GetContactFrictionMode() const {
+    return contact_friction_mode_;
+}
 
 } // namespace gobot
 
@@ -50,7 +67,10 @@ GOBOT_REGISTRATION {
                       &gobot::PhysicsMaterial3D::SetContactCompliance)
             .property("contact_damping",
                       &gobot::PhysicsMaterial3D::GetContactDamping,
-                      &gobot::PhysicsMaterial3D::SetContactDamping);
+                      &gobot::PhysicsMaterial3D::SetContactDamping)
+            .property("contact_friction_mode",
+                      &gobot::PhysicsMaterial3D::GetContactFrictionMode,
+                      &gobot::PhysicsMaterial3D::SetContactFrictionMode);
 
     gobot::Type::register_wrapper_converter_for_base_classes<
             gobot::Ref<gobot::PhysicsMaterial3D>, gobot::Ref<gobot::Resource>>();

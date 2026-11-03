@@ -594,6 +594,21 @@ set_tests_properties(test_python_terrain_generation_scene
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(NAME test_python_shared_velocity_cpu
+         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_shared_velocity.py --integration)
+set_tests_properties(test_python_shared_velocity_cpu PROPERTIES
+    ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" SKIP_RETURN_CODE 77)
+add_test(NAME test_python_shared_velocity_gpu
+         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_shared_velocity_gpu.py)
+set_tests_properties(test_python_shared_velocity_gpu PROPERTIES
+    ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" RESOURCE_LOCK gobot_cuda SKIP_RETURN_CODE 77)
+add_test(NAME test_python_shared_velocity
+         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_shared_velocity.py)
+set_tests_properties(test_python_shared_velocity PROPERTIES
+    ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 add_test(
         NAME test_velocity_env
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_env.py

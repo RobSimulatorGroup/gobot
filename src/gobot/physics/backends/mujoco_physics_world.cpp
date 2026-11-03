@@ -1857,7 +1857,7 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
     // callbacks. Capture each tick's contacts before its workspace is reused.
     try {
         for (std::size_t i = 0; i < environment_count; ++i) {
-            if (constants_changed_by_environment[i] || request.ticks == 0) {
+            if (constants_changed_by_environment[i] || (request.ticks == 0 && !request.kinematic_readback)) {
                 auto access = batch_runtime_->Access(static_cast<int>(i));
                 mujoco_detail::MuJoCoBatch::Forward(batch_runtime_->Model(i), batch_runtime_->Data(i));
             }
@@ -1962,6 +1962,17 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
         return false;
     }
 
+    if (request.kinematic_readback) {
+        try {
+            for (std::size_t i = 0; i < environment_count; ++i) {
+                auto access = batch_runtime_->Access(static_cast<int>(i));
+                mujoco_detail::MuJoCoBatch::RefreshKinematics(batch_runtime_->Model(i), batch_runtime_->Data(i));
+            }
+        } catch (const std::exception& error) {
+            SetLastError(error.what());
+            return false;
+        }
+    }
     std::vector<std::size_t> contact_counts(environment_count, 0);
     std::size_t max_contact_count = 0;
     for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {

@@ -65,118 +65,18 @@ GO1_ROUGH_REWARD_TERM_NAMES: tuple[str, ...] = (
 )
 
 
-@dataclass
-class VelocityObservationCfg:
-    height_scan_sensor: str = "terrain_scan"
-    terrain_scan_max_distance: float = 5.0
-    actor_noise: bool = True
-    actor_noise_ranges: Mapping[str, tuple[float, float]] = field(
-        default_factory=lambda: {
-            "base_lin_vel": (-0.5, 0.5),
-            "base_ang_vel": (-0.2, 0.2),
-            "projected_gravity": (-0.05, 0.05),
-            "joint_pos": (-0.01, 0.01),
-            "joint_vel": (-1.5, 1.5),
-            "height_scan": (-0.1, 0.1),
-        }
-    )
-
+from gobot.rl.locomotion.config import (
+    FootCfg, LocomotionRobotCfg, VelocityTaskCfg, VelocityObservationCfg,
+    VelocityRewardCfg, VelocityIllegalContactCfg, VelocityDomainRandomizationCfg,
+    _default_push_force_ranges, _default_push_velocity_ranges,
+)
 
 @dataclass
-class VelocityRewardCfg:
-    track_linear_velocity: float = 2.0
-    track_angular_velocity: float = 2.0
-    upright: float = 1.0
-    pose: float = 1.0
-    body_ang_vel: float = 0.0
-    angular_momentum: float = 0.0
-    dof_pos_limits: float = -1.0
-    action_rate_l2: float = -0.1
-    air_time: float = 0.0
-    foot_clearance: float = -2.0
-    foot_swing_height: float = -0.25
-    foot_slip: float = -0.1
-    soft_landing: float = -1.0e-5
-    self_collisions: float = -0.1
-    shank_collision: float = -0.1
-    trunk_head_collision: float = -0.1
-    run_progress: float = 0.0
-    bound_gait: float = 0.0
-    bound_gait_motion_std: float = 1.0
-    bound_gait_action_std: float = 0.5
-    bound_gait_height_sync_std: float = 0.04
-    bound_gait_height_separation_std: float = 0.05
-    bound_gait_trot_penalty: float = 0.5
-    lin_vel_std: float = math.sqrt(0.25)
-    ang_vel_std: float = math.sqrt(0.5)
-    upright_std: float = math.sqrt(0.2)
-    command_threshold: float = 0.05
-    foot_clearance_target_height: float = 0.1
-    soft_joint_pos_limit_factor: float = 0.9
-    pose_walking_threshold: float = 0.05
-    pose_running_threshold: float = 1.5
-    pose_std_standing_hip_thigh: float = 0.05
-    pose_std_standing_calf: float = 0.1
-    pose_std_walking_hip_thigh: float = 0.3
-    pose_std_walking_calf: float = 0.6
-    pose_std_running_hip_thigh: float = 0.3
-    pose_std_running_calf: float = 0.6
-
-
-@dataclass
-class VelocityIllegalContactCfg:
-    enabled: bool = True
-    terminate_on_thigh: bool = True
-    ground_force_threshold: float = 10.0
-    self_collision_force_threshold: float = 10.0
-    thigh_shape_patterns: tuple[str, ...] = (r".*_thigh_collision[123]",)
-    shank_shape_patterns: tuple[str, ...] = (r".*_calf_collision[12]",)
-    trunk_head_shape_patterns: tuple[str, ...] = (r"trunk_collision", r"head_collision")
-
-
-@dataclass
-class VelocityDomainRandomizationCfg:
-    enabled: bool = True
-    randomize_base_mass: bool = False
-    added_mass_range: tuple[float, float] = (-1.5, 1.5)
-    random_com: bool = True
-    com_offset_x: tuple[float, float] = (-0.025, 0.025)
-    com_offset_y: tuple[float, float] | None = (-0.025, 0.025)
-    com_offset_z: tuple[float, float] | None = (-0.03, 0.03)
-    randomize_kp: bool = False
-    kp_multiplier_range: tuple[float, float] = (0.9, 1.1)
-    randomize_kd: bool = False
-    kd_multiplier_range: tuple[float, float] = (0.9, 1.1)
-    encoder_bias_range: tuple[float, float] = (-0.015, 0.015)
-    randomize_foot_friction: bool = True
-    foot_friction_slide_range: tuple[float, float] = (0.3, 1.5)
-    foot_friction_spin_range: tuple[float, float] = (1.0e-4, 2.0e-2)
-    foot_friction_roll_range: tuple[float, float] = (1.0e-5, 5.0e-3)
-
-
-def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:
-    return {
-        "x": (-0.5, 0.5),
-        "y": (-0.5, 0.5),
-        "z": (-0.4, 0.4),
-        "roll": (-0.52, 0.52),
-        "pitch": (-0.52, 0.52),
-        "yaw": (-0.78, 0.78),
-    }
-
-
-def _default_push_force_ranges() -> Mapping[str, tuple[float, float]]:
-    return {
-        "x": (-1.0, 1.0),
-        "y": (-1.0, 1.0),
-        "z": (-0.5, 0.5),
-    }
-
-
-@dataclass
-class Go1VelocityCfg:
+class Go1VelocityCfg(VelocityTaskCfg):
     """Single source of truth for Go1 rough-terrain training and playback."""
 
+    task_version: str = "go1_rough_velocity_numpy_v2"
+    post_step_sensing: bool = False
     name: str = GO1_TASK_NAME
     training_profile: Literal["balanced", "run"] = "balanced"
     project_path: str | Path = "examples/go1"
@@ -247,6 +147,25 @@ class Go1VelocityCfg:
     rewards: VelocityRewardCfg = field(default_factory=VelocityRewardCfg)
 
 
+    def __post_init__(self):
+        from ..go1_profile import GO1_ARMATURE, GO1_EFFORT_LIMIT, GO1_VELOCITY_LIMIT
+        offsets = ((0., 0., 0.), (0.04, 0., 0.), (0., 0.04, 0.), (-0.04, 0., 0.), (0., -0.04, 0.))
+        self.robot = LocomotionRobotCfg(
+            name=self.robot_name, base_link=self.base_link, torso_link=self.base_link,
+            joint_names=self.joint_names, default_joint_pos=self.default_joint_pos,
+            kp=(float(self.kp),) * len(self.joint_names) if isinstance(self.kp, (int, float)) else tuple(self.kp),
+            kd=(float(self.kd),) * len(self.joint_names) if isinstance(self.kd, (int, float)) else tuple(self.kd),
+            armature=GO1_ARMATURE,
+            effort_limit=GO1_EFFORT_LIMIT, velocity_limit=GO1_VELOCITY_LIMIT,
+            feet=tuple(FootCfg(name, link, (f"{name}_foot_collision",),
+                f"{name}_foot_contact", f"{name}_foot_height_scan",
+                offsets)
+                for name, link in zip(self.foot_names, self.foot_link_names, strict=True)),
+        )
+        if self.training_profile == "run":
+            self.gait_foot_indices = (0, 1, 2, 3)
+            self.gait_joint_indices = tuple(tuple(range(i, i + 3)) for i in range(0, 12, 3))
+
 def go1_velocity_cfg(
     *,
     project_path: str | Path = "examples/go1",
@@ -279,78 +198,16 @@ def apply_training_profile(
             VelocityCommandStage(step=100 * 24, run_velocity_x=(2.0, 3.0)),
             VelocityCommandStage(step=250 * 24, run_velocity_x=(2.5, 3.5)),
         )
+        cfg.gait_foot_indices = (0, 1, 2, 3)
+        cfg.gait_joint_indices = tuple(tuple(range(i, i + 3)) for i in range(0, 12, 3))
         cfg.rewards.track_linear_velocity = 4.0
         cfg.rewards.run_progress = 4.0
         cfg.rewards.bound_gait = 3.0
     return cfg
 
 
-def rsl_rl_train_cfg(
-    *,
-    experiment_name: str = GO1_TASK_NAME,
-    max_iterations: int = 10_000,
-    save_interval: int = 50,
-    obs_normalization: bool = False,
-    clip_actions: float | None = None,
-) -> dict[str, Any]:
-    return {
-        "num_steps_per_env": 24,
-        "save_interval": save_interval,
-        "max_iterations": max_iterations,
-        "obs_groups": {
-            "actor": ["actor"],
-            "critic": ["critic"],
-        },
-        "experiment_name": experiment_name,
-        "clip_actions": clip_actions,
-        "actor": {
-            "class_name": "rsl_rl.models.MLPModel",
-            "hidden_dims": [512, 256, 128],
-            "activation": "elu",
-            "obs_normalization": obs_normalization,
-            "distribution_cfg": {
-                "class_name": "rsl_rl.modules.GaussianDistribution",
-                "init_std": 1.0,
-                "std_type": "scalar",
-            },
-        },
-        "critic": {
-            "class_name": "rsl_rl.models.MLPModel",
-            "hidden_dims": [512, 256, 128],
-            "activation": "elu",
-            "obs_normalization": obs_normalization,
-        },
-        "algorithm": {
-            "class_name": "PPO",
-            "num_learning_epochs": 5,
-            "num_mini_batches": 4,
-            "clip_param": 0.2,
-            "use_clipped_value_loss": True,
-            "gamma": 0.99,
-            "lam": 0.95,
-            "value_loss_coef": 1.0,
-            "entropy_coef": 0.01,
-            "learning_rate": 1.0e-3,
-            "max_grad_norm": 1.0,
-            "schedule": "adaptive",
-            "desired_kl": 0.01,
-            "normalize_advantage_per_mini_batch": False,
-            "rnd_cfg": None,
-            "symmetry_cfg": None,
-        },
-    }
+from gobot.rl.locomotion.ppo import rsl_rl_train_cfg as _shared_ppo_cfg
 
-
-__all__ = [
-    "GO1_ACTION_SCALE",
-    "GO1_MUJOCO_SOLVER_SETTINGS",
-    "GO1_ROUGH_REWARD_TERM_NAMES",
-    "Go1VelocityCfg",
-    "VelocityDomainRandomizationCfg",
-    "VelocityIllegalContactCfg",
-    "VelocityObservationCfg",
-    "VelocityRewardCfg",
-    "apply_training_profile",
-    "go1_velocity_cfg",
-    "rsl_rl_train_cfg",
-]
+def rsl_rl_train_cfg(**kwargs):
+    kwargs.setdefault("experiment_name", GO1_TASK_NAME)
+    return _shared_ppo_cfg(**kwargs)

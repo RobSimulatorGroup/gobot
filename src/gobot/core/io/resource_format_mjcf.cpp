@@ -12,6 +12,8 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <limits>
+#include <set>
 #include <regex>
 #include <sstream>
 #include <string_view>
@@ -34,11 +36,13 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/resources/plane_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 
@@ -887,6 +891,51 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
 Ref<Shape3D> MakeGeomShape(const mjModel* model, int geom_id) {
     const mjtNum* size = model->geom_size + 3 * geom_id;
     switch (model->geom_type[geom_id]) {
+        case mjGEOM_PLANE:
+            return dynamic_pointer_cast<Shape3D>(MakeRef<PlaneShape3D>());
+        case mjGEOM_MESH: {
+            const int mesh_id = model->geom_dataid[geom_id];
+            if (mesh_id < 0 || mesh_id >= model->nmesh) {
+                return {};
+            }
+            // MuJoCo's compiled vertices already include asset scale and are
+            // centered in the mesh inertia frame. geom_pos/quat use that same
+            // frame; importing the source file here would apply it twice.
+            std::vector<Vector3> vertices;
+            std::vector<std::uint32_t> indices;
+            vertices.reserve(model->mesh_vertnum[mesh_id]);
+            indices.reserve(3 * model->mesh_facenum[mesh_id]);
+            for (int index = 0; index < model->mesh_vertnum[mesh_id]; ++index) {
+                const float* vertex = model->mesh_vert + 3 * (model->mesh_vertadr[mesh_id] + index);
+                vertices.emplace_back(vertex[0], vertex[1], vertex[2]);
+            }
+            std::set<std::array<std::uint32_t, 3>> unique_faces;
+            for (int index = 0; index < model->mesh_facenum[mesh_id]; ++index) {
+                const int* face = model->mesh_face + 3 * (model->mesh_faceadr[mesh_id] + index);
+                std::array<std::uint32_t, 3> triangle{
+                        static_cast<std::uint32_t>(face[0]), static_cast<std::uint32_t>(face[1]),
+                        static_cast<std::uint32_t>(face[2])};
+                const Vector3 a = vertices[triangle[1]] - vertices[triangle[0]];
+                const Vector3 b = vertices[triangle[2]] - vertices[triangle[0]];
+                const RealType scale = std::max({a.norm(), b.norm(), (a - b).norm()});
+                const RealType tolerance = std::numeric_limits<RealType>::epsilon() * 128.0 * scale * scale;
+                auto sorted = triangle;
+                std::sort(sorted.begin(), sorted.end());
+                // STL inputs can contain duplicate or numerically flat faces.
+                // Retain ALL vertices: the convex collision hull is unchanged.
+                if (a.cross(b).norm() > tolerance && unique_faces.insert(sorted).second) {
+                    indices.insert(indices.end(), triangle.begin(), triangle.end());
+                }
+            }
+            if (indices.empty()) {
+                return {};
+            }
+            Ref<ArrayMesh> mesh = MakeRef<ArrayMesh>();
+            mesh->SetSurface(std::move(vertices), std::move(indices));
+            Ref<ConvexMeshShape3D> shape = MakeRef<ConvexMeshShape3D>();
+            shape->SetMesh(mesh);
+            return dynamic_pointer_cast<Shape3D>(shape);
+        }
         case mjGEOM_BOX: {
             Ref<BoxShape3D> shape = MakeRef<BoxShape3D>();
             shape->SetSize(Vector3{
@@ -931,6 +980,13 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
     material->SetSlidingFriction(friction.x());
     material->SetTorsionalFriction(friction.y());
     material->SetRollingFriction(friction.z());
+    switch (model->geom_condim[geom_id]) {
+        case 1: material->SetContactFrictionMode("frictionless"); break;
+        case 3: material->SetContactFrictionMode("sliding"); break;
+        case 4: material->SetContactFrictionMode("sliding_torsional"); break;
+        case 6: material->SetContactFrictionMode("sliding_torsional_rolling"); break;
+        default: break;
+    }
     const RealType time_constant = static_cast<RealType>(model->geom_solref[2 * geom_id]);
     material->SetContactCompliance(time_constant > 0.0 ? time_constant * time_constant : 0.0);
     material->SetContactDamping(
@@ -1035,6 +1091,8 @@ void ApplyActuatorsToJoints(const mjModel* model, std::unordered_map<int, SceneS
         if (LooksLikePositionActuator(model, actuator_id)) {
             SetProperty(joint_node, "drive_mode", JointDriveMode::Position);
             SetProperty(joint_node, "drive_stiffness", static_cast<RealType>(std::abs(gain[0])));
+            SetProperty(joint_node, "drive_damping", static_cast<RealType>(
+                    std::max<mjtNum>(0.0, -model->actuator_biasprm[mjNBIAS * actuator_id + 2])));
         } else if (LooksLikeVelocityActuator(model, actuator_id)) {
             SetProperty(joint_node, "drive_mode", JointDriveMode::Velocity);
             SetProperty(joint_node, "drive_damping", static_cast<RealType>(std::abs(gain[0])));
@@ -1101,7 +1159,26 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
 
     const std::string model_name = ReadMJCFModelName(xml);
     const std::unordered_map<int, std::string> mesh_paths = BuildMeshAssetPaths(input_path);
-    const int robot_index = state->AddNode(MakeRobotNode(model_name, original_path.empty() ? path : original_path));
+    auto robot_node = MakeRobotNode(model_name, original_path.empty() ? path : original_path);
+    std::vector<std::array<std::string, 2>> exclusions;
+    for (int i = 0; i < model->nexclude; ++i) {
+        const int signature = model->exclude_signature[i];
+        const int first = signature >> 16;
+        const int second = signature & 0xffff;
+        exclusions.push_back({GetMuJoCoName(model.get(), mjOBJ_BODY, first, fmt::format("body_{}", first)),
+                              GetMuJoCoName(model.get(), mjOBJ_BODY, second, fmt::format("body_{}", second))});
+    }
+    AddProperty(robot_node, "collision_exclusions", exclusions);
+    const int robot_index = state->AddNode(robot_node);
+
+    // World-attached collision geometry stays static, outside all Link3D nodes.
+    for (int offset = 0; offset < model->body_geomnum[0]; ++offset) {
+        const int geom_id = model->body_geomadr[0] + offset;
+        if ((model->geom_contype[geom_id] != 0 || model->geom_conaffinity[geom_id] != 0) &&
+            MakeGeomShape(model.get(), geom_id).IsValid()) {
+            state->AddNode(MakeGeomCollisionNode(model.get(), geom_id, robot_index));
+        }
+    }
 
     std::unordered_map<int, int> body_to_link_node;
     std::unordered_map<int, SceneState::NodeData> joint_nodes;
@@ -1127,6 +1204,22 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
         int link_parent_index = parent_link_index;
         Affine3 link_parent_world_transform = parent_world_transform;
         Affine3 joint_parent_world_transform = parent_world_transform;
+        if (model->body_jntnum[body_id] == 0 && parent_body_id > 0) {
+            // A nested body without a MuJoCo joint is welded to its parent.
+            // Preserve that relationship explicitly in the authored physics
+            // topology; a scene-tree parent alone is not a physics constraint.
+            SceneState::NodeData fixed;
+            fixed.type = "Joint3D";
+            fixed.name = child_link + "_fixed_joint";
+            fixed.parent = parent_link_index;
+            const Affine3 local = parent_world_transform.inverse() * body_world_transform;
+            AddTransformProperties(fixed, local.translation(), local.linear());
+            AddProperty(fixed, "joint_type", JointType::Fixed);
+            AddProperty(fixed, "parent_link", parent_link);
+            AddProperty(fixed, "child_link", child_link);
+            link_parent_index = state->AddNode(fixed);
+            link_parent_world_transform = body_world_transform;
+        }
         for (int joint_offset = 0; joint_offset < model->body_jntnum[body_id]; ++joint_offset) {
             const int joint_id = model->body_jntadr[body_id] + joint_offset;
             const Affine3 joint_world_transform = GetJointWorldTransform(model.get(), data.get(), joint_id, body_id);
@@ -1158,7 +1251,12 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
         for (int geom_offset = 0; geom_offset < model->body_geomnum[body_id]; ++geom_offset) {
             const int geom_id = model->body_geomadr[body_id] + geom_offset;
             if (model->geom_type[geom_id] == mjGEOM_MESH && model->geom_dataid[geom_id] >= 0) {
-                state->AddNode(MakeGeomVisualNode(model.get(), geom_id, link_index, mesh_paths));
+                auto visual = MakeGeomVisualNode(model.get(), geom_id, link_index, mesh_paths);
+                if (model->geom_contype[geom_id] != 0 || model->geom_conaffinity[geom_id] != 0) {
+                    visual.name += "__visual";
+                    state->AddNode(MakeGeomCollisionNode(model.get(), geom_id, link_index));
+                }
+                state->AddNode(visual);
                 continue;
             }
             if (!MakeGeomShape(model.get(), geom_id).IsValid()) {

@@ -278,5 +278,46 @@ TEST(TestLocomotionBatchRuntime, RejectsStateOutsideResolvedLayout) {
     EXPECT_THROW(contact_only.UpdateState(PhysicsState()), std::logic_error);
 }
 
+TEST(TestLocomotionBatchRuntime, AggregatesMultipleShapesPerFoot) {
+    auto layout = StateLayout();
+    layout.foot_shape_names.clear();
+    layout.foot_shape_groups = {{"heel", "toe"}};
+    LocomotionBatchRuntime runtime(1, layout);
+    auto state = PhysicsState();
+    state.shape_names = {"heel", "toe"};
+    state.max_contact_count = 2;
+    state.contact_count = {2};
+    state.contact_link_index = {1, -1, 1, -1};
+    state.contact_shape_index = {0, -1, 1, -1};
+    state.contact_force = {3., 4., 5., -1., 2., 7.};
+    runtime.UpdateState(state);
+    EXPECT_FLOAT_EQ(runtime.FootContacts()[0], 1.f);
+    EXPECT_FLOAT_EQ(runtime.FootContactForces()[0], 2.f);
+    EXPECT_FLOAT_EQ(runtime.FootContactForces()[1], 6.f);
+    EXPECT_FLOAT_EQ(runtime.FootContactForces()[2], 12.f);
+    // Foot velocity comes from the authored foot frame, not the ankle origin.
+    EXPECT_FLOAT_EQ(runtime.FootVelocities()[0], .7f);
+    layout.foot_shape_groups = {{"heel", "heel"}};
+    EXPECT_THROW(LocomotionBatchRuntime(1, layout), std::invalid_argument);
+    layout.foot_shape_groups = {{}};
+    EXPECT_THROW(LocomotionBatchRuntime(1, layout), std::invalid_argument);
+}
+
+TEST(TestLocomotionBatchRuntime, ReadsExplicitAngularMomentumSensor) {
+    auto layout = StateLayout();
+    layout.angular_momentum_sensor_index = 0;
+    LocomotionBatchRuntime runtime(1, layout);
+    auto state = PhysicsState();
+    state.sensor_values[0] = 1.5;
+    state.sensor_values[1] = -2.;
+    state.sensor_values[2] = 3.;
+    runtime.UpdateState(state);
+    EXPECT_FLOAT_EQ(runtime.AngularMomentum()[0], 1.5f);
+    EXPECT_FLOAT_EQ(runtime.AngularMomentum()[1], -2.f);
+    EXPECT_FLOAT_EQ(runtime.AngularMomentum()[2], 3.f);
+    state.sensor_value_count[0] = 2;
+    EXPECT_THROW(runtime.UpdateState(state), std::invalid_argument);
+}
+
 } // namespace
 } // namespace gobot

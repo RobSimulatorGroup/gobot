@@ -976,6 +976,14 @@ Ref<PhysicsMaterial3D> PhysicsMaterialFromPython(const py::handle& value) {
     set_if_present("restitution", [&material](RealType v) { material->SetRestitution(v); });
     set_if_present("contact_compliance", [&material](RealType v) { material->SetContactCompliance(v); });
     set_if_present("contact_damping", [&material](RealType v) { material->SetContactDamping(v); });
+    if (source.contains("contact_friction_mode")) {
+        const auto mode = py::cast<std::string>(source["contact_friction_mode"]);
+        if (mode != "auto" && mode != "frictionless" && mode != "sliding" &&
+            mode != "sliding_torsional" && mode != "sliding_torsional_rolling") {
+            throw py::value_error("invalid contact_friction_mode");
+        }
+        material->SetContactFrictionMode(mode);
+    }
     return material;
 }
 

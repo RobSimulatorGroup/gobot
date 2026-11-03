@@ -280,6 +280,10 @@ bool HasUsableAuthoredModel(const PhysicsRobotSnapshot& robot) {
 }
 
 int ContactDimension(const PhysicsMaterialSnapshot& material) {
+    if (material.contact_friction_mode == "frictionless") return 1;
+    if (material.contact_friction_mode == "sliding") return 3;
+    if (material.contact_friction_mode == "sliding_torsional") return 4;
+    if (material.contact_friction_mode == "sliding_torsional_rolling") return 6;
     if (material.rolling_friction > 0.0) {
         return 6;
     }
@@ -405,6 +409,7 @@ bool IsSupportedShapeType(PhysicsShapeType type) {
         case PhysicsShapeType::Cylinder:
         case PhysicsShapeType::Capsule:
         case PhysicsShapeType::Mesh:
+        case PhysicsShapeType::Plane:
             return true;
         case PhysicsShapeType::Unknown:
             return false;
@@ -440,6 +445,11 @@ bool ConfigureShapeGeometry(mjsGeom* geom,
         return false;
     }
     switch (shape.type) {
+        case PhysicsShapeType::Plane:
+            geom->type = mjGEOM_PLANE;
+            geom->size[0] = geom->size[1] = 0.0;
+            geom->size[2] = 0.05;
+            return true;
         case PhysicsShapeType::Box:
             geom->type = mjGEOM_BOX;
             geom->size[0] = shape.box_size.x() * 0.5;
@@ -561,11 +571,17 @@ void AddShapeGeomToBody(mjSpec* spec,
     geom->rgba[3] = 1.0f;
 }
 
-void ConfigureBodyInertial(mjsBody* body, const PhysicsLinkSnapshot& link) {
+void ConfigureBodyInertial(mjsBody* body, const PhysicsLinkSnapshot& link, bool allow_massless = false) {
     if (!body || link.role == PhysicsLinkRole::VirtualRoot) {
         return;
     }
 
+    if (allow_massless && link.mass == 0.0 && link.inertia_diagonal.isZero()) {
+        body->mass = 0.0;
+        std::fill_n(body->inertia, 3, 0.0);
+        body->explicitinertial = true;
+        return;
+    }
     const double mass = PositiveOrDefault(link.mass, 1.0);
     body->mass = mass;
     SetMuJoCoVector3(body->ipos, link.center_of_mass);
@@ -986,7 +1002,8 @@ bool ModelBuilder::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         const std::string body_name = prefix + link.name;
         mjs_setName(body->element, body_name.c_str());
         SetMuJoCoPose(body, RelativeTransform(parent_global_transform, link.global_transform));
-        ConfigureBodyInertial(body, link);
+        ConfigureBodyInertial(body, link, !robot.standalone_rigid_body &&
+                (parent_joint == nullptr || IsFixedMuJoCoJoint(*parent_joint)));
 
         if (robot.standalone_rigid_body) {
             mjsJoint* free_joint = mjs_addFreeJoint(body);
@@ -1029,6 +1046,21 @@ bool ModelBuilder::AddAuthoredRobotToSpec(void* parent_spec_ptr,
 
     for (const PhysicsJointSnapshot& joint : robot.joints) {
         AddJointActuators(parent_spec, joint, prefix + joint.name);
+    }
+
+    for (const auto& pair : robot.collision_exclusions) {
+        if (pair[0] == pair[1] || !bodies.contains(pair[0]) || !bodies.contains(pair[1])) {
+            SetLastError(fmt::format("Invalid collision exclusion in robot '{}': '{}' / '{}'.",
+                                    robot.name, pair[0], pair[1]));
+            return false;
+        }
+        mjsExclude* exclusion = mjs_addExclude(parent_spec);
+        if (!exclusion) {
+            SetLastError("MuJoCo failed to allocate a collision exclusion.");
+            return false;
+        }
+        mjs_setString(exclusion->bodyname1, (prefix + pair[0]).c_str());
+        mjs_setString(exclusion->bodyname2, (prefix + pair[1]).c_str());
     }
 
     LOG_INFO("Added authored Gobot {} '{}' to MuJoCo spec with prefix '{}'.",

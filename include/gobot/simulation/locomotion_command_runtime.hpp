@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <random>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "gobot/core/math/math_defs.hpp"
@@ -50,6 +51,9 @@ public:
     void Configure(const LocomotionCommandConfig& config);
 
     bool IsConfigured() const;
+
+    std::vector<std::string> SaveRandomState() const;
+    void RestoreRandomState(const std::vector<std::string>& states);
 
     RealType GetStepDt() const;
 

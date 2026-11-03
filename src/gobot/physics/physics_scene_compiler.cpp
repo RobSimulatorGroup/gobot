@@ -33,6 +33,7 @@
 #include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/resources/plane_shape_3d.hpp"
 #include "gobot/scene/rigid_body_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
@@ -114,6 +115,7 @@ PhysicsMaterialSnapshot CapturePhysicsMaterial(const Ref<PhysicsMaterial3D>& mat
     snapshot.restitution = material->GetRestitution();
     snapshot.contact_compliance = material->GetContactCompliance();
     snapshot.contact_damping = material->GetContactDamping();
+    snapshot.contact_friction_mode = material->GetContactFrictionMode();
     return snapshot;
 }
 
@@ -262,7 +264,9 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
     if (!shape.IsValid()) {
         return snapshot;
     }
-    if (const auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
+    if (dynamic_pointer_cast<PlaneShape3D>(shape).IsValid()) {
+        snapshot.type = PhysicsShapeType::Plane;
+    } else if (const auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
         snapshot.type = PhysicsShapeType::Box;
         snapshot.box_size = box->GetSize();
     } else if (const auto sphere = dynamic_pointer_cast<SphereShape3D>(shape)) {
@@ -740,6 +744,7 @@ void CollectSceneNodes(const Node* node,
     if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.name = robot->GetName();
+        robot_snapshot.collision_exclusions = robot->GetCollisionExclusions();
         robot_snapshot.scene_path = CanonicalScenePath(robot);
         robot_snapshot.global_transform = global_transform;
         PhysicsRobotSceneBinding scene_binding;

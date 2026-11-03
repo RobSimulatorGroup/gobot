@@ -11,6 +11,10 @@ py::dict LinkSnapshotToPythonDict(const PhysicsLinkSnapshot& link);
 inline py::dict PhysicsSnapshotMaterial(const PhysicsMaterialSnapshot& material) {
     py::dict result;
     result["friction"] = material.sliding_friction;
+    result["sliding_friction"] = material.sliding_friction;
+    result["torsional_friction"] = material.torsional_friction;
+    result["rolling_friction"] = material.rolling_friction;
+    result["contact_friction_mode"] = material.contact_friction_mode;
     result["restitution"] = material.restitution;
     result["compliance"] = material.contact_compliance;
     result["damping"] = material.contact_damping;

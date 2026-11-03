@@ -151,5 +151,21 @@ TEST(TestLocomotionCommandRuntime, RunSamplingProducesPureForwardCommands) {
     }
 }
 
+TEST(TestLocomotionCommandRuntime, RandomStateRestoresNextCommands) {
+    LocomotionCommandRuntime runtime(2);
+    runtime.Configure(DeterministicCommandConfig(73));
+    const std::array<std::size_t, 2> ids{0, 1};
+    runtime.Reset(ids);
+    const auto checkpoint = runtime.SaveRandomState();
+    runtime.Reset(ids);
+    const auto first = CommandForEnvironment(runtime, 0);
+    const auto second = CommandForEnvironment(runtime, 1);
+    runtime.RestoreRandomState(checkpoint);
+    runtime.Reset(ids);
+    EXPECT_EQ(CommandForEnvironment(runtime, 0), first);
+    EXPECT_EQ(CommandForEnvironment(runtime, 1), second);
+    EXPECT_THROW(runtime.RestoreRandomState({"broken", "broken"}), std::invalid_argument);
+}
+
 } // namespace
 } // namespace gobot

@@ -1,0 +1,13 @@
+<mujoco model="excluded_links">
+  <worldbody>
+    <body name="first" pos="0 0 1">
+      <freejoint name="first_root"/>
+      <geom name="first_shape" type="sphere" size="0.1" mass="1"/>
+    </body>
+    <body name="second" pos="0.1 0 1">
+      <freejoint name="second_root"/>
+      <geom name="second_shape" type="sphere" size="0.1" mass="1"/>
+    </body>
+  </worldbody>
+  <contact><exclude body1="first" body2="second"/></contact>
+</mujoco>

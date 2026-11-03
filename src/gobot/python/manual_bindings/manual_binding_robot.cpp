@@ -36,6 +36,13 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                                  PyJoint3DClass& joint3d_class,
                                  PyCollisionShape3DClass& collision_shape_class) {
     robot3d_class
+            .def_property("collision_exclusions",
+                          [](const PyRobot3DHandle& handle) {
+                              return handle.ResolveAs<Robot3D>()->GetCollisionExclusions();
+                          },
+                          [](PyRobot3DHandle& handle, const std::vector<std::array<std::string, 2>>& pairs) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<Robot3D>(), "collision_exclusions", Variant(pairs));
+                          })
             .def_property("source_path",
                           [](const PyRobot3DHandle& handle) {
                               return handle.ResolveAs<Robot3D>()->GetSourcePath();

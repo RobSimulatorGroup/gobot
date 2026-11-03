@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "name": "g1_tracking_subject_split",
+  "purpose": "training",
+  "split": "train",
+  "num_envs": 2048,
+  "seed": 42,
+  "hours": 12.0,
+  "total_gpu_hours": null,
+  "deterministic": false,
+  "checkpoint_minutes": 10.0,
+  "stop_reserve_seconds": 90.0,
+  "algorithm": {
+    "iterations": 12000,
+    "wm_batch": 2048,
+    "pi_batch": 2048,
+    "horizon": 32,
+    "wm_only_iters": 500,
+    "ckpt_every": 250,
+    "log_every": 10,
+    "amp": "bf16",
+    "compile": true
+  },
+  "randomization": {
+    "enabled": true
+  }
+}

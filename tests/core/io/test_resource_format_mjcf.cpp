@@ -6,6 +6,8 @@
 #include <fstream>
 
 #include <gobot/core/io/resource_format_mjcf.hpp>
+#include <gobot/physics/physics_server.hpp>
+#include <gobot/physics/physics_scene_compiler.hpp>
 #include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
@@ -13,6 +15,10 @@
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/capsule_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
+#include <gobot/scene/resources/array_mesh.hpp>
+#include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
+#include <gobot/scene/resources/plane_shape_3d.hpp>
+#include <gobot/scene/resources/physics_material_3d.hpp>
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/robot_3d.hpp>
@@ -70,6 +76,80 @@ gobot::Affine3 ComputeTransformFromRoot(const gobot::Node3D* node) {
 }
 
 } // namespace
+
+TEST(TestResourceFormatMJCF, preserves_mesh_collision_and_position_drive_damping) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+    const auto path = std::filesystem::temp_directory_path() / "gobot_mjcf_contact_mesh.xml";
+    {
+        std::ofstream file(path);
+        file << R"(<mujoco model="mesh_contact_bot">
+  <compiler angle="radian"/>
+  <asset><mesh name="tetra" scale="2 3 4"
+    vertex="0 0 0  1 0 0  0 1 0  0 0 1"
+    face="0 2 1  0 1 3  0 3 2  1 2 3"/></asset>
+  <worldbody><geom name="ground" type="plane" size="0 0 0.05"/>
+  <body name="base" pos="1 2 3">
+    <joint name="hinge" type="hinge" axis="0 1 0"/>
+    <geom name="contact_mesh" type="mesh" mesh="tetra" pos="0.5 0 0" contype="2" conaffinity="4"/>
+    <body name="sensor_frame" pos="0.1 0.2 0.3"/>
+  </body></worldbody>
+  <actuator><position joint="hinge" kp="40" kv="2.5" forcerange="-88 88"/></actuator>
+</mujoco>)";
+    }
+    auto loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    auto packed = gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(path.string()));
+    ASSERT_TRUE(packed.IsValid());
+    auto* root = packed->Instantiate();
+    ASSERT_NE(root, nullptr);
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(root, "hinge"));
+    ASSERT_NE(joint, nullptr);
+    EXPECT_NEAR(joint->GetDriveStiffness(), 40.0, 1.e-6);
+    EXPECT_NEAR(joint->GetDriveDamping(), 2.5, 1.e-6);
+    auto* fixed = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(root, "sensor_frame_fixed_joint"));
+    ASSERT_NE(fixed, nullptr);
+    EXPECT_EQ(fixed->GetJointType(), gobot::JointType::Fixed);
+    EXPECT_EQ(fixed->GetParentLink(), "base");
+    EXPECT_EQ(fixed->GetChildLink(), "sensor_frame");
+    auto* ground = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(root, "ground"));
+    ASSERT_NE(ground, nullptr);
+    EXPECT_TRUE(gobot::dynamic_pointer_cast<gobot::PlaneShape3D>(ground->GetShape()).IsValid());
+    auto* collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(root, "contact_mesh"));
+    ASSERT_NE(collision, nullptr);
+    EXPECT_EQ(collision->GetCollisionLayer(), 2u);
+    EXPECT_EQ(collision->GetCollisionMask(), 4u);
+    EXPECT_EQ(collision->GetPhysicsMaterial()->GetContactFrictionMode(), "sliding");
+    auto shape = gobot::dynamic_pointer_cast<gobot::ConvexMeshShape3D>(collision->GetShape());
+    ASSERT_TRUE(shape.IsValid());
+    auto mesh = gobot::dynamic_pointer_cast<gobot::ArrayMesh>(shape->GetMesh());
+    ASSERT_TRUE(mesh.IsValid());
+    ASSERT_EQ(mesh->GetVertices().size(), 4u);
+    EXPECT_EQ(mesh->GetIndices().size(), 12u);
+    const auto transform = ComputeTransformFromRoot(collision);
+    const std::vector<gobot::Vector3> expected{{1.5, 2, 3}, {3.5, 2, 3}, {1.5, 5, 3}, {1.5, 2, 7}};
+    for (const auto& point : expected) {
+        EXPECT_TRUE(std::any_of(mesh->GetVertices().begin(), mesh->GetVertices().end(),
+                               [&](const auto& v) { return (transform * v).isApprox(point, 2.e-6); }));
+    }
+    auto roundtrip = gobot::MakeRef<gobot::PackedScene>();
+    EXPECT_TRUE(roundtrip->Pack(root));
+    auto* clone = roundtrip->Instantiate();
+    ASSERT_NE(clone, nullptr);
+    auto* cloned = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(clone, "contact_mesh"));
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_TRUE(gobot::dynamic_pointer_cast<gobot::ConvexMeshShape3D>(cloned->GetShape()).IsValid());
+    gobot::CompiledPhysicsScene compiled;
+    gobot::PhysicsSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
+            gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error)) << error;
+    EXPECT_NE(artifact.content.find("type=\"plane\""), std::string::npos);
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(clone);
+    std::filesystem::remove(path);
+}
 
 TEST(TestResourceFormatMJCF, recognizes_mjcf_xml_for_packed_scene) {
     const std::filesystem::path fixture_path =
@@ -569,4 +649,39 @@ TEST(TestResourceFormatMJCF, imports_go1_imu_velocimeter_as_imu_sensor_node) {
             gobot::Vector3(-0.01592, -0.06659, -0.00617), 1.0e-9));
 
     gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, preserves_collision_exclusions_through_scene_and_physics_compilation) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+    auto loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    auto scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(
+            loader->Load((std::filesystem::current_path() / "tests/fixtures/mjcf/collision_exclusions.xml").string()));
+    ASSERT_TRUE(scene.IsValid());
+    auto* root = scene->Instantiate();
+    auto* robot = gobot::Object::PointerCastTo<gobot::Robot3D>(root);
+    ASSERT_NE(robot, nullptr);
+    const std::vector<std::array<std::string, 2>> expected{{"first", "second"}};
+    EXPECT_EQ(robot->GetCollisionExclusions(), expected);
+    auto packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(robot));
+    auto* clone = gobot::Object::PointerCastTo<gobot::Robot3D>(packed->Instantiate());
+    ASSERT_NE(clone, nullptr);
+    EXPECT_EQ(clone->GetCollisionExclusions(), expected);
+    gobot::PhysicsSceneArtifact artifact;
+    std::string error;
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
+            gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error)) << error;
+    EXPECT_NE(artifact.content.find("<exclude"), std::string::npos);
+    EXPECT_NE(artifact.content.find("body1=\"excluded_links_first\""), std::string::npos);
+    clone->SetCollisionExclusions({{"first", "missing_link"}});
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    EXPECT_FALSE(gobot::PhysicsServer::CompileSceneArtifact(
+            gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error));
+    EXPECT_NE(error.find("Invalid collision exclusion"), std::string::npos);
+    gobot::Object::Delete(clone);
+    gobot::Object::Delete(root);
 }
