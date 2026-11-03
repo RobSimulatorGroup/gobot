@@ -518,6 +518,7 @@ public:
                 VectorArrayView(batch_runtime_.CommandRuntime().StandingEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_world_env"] =
                 VectorArrayView(batch_runtime_.CommandRuntime().WorldEnvironmentMask(), {EnvDim()}, owner, false);
+        arrays["command_mode"] = VectorArrayView(batch_runtime_.CommandRuntime().CommandModes(), {EnvDim()}, owner, false);
         arrays["command_is_forward_env"] =
                 VectorArrayView(batch_runtime_.CommandRuntime().ForwardEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_run_env"] =
@@ -705,7 +706,11 @@ public:
                           bool heading_command,
                           double heading_control_stiffness,
                           double zero_small_xy_threshold,
-                          std::uint64_t seed) {
+                          std::uint64_t seed,
+                          const std::array<double, 6>& mode_probabilities,
+                          bool external_commands,
+                          double minimum_forward_velocity,
+                          double minimum_moving_velocity) {
         LocomotionCommandConfig config;
         config.step_dt = step_dt;
         config.resampling_time = {
@@ -734,6 +739,10 @@ public:
         config.heading_command = heading_command;
         config.heading_control_stiffness = heading_control_stiffness;
         config.zero_small_xy_threshold = zero_small_xy_threshold;
+        std::copy(mode_probabilities.begin(), mode_probabilities.end(), config.mode_probabilities.begin());
+        config.external_commands = external_commands;
+        config.minimum_forward_velocity = minimum_forward_velocity;
+        config.minimum_moving_velocity = minimum_moving_velocity;
         config.seed = seed;
         batch_runtime_.CommandRuntime().Configure(config);
     }
@@ -1503,7 +1512,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("heading_command"),
                  py::arg("heading_control_stiffness"),
                  py::arg("zero_small_xy_threshold"),
-                 py::arg("seed"))
+                 py::arg("seed"),
+                 py::arg("mode_probabilities") = std::array<double, 6>{},
+                 py::arg("external_commands") = false,
+                 py::arg("minimum_forward_velocity") = 0.3,
+                 py::arg("minimum_moving_velocity") = 0.1)
             .def("set_command_ranges",
                  &PyLocomotionBatchView::SetCommandRanges,
                  py::arg("lin_vel_x_min"),

@@ -49,7 +49,10 @@ def make_velocity_env(cfg, *, backend="mujoco-cpu", num_envs=64, device=None, se
         raise ValueError(f"unsupported velocity backend {backend!r}")
     if cfg.observations.history_length > 1:
         from .history import HistoryVelocityEnv
-        return HistoryVelocityEnv(env, cfg.observations.history_length)
+        env = HistoryVelocityEnv(env, cfg.observations.history_length)
+    if cfg.gait.enabled:
+        from .natural_gait import NaturalGaitEnv
+        env = NaturalGaitEnv(env)
     return env
 
 __all__ += ["FootCfg", "LocomotionRobotCfg", "VelocityTaskCfg", "make_velocity_env"]

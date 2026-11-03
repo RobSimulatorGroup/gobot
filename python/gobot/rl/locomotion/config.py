@@ -87,6 +87,14 @@ class VelocityObservationCfg:
 
 @dataclass
 class VelocityRewardCfg:
+    adaptive_tracking: bool = False
+    tracking_std_floor: float = .1
+    tracking_std_scale: float = .5
+    tracking_std_ceiling: float = .5
+    moving_pose_scale: float = 1.
+    command_progress: float = 0.
+    body_lin_vel_z: float = 0.
+    upright_reference: Literal["world", "terrain"] = "terrain"
     track_linear_velocity: float = 2.0
     track_angular_velocity: float = 2.0
     upright: float = 1.0
@@ -181,6 +189,26 @@ def _default_push_force_ranges() -> Mapping[str, tuple[float, float]]:
 
 
 @dataclass
+class NaturalGaitCfg:
+    active_threshold: float = .05
+    enabled: bool = False
+    weight: float = 0.5
+    walk_speed: float = 0.8
+    run_speed: float = 2.0
+    blend_width: float = 0.2
+    frequencies: tuple[float, float, float] = (1.3, 2.2, 2.8)
+    duty_factors: tuple[float, float, float] = (0.7, 0.5, 0.35)
+
+    def __post_init__(self):
+        if not 0 < self.walk_speed < self.run_speed or self.blend_width <= 0 or self.weight < 0:
+            raise ValueError("invalid natural gait speed intervals or weight")
+        if len(self.frequencies) != 3 or min(self.frequencies) <= 0:
+            raise ValueError("three positive gait frequencies are required")
+        if len(self.duty_factors) != 3 or not all(0 < x < 1 for x in self.duty_factors):
+            raise ValueError("three gait duty factors in (0, 1) are required")
+
+
+@dataclass
 class VelocityTaskCfg:
     """Single source of truth for robot rough-terrain training and playback."""
 
@@ -188,6 +216,7 @@ class VelocityTaskCfg:
     task_version: str = "velocity_v1"
     post_step_sensing: bool = True
     capture_transitions: bool = False
+    gait: NaturalGaitCfg = field(default_factory=NaturalGaitCfg)
     state_link_names: tuple[str, ...] = ()
     robot_resource_path: str | None = None
     max_terrain_level: int | None = None
@@ -282,5 +311,9 @@ class VelocityTaskCfg:
             self.kp, self.kd = profile.kp, profile.kd
             self.foot_names = tuple(foot.name for foot in profile.feet)
             self.foot_link_names = tuple(foot.link for foot in profile.feet)
+        if self.rewards.upright_reference not in {"world", "terrain"}:
+            raise ValueError("upright_reference must be world or terrain")
+        if self.gait.enabled and (not self.capture_transitions or len(self.robot.feet) != 4):
+            raise ValueError("natural gait requires four feet and transition capture")
         if self.curriculum_mode not in {"legacy", "command_progress"}:
             raise ValueError("unknown terrain curriculum mode")

@@ -151,6 +151,47 @@ TEST(TestLocomotionCommandRuntime, RunSamplingProducesPureForwardCommands) {
     }
 }
 
+TEST(TestLocomotionCommandRuntime, PureForwardOverridesHeadingAndWorld) {
+    LocomotionCommandRuntime runtime(1);
+    auto config = DeterministicCommandConfig(42);
+    config.forward_environment_ratio = 1.0;
+    config.heading_environment_ratio = config.world_environment_ratio = 1.0;
+    config.heading_command = true;
+    config.heading = {1.0, 1.0};
+    runtime.Configure(config);
+    runtime.Reset(std::array<std::size_t, 1>{0});
+    runtime.UpdateFrames(std::array<float, 4>{0.70710678f, 0.f, 0.f, 0.70710678f});
+    auto command = CommandForEnvironment(runtime, 0);
+    EXPECT_GE(command[0], 0.3f);
+    EXPECT_EQ(command[1], 0.f); EXPECT_EQ(command[2], 0.f);
+    EXPECT_EQ(runtime.HeadingEnvironmentMask()[0], 0);
+    EXPECT_EQ(runtime.WorldEnvironmentMask()[0], 0);
+}
+
+TEST(TestLocomotionCommandRuntime, CategoricalCommandsAndExternalAuthority) {
+    LocomotionCommandRuntime runtime(1);
+    auto config = DeterministicCommandConfig(42);
+    config.heading_command = true;
+    config.mode_probabilities = {0., 0., 0., 1., 0., 0.};
+    runtime.Configure(config); runtime.Reset(std::array<std::size_t, 1>{0});
+    runtime.UpdateFrames(std::array<float, 4>{1., 0., 0., 0.});
+    EXPECT_LT(runtime.Commands()[0], 0.f);
+    EXPECT_EQ(runtime.Commands()[1], 0.f); EXPECT_EQ(runtime.Commands()[2], 0.f);
+    EXPECT_EQ(runtime.CommandModes()[0], 3);
+    config.external_commands = true; config.resampling_time = {0., 0.};
+    runtime.Configure(config); runtime.Reset(std::array<std::size_t, 1>{0});
+    runtime.SetCommands(std::array<std::size_t,1>{0}, std::array<float,3>{.2f,.1f,.3f},
+                        std::array<float,1>{2.f}, std::array<float,1>{0.f});
+    runtime.Advance(std::array<float,4>{1.,0.,0.,0.});
+    EXPECT_EQ(CommandForEnvironment(runtime,0), (std::array<float,3>{.2f,.1f,.3f}));
+    runtime.Reset(std::array<std::size_t, 1>{0});
+    runtime.Advance(std::array<float,4>{0.70710678f,0.,0.,0.70710678f});
+    EXPECT_EQ(CommandForEnvironment(runtime,0), (std::array<float,3>{.2f,.1f,.3f}));
+    EXPECT_EQ(runtime.CommandModes()[0], 7);
+    config.mode_probabilities = {1.,1.,0.,0.,0.,0.};
+    EXPECT_THROW(runtime.Configure(config), std::invalid_argument);
+}
+
 TEST(TestLocomotionCommandRuntime, RandomStateRestoresNextCommands) {
     LocomotionCommandRuntime runtime(2);
     runtime.Configure(DeterministicCommandConfig(73));

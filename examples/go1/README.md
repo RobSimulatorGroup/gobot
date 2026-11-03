@@ -1,5 +1,10 @@
 # Go1: training and playback
 
+The new natural walk/trot/gallop workflow is documented in
+[shared locomotion training](../locomotion/README.md). It uses separate versioned
+policies and practical terrain resources. The bundled policy below is the existing
+baseline; no new candidate has been promoted by smoke tests alone.
+
 The editable `go1_scene.jscn` and `terrain/rough_terrain.jres` are shared by
 training and playback. MuJoCo CPU is the reference backend; MuJoCo Warp keeps
 the full task on CUDA. Run commands from the repository root using an
@@ -69,7 +74,9 @@ uv run python -m examples.go1.train.go1_velocity_train \
   --log-dir logs/go1_warp_run --policy-out policies/go1_velocity_run_candidate.pt
 ```
 
-The `run` profile adds paired-leg gait shaping and speed curriculum. Switching
+The legacy `run` profile increases forward-speed commands; its bound-only reward
+is disabled so it no longer penalizes diagonal trot. Use the shared natural recipe
+for observable phase-conditioned walk/trot/gallop training. Switching
 from `balanced` restarts only the profile-local curriculum; resuming `run`
 restores it. Checkpoints and logs are local outputs. Evaluate candidates before
 promoting an exported actor to the bundled ONNX path.

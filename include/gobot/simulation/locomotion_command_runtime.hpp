@@ -35,6 +35,11 @@ struct LocomotionCommandConfig {
     bool heading_command{true};
     RealType heading_control_stiffness{0.5};
     RealType zero_small_xy_threshold{0.0};
+    // Forward, turn, stand, reverse, strafe, run. All zero retains legacy sampling.
+    std::array<RealType, 6> mode_probabilities{};
+    bool external_commands{false};
+    RealType minimum_forward_velocity{0.3};
+    RealType minimum_moving_velocity{0.1};
     std::uint64_t seed{1};
 };
 
@@ -113,6 +118,9 @@ public:
     std::span<std::uint8_t> RunEnvironmentMask();
     std::span<const std::uint8_t> RunEnvironmentMask() const;
 
+    std::span<std::uint8_t> CommandModes();
+    std::span<const std::uint8_t> CommandModes() const;
+
     std::span<float> Ranges();
     std::span<const float> Ranges() const;
 
@@ -164,6 +172,7 @@ private:
     std::vector<std::uint8_t> forward_environment_mask_;
     std::vector<std::uint8_t> run_environment_mask_;
     std::vector<float> ranges_;
+    std::vector<std::uint8_t> command_modes_;
 };
 
 } // namespace gobot

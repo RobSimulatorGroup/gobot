@@ -1,3 +1,8 @@
+> The current G1/Go1 experiment workflow is in [shared locomotion training](../locomotion/README.md).
+> It adds speed-matched AMP, held-out validation, independent evaluation, bounded exploration,
+> admission-gated stages and portable training bundles. G1 task version 3 changes reward
+> semantics; old version-2 checkpoints are diagnostic artifacts, not silently resumed policies.
+
 # G1 motion-prior locomotion
 
 This example trains a 29-action G1 using a human motion prior (AMP) and PPO.

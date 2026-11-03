@@ -19,6 +19,7 @@ class VelocityPolicyPlayback:
         manifest = policy_manifest_from_onnx_metadata(self.actor.get_modelmeta().custom_metadata_map)
         if manifest is None:
             raise ValueError('policy has no Gobot manifest')
+        cfg.command.source = "external"
         cfg.randomize_reset_yaw = False
         cfg.spawn_jitter = 0.
         cfg.command.rel_standing_envs = cfg.command.rel_heading_envs = cfg.command.rel_forward_envs = 0.

@@ -78,6 +78,7 @@ def g1_velocity_cfg(*, project_path=None, play=False):
     cfg.illegal_contact.shank_shape_patterns = ()
     cfg.illegal_contact.trunk_head_shape_patterns = ()
     cfg.rewards.shank_collision = cfg.rewards.trunk_head_collision = 0.
+    cfg.rewards.upright_reference = "world"
     cfg.rewards.body_ang_vel = -.05
     cfg.rewards.angular_momentum = -.02
     cfg.rewards.self_collisions = -1.
@@ -103,7 +104,7 @@ def g1_amp_cfg(*, project_path=None, stage="rough", play=False):
         raise ValueError(f"unknown G1 AMP stage {stage!r}")
     cfg = g1_velocity_cfg(project_path=project_path, play=play)
     cfg.name = "g1_amp_velocity"
-    cfg.task_version = "g1_amp_velocity_v2"
+    cfg.task_version = "g1_amp_velocity_v3"
     cfg.scene_path = "res://g1_flat_scene.jscn" if stage == "flat" else "res://g1_scene.jscn"
     cfg.robot_resource_path = "res://g1.jscn"
     cfg.capture_transitions = True

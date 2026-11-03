@@ -1,6 +1,7 @@
 """Shared velocity policy contract creation and validation."""
 from __future__ import annotations
 from pathlib import Path
+from dataclasses import asdict
 import numpy as np
 from gobot.rl.policy import PolicyManifest, scene_bundle_digest
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
@@ -50,6 +51,7 @@ def build_policy_manifest(
             "scene_digest_kind": "robot_physics_v1" if cfg.robot_resource_path else "scene_bundle",
             "training_scene_digest": scene_digest,
             "history_length": cfg.observations.history_length,
+            "natural_gait": asdict(cfg.gait) if cfg.gait.enabled else None,
 
             "post_step_sensing": cfg.post_step_sensing,
             "base_link": str(cfg.base_link),
@@ -84,6 +86,15 @@ def validate_policy(manifest, env, cfg):
         joint_names=env.joint_names, physics_dt=env.physics_dt, decimation=env.decimation,
         task_name=cfg.name, task_version=cfg.task_version,
         scene_digest=digest)
+    saved_gait = manifest.extras.get("natural_gait")
+    if saved_gait is not None:
+        saved_gait = {"active_threshold": .1, **saved_gait}
+        # Reward weight does not affect inference; phase scheduling does.
+        expected = asdict(cfg.gait)
+        if any(saved_gait.get(k) != (list(v) if isinstance(v, tuple) else v) and saved_gait.get(k) != v for k, v in expected.items() if k != "weight"):
+            raise ValueError("policy natural gait clock does not match the runtime")
+    elif cfg.gait.enabled:
+        raise ValueError("policy has no natural gait clock contract")
     if manifest.control.get("action_clip") != cfg.action_clip:
         raise ValueError("policy action clipping does not match the runtime")
     if int(manifest.extras.get("history_length", 1)) != cfg.observations.history_length:

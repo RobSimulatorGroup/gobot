@@ -91,3 +91,6 @@ examples/newton_g1/assets/*
 /examples/g1/assets/
 /examples/g1/logs/
 /examples/g1/policies/
+
+# Generated, inspectable locomotion evaluation scenes.
+/examples/go1/assets/evaluation/
