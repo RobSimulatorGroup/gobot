@@ -150,6 +150,7 @@
             "name": "kinematic_colliders",
             "parent": 0,
             "properties": {
+                "collision_exclusions": [],
                 "mode": "Assembly",
                 "position": {
                     "matrix_data": {
@@ -486,6 +487,7 @@
             "name": "soft_workpiece",
             "parent": 0,
             "properties": {
+                "bending_stiffness": 0.0010000000474974513,
                 "collision_layer": 1,
                 "collision_mask": 4294967295,
                 "damping": 0.07999999821186066,
@@ -498,7 +500,10 @@
                 "debug_wireframe_visible": true,
                 "density": 650.0,
                 "kinematic": false,
+                "material": null,
                 "mesh": "SubResource(TetrahedralMesh_0)",
+                "model": "Volumetric",
+                "physics_material": null,
                 "poisson_ratio": 0.3799999952316284,
                 "position": {
                     "matrix_data": {
@@ -536,6 +541,8 @@
                 "script": null,
                 "self_collision_enabled": false,
                 "semantic_label": "",
+                "surface_mesh": null,
+                "thickness": 0.0010000000474974513,
                 "visible": true,
                 "young_modulus": 30000.0
             },
@@ -545,6 +552,7 @@
             "name": "fr3_arm",
             "parent": 0,
             "properties": {
+                "collision_exclusions": [],
                 "mode": "Assembly",
                 "position": {
                     "matrix_data": {
@@ -2740,7 +2748,7 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
+                            0.9999999403953552,
                             1.0,
                             1.0
                         ]
@@ -2883,7 +2891,7 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
+                            0.9999999403953552,
                             1.0,
                             1.0
                         ]
@@ -3588,7 +3596,7 @@
                         "rows": 3,
                         "storage": [
                             -30.0,
-                            -0.0,
+                            -2.6411323430898198e-23,
                             180.0
                         ]
                     }
@@ -5886,6 +5894,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5903,6 +5913,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5920,6 +5932,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5937,6 +5951,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5954,6 +5970,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5971,6 +5989,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -5988,6 +6008,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6005,6 +6027,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6022,6 +6046,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6049,6 +6075,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6076,6 +6104,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6103,6 +6133,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6130,6 +6162,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6157,6 +6191,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6184,6 +6220,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6211,6 +6249,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,
@@ -6238,6 +6278,8 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
+            "contact_friction_mode": "auto",
+            "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 9.999999747378752e-05,

@@ -5,6 +5,7 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
+import subprocess
 
 import numpy as np
 try:
@@ -433,14 +434,26 @@ def test_commands_are_joint_targets_without_wrist_rotation(runner):
         np.testing.assert_allclose(trajectory[tick, side, :3], expected)
 
 
-def test_compile_trial_preserves_authored_assets_and_explicit_two_way_contract(runner):
-    scene = EXAMPLE / "conveyor_packages.jscn"
+def test_compile_trial_preserves_authored_assets_and_explicit_two_way_contract(runner, tmp_path):
+    # This controller uses the LEAP variant. The checked-in default scene now
+    # contains OpenArm/Sharpa, so build the required authored variant explicitly.
+    checked_in = EXAMPLE / "conveyor_packages.jscn"
+    checked_in_before = hashlib.sha256(checked_in.read_bytes()).hexdigest()
+    subprocess.run(
+        [sys.executable, "-S", str(EXAMPLE / "build_scene.py"),
+         "--hand-model", "leap", "--output-dir", str(tmp_path)],
+        check=True, capture_output=True, text=True,
+    )
+    scene = tmp_path / "conveyor_packages.jscn"
     before = hashlib.sha256(scene.read_bytes()).hexdigest()
     context, artifact, face_triangles = runner.load_trial(scene)
     try:
         assert face_triangles.shape[1] == 3
         assert {body["name"] for body in artifact.ipc.deformable_bodies} == set(runner.PACKAGE_NAMES)
-        assert sum(body["vertex_count"] for body in artifact.ipc.deformable_bodies) == 2600
+        assert {body["name"]: body["vertex_count"] for body in artifact.ipc.deformable_bodies} == {
+            "soft_mailer_blue": 1820,  # Two 35 x 26 shell panels.
+            "soft_mailer_blue_fill": 189,  # 9 x 7 x 3 volumetric vertices.
+        }
         assert all(not body["kinematic"] for body in artifact.ipc.deformable_bodies)
         assert not artifact.ipc.deformable_attachments
         for name in runner.LEAP_ROBOT_NAMES:
@@ -475,6 +488,7 @@ def test_compile_trial_preserves_authored_assets_and_explicit_two_way_contract(r
     finally:
         context.clear_scene()
     assert hashlib.sha256(scene.read_bytes()).hexdigest() == before
+    assert hashlib.sha256(checked_in.read_bytes()).hexdigest() == checked_in_before
 
 
 @pytest.mark.skipif(os.environ.get("GOBOT_RUN_CONVEYOR_IPC_GPU_TEST") != "1",

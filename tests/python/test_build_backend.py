@@ -60,7 +60,7 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
         '"nvidia-cusolver-cu12>=11.7,<12;',
         '"nvidia-cusparse-cu12>=12.5,<13;',
         '"nvidia-nvjitlink-cu12>=12.8,<13;',
-        '"torch>=2.7;',
+        '"torch>=2.9;',
         '"warp-lang==1.17.0;',
     ):
         assert requirement in pyproject

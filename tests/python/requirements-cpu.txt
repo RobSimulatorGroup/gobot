@@ -2,5 +2,10 @@
 # Keep MuJoCo aligned with GOB_MUJOCO_GIT_TAG and pyproject.toml.
 mujoco==3.17.0
 numpy>=2,<3
+pillow>=10.1
 scipy>=1.11
 trimesh>=4.6.8
+
+# The +cpu suffix keeps hosted CI free of the CUDA runtime dependency stack.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.11.0+cpu

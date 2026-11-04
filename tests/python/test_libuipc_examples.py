@@ -26,21 +26,9 @@ SCENE_NAMES = ("fr3_brick_grasp.jscn",)
 
 
 def _assert_authored_scene_matches(actual, expected):
-    # Older checked-in scenes omit the later shell properties. Preserve these
-    # assets as the physics baseline; compare their explicit default semantics.
-    for scene in (actual, expected):
-        for node in scene["__NODES__"]:
-            if node["type"] == "DeformableBody3D":
-                properties = node["properties"]
-                properties.setdefault("model", "Volumetric")
-                properties.setdefault("thickness", float(np.float32(.001)))
-                properties.setdefault("bending_stiffness", float(np.float32(.001)))
-                properties.setdefault("surface_mesh", None)
-                properties.setdefault("physics_material", None)
-
     def compare(a, b, path):
         if isinstance(a, dict):
-            assert a.keys() == b.keys(), path
+            assert a.keys() == b.keys(), (path, a.keys() - b.keys(), b.keys() - a.keys())
             for key in a:
                 compare(a[key], b[key], path + "/" + key)
         elif isinstance(a, list):

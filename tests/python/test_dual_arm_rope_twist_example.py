@@ -114,13 +114,7 @@ def test_scene_is_reproducible() -> None:
         generated = builder.build_scene(output)
         actual = json.loads(generated.read_text())
         expected = json.loads(SCENE.read_text())
-        # The authored fixture predates shell properties. Missing volumetric
-        # defaults have identical loading semantics; keep physical assets fixed.
         for new, old in zip(actual["__NODES__"], expected["__NODES__"], strict=True):
-            if old["type"] == "DeformableBody3D":
-                for key, value in dict(model="Volumetric", physics_material=None, surface_mesh=None,
-                        thickness=float(np.float32(.001)), bending_stiffness=float(np.float32(.001))).items():
-                    old["properties"].setdefault(key, value)
             # Quaternion decomposition can differ by float32 roundoff. Only
             # these transform fields permit it; geometry/materials stay exact.
             for key in ("scale", "rotation_degrees"):

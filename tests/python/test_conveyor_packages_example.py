@@ -182,7 +182,28 @@ def test_scene_is_reproducible() -> None:
     ) as temporary:
         output = Path(temporary)
         generated = builder.build_scene(output)
-        assert generated.read_bytes() == SCENE.read_bytes()
+        actual = json.loads(generated.read_text())
+        expected = json.loads(SCENE.read_text())
+        # The home pose is solved with SciPy/NumPy and stored as float32.
+        # Different BLAS/SciPy builds can move the result by a few ULPs.
+        # Only poses and joint states allow that roundoff; topology, materials,
+        # geometry, resource references and all other fields remain exact.
+        tolerance = 8 * np.finfo(np.float32).eps
+        for new, old in zip(actual["__NODES__"], expected["__NODES__"], strict=True):
+            for key in ("position", "rotation_degrees", "scale", "initial_position", "joint_position"):
+                if key not in new["properties"] or key not in old["properties"]:
+                    continue  # The exact comparison below still rejects missing fields.
+                lhs, rhs = new["properties"][key], old["properties"][key]
+                if isinstance(rhs, dict):
+                    np.testing.assert_allclose(
+                        lhs["matrix_data"]["storage"], rhs["matrix_data"]["storage"],
+                        rtol=tolerance, atol=tolerance, err_msg=f"{old['name']}/{key}")
+                    lhs["matrix_data"]["storage"] = rhs["matrix_data"]["storage"]
+                else:
+                    np.testing.assert_allclose(lhs, rhs, rtol=tolerance, atol=tolerance,
+                                               err_msg=f"{old['name']}/{key}")
+                    new["properties"][key] = rhs
+        assert actual == expected
         assert {
             path.name for path in output.iterdir() if path.is_file()
         } == {
@@ -218,470 +239,6 @@ def test_scene_is_reproducible() -> None:
         assert imported.returncode == 0, imported.stderr
 
 
-def _legacy_scene_has_play_script_and_industrial_visuals() -> None:
-    scene = json.loads(SCENE.read_text(encoding="utf-8"))
-    roots = [node for node in scene["__NODES__"] if node["parent"] == -1]
-    assert len(roots) == 1
-    assert roots[0]["properties"]["script"] == (
-        "ExtResource(conveyor_packages_play_script)"
-    )
-    resource = next(
-        value
-        for value in scene["__EXT_RESOURCES__"]
-        if value["__ID__"] == "conveyor_packages_play_script"
-    )
-    assert resource["__PATH__"] == "res://conveyor_packages_play.py"
-    names = {node["name"] for node in scene["__NODES__"]}
-    assert {
-        "scanner_crossbar",
-        "scanner_camera",
-        "worktable_surface_visual",
-        "worktable_surface_collision",
-        "incoming_package_lane",
-        "manual_sorting_zone",
-        "worktable_transfer_lip",
-        "end_stop_visual",
-        "end_stop_collision",
-        "openarm_bimanual",
-        "openarm_base_pedestal",
-        "openarm_shoulder_shroud",
-        "openarm_camera_mast",
-        "openarm_sensor_head",
-        "openarm_left_allegro_palm",
-        "openarm_right_allegro_palm",
-        "openarm_left_allegro_thumb_distal",
-        "openarm_right_allegro_thumb_distal",
-        "openarm_left_allegro_ff_tip",
-        "openarm_right_allegro_ff_tip",
-        "openarm_left_allegro_rf_tip",
-        "openarm_right_allegro_rf_tip",
-        "openarm_left_allegro_ff_tip_proxy",
-        "openarm_right_allegro_thumb_tip_proxy",
-        "openarm_left_sweep_edge_proxy",
-        "openarm_right_sweep_edge_proxy",
-    } <= names
-    resource_paths = {
-        resource["__PATH__"] for resource in scene["__EXT_RESOURCES__"]
-    }
-    assert {
-        "res://assets/wonik_allegro/assets/base_link_left.stl",
-        "res://assets/wonik_allegro/assets/base_link.stl",
-        "res://assets/wonik_allegro/assets/link_15.0_tip.stl",
-    } <= resource_paths
-    assert math.isclose(_builder().ALLEGRO_HAND_SCALE, 1.50)
-    assert math.isclose(_builder().HAND_DOWN_ANGLE_DEGREES, 60.0)
-    assert math.isclose(_builder().HAND_PRESS_ANGLE_DEGREES, 90.0)
-    np.testing.assert_allclose(
-        _builder().HAND_PUSH_PAD_SIZE, (0.180, 0.025, 0.260)
-    )
-    np.testing.assert_allclose(
-        _builder().HAND_SWEEP_EDGE_SIZE, (0.180, 0.025, 0.105)
-    )
-    assert math.isclose(
-        float(np.linalg.det(_builder().HAND_PUSH_PAD_REFERENCE_ROTATION)),
-        1.0,
-        abs_tol=1.0e-12,
-    )
-    assert math.isclose(
-        float(np.linalg.det(_builder().HAND_VISUAL_WORLD_ADJUSTMENT)),
-        1.0,
-        abs_tol=1.0e-12,
-    )
-    pressure_normal = _builder().HAND_PUSH_PAD_WORLD_ROTATION[:, 1]
-    assert abs(float(pressure_normal[1])) < 1.0e-12
-    assert pressure_normal[2] < -0.99
-    assert math.isclose(
-        float(np.linalg.det(_builder().HAND_PUSH_PAD_WORLD_ROTATION)),
-        1.0,
-        abs_tol=1.0e-12,
-    )
-    for world_offset, local_offset in zip(
-        _builder().HAND_PUSH_PAD_WORLD_OFFSETS,
-        _builder().HAND_PUSH_PAD_LOCAL_OFFSETS,
-        strict=True,
-    ):
-        np.testing.assert_allclose(
-            _builder().HAND_PUSH_PAD_REFERENCE_ROTATION
-            @ np.asarray(local_offset),
-            world_offset,
-            atol=1.0e-12,
-        )
-    for world_offset, local_offset in zip(
-        _builder().HAND_SWEEP_EDGE_WORLD_OFFSETS,
-        _builder().HAND_SWEEP_EDGE_LOCAL_OFFSETS,
-        strict=True,
-    ):
-        np.testing.assert_allclose(
-            _builder().HAND_PUSH_PAD_REFERENCE_ROTATION
-            @ np.asarray(local_offset),
-            world_offset,
-            atol=1.0e-12,
-        )
-    world_transforms = _scene_world_transforms(scene)
-    for side in ("left", "right"):
-        palm_transform = world_transforms[
-            f"openarm_{side}_allegro_palm"
-        ]
-        palm_normal = palm_transform[:3, 0]
-        palm_normal /= np.linalg.norm(palm_normal)
-        if palm_normal[2] > 0.0:
-            palm_normal *= -1.0
-        assert abs(float(palm_normal[0])) < 0.02
-        assert abs(float(palm_normal[1])) < 0.02
-        assert palm_normal[2] < -0.99
-        palm_position = palm_transform[:3, 3]
-        fingertip_positions = np.stack(
-            tuple(
-                world_transforms[
-                    f"openarm_{side}_allegro_{finger}_tip"
-                ][:3, 3]
-                for finger in ("ff", "mf", "rf")
-            )
-        )
-        finger_direction = fingertip_positions.mean(axis=0) - palm_position
-        assert finger_direction[1] > 0.10
-        assert abs(float(finger_direction[2])) < finger_direction[1]
-    belt_surface = next(
-        node
-        for node in scene["__NODES__"]
-        if node["name"] == "belt_surface"
-    )
-    np.testing.assert_allclose(
-        belt_surface["properties"]["position"]["matrix_data"]["storage"],
-        (
-            _builder().BELT_CENTER_X,
-            _builder().BELT_CENTER_Y,
-            _builder().BELT_CENTER_Z,
-        ),
-    )
-    worktable = next(
-        node
-        for node in scene["__NODES__"]
-        if node["name"] == "worktable_surface_collision"
-    )
-    np.testing.assert_allclose(
-        worktable["properties"]["position"]["matrix_data"]["storage"],
-        (
-            _builder().WORKTABLE_CENTER_X,
-            _builder().WORKTABLE_CENTER_Y,
-            _builder().WORKTABLE_TOP_Z
-            - 0.5 * _builder().WORKTABLE_THICKNESS,
-        ),
-    )
-    robot = next(
-        node
-        for node in scene["__NODES__"]
-        if node["name"] == "openarm_bimanual"
-    )
-    np.testing.assert_allclose(
-        robot["properties"]["position"]["matrix_data"]["storage"],
-        _builder().OPENARM_ROOT_POSITION,
-    )
-    soft_specs = {
-        str(spec["name"]): spec for spec in _builder().SOFT_PACKAGE_SPECS
-    }
-    blue_spec = soft_specs["soft_mailer_blue"]
-    fill_spec = soft_specs["soft_mailer_blue_fill"]
-    yellow_spec = soft_specs["soft_pouch_yellow"]
-    yellow_fill_spec = soft_specs["soft_pouch_yellow_fill"]
-    rigid_specs = {
-        str(spec["name"]): spec for spec in _builder().RIGID_BOX_SPECS
-    }
-    assert (
-        float(rigid_specs["carton_small"]["position"][0])
-        < float(yellow_spec["position"][0])
-        < float(blue_spec["position"][0])
-        < float(rigid_specs["carton_wide"]["position"][0])
-        < float(rigid_specs["carton_tall"]["position"][0])
-    )
-    carton_right_edge = (
-        float(rigid_specs["carton_small"]["position"][0])
-        + 0.5 * float(rigid_specs["carton_small"]["size"][0])
-    )
-    yellow_left_edge = (
-        float(yellow_spec["position"][0])
-        - 0.5 * float(yellow_spec["size"][0])
-    )
-    assert yellow_left_edge - carton_right_edge >= 0.30
-    belt_near_edge = (
-        _builder().BELT_CENTER_Y - 0.5 * _builder().BELT_WIDTH
-    )
-    assert (
-        float(rigid_specs["carton_small"]["position"][1])
-        + 0.5 * float(rigid_specs["carton_small"]["size"][1])
-        < belt_near_edge
-    )
-    assert (
-        float(yellow_spec["position"][1])
-        + 0.5 * float(yellow_spec["size"][1])
-        < belt_near_edge
-    )
-    assert (
-        float(blue_spec["position"][1])
-        + 0.5 * float(blue_spec["size"][1])
-        < belt_near_edge
-    )
-    for name in ("carton_wide", "carton_tall"):
-        assert abs(
-            float(rigid_specs[name]["position"][1])
-            - _builder().BELT_CENTER_Y
-        ) < 0.5 * _builder().BELT_WIDTH
-    assert math.isclose(
-        float(blue_spec["position"][2]),
-        _builder().WORKTABLE_TOP_Z + 0.0461,
-    )
-    assert math.isclose(float(blue_spec["position"][1]), -0.375)
-    assert math.isclose(_builder().WORKTABLE_SLIDING_FRICTION, 0.30)
-    assert blue_spec["model"] == "thin_shell"
-    assert float(blue_spec["young_modulus"]) >= 1.0e5
-    assert float(blue_spec["bending_stiffness"]) <= 5.0e-4
-    assert float(blue_spec["thickness"]) <= 1.5e-3
-    assert float(blue_spec["damping"]) >= 5.0
-    assert tuple(blue_spec["cells"]) == (18, 13)
-    assert fill_spec["model"] == "volumetric"
-    assert not bool(fill_spec["visible"])
-    assert math.isclose(
-        float(blue_spec["position"][2]) - float(fill_spec["position"][2]),
-        0.010,
-    )
-    assert float(fill_spec["young_modulus"]) <= 1.0e4
-    assert tuple(fill_spec["cells"]) == (8, 6, 3)
-    assert yellow_spec["model"] == "thin_shell"
-    assert tuple(yellow_spec["cells"]) == (28, 21)
-    assert float(yellow_spec["size"][2]) > float(blue_spec["size"][2])
-    assert yellow_fill_spec["model"] == "volumetric"
-    assert tuple(yellow_fill_spec["cells"]) == (11, 8, 5)
-    assert not bool(yellow_fill_spec["visible"])
-
-    yellow_fill_mesh = builder._soft_package_mesh(
-        yellow_fill_spec["size"],
-        yellow_fill_spec["cells"],
-        side_rounding=float(yellow_fill_spec["side_rounding"]),
-    )
-    yellow_fill_vertices = np.asarray(
-        yellow_fill_mesh.vertices, dtype=np.float64
-    )
-    yellow_fill_layers = yellow_fill_vertices.reshape(
-        yellow_fill_spec["cells"][2] + 1,
-        -1,
-        3,
-    )
-    middle_layer = yellow_fill_layers[
-        yellow_fill_spec["cells"][2] // 2
-    ]
-    for axis in (0, 1):
-        middle_extent = float(np.ptp(middle_layer[:, axis]))
-        bottom_extent = float(np.ptp(yellow_fill_layers[0, :, axis]))
-        top_extent = float(np.ptp(yellow_fill_layers[-1, :, axis]))
-        assert middle_extent > 1.08 * bottom_extent
-        assert middle_extent > 1.08 * top_extent
-    blue_mesh = _builder()._soft_mailer_shell_mesh(
-        blue_spec["size"], blue_spec["cells"], seam_thickness=blue_spec.get("seam_thickness"), edge_refinement=blue_spec.get("edge_refinement", 1.), underside_wrinkle=blue_spec.get("underside_wrinkle", .018)
-    )
-    blue_vertices = np.asarray(blue_mesh.vertices, dtype=np.float64)
-    blue_triangles = np.asarray(blue_mesh.triangles, dtype=np.int64)
-    layer_size = (blue_spec["cells"][0] + 1) * (
-        blue_spec["cells"][1] + 1
-    )
-    bottom_z = blue_vertices[:layer_size, 2]
-    top_z = blue_vertices[layer_size:, 2]
-    assert float(top_z.max() - bottom_z.min()) > 0.08
-    assert float(np.ptp(top_z)) > 0.04
-    edge_counts: dict[tuple[int, int], int] = {}
-    for triangle in blue_triangles:
-        for first, second in (
-            (triangle[0], triangle[1]),
-            (triangle[1], triangle[2]),
-            (triangle[2], triangle[0]),
-        ):
-            edge = tuple(sorted((int(first), int(second))))
-            edge_counts[edge] = edge_counts.get(edge, 0) + 1
-    assert edge_counts
-    assert set(edge_counts.values()) == {2}
-    initial_bottom_gap = (
-        float(blue_spec["position"][2])
-        + float(bottom_z.min())
-        - _builder().WORKTABLE_TOP_Z
-    )
-    assert math.isclose(initial_bottom_gap, 0.011, abs_tol=1.0e-6)
-    assert (
-        _builder().OPENARM_ROOT_POSITION[1]
-        < _builder().BELT_CENTER_Y - 0.5 * _builder().BELT_WIDTH
-    )
-    collision_nodes = {
-        node["name"]: node["properties"]
-        for node in scene["__NODES__"]
-        if node["name"]
-        in {
-            "worktable_surface_collision",
-            "openarm_left_palm_proxy",
-            "soft_mailer_blue",
-        }
-    }
-    assert (
-        collision_nodes["worktable_surface_collision"]["collision_layer"],
-        collision_nodes["worktable_surface_collision"]["collision_mask"],
-    ) == (
-        _builder().RIGID_COLLISION_LAYER,
-        _builder().RIGID_COLLISION_MASK,
-    )
-    assert (
-        collision_nodes["openarm_left_palm_proxy"]["collision_layer"],
-        collision_nodes["openarm_left_palm_proxy"]["collision_mask"],
-    ) == (
-        _builder().HAND_COLLISION_LAYER,
-        _builder().HAND_COLLISION_MASK,
-    )
-    assert (
-        collision_nodes["soft_mailer_blue"]["collision_layer"],
-        collision_nodes["soft_mailer_blue"]["collision_mask"],
-    ) == (
-        _builder().DEFORMABLE_COLLISION_LAYER,
-        _builder().DEFORMABLE_COLLISION_MASK,
-    )
-    assert (
-        _builder().WORKTABLE_CENTER_Y
-        + 0.5 * _builder().WORKTABLE_DEPTH
-        < _builder().BELT_CENTER_Y - 0.5 * _builder().BELT_WIDTH
-    )
-    assert len({name for name in names if name.startswith("belt_marker_")}) >= 12
-    wrist_joints = [
-        node
-        for node in scene["__NODES__"]
-        if node["name"] in {"openarm_left_joint7", "openarm_right_joint7"}
-    ]
-    assert len(wrist_joints) == 2
-    for wrist in wrist_joints:
-        properties = wrist["properties"]
-        assert properties["drive_mode"] == "Position"
-        assert math.isclose(properties["drive_stiffness"], 42.0)
-        assert math.isclose(properties["drive_damping"], 5.0)
-        assert math.isclose(properties["effort_limit"], 7.0)
-    left_link1 = next(
-        node
-        for node in scene["__NODES__"]
-        if node["name"] == "openarm_left_link1"
-    )
-    baked_y_degrees = left_link1["properties"]["rotation_degrees"][
-        "matrix_data"
-    ]["storage"][1]
-    assert math.isclose(
-        baked_y_degrees,
-        math.degrees(_builder().ARM_INITIAL_POSES[0][0]),
-    )
-    assert not math.isclose(baked_y_degrees, 0.0)
-    shoulder_mounts = {
-        node["name"]: node["properties"]["position"]["matrix_data"][
-            "storage"
-        ]
-        for node in scene["__NODES__"]
-        if node["name"]
-        in {
-            "openarm_left_base_link_mount_joint",
-            "openarm_right_base_link_mount_joint",
-        }
-    }
-    np.testing.assert_allclose(
-        shoulder_mounts["openarm_left_base_link_mount_joint"],
-        (0.0, 0.22, 0.94),
-    )
-    np.testing.assert_allclose(
-        shoulder_mounts["openarm_right_base_link_mount_joint"],
-        (0.0, -0.22, 0.94),
-    )
-    assert all(
-        not resource["__PATH__"].startswith("res://../")
-        for resource in scene["__EXT_RESOURCES__"]
-    )
-
-
-def _legacy_allegro_visual_meshes_are_enclosed_by_contact_proxies() -> None:
-    builder = _builder()
-    scene = json.loads(SCENE.read_text(encoding="utf-8"))
-    nodes = {str(node["name"]): node for node in scene["__NODES__"]}
-    transforms = _scene_world_transforms(scene)
-    external_resources = {
-        str(resource["__ID__"]): str(resource["__PATH__"])
-        for resource in scene["__EXT_RESOURCES__"]
-    }
-    sub_resources = {
-        str(resource["__ID__"]): resource
-        for resource in scene["__SUB_RESOURCES__"]
-    }
-
-    proxy_names = {
-        name
-        for name in nodes
-        if name.startswith("openarm_")
-        and "_allegro_" in name
-        and name.endswith("_proxy")
-    }
-    assert len(proxy_names) == 16
-    visual_names = {
-        name
-        for name in nodes
-        if re.fullmatch(
-            r"openarm_(left|right)_allegro_"
-            r"(ff|mf|rf|thumb)_(base|proximal|medial|distal|tip)",
-            name,
-        )
-    }
-    assert len(visual_names) == 40
-    tolerance = 5.0e-7
-    for visual_name in sorted(visual_names):
-        name_match = re.fullmatch(
-            r"(openarm_(left|right)_allegro_(ff|mf|rf|thumb))_"
-            r"(base|proximal|medial|distal|tip)",
-            visual_name,
-        )
-        assert name_match is not None
-        segment = name_match.group(4)
-        proxy_group = "root" if segment in {"base", "proximal"} else "tip"
-        proxy_name = f"{name_match.group(1)}_{proxy_group}_proxy"
-        assert proxy_name in proxy_names
-        visual = nodes[visual_name]
-        proxy = nodes[proxy_name]
-
-        mesh_match = re.fullmatch(
-            r"ExtResource\(([^)]+)\)", str(visual["properties"]["mesh"])
-        )
-        shape_match = re.fullmatch(
-            r"SubResource\(([^)]+)\)", str(proxy["properties"]["shape"])
-        )
-        assert mesh_match is not None
-        assert shape_match is not None
-        mesh_path = external_resources[mesh_match.group(1)]
-        assert mesh_path.startswith("res://")
-        mesh = trimesh.load_mesh(
-            EXAMPLE / mesh_path.removeprefix("res://"), process=False
-        )
-        vertices = np.column_stack(
-            (np.asarray(mesh.vertices, dtype=np.float64), np.ones(len(mesh.vertices)))
-        )
-        world_vertices = transforms[visual_name] @ vertices.T
-        proxy_vertices = (
-            np.linalg.inv(transforms[proxy_name]) @ world_vertices
-        ).T[:, :3]
-        shape = sub_resources[shape_match.group(1)]
-        half_size = 0.5 * _matrix_vector(shape, "size", (0.0, 0.0, 0.0))
-        clearance = half_size - np.abs(proxy_vertices)
-        assert float(np.min(clearance)) >= (
-            builder.ALLEGRO_VISUAL_PROXY_MARGIN - tolerance
-        ), proxy_name
-
-        properties = proxy["properties"]
-        assert (
-            properties["collision_layer"], properties["collision_mask"]
-        ) == (builder.HAND_COLLISION_LAYER, builder.HAND_COLLISION_MASK)
-    for proxy_name in proxy_names:
-        proxy = nodes[proxy_name]
-        parent = scene["__NODES__"][int(proxy["parent"])]
-        expected_link = (
-            "ee_link2" if "_thumb_" in proxy_name else "ee_link1"
-        )
-        assert str(parent["name"]).endswith(expected_link)
-
-
 @lru_cache(maxsize=1)
 def _leap_scene():
     with tempfile.TemporaryDirectory(prefix="gobot-leap-scene-") as temporary:
@@ -689,7 +246,7 @@ def _leap_scene():
         return json.loads(path.read_text())
 
 
-def test_legacy_scene_compiles_to_native_superdex_conveyor_contract() -> None:
+def test_leap_scene_compiles_to_native_superdex_conveyor_contract() -> None:
     builder = _builder()
     scene = _leap_scene()
     nodes = scene["__NODES__"]
@@ -757,7 +314,7 @@ def test_legacy_scene_compiles_to_native_superdex_conveyor_contract() -> None:
             assert properties["mesh"] is not None
 
 
-def test_legacy_scene_has_play_script_and_leap_hands() -> None:
+def test_leap_scene_has_play_script_and_hand_geometry() -> None:
     builder = _builder()
     scene = _leap_scene()
     roots = [node for node in scene["__NODES__"] if node["parent"] == -1]
@@ -879,9 +436,17 @@ def test_legacy_scene_has_play_script_and_leap_hands() -> None:
                 source_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id
             )
             assert geom_name is not None
+            # Collidable mesh geoms retain their original name for the
+            # CollisionShape3D; their separate render node has a __visual suffix.
+            visual_name = geom_name
+            if source_model.geom_contype[geom_id] or source_model.geom_conaffinity[geom_id]:
+                collision_index = _descendant_node_index(scene, robot_name, geom_name)
+                assert scene["__NODES__"][collision_index]["type"] == "CollisionShape3D"
+                visual_name += "__visual"
             imported_index = _descendant_node_index(
-                scene, robot_name, geom_name
+                scene, robot_name, visual_name
             )
+            assert scene["__NODES__"][imported_index]["type"] == "MeshInstance3D"
             imported = _scene_world_transform_list(scene)[imported_index]
             mesh_reference = str(
                 scene["__NODES__"][imported_index]["properties"]["mesh"]
@@ -1207,153 +772,6 @@ def test_legacy_scene_has_play_script_and_leap_hands() -> None:
             rel_tol=0.0,
             abs_tol=1.0e-5,
         )
-
-
-def _legacy_quality_profiles_and_belt_schedule() -> None:
-    profile = _profile()
-    assert math.isclose(profile.IPC_CONTACT_ACTIVATION_DISTANCE, 2.0e-3)
-    assert math.isclose(profile.IPC_CONTACT_RESISTANCE, 1.0e8)
-    interactive = profile.quality_profile("interactive")
-    accurate = profile.quality_profile("accurate")
-    assert (
-        interactive.coupling_iterations,
-        interactive.relaxation_mode,
-        interactive.scene_sync_interval,
-        interactive.contact_refresh_interval,
-    ) == (1, "fixed", 2, 4)
-    assert (
-        accurate.coupling_iterations,
-        accurate.relaxation_mode,
-        accurate.scene_sync_interval,
-        accurate.contact_refresh_interval,
-    ) == (2, "aitken", 1, 1)
-    assert (
-        interactive.newton_max_iterations,
-        interactive.line_search_max_iterations,
-        interactive.linear_system_tolerance_rate,
-    ) == (48, 8, 2.0e-3)
-    assert (
-        accurate.newton_max_iterations,
-        accurate.line_search_max_iterations,
-        accurate.linear_system_tolerance_rate,
-    ) == (16, 8, 1.0e-3)
-    speeds = [
-        profile.belt_speed_at_tick(tick)
-        for tick in range(profile.CYCLE_TICKS)
-    ]
-    assert all(value == 0.0 for value in speeds[: profile.BELT_START_TICKS])
-    ramp_start = profile.BELT_START_TICKS
-    assert 0.0 < speeds[ramp_start] < speeds[
-        ramp_start + profile.RAMP_TICKS - 1
-    ]
-    assert math.isclose(
-        speeds[ramp_start + profile.RAMP_TICKS - 1], profile.BELT_SPEED
-    )
-    assert math.isclose(
-        speeds[ramp_start + profile.RAMP_TICKS], profile.BELT_SPEED
-    )
-    assert speeds[-1] == 0.0
-    assert math.isclose(
-        sum(speeds) * profile.FIXED_DT,
-        0.48,
-        rel_tol=0.0,
-        abs_tol=1.0e-12,
-    )
-    drop_end = profile.DROP_SETTLE_TICKS
-    assert profile.cycle_phase(0) == "drop_settle"
-    assert profile.cycle_phase(drop_end - 1) == "drop_settle"
-    assert profile.cycle_phase(drop_end) == "approach"
-    assert profile.cycle_phase(drop_end + profile.APPROACH_TICKS) == "grip"
-    assert profile.cycle_phase(
-        drop_end + profile.APPROACH_TICKS + profile.GRIP_SETTLE_TICKS
-    ) == "push"
-    assert profile.cycle_phase(
-        drop_end
-        + profile.APPROACH_TICKS
-        + profile.GRIP_SETTLE_TICKS
-        + profile.PUSH_TICKS
-    ) == "release"
-    open_settle_start = (
-        drop_end
-        + profile.APPROACH_TICKS
-        + profile.GRIP_SETTLE_TICKS
-        + profile.PUSH_TICKS
-        + profile.RELEASE_TICKS
-    )
-    assert profile.cycle_phase(open_settle_start) == "open_settle"
-    clear_start = open_settle_start + profile.OPEN_SETTLE_TICKS
-    assert profile.cycle_phase(clear_start) == "clear"
-    retract_start = clear_start + profile.ARM_CLEAR_TICKS
-    assert profile.cycle_phase(retract_start) == "retract"
-    assert profile.cycle_phase(profile.MANIPULATION_TICKS) == "settle"
-    assert profile.cycle_phase(profile.CYCLE_TICKS - 1) == "settle"
-    grip_fractions = [
-        profile.gripper_close_fraction_at_tick(tick)
-        for tick in range(profile.MANIPULATION_TICKS + 1)
-    ]
-    assert all(value == 0.0 for value in grip_fractions[:drop_end])
-    assert 0.0 < grip_fractions[drop_end] < 1.0
-    assert math.isclose(
-        grip_fractions[drop_end + profile.APPROACH_TICKS - 1],
-        1.0,
-    )
-    assert grip_fractions[-1] == 0.0
-    assert profile.arm_grip_fraction_at_tick(drop_end - 1) == 0.0
-    assert 0.0 < profile.arm_grip_fraction_at_tick(drop_end) < 1.0
-    assert profile.arm_grip_fraction_at_tick(
-        drop_end + profile.APPROACH_TICKS - 1
-    ) == 1.0
-    assert profile.arm_grip_fraction_at_tick(profile.MANIPULATION_TICKS) == 1.0
-    push_start = (
-        drop_end + profile.APPROACH_TICKS + profile.GRIP_SETTLE_TICKS
-    )
-    assert profile.arm_push_fraction_at_tick(push_start - 1) == 0.0
-    assert 0.0 < profile.arm_push_fraction_at_tick(push_start) < 1.0
-    assert profile.arm_push_fraction_at_tick(
-        push_start + profile.PUSH_TICKS - 1
-    ) == 1.0
-    assert profile.arm_clear_fraction_at_tick(
-        clear_start - 1
-    ) == 0.0
-    assert 0.0 < profile.arm_clear_fraction_at_tick(
-        clear_start
-    ) < 1.0
-    assert profile.arm_clear_fraction_at_tick(retract_start - 1) == 1.0
-    assert profile.arm_retract_fraction_at_tick(retract_start - 1) == 0.0
-    assert 0.0 < profile.arm_retract_fraction_at_tick(retract_start) < 1.0
-    assert profile.arm_retract_fraction_at_tick(
-        profile.MANIPULATION_TICKS - 1
-    ) == 1.0
-    assert tuple(len(target) for target in profile.ARM_GRIP_TARGETS) == (7, 7)
-    assert tuple(len(target) for target in profile.ARM_PUSH_TARGETS) == (7, 7)
-    assert tuple(len(target) for target in profile.ARM_CLEAR_TARGETS) == (7, 7)
-    assert tuple(len(target) for target in profile.ARM_RETRACT_TARGETS) == (7, 7)
-    assert profile.FINGER_GRIP_OFFSETS[0] < 0.0
-    assert profile.FINGER_GRIP_OFFSETS[1] > 0.0
-
-    for spec, expected_mass in zip(
-        _builder().SOFT_PACKAGE_SPECS,
-        profile.SOFT_PACKAGE_MASSES,
-        strict=True,
-    ):
-        if spec.get("model", "volumetric") == "thin_shell":
-            mesh = _builder()._soft_mailer_shell_mesh(
-                spec["size"], spec["cells"], seam_thickness=spec.get("seam_thickness"), edge_refinement=spec.get("edge_refinement", 1.), underside_wrinkle=spec.get("underside_wrinkle", .018)
-            )
-            mass = _surface_mass(mesh, spec["thickness"], spec["density"])
-        else:
-            mesh = _builder()._soft_package_mesh(
-                spec["size"],
-                spec["cells"],
-                side_rounding=float(spec.get("side_rounding", 0.0)),
-            )
-            mass = _tetrahedral_mass(mesh, spec["density"])
-        assert math.isclose(mass, expected_mass, rel_tol=1.0e-12)
-    assert math.isclose(
-        sum(profile.SOFT_PACKAGE_MASSES[:2]),
-        0.35,
-        rel_tol=1.0e-12,
-    )
 
 
 def test_quality_profiles_and_flip_push_schedule() -> None:
@@ -2583,8 +2001,8 @@ def test_runtime_uses_native_superdex_state_and_external_forces() -> None:
 
 def main() -> None:
     test_scene_is_reproducible()
-    test_legacy_scene_compiles_to_native_superdex_conveyor_contract()
-    test_legacy_scene_has_play_script_and_leap_hands()
+    test_leap_scene_compiles_to_native_superdex_conveyor_contract()
+    test_leap_scene_has_play_script_and_hand_geometry()
     test_quality_profiles_and_flip_push_schedule()
     test_native_rigid_conveyor_force_is_coulomb_limited()
     test_native_deformable_force_is_nodal_and_belt_local()
