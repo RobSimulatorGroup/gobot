@@ -5,6 +5,8 @@ numpy>=2,<3
 pillow>=10.1
 scipy>=1.11
 trimesh>=4.6.8
+# CPU RSL-RL adapter tests construct TensorDict observations.
+tensordict==0.13.0
 
 # The +cpu suffix keeps hosted CI free of the CUDA runtime dependency stack.
 --extra-index-url https://download.pytorch.org/whl/cpu
