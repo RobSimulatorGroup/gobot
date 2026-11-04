@@ -1067,7 +1067,8 @@ if(NOT SKBUILD)
             PATTERN "*.pyc" EXCLUDE
             PATTERN "*.py"
             PATTERN "*.pyi"
-            PATTERN "py.typed")
+            PATTERN "py.typed"
+            PATTERN "LICENSE-*")
     install(DIRECTORY "${GOBOT_PYTHON_CLI_PACKAGE_DIR}/"
             DESTINATION "gobot_cli" COMPONENT python
             FILES_MATCHING

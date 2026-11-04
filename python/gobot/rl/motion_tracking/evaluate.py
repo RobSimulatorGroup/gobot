@@ -1,74 +1,83 @@
-"""Frozen teacher inference and full-clip scoring shared by port comparisons."""
+"""Complete-clip evaluation with the pinned reference's queue and return metric."""
 from __future__ import annotations
+from copy import deepcopy
+import json
+from pathlib import Path, PosixPath
 import torch
-from gobot.rl.supermimic import networks
-from gobot.rl.supermimic.geometry import unflatten_state
-from gobot.rl.supermimic.contracts import SUPERMIMIC_STATE_KEY, SUPERMIMIC_TRANSITION_KEY
+from gobot.rl.supermimic.policy import Policy, PolicyCfg
+from .env import MotionTrackingEnv
+from .training import FORMAT
+from .convert import digest
+from .identity import source_identity
 
 
-def load_policy(env, checkpoint, device=None):
-    mdp, args = env.supermimic_mdp, checkpoint['args']
-    if int(args['goal_frames']) != env.cfg.goal_frames:
-        raise ValueError('checkpoint future-goal protocol differs from the environment')
-    networks.AMP_DTYPE = torch.bfloat16 if args.get('amp', 'none') == 'bf16' else None
-    policy = networks.Policy(mdp.obs_dim, mdp.goal_frame_dim*int(args['goal_frames']),
-        hist=int(args['hist']), z_dim=int(args['z_dim']), num_joints=mdp.num_joints,
-        hidden=tuple(args.get('test_hidden_dims') or args['policy_hidden'])).to(device or env.device)
-    policy.load_state_dict(checkpoint['pi'], strict=True)
-    return policy.eval()
+def load_policy(checkpoint, device='cpu', *, release=False):
+    if release:
+        expected='0527bab674556f48eaa7d3a27d650d1d14986019fc982d8acecbf6da75bc5ea6'
+        if digest(checkpoint)!=expected:
+            raise ValueError('release evaluation requires the pinned e8 checkpoint SHA256')
+        with torch.serialization.safe_globals([PosixPath,(PosixPath,'pathlib.PosixPath')]):
+            ck=torch.load(checkpoint,map_location='cpu',weights_only=True)
+    else:
+        ck=torch.load(checkpoint,map_location='cpu',weights_only=True)
+        if ck.get('format')!=FORMAT:
+            raise ValueError('expected Gobot SuperMimic-Reproduced checkpoint; use --release for the pinned public checkpoint')
+    policy=Policy(PolicyCfg(**ck['config']['policy'])).to(device).eval()
+    policy.load_state_dict(ck['policy'],strict=True)
+    return policy,ck['config']
 
 
-@torch.inference_mode()
-def evaluate(env, checkpoint, *, max_steps=None, progress=None, start_offset=0, device=None):
-    """Each lane evaluates one clip; early truncation cannot count as completion."""
-    mdp, args = env.supermimic_mdp, checkpoint['args']
-    motion = mdp.motion
-    count = len(motion.names)
-    if env.num_envs != count:
-        raise ValueError('evaluation requires exactly one environment per clip')
-    if max_steps is not None and max_steps <= 0 or start_offset < 0:
-        raise ValueError('invalid evaluation duration or start offset')
-    frames = motion.clip_start+start_offset
-    if bool((frames>=motion.clip_end).any()):
-        raise ValueError('evaluation offset exceeds one or more clips')
-    policy = load_policy(env, checkpoint, device)
-    policy_device = next(policy.parameters()).device
-    _, info = env.reset_to_frames(frames)
-    current = info[SUPERMIMIC_STATE_KEY]
-    returns = torch.zeros(count, device=env.device)
-    steps = torch.zeros(count, dtype=torch.long, device=env.device)
-    done = torch.zeros(count, dtype=torch.bool, device=env.device)
-    failed = torch.zeros_like(done)
-    history = None
-    iteration = 0
-    while not bool(done.all()):
-        obs = mdp.obs(unflatten_state(current['s']),current['a_prev'],current['xi'],current['f'])
-        history = obs[:, None].repeat(1,int(args['hist']),1) if history is None else torch.cat((history[:,1:],obs[:,None]),1)
-        goal = mdp.goal(current['f'],int(args['goal_frames']))
-        action = policy(history.to(policy_device),goal.to(policy_device)).to(env.device)
-        state = env.step(action)
-        transition = state.info[SUPERMIMIC_TRANSITION_KEY]
-        alive = ~done
-        if not bool(torch.isfinite(transition['s1']).all() and torch.isfinite(transition['r']).all()):
-            raise FloatingPointError('non-finite physical state or tracking reward')
-        returns += torch.where(alive,transition['r'],0.)
-        steps += alive
-        failed |= alive & transition['term']
-        done |= alive & transition['done']
-        current = state.info[SUPERMIMIC_STATE_KEY]
-        iteration += 1
-        if progress and (iteration % 100 == 0 or bool(done.all())):
-            progress(iteration, steps, failed)
-        if max_steps is not None and iteration >= max_steps:
-            break
-    expected = motion.clip_len-1-start_offset
-    normalized = returns / (expected.float()*mdp.max_step_reward)
-    complete = (steps>=expected)&~failed
-    per_clip = {name:{'norm_return':float(normalized[i]), 'steps':int(steps[i]),
-        'expected_steps':int(expected[i]),'failed':bool(failed[i]),'full_clip':bool(complete[i]) and start_offset==0,
-        'window_complete':bool(complete[i]),'failure_time_s':(start_offset+int(steps[i]))*.02 if failed[i] else None}
-        for i,name in enumerate(motion.names)}
-    return {'protocol':'g1_tracking_deterministic_v1' if env.cfg.deterministic else 'g1_tracking_v1','start_offset':start_offset,'screening':max_steps is not None or start_offset!=0,
-            'norm_return':float(normalized.mean()),'norm_return_framew':float(returns.sum()/(expected.sum()*mdp.max_step_reward)),
-            'n_failed':int(failed.sum()),'n_full_clips':int(complete.sum()) if start_offset==0 else 0,
-            'frame_coverage':float(steps.sum()/expected.sum()), 'per_clip':per_clip}
+def summarize(rows):
+    n,steps=len(rows),sum(r['steps'] for r in rows)
+    return {'clips':n,'failed':sum(r['failed'] for r in rows),
+            'mean_norm_return':sum(r['norm_return'] for r in rows)/max(n,1),
+            'step_weighted_norm_return':sum(r['norm_return']*r['steps'] for r in rows)/max(steps,1)}
+
+
+@torch.no_grad()
+def benchmark(cfg,policy):
+    cfg=deepcopy(cfg)
+    cfg.env.obs_noise=cfg.env.reset_noise=cfg.env.domain_randomization=False
+    cfg.env.action_noise_std=0.
+    cfg.env.sampling_mode='start'
+    cfg.env.compact_library=False
+    cfg.data.library=None
+    cfg.env.episode_length_s=1.e5
+    source=source_identity()
+    env=MotionTrackingEnv(cfg)
+    try:
+        lib=env.library
+        if env.num_envs>lib.num_clips:
+            raise ValueError('evaluation num_envs must not exceed the number of selected clips')
+        current=env.ids.clone(); nxt=current+env.num_envs
+        obs,_=env.reset(frames=lib.clip_start[current])
+        env.forced_frame[:]=lib.clip_start[nxt.clamp_max(lib.num_clips-1)]
+        active=torch.ones(env.num_envs,dtype=torch.bool,device=env.device)
+        returns=torch.zeros(env.num_envs,device=env.device)
+        steps=torch.zeros_like(current); sums={}; results={}
+        control_steps=0
+        while len(results)<lib.num_clips:
+            obs,reward,term,timeout,info=env.step(policy(obs['policy'],obs['goal']),record=False)
+            returns+=reward;steps+=1
+            control_steps+=1
+            if control_steps%1000==0:
+                print(json.dumps({'evaluation_control_steps':control_steps,'completed_clips':len(results)}),flush=True)
+            for key,value in info['reward_terms'].items():
+                sums[key]=sums.get(key,torch.zeros_like(value))+value
+            ids=((term|timeout)&active).nonzero().flatten()
+            for e in ids.tolist():
+                ci=int(current[e]);st=int(steps[e])
+                results[ci]={'name':lib.clips[ci].name,'frames':lib.clips[ci].length,'steps':st,
+                    'norm_return':float(returns[e])/(.1*st),'failed':bool(term[e]),'fail_step':st if term[e] else -1,
+                    'terms':{k:float(v[e])/st for k,v in sums.items() if k!='total'}}
+                print(json.dumps({'evaluated':len(results),'total':lib.num_clips,**results[ci]}),flush=True)
+            current[ids]=nxt[ids];nxt[ids]+=env.num_envs
+            active[ids[current[ids]>=lib.num_clips]]=False
+            env.forced_frame[ids]=lib.clip_start[nxt[ids].clamp_max(lib.num_clips-1)]
+            returns[ids]=0;steps[ids]=0
+            for value in sums.values():value[ids]=0
+        rows=[results[i] for i in range(lib.num_clips)]
+        return {'protocol':'supermimic_reproduced_complete_clips_v1','summary':summarize(rows),'clips':rows,
+                'physics_digest':env.batch.artifact.digest,'source_sha256':source,'data':[(p.name,digest(p)) for p in env.files]}
+    finally:
+        env.close()

@@ -1,294 +1,277 @@
-"""Motion tracking on scene-compiled CPU/Warp articulation batches."""
+"""SuperMimic-Reproduced task on a scene-authored Gobot articulation batch.
+
+The control clock, reward/reference order, episode sampler and terminal replay
+rows follow the pinned reference. Simulator access stays behind ArticulationBatch.
+"""
 from __future__ import annotations
+
 import json
-import re
-from dataclasses import asdict
+import math
 from pathlib import Path
+
 import torch
-import numpy as np
-from gobot.sim.providers.base import RobotBatchSpec
+
 from gobot.rl.articulation import ArticulationBatch
-from gobot.rl.batch import BatchEnvState
-from gobot.rl.spec import ObservationSpec, ActionSpec, SpecField
 from gobot.rl.kinematics import SceneKinematics
-from gobot.rl.experiment_identity import canonical_digest, file_digest
-from gobot.rl.supermimic.geometry import flatten_state, mat_to_quat, quat_to_mat, so3_exp
-from gobot.rl.supermimic.contracts import SUPERMIMIC_STATE_KEY, SUPERMIMIC_TRANSITION_KEY
-from .config import MotionTrackingCfg
-from .motion import MotionLib, BIN_FRAMES
-from .mdp import MDP, MAX_STEP_REWARD
-from .robot import G1_JOINT_NAMES, TRACKED_BODIES
+from gobot.rl.spec import ObservationSpec, ActionSpec, SpecField
+from gobot.sim.providers.base import RobotBatchSpec
+from gobot.rl.supermimic.heads import AnalyticHeads, OBS_TERMS, analytic_observation, anchor_relative_obs, flatten_history_term_major
+from gobot.rl.supermimic.motion_library import MotionLibrary, discover_npz
+from gobot.rl.supermimic.replay import ReplayBuffer
+from gobot.rl.supermimic.rewards import reanchor_reference, tracking_reward_terms
+from gobot.rl.supermimic.rotations import quat_apply, quat_apply_inverse, quat_mul, quat_normalize
+from gobot.rl.supermimic.rollout import OBS_NOISE_HALF, ANCHOR_NOISE_HALF
+from gobot.rl.supermimic.sampler import ReturnSampler, SamplerCfg
+from gobot.rl.supermimic.wm_trainer import reference_at
+from .kinematics import SceneStateKinematics
+
+
+def euler_quat(angles):
+    half = angles * .5
+    c, s = half.cos(), half.sin()
+    return torch.stack((c[:,0]*c[:,1]*c[:,2]+s[:,0]*s[:,1]*s[:,2],
+                        s[:,0]*c[:,1]*c[:,2]-c[:,0]*s[:,1]*s[:,2],
+                        c[:,0]*s[:,1]*c[:,2]+s[:,0]*c[:,1]*s[:,2],
+                        c[:,0]*c[:,1]*s[:,2]-s[:,0]*s[:,1]*c[:,2]), -1)
 
 
 class MotionTrackingEnv:
-    """Reference tracking with scene-bound physics and explicit randomization."""
-    def __init__(self, cfg: MotionTrackingCfg, *, num_envs=1, backend='mujoco-cpu', device=None,
-                 seed=42, capture_graphs=True):
-        self.cfg, self.num_envs = cfg, int(num_envs)
-        profile = json.loads((Path(cfg.project_path)/cfg.robot_profile).read_text())
-        self.profile = profile
-        self.joint_names = tuple(profile['joint_names'])
-        if self.joint_names != tuple(G1_JOINT_NAMES):
-            raise ValueError('reference G1 control order differs from the authored profile')
-        files = [str(Path(path).resolve()) for path in cfg.motion_files]
-        if cfg.split != 'coverage40':
-            allowed = {'train': (1,2,3), 'validation': (4,), 'holdout': (5,)}[cfg.split]
-            for path in files:
-                match = re.search(r'subject(\d+)', Path(path).stem)
-                if match is None or int(match.group(1)) not in allowed:
-                    raise ValueError(f'motion {path} violates split {cfg.split}')
-        self.batch = ArticulationBatch(project_path=cfg.project_path, scene_path=cfg.scene_path,
-            spec=RobotBatchSpec(cfg.robot_name, cfg.base_link, self.joint_names, tuple(TRACKED_BODIES)),
-            num_envs=self.num_envs, backend=backend, device=device, physics_dt=cfg.physics_dt,
-            decimation=cfg.decimation, solver_settings=profile['solver_settings'],
-            contact_links=cfg.contact_links, capture_graphs=capture_graphs,
-            sliding_friction=None if cfg.randomization.enabled else 1.0, deterministic=cfg.deterministic)
+    def __init__(self, cfg):
+        self.cfg, self.num_envs = cfg, cfg.env.num_envs
+        cfg.validate()
+        torch.backends.cuda.matmul.fp32_precision = "tf32"
+        torch.backends.cudnn.fp32_precision = "tf32"
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
+        self.profile = json.loads((Path(cfg.project)/'assets/supermimic/robot_profile.json').read_text())
+        p = self.profile
+        if p.get('schema_version') != 2:
+            raise ValueError('prepare the scene from the pinned SuperMimic-Reproduced export first')
+        self.joint_names, self.body_names = tuple(p['joint_names']), tuple(p['tracked_links'])
+        self.batch = ArticulationBatch(project_path=cfg.project, scene_path=cfg.scene,
+            spec=RobotBatchSpec(p['robot_name'], p['base_link'], self.joint_names, self.body_names),
+            num_envs=self.num_envs, backend=cfg.backend, device=cfg.device,
+            physics_dt=p['physics_dt'], decimation=p['decimation'], solver_settings=p['solver_settings'],
+            capture_graphs=cfg.capture_graphs, deterministic=cfg.deterministic,
+            nconmax=cfg.nconmax, njmax=cfg.njmax)
+        try:
+            self._initialize()
+        except BaseException:
+            self.batch.close()
+            raise
+
+    def _initialize(self):
+        cfg, p = self.cfg, self.profile
         self.device = self.batch.device
         self.step_dt = self.batch.control_dt
-        self.generator = torch.Generator(device=self.device).manual_seed(seed)
-        self.state = None
-        try:
-            kin = SceneKinematics(self.batch.snapshot, robot_name=cfg.robot_name, base_link=cfg.base_link,
-                joint_names=self.joint_names, tracked_links=TRACKED_BODIES, device=self.device)
-            motion = MotionLib(files, kin, self.device, src_fps=cfg.source_fps)
-            self.default_q = torch.tensor(profile['default_joint_position'], device=self.device)
-            self.action_scale = torch.tensor(profile['action_scale'], device=self.device)
-            self.supermimic_mdp = MDP(kin, motion, self.default_q)
-            self.f = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-            self.xi = torch.zeros((self.num_envs, 33), device=self.device); self.xi[:,0] = 1.
-            self.a_prev = torch.zeros((self.num_envs, 29), device=self.device)
-            self.ep_step = torch.zeros_like(self.f)
-            self.ep_ret = torch.zeros(self.num_envs, device=self.device)
-            self.ep_disc_ret = torch.zeros_like(self.ep_ret)
-            self.start_bin = torch.zeros_like(self.f)
-            self.bin_G = torch.zeros(motion.num_bins, device=self.device)
-            self.bin_w_avg = torch.full_like(self.bin_G, 1/motion.num_bins)
-            self._task_signature = canonical_digest({
-                'config':{k:v for k,v in asdict(cfg).items() if k not in ('project_path','motion_files')},
-                'data':[(Path(path).name,file_digest(path)) for path in files],
-                'physics':self.batch.artifact.digest,'kinematics':kin.digest,
-            })
-            if cfg.randomization.enabled:
-                self._sample_startup_context()
-                self._apply_physics_context()
-            self.observation_spec = ObservationSpec('g1_tracking_proprio_v1', (
-                SpecField('joint_position_offset',29,'rad'), SpecField('joint_velocity',29,'rad/s'),
-                SpecField('base_angular_velocity_body',3,'rad/s'), SpecField('projected_gravity',3),
-                SpecField('previous_action',29), SpecField('reference_orientation_6d',6)))
-            self.goal_observation_spec = ObservationSpec('g1_tracking_future_v1', (SpecField('future',73*cfg.goal_frames),))
-            self.action_spec = ActionSpec('g1_tracking_position_offset_v1',
-                tuple(SpecField(name,1,'normalized_offset') for name in self.joint_names),
-                lower=-np.finfo(np.float32).max, upper=np.finfo(np.float32).max)
-            self.reset()
-            self.critic_observation_spec = ObservationSpec('g1_tracking_critic_v1',
-                (SpecField('tracking_features_and_future',self.state.obs['critic'].shape[-1]),))
-        except BaseException:
-            self.batch.close(); raise
+        self.max_episode_steps = math.ceil(cfg.env.episode_length_s/self.step_dt)
+        self.task_version = 'supermimic_reproduced_g1_v1'
+        self.observation_spec = ObservationSpec(self.task_version + '_policy',
+            tuple(SpecField(name, cfg.policy.history*dim) for name,dim in OBS_TERMS))
+        goal_fields = (SpecField('future_frames', cfg.env.future_frames*68),)
+        if cfg.env.anchor_obs:
+            goal_fields += (SpecField('anchor_pose',9),)
+        self.goal_observation_spec = ObservationSpec(self.task_version + '_goal',goal_fields)
+        self.action_spec = ActionSpec(self.task_version + '_action',
+            tuple(SpecField(name,1,'scaled joint-position offset') for name in self.joint_names),
+            lower=-float('inf'),upper=float('inf'))
+        self.default_q = torch.tensor(p['default_joint_position'], device=self.device)
+        self.action_scale = torch.tensor(p['action_scale'], device=self.device)
+        scene_fk = SceneKinematics(self.batch.snapshot, robot_name=p['robot_name'], base_link=p['base_link'],
+            joint_names=self.joint_names, tracked_links=self.body_names, device=self.device)
+        self.fk = SceneStateKinematics(scene_fk)
+        middle, half = (scene_fk.q_lo+scene_fk.q_hi)/2, (scene_fk.q_hi-scene_fk.q_lo)*p['soft_joint_limit_factor']/2
+        self.soft_limits = torch.stack((middle-half, middle+half), -1)
+        self.heads = AnalyticHeads(self.fk, self.body_names, p['anchor_link'], p['base_link'], self.soft_limits, self.default_q)
+        self.files = [Path(cfg.data.library)] if cfg.data.library else discover_npz(
+            cfg.data.npz_dir, names=cfg.data.clips, limit=cfg.data.limit, manifest=cfg.data.manifest)
+        self.library = MotionLibrary(self.files, self.body_names, self.default_q, self.device,
+            compact=bool(cfg.data.library or cfg.env.compact_library), fk=self.fk)
+        if bool((self.library.clip_len < 3).any()):
+            raise ValueError('tracking clips must contain at least three 50 Hz frames')
+        self.sampler = ReturnSampler(self.library, self.num_envs, self.max_episode_steps, SamplerCfg(sampling_mode=cfg.env.sampling_mode))
+        self.buffer = ReplayBuffer(self.num_envs, cfg.env.replay_capacity, 71, 29, 33, self.device)
+        self.ids = torch.arange(self.num_envs, device=self.device)
+        self.frame = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.clip_end = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.ep_step = torch.zeros_like(self.frame)
+        self.ep_start = torch.ones_like(self.clip_end)
+        self.pending_reset = torch.zeros_like(self.clip_end)
+        self.action = torch.zeros(self.num_envs, 29, device=self.device)
+        self._reset_quat = torch.zeros(self.num_envs, 4, device=self.device)
+        self.xi = torch.zeros(self.num_envs, 33, device=self.device)
+        self.xi[:,0] = 1.
+        self.history = torch.zeros(cfg.policy.history, self.num_envs, 93, device=self.device)
+        self.obs_noise_half = OBS_NOISE_HALF.to(self.device)
+        self.anchor_noise_half = ANCHOR_NOISE_HALF.to(self.device)
+        self.forced_frame = torch.full_like(self.frame, -1)
+        if cfg.env.domain_randomization:
+            self.xi[:,30:33] = (2*torch.rand(self.num_envs, 3, device=self.device)-1)*torch.tensor([.025,.05,.05], device=self.device)
+        self._apply_physics_context(include_com=True)
 
-    def _uniform(self, shape, low, high):
-        lower=torch.as_tensor(low,device=self.device,dtype=torch.float32)
-        upper=torch.as_tensor(high,device=self.device,dtype=torch.float32)
-        return lower+(upper-lower)*torch.rand(shape,device=self.device,generator=self.generator)
-
-    def _sample_startup_context(self):
-        cfg=self.cfg.randomization
-        self.xi[:,0]=self._uniform((self.num_envs,),*cfg.sliding_friction)
-        self.xi[:,30:33]=self._uniform((self.num_envs,3),cfg.com_offset_min,cfg.com_offset_max)
-
-    def _apply_physics_context(self):
-        if not self.cfg.randomization.enabled:
-            return
-        robot=next(r for r in self.batch.snapshot['robots'] if r['name']==self.cfg.robot_name)
-        friction={}
-        for link in robot['links']:
-            for shape in link.get('shapes',()):
-                if shape['disabled']:
-                    continue
-                material=shape['material']
-                value=torch.empty((self.num_envs,3),device=self.device)
-                value[:,0]=self.xi[:,0]
-                value[:,1]=material['torsional_friction'];value[:,2]=material['rolling_friction']
-                friction[shape['name']]=value
-        self.batch.configure_physics(
-            link_center_of_mass_offsets={self.cfg.randomization.torso_link:self.xi[:,30:33]},
-            shape_friction=friction)
-
-    def training_state_dict(self):
-        """Resume preserves sampling/model context and starts fresh episodes."""
-        return {'version':1,'signature':self._task_signature,'num_envs':self.num_envs,
-                'backend':self.batch.backend,'rng_device':torch.device(self.device).type,
-                'generator':self.generator.get_state().cpu().clone(),
-                'context':self.xi.detach().cpu().clone(),
-                'bin_G':self.bin_G.detach().cpu().clone(),'bin_w_avg':self.bin_w_avg.detach().cpu().clone(),
-                'resume_episodes':'fresh'}
-
-    def load_training_state_dict(self, saved):
-        if saved.get('version')!=1 or saved.get('signature')!=self._task_signature:
-            raise ValueError('tracking checkpoint configuration/data changed; use an explicit fork')
-        if saved.get('num_envs')!=self.num_envs or saved.get('backend')!=self.batch.backend or saved.get('rng_device')!=torch.device(self.device).type:
-            raise ValueError('tracking resume requires the same batch size and backend')
-        replacements={}
-        for name,target in (('context',self.xi),('bin_G',self.bin_G),('bin_w_avg',self.bin_w_avg)):
-            value=torch.as_tensor(saved[name],device=self.device,dtype=target.dtype)
-            if value.shape!=target.shape or not bool(torch.isfinite(value).all()):
-                raise ValueError(f'invalid tracking checkpoint field {name}')
-            replacements[name]=value
-        if bool((replacements['bin_w_avg']<0).any()) or not bool(replacements['bin_w_avg'].sum()>0):
-            raise ValueError('invalid adaptive frame-sampling distribution')
-        context=replacements['context']
-        if self.cfg.randomization.enabled:
-            dr=self.cfg.randomization
-            for values,low,high in ((context[:,0],dr.sliding_friction[0],dr.sliding_friction[1]),
-                                    (context[:,1:30],dr.joint_offset[0],dr.joint_offset[1]),
-                                    (context[:,30:33],dr.com_offset_min,dr.com_offset_max)):
-                if bool(((values<torch.as_tensor(low,device=self.device)-1.e-6)|
-                         (values>torch.as_tensor(high,device=self.device)+1.e-6)).any()):
-                    raise ValueError('tracking context is outside configured randomization ranges')
-        elif not bool(torch.all(context[:,0]==1) and torch.all(context[:,1:]==0)):
-            raise ValueError('fixed-physics checkpoint has randomized context')
-        generator_state=saved['generator'].cpu()
-        probe_generator=torch.Generator(device=self.device)
-        probe_generator.set_state(generator_state)
-        self.xi.copy_(replacements['context']);self.bin_G.copy_(replacements['bin_G'])
-        self.bin_w_avg.copy_(replacements['bin_w_avg'])
-        self.generator.set_state(generator_state)
-        self._apply_physics_context()
-        self.reset()
+    def _apply_physics_context(self, *, include_com=False):
+        # Only the 14 foot shapes change friction; torso COM is sampled once.
+        robot = next(r for r in self.batch.snapshot['robots'] if r['name']==self.profile['robot_name'])
+        shapes = {s['name']:s for link in robot['links'] for s in link.get('shapes', ())}
+        friction = {}
+        for name in self.profile['foot_shapes']:
+            m = shapes[name]['material']
+            v = torch.empty(self.num_envs, 3, device=self.device)
+            v[:,0], v[:,1], v[:,2] = self.xi[:,0], m['torsional_friction'], m['rolling_friction']
+            friction[name] = v
+        kwargs = {'shape_friction':friction}
+        if include_com:
+            kwargs['link_center_of_mass_offsets'] = {self.profile['anchor_link']:self.xi[:,30:33]}
+        self.batch.configure_physics(**kwargs)
 
     def physical_state(self):
-        state = self.batch.read_state()
-        return (state.base_pose[:,:3], quat_to_mat(state.base_pose[:,(6,3,4,5)]),
-                state.base_velocity[:,:3], state.base_velocity[:,3:], state.joint_position, state.joint_velocity)
+        r = self.batch.read_state()
+        q = r.base_pose[:, (6,3,4,5)]
+        return torch.cat((r.base_pose[:,:3], q, r.joint_position, r.base_velocity[:,:3],
+                          quat_apply_inverse(q, r.base_velocity[:,3:]), r.joint_velocity), -1)
 
-    def _current(self):
-        return {'s': flatten_state(self.physical_state()).detach().clone(), 'f': self.f.clone(),
-                'xi': self.xi.clone(), 'a_prev': self.a_prev.clone(), 'ep_step': self.ep_step.clone()}
-
-    def _observations(self):
-        mdp = self.supermimic_mdp
+    def learning_state(self):
         state = self.physical_state()
-        goal = mdp.goal(self.f, self.cfg.goal_frames)
-        actor = mdp.obs(state, self.a_prev, self.xi, self.f)
-        critic = torch.cat((mdp.critic_features(state,self.f,mdp.normalize_context(self.xi)),goal),-1)
-        return {'actor': actor, 'goal': goal, 'critic': critic}
+        # Compact reference quaternions have fp16 norm error. mjlab replay stores
+        # that raw reset qpos, while its body observations use normalized xquat.
+        state[self.ep_start,3:7] = self._reset_quat[self.ep_start]
+        return state
 
-    def _ids(self, env_ids):
-        if env_ids is None:
-            return torch.arange(self.num_envs,device=self.device)
-        ids = torch.as_tensor(env_ids,device=self.device)
-        if ids.dtype == torch.bool:
-            if ids.shape != (self.num_envs,): raise ValueError('invalid reset mask')
-            ids = ids.nonzero().flatten()
-        elif ids.dtype not in (torch.int32,torch.int64):
-            raise TypeError('reset indices must be integer or boolean')
-        ids = ids.long()
-        if ids.ndim != 1 or ids.unique().numel()!=ids.numel() or bool(((ids<0)|(ids>=self.num_envs)).any()):
-            raise ValueError('invalid reset indices')
-        return ids
+    def _before_substep(self, substep):
+        if substep == self.batch.decimation-1:
+            self.batch.refresh_kinematics()
+            self._lag_state = self.physical_state()
 
-    def _sample_frames(self, count):
-        motion = self.supermimic_mdp.motion
-        soft = torch.softmax(-25*self.bin_G/(MAX_STEP_REWARD/(1-self.cfg.gamma)),0)
-        self.bin_w_avg.mul_(.999).add_(soft,alpha=.001)
-        probabilities = .5/motion.num_bins + .4*soft + .1*self.bin_w_avg/self.bin_w_avg.sum()
-        bins = torch.multinomial(probabilities,count,replacement=True,generator=self.generator)
-        start = motion.bin_start[bins]
-        end = torch.minimum(start+BIN_FRAMES,motion.clip_end[motion.bin_clip[bins]])
-        return start+(torch.rand(count,device=self.device,generator=self.generator)*(end-start)).long()
+    def _write_reset(self, ids, frame, noise):
+        self.frame[ids] = frame
+        # mjlab reset events run before command resampling writes the pose.
+        if self.cfg.env.domain_randomization:
+            self.xi[ids,1:30] = (2*torch.rand(len(ids),29,device=self.device)-1)*.01
+            self.xi[ids,0] = .3+.9*torch.rand(len(ids),device=self.device)
+            self._apply_physics_context()
+        r = self.library.ref(frame)
+        pos, ori, lin, ang, q, qd = (r.root_pos_w.clone(), r.root_quat_w.clone(), r.root_lin_vel_w.clone(),
+                                   r.root_ang_vel_w.clone(), r.joint_pos.clone(), r.joint_vel.clone())
+        if noise:
+            pose = (2*torch.rand(len(ids), 6, device=self.device)-1)*torch.tensor([.05,.05,.01,.1,.1,.2],device=self.device)
+            vel = (2*torch.rand(len(ids), 6, device=self.device)-1)*torch.tensor([.5,.5,.2,.52,.52,.78],device=self.device)
+            pos += pose[:,:3]
+            ori = quat_mul(euler_quat(pose[:,3:]), ori)
+            lin += vel[:,:3]
+            ang += vel[:,3:]
+            q += (2*torch.rand_like(q)-1)*.1
+        self._reset_quat[ids] = ori
+        # Preserve reference body angular coordinates while providing a unit
+        # orientation to the backend-neutral scene reset API.
+        angular_body = quat_apply_inverse(ori, ang)
+        ori = quat_normalize(ori)
+        ang = quat_apply(ori, angular_body)
+        q = q.clamp(self.soft_limits[:,0], self.soft_limits[:,1])
+        state = self.batch.read_state()
+        bp, bv = state.base_pose.clone(), state.base_velocity.clone()
+        jp, jv, targets = state.joint_position.clone(), state.joint_velocity.clone(), state.joint_control.clone()
+        bp[ids] = torch.cat((pos, ori[:,(1,2,3,0)]),-1)
+        bv[ids] = torch.cat((lin, ang),-1)
+        jp[ids], jv[ids] = q, qd
+        targets[ids] = 0.  # mjlab resets actuator data before processing the next action.
+        mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        mask[ids] = True
+        self.batch.reset(mask, base_pose=bp, base_velocity=bv, joint_position=jp, joint_velocity=jv, targets=targets)
+        self.action[ids] = 0.
+        self.ep_step[ids] = 0
+        self.ep_start[ids] = True
+        self.clip_end[ids] = False
+        self.pending_reset[ids] = False
+        self.sampler.ep_len[ids] = 0
+
+    def _advance(self):
+        last = self.library.last_frame_of(self.frame)
+        self.frame += 1
+        self.clip_end |= self.frame > last
+        self.frame.copy_(torch.minimum(self.frame,last))
+        self.ref = reference_at(self.library, self.frame)
+        i = self.heads.anchor_index
+        anchor = self.batch.read_state().link_pose[:,i]
+        self.relative_pose = reanchor_reference(self.ref.body_pos_w, self.ref.body_quat_w,
+            self.ref.body_pos_w[:,i], self.ref.body_quat_w[:,i], anchor[:,:3], anchor[:,(6,3,4,5)])
+
+    def _observe(self, reset_ids):
+        s = self.physical_state()
+        obs = analytic_observation(s, self.action, self.xi, self.default_q)
+        if self.cfg.env.obs_noise:
+            obs += (2*torch.rand_like(obs)-1)*self.obs_noise_half
+        self.history = torch.cat((self.history[1:], obs[None]),0)
+        self.history[:,reset_ids] = obs[reset_ids][None]
+        goal = self.library.goal_window(self.frame, self.cfg.env.future_frames)
+        if self.cfg.env.anchor_obs:
+            i = self.heads.anchor_index
+            pose = self.batch.read_state().link_pose[:,i]
+            anchor = anchor_relative_obs(pose[:,:3], pose[:,(6,3,4,5)], self.ref.body_pos_w[:,i], self.ref.body_quat_w[:,i])
+            if self.cfg.env.obs_noise:
+                anchor += (2*torch.rand_like(anchor)-1)*self.anchor_noise_half
+            goal = torch.cat((goal, anchor),-1)
+        return {'policy':flatten_history_term_major(self.history), 'goal':goal}
 
     @torch.no_grad()
-    def reset(self, env_ids=None, *, seed=None, frames=None):
-        ids = self._ids(env_ids)
-        if not ids.numel() and self.state is not None:
-            return self.state.obs, self.state.info
-        if seed is not None:
-            self.generator.manual_seed(seed)
-        if self.cfg.randomization.enabled:
-            self.xi[ids,1:30]=self._uniform((len(ids),29),*self.cfg.randomization.joint_offset)
-        motion = self.supermimic_mdp.motion
+    def reset(self, *, frames=None):
         if frames is None:
-            frames = motion.clip_start[ids % len(motion.names)] if self.cfg.eval_mode else self._sample_frames(len(ids))
-        else:
-            frames = torch.as_tensor(frames,device=self.device)
-            if frames.dtype not in (torch.int32,torch.int64) or frames.shape != ids.shape:
-                raise ValueError('reset frames must be integer and match selected environments')
-            if bool(((frames<0)|(frames>=motion.num_frames)).any()):
-                raise ValueError('reset frames outside motion library')
-        self.f[ids] = frames
-        p,r,v,w,q,qd = (value.clone() for value in motion.ref_state(self.f))
-        if self.cfg.reset_noise and len(ids):
-            def noise(lo,hi,width):
-                low = torch.as_tensor(lo,device=self.device)
-                return low+(torch.as_tensor(hi,device=self.device)-low)*torch.rand((len(ids),width),device=self.device,generator=self.generator)
-            p[ids] += noise([-.05,-.05,-.01],[.05,.05,.01],3)
-            r[ids] = so3_exp(noise([-.1,-.1,-.2],[.1,.1,.2],3)) @ r[ids]
-            v[ids] += noise([-.5,-.5,-.2],[.5,.5,.2],3)
-            w[ids] += noise([-.52,-.52,-.78],[.52,.52,.78],3)
-            q[ids] += noise(-.1,.1,29)
-        q = q.clamp(self.supermimic_mdp.kin.q_lo,self.supermimic_mdp.kin.q_hi)
-        quaternion = mat_to_quat(r)
-        pose = torch.cat((p,quaternion[:,(1,2,3,0)]),-1)
-        mask = torch.zeros(self.num_envs,dtype=torch.bool,device=self.device); mask[ids] = True
-        self.batch.reset(mask,base_pose=pose,base_velocity=torch.cat((v,w),-1),
-                         joint_position=q,joint_velocity=qd,targets=q)
-        self.ep_step[ids] = 0; self.a_prev[ids] = 0
-        self.ep_ret[ids] = 0; self.ep_disc_ret[ids] = 0
-        self.start_bin[ids] = motion.frame_bin[frames]
-        self.state = BatchEnvState(self._observations(),torch.zeros(self.num_envs,device=self.device),
-            torch.zeros_like(mask),torch.zeros_like(mask),{SUPERMIMIC_STATE_KEY:self._current()})
-        return self.state.obs,self.state.info
-
-    def reset_to_frames(self, frames, env_ids=None):
-        return self.reset(env_ids,frames=frames)
-
-    def init_state(self):
-        if self.state is None: self.reset()
-        return self.state
-
-    def get_observations(self):
-        return self.state.obs
+            frames = self.sampler.sample(self.num_envs)
+        self._write_reset(self.ids, frames, self.cfg.env.reset_noise)
+        # Pinned command.compute advances once even on a freshly reset environment.
+        self._advance()
+        return self._observe(self.ids), {}
 
     @torch.no_grad()
-    def step(self, action):
-        action = torch.as_tensor(action,dtype=torch.float32,device=self.device)
-        if action.shape != self.a_prev.shape or not bool(torch.isfinite(action).all()):
-            raise ValueError('tracking actions must be finite and match joint order')
-        current = self._current()
-        mdp, motion = self.supermimic_mdp, self.supermimic_mdp.motion
-        self.batch.set_joint_targets(self.default_q+self.xi[:,1:30]+self.action_scale*action)
-        self.batch.step_control()
-        after = self.physical_state()
-        clip_end = motion.clip_end[motion.clip_id[self.f]]
-        next_frame = torch.minimum(self.f+1,clip_end)
-        reward = mdp.reward(after,next_frame,action,self.a_prev)
-        terminated = mdp.termination(after,next_frame)
-        truncated = (self.f+1>=clip_end)
-        if not self.cfg.eval_mode:
-            truncated |= self.ep_step+1>=self.cfg.max_episode_steps
-        done = terminated|truncated
-        transition = {**current,'s1':flatten_state(after).clone(),'a':action.clone(),
-                      'r':reward.clone(),'term':terminated.clone(),'done':done.clone()}
-        self.ep_disc_ret.add_(self.cfg.gamma**self.ep_step.float()*reward)
-        self.ep_ret.add_(reward); self.ep_step.add_(1)
-        self.f.copy_(next_frame); self.a_prev.copy_(action)
-        if not self.cfg.eval_mode and bool(done.any()):
-            lengths = self.ep_step[done].float()
-            boot = torch.where(terminated[done],0.,self.cfg.gamma**lengths*self.ep_ret[done]/lengths/(1-self.cfg.gamma))
-            bins = self.start_bin[done]
-            self.bin_G.index_put_((bins,),.8*self.bin_G[bins]+.2*(self.ep_disc_ret[done]+boot))
-            transition.update(ep_len=lengths.clone(),ep_ret_norm=self.ep_ret[done]/(lengths*MAX_STEP_REWARD))
-        final_observation = self._observations()
-        if self.cfg.autoreset and bool(done.any()):
-            self.reset(done)
-        self.state = BatchEnvState(self._observations(),reward,terminated,truncated,
-            {SUPERMIMIC_STATE_KEY:self._current(),SUPERMIMIC_TRANSITION_KEY:transition,
-             'final_observation':final_observation,'_final_observation':done,
-             'terminal_frames':next_frame.clone()},final_observation=final_observation)
-        return self.state
+    def step(self, action, *, autoreset=True, record=True):
+        if self.pending_reset.any():
+            raise RuntimeError('reset terminated environments before stepping')
+        if action.shape != self.action.shape or not torch.isfinite(action).all():
+            raise ValueError('actions must be finite [num_envs, 29] tensors')
+        s, xi, frame = self.learning_state(), self.xi.clone(), self.frame.clone()
+        previous = self.action.clone()
+        self.action.copy_(action)
+        executed = action + self.cfg.env.action_noise_std*torch.randn_like(action) if self.cfg.env.action_noise_std else action.clone()
+        self.batch.set_joint_targets(self.default_q + executed*self.action_scale - self.xi[:,1:30])
+        self.batch.step_control(before_substep=self._before_substep)
+        snext = self.physical_state()
+        # mjlab reward/termination read link kinematics before the final integration,
+        # while joint limits and replay read the final qpos/qvel.
+        bodies = self.heads.robot_bodies(self._lag_state)
+        terms = tracking_reward_terms(robot_body_pos_w=bodies['pos'], robot_body_quat_w=bodies['quat'],
+            robot_body_lin_vel_w=bodies['lin_vel'], robot_body_ang_vel_w=bodies['ang_vel'],
+            ref_body_pos_w=self.ref.body_pos_w, ref_body_quat_w=self.ref.body_quat_w,
+            ref_body_lin_vel_w=self.ref.body_lin_vel_w, ref_body_ang_vel_w=self.ref.body_ang_vel_w,
+            anchor_index=self.heads.anchor_index, action=action, prev_action=previous,
+            joint_pos=snext[:,7:36], soft_limits=self.soft_limits, cfg=self.heads.reward_cfg,
+            relative_body_pose=self.relative_pose)
+        reward = terms['total']
+        term = self.heads.terminated(self._lag_state, self.ref)
+        self.ep_step += 1
+        timeout = (self.ep_step >= self.max_episode_steps) | self.clip_end
+        done = term | timeout
+        done_ids = done.nonzero().flatten()
+        if record:
+            self.buffer.add(self.ids, s, action, executed, xi, reward, term.float(), frame,
+                self.library.frame_clip[frame], torch.zeros_like(done), self.ep_start)
+            self.ep_start[:] = False
+            if len(done_ids):
+                z = torch.zeros(len(done_ids),29,device=self.device)
+                self.buffer.add(done_ids, snext[done_ids], z, z, xi[done_ids], torch.zeros(len(done_ids),device=self.device),
+                    term[done_ids].float(), frame[done_ids], self.library.frame_clip[frame[done_ids]],
+                    torch.ones_like(done[done_ids]), torch.zeros_like(done[done_ids]))
+                self.buffer.end_episode(done_ids)
+        self.sampler.log_step(reward, frame)
+        if len(done_ids):
+            self.sampler.finalize(done_ids, term, self.clip_end)
+            if autoreset:
+                sampled = self.sampler.sample(len(done_ids))
+                sampled = torch.where(self.forced_frame[done_ids]>=0, self.forced_frame[done_ids], sampled)
+                self._write_reset(done_ids, sampled, self.cfg.env.reset_noise)
+            else:
+                self.pending_reset[done_ids] = True
+        self._advance()
+        obs = self._observe(done_ids if autoreset else self.ids[:0])
+        return obs, reward, term, timeout, {'reward_terms':terms, 'terminal_state':snext, 'target_frame':frame}
 
     def close(self):
         self.batch.close()
-
-
-def make_motion_tracking_env(cfg, **kwargs):
-    return MotionTrackingEnv(cfg, **kwargs)

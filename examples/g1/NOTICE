@@ -15,8 +15,14 @@ No Isaac Lab or UniLab runtime is imported by this Gobot task.
 
 AMP loss and style reward: Peng et al., "AMP: Adversarial Motion Priors for
 Stylized Physics-Based Character Control", SIGGRAPH 2021, equations 7-8.
-SuperMimic reference: Liao et al., arXiv:2610.28480, 2026. The world-model
-algorithm is not implemented here; it informed reference-data and contract checks.
+SuperMimic reference: Liao et al., arXiv:2610.28480, 2026.
+
+The reference-aligned numerical modules under python/gobot/rl/supermimic are
+adapted from CuboiLeo/SuperMimic-Reproduced,
+ba6105349069bf040f1fdad60873d13138d505a2, copyright (c) 2026 Yuxi Liu, MIT.
+Their license is included as LICENSE-SuperMimic-Reproduced in that package.
+Rotation primitives retain the Isaac Lab BSD-3-Clause notices from pinned
+mjlab; the complete notice is included as LICENSE-IsaacLab.
 
 Downloaded LAFAN1/G1 data remains a separate, untracked asset. Its source,
 revision, checksums, and license are retained in assets/motions/source.json.

@@ -1,0 +1,9 @@
+{
+  "run_name": "g1_bones_seed_s0",
+  "seed": 0,
+  "env": {"num_envs": 4096, "compact_library": true},
+  "wm_trainer": {"batch_size": 2048, "batches_per_update": 10, "lr": 0.0002},
+  "policy_trainer": {"batch_size": 2048, "lr": 0.0002, "critic_lr": 0.0002},
+  "schedule": {"total_iterations": 320000, "log_interval": 500, "checkpoint_interval": 4000},
+  "stop_iteration": 100000
+}

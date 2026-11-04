@@ -1,3 +1,7 @@
+For the built-in G1 **SuperMimic** trainer and task registry, see
+[the Gobot training framework](../../doc/gobot_training.md). The PPO/AMP workflows
+and isolated historical reference experiments below are separate tools.
+
 # G1 and Go1 natural locomotion
 
 Train headlessly from Gobot-authored robot and terrain scenes. G1 uses PPO with an
@@ -8,20 +12,6 @@ reference implementation and MuJoCo Warp for CUDA training.
 No new policy is admitted by the implementation or smoke tests alone. Existing
 bundled playback policies remain unchanged until candidates pass admission and
 visual review.
-
-## Full SuperMimic reference (2026-10-28)
-
-The separate `supermimic_reference.py` runner tests Uni-SuperMimic's complete
-world-model/BPTT pipeline with pinned physics and all 40 motion clips. It is not
-AMP. ModelScope asset preparation is provided by `reference_assets.py`; all assets
-are checksummed, including the existing 18 clips after newline normalization.
-See [reference configuration, validation, live status and limits](../../doc/supermimic_reference_status.md).
-The local full-network benchmark and checkpoint resume passed; the bounded formal
-reference run uses 512 environments and automatically evaluates full-clip coverage.
-A tracking checkpoint still requires separate velocity/terrain admission.
-`supermimic_video.py --watch --run-dir <run>` records fixed walking/running/sprinting
-windows every 15 minutes and on completion. The current video and next recording
-are listed in `<run>/videos/latest.json` and `watch_status.json`.
 
 ## Frozen v1 experiment workflow
 
@@ -204,9 +194,7 @@ independent evaluator on both backends. These small runs check correctness only.
 
 ## Gobot SuperMimic tracking
 
-The scene-authored port, randomized training, checkpoint recovery, frozen-actor
-forks and independent validation are available through `examples.g1.train_tracking`.
-Full-network smoke training has run in Gobot; full-library migration admission
-is still pending. See the [G1 tracking workflow](../g1/README.md),
-[measured port status](../../doc/supermimic_port_status.md), and
-[cluster job instructions](cluster/README.md).
+G1 tracking now uses the built-in SuperMimic-Reproduced implementation.
+See [the training workflow](../../doc/gobot_training.md) and
+[the measured alignment status](../../doc/supermimic_reproduced_progress.md).
+The four-GPU synchronized job is documented in [cluster/README.md](cluster/README.md).

@@ -1,9 +1,14 @@
-> The current G1/Go1 experiment workflow is in [shared locomotion training](../locomotion/README.md).
-> It adds speed-matched AMP, held-out validation, independent evaluation, bounded exploration,
-> admission-gated stages and portable training bundles. G1 task version 3 changes reward
-> semantics; old version-2 checkpoints are diagnostic artifacts, not silently resumed policies.
+# G1 training in Gobot
 
-# G1 motion-prior locomotion
+G1 motion tracking uses the built-in SuperMimic-Reproduced training framework.
+See [preparation, training, resume and complete-clip evaluation](../../doc/gobot_training.md),
+[the alignment plan](../../doc/supermimic_reproduced_alignment_plan.md), and
+[measured progress](../../doc/supermimic_reproduced_progress.md).
+
+The older Uni-SuperMimic tracking workflow has been removed. The independent
+PPO/AMP locomotion workflow below remains available.
+
+# PPO/AMP motion-prior locomotion
 
 This example trains a 29-action G1 using a human motion prior (AMP) and PPO.
 MuJoCo Warp runs the training batch; MuJoCo CPU is the state/control reference.
@@ -177,70 +182,3 @@ orderly checkpoint through the training process's SIGTERM handler. For a
 controlled tuning experiment, `--learning-rate`, `--schedule`, and
 `--reset-action-std` explicitly override restored settings and are recorded in
 that run's configuration.
-
-## Scene-authored SuperMimic tracking (experimental)
-
-`g1_29dof.jscn` and `g1_29dof_flat_scene.jscn` are separate from the hand-equipped
-velocity model above. The tracking implementation is in `gobot.rl.motion_tracking`
-and `gobot.rl.supermimic`; it has no UniLab runtime dependency. The scene owns mesh
-contacts, fixed links, mass/inertia and PD parameters. The plane is an authored
-`PlaneShape3D`, not a small box approximating infinite ground.
-
-Prepare from the already checksum-verified independent reference checkout:
-
-```bash
-uv run --no-sync python -m examples.g1.prepare_tracking
-```
-
-This copies the 40 motion CSVs and visual meshes, writes explicit subject splits,
-imports scene assets, and checks robot/world physics against the pinned source.
-Generated data lives in `assets/motions/tracking` and `assets/supermimic`.
-Preparation requires the native MJCF mesh/fixed-link/servo-damping fixes included
-with this workflow; rebuild Gobot after changing native code.
-
-Run a small CPU training check or frozen-checkpoint evaluation:
-
-```bash
-uv run --no-sync python -m examples.g1.tracking smoke-train \
-  --clips walk1_subject1 --iterations 3 --output /tmp/g1-tracking-smoke
-
-uv run --no-sync python -m examples.g1.tracking evaluate \
-  --checkpoint examples/locomotion/logs/supermimic_reference/g1_reference_s42_512/ckpt_012000.pt \
-  --backend mujoco-warp --output examples/locomotion/logs/tracking_port/candidate --hours .6
-```
-
-A smoke run uses small networks and fixed physical parameters, with optional reset
-noise. It validates learning/backward/checkpoint execution; it does not reproduce
-the reference's full physical randomization or admit a usable policy. Frozen
-inference keeps all actor normalization statistics unchanged. Teachers require
-10-frame proprioceptive history and future motion goals; velocity-policy manifests
-are not interchangeable with tracking manifests.
-
-`--max-steps` and `--start-offset` produce explicitly marked screening results.
-Full-clip fidelity requires every original frame, the original denominator, and
-the same checkpoint on reference 3.17 and Gobot 3.17. Reports contain per-clip
-failure time, source/data/physics identity and a separate teacher manifest.
-`tracking_compare` rejects shortened clips, mismatched checkpoint identities and
-new failures even when mean return improves.
-
-GPU entry points share `examples/g1/logs/gpu_budget.json`. A frozen authorization
-attached to this ledger takes precedence over larger CLI limits; a restart does
-not replenish the allowance. Evaluate physics-version changes in the isolated
-reference environment before attributing differences to Gobot. See
-[the implementation plan](../../doc/supermimic_gobot_implementation_plan.md).
-
-Measured port results and remaining admission failures are recorded in [the port status](../../doc/supermimic_port_status.md).
-
-
-## Randomized tracking recipes and cluster jobs
-
-The production recipe runner is `python -m examples.g1.train_tracking`. It adds
-real per-world friction/CoM randomization, reset joint offsets, complete optimizer
-and task-state resume, frozen-actor forks, and separate adaptation validation.
-The earlier `examples.g1.tracking smoke-train` command remains a small fixed-physics
-execution test. Neither kind of smoke checkpoint is an admitted walking policy.
-
-See [cluster setup and job commands](../locomotion/cluster/README.md) for the
-64-environment full-network smoke, paired fidelity jobs, 512/1024/2048 scans,
-seed arrays, checkpoint recovery and 15-minute video requests. Formal recipes
-still require a passed full-library migration report for the same robot physics.

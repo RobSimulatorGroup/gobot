@@ -29,6 +29,17 @@ GOBOT_PHYSICS_MATERIAL_PROPERTY(ContactDamping, contact_damping_)
 
 #undef GOBOT_PHYSICS_MATERIAL_PROPERTY
 
+void PhysicsMaterial3D::SetContactPriority(int value) {
+    if (contact_priority_ != value) {
+        contact_priority_ = value;
+        MarkChanged();
+    }
+}
+
+int PhysicsMaterial3D::GetContactPriority() const {
+    return contact_priority_;
+}
+
 void PhysicsMaterial3D::SetContactFrictionMode(const std::string& value) {
     if (value != "auto" && value != "frictionless" && value != "sliding" &&
         value != "sliding_torsional" && value != "sliding_torsional_rolling") {
@@ -68,6 +79,9 @@ GOBOT_REGISTRATION {
             .property("contact_damping",
                       &gobot::PhysicsMaterial3D::GetContactDamping,
                       &gobot::PhysicsMaterial3D::SetContactDamping)
+            .property("contact_priority",
+                      &gobot::PhysicsMaterial3D::GetContactPriority,
+                      &gobot::PhysicsMaterial3D::SetContactPriority)
             .property("contact_friction_mode",
                       &gobot::PhysicsMaterial3D::GetContactFrictionMode,
                       &gobot::PhysicsMaterial3D::SetContactFrictionMode);

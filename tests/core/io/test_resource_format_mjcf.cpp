@@ -92,7 +92,7 @@ TEST(TestResourceFormatMJCF, preserves_mesh_collision_and_position_drive_damping
   <worldbody><geom name="ground" type="plane" size="0 0 0.05"/>
   <body name="base" pos="1 2 3">
     <joint name="hinge" type="hinge" axis="0 1 0"/>
-    <geom name="contact_mesh" type="mesh" mesh="tetra" pos="0.5 0 0" contype="2" conaffinity="4"/>
+    <geom name="contact_mesh" type="mesh" mesh="tetra" pos="0.5 0 0" contype="2" conaffinity="4" priority="1"/>
     <body name="sensor_frame" pos="0.1 0.2 0.3"/>
   </body></worldbody>
   <actuator><position joint="hinge" kp="40" kv="2.5" forcerange="-88 88"/></actuator>
@@ -120,6 +120,7 @@ TEST(TestResourceFormatMJCF, preserves_mesh_collision_and_position_drive_damping
     EXPECT_EQ(collision->GetCollisionLayer(), 2u);
     EXPECT_EQ(collision->GetCollisionMask(), 4u);
     EXPECT_EQ(collision->GetPhysicsMaterial()->GetContactFrictionMode(), "sliding");
+    EXPECT_EQ(collision->GetPhysicsMaterial()->GetContactPriority(), 1);
     auto shape = gobot::dynamic_pointer_cast<gobot::ConvexMeshShape3D>(collision->GetShape());
     ASSERT_TRUE(shape.IsValid());
     auto mesh = gobot::dynamic_pointer_cast<gobot::ArrayMesh>(shape->GetMesh());
@@ -138,6 +139,7 @@ TEST(TestResourceFormatMJCF, preserves_mesh_collision_and_position_drive_damping
     ASSERT_NE(clone, nullptr);
     auto* cloned = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(clone, "contact_mesh"));
     ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->GetPhysicsMaterial()->GetContactPriority(), 1);
     EXPECT_TRUE(gobot::dynamic_pointer_cast<gobot::ConvexMeshShape3D>(cloned->GetShape()).IsValid());
     gobot::CompiledPhysicsScene compiled;
     gobot::PhysicsSceneArtifact artifact;
@@ -146,6 +148,7 @@ TEST(TestResourceFormatMJCF, preserves_mesh_collision_and_position_drive_damping
     ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
             gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error)) << error;
     EXPECT_NE(artifact.content.find("type=\"plane\""), std::string::npos);
+    EXPECT_NE(artifact.content.find("priority=\"1\""), std::string::npos);
     gobot::Object::Delete(root);
     gobot::Object::Delete(clone);
     std::filesystem::remove(path);

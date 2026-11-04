@@ -116,6 +116,7 @@ PhysicsMaterialSnapshot CapturePhysicsMaterial(const Ref<PhysicsMaterial3D>& mat
     snapshot.contact_compliance = material->GetContactCompliance();
     snapshot.contact_damping = material->GetContactDamping();
     snapshot.contact_friction_mode = material->GetContactFrictionMode();
+    snapshot.contact_priority = material->GetContactPriority();
     return snapshot;
 }
 

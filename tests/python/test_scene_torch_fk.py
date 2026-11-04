@@ -82,3 +82,20 @@ def test_invalid_topology_rejected(fixture):
     robot['joints'] = [j for j in robot['joints'] if int(j['type']) != 0]
     with pytest.raises(ValueError, match='disconnected'):
         SceneKinematics(broken, robot_name='fk_test', base_link='base', joint_names=('slide', 'hinge'))
+
+
+def test_static_world_sibling_is_not_part_of_articulation_fk(fixture):
+    from copy import deepcopy
+    original, _, snapshot = fixture
+    snapshot = deepcopy(snapshot)
+    robot = next(r for r in snapshot['robots'] if r['name'] == 'fk_test')
+    terrain = deepcopy(robot['links'][0])
+    terrain['name'] = 'terrain'
+    robot['links'].append(terrain)
+    kin = SceneKinematics(snapshot, robot_name='fk_test', base_link='base',
+                          joint_names=('slide', 'hinge'), dtype=torch.float64)
+    assert kin.body_names == original.body_names
+    assert kin.digest == original.digest
+    with pytest.raises(ValueError, match='selected articulation'):
+        SceneKinematics(snapshot, robot_name='fk_test', base_link='base',
+                        joint_names=('slide', 'hinge'), tracked_links=('terrain',))

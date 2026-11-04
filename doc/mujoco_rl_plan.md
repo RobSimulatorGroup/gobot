@@ -5,6 +5,11 @@ Both consume Gobot-authored scenes. Start with the [Go1 guide](../examples/go1/R
 for runnable training commands and [architecture](architecture.md) for engine
 ownership and policy/checkpoint contracts.
 
+SuperMimic now has a built-in task registry and headless training entry point:
+`python -m gobot.rl.train`. See [the training framework](gobot_training.md).
+The first registered task is scene-authored G1 motion tracking; synchronized
+multi-GPU training and a command-conditioned student remain follow-up work.
+
 ## Runtime
 
 ```text

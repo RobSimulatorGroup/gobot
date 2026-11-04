@@ -1,0 +1,22 @@
+{
+  "protocol": "reproduced_math_fixture_v1",
+  "torch": "2.11.0+cu128",
+  "mujoco": "3.17.0",
+  "numerical_sources": {
+    "supermimic.world_model": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "supermimic.world_model.dynamics": "ce21b40a69c6abddebd85e7e2f000fadfd37f9bebbdecd5d61510e1f68736cd7",
+    "mjlab.utils.lab_api.math": "85e267ee202dc8dc2b340be07ec7abe9b10da9b82c3bf33e16889f422fcf9ca8",
+    "supermimic.envs.mdp.rewards": "34f53e7164097427b93cb5da7cdea755597b61a4ae389801eea6ddf7401a7407",
+    "supermimic.kinematics": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "supermimic.kinematics.rotations": "e4120edd12b5fdf97a1927a6d4a14b392d2d2736308bb473f6ffa89219aa0c47",
+    "supermimic.kinematics.g1_fk": "4635eea9db60cc1f0541a1ed480986392984dbf8e83802775bb3d53665a91657",
+    "supermimic.world_model.heads": "1af9d3e47e2914fc0ff4154ba0cb2c53413b75cebdb81eb4d3aeed8928582e22",
+    "supermimic.world_model.state_spec": "5e2cbc177056f010a1f4df80d9a3b4cf3ec4b5e84f0ff6a2c05d195500019c72",
+    "supermimic.world_model.world_model": "24a6157e285584fd1f8433360cc93b2c0b5fe68395fa46ccc4358109ce0e7ba2",
+    "supermimic.policy": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "supermimic.policy.nets": "02e33aeaf0b371129f349223429682819868a831f4dac8dd834fdc848e57e471"
+  },
+  "gobot_imported": false,
+  "scope": "CPU algebra only; not physics or full-training parity",
+  "fixture_sha256": "de7322268f6607881209aa23a78c36e9a2c82cbb64708a8c7c7b375ee72786f5"
+}

@@ -15,6 +15,7 @@ inline py::dict PhysicsSnapshotMaterial(const PhysicsMaterialSnapshot& material)
     result["torsional_friction"] = material.torsional_friction;
     result["rolling_friction"] = material.rolling_friction;
     result["contact_friction_mode"] = material.contact_friction_mode;
+    result["contact_priority"] = material.contact_priority;
     result["restitution"] = material.restitution;
     result["compliance"] = material.contact_compliance;
     result["damping"] = material.contact_damping;

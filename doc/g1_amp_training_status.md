@@ -2,14 +2,9 @@
 
 No checkpoint has passed full multi-terrain or natural-gait admission yet.
 
-October 28 update: the independent Uni-SuperMimic world-model/BPTT reference
-finished 12,000 iterations and full evaluation normally at 16:16:57 CST. Walking,
-running and sprinting completed 18/18 clips; the full library completed 33/40 with
-mean normalized return 0.7318. Dance completed 6/8 and fall/get-up 3/6. This is a
-reference motion-tracking result, not Gobot PPO/AMP or multi-terrain admission.
-See [the reference experiment record](supermimic_reference_status.md) for complete
-scores, failure locations, final videos and transfer limitations. The October 26
-PPO campaign history below remains useful diagnosis.
+The former Uni-SuperMimic experiment tooling has been removed. Current G1
+motion-tracking work follows [SuperMimic-Reproduced](supermimic_reproduced_progress.md).
+The PPO/AMP campaign history below remains independent of that migration.
 
 ## Natural locomotion implementation and local campaign
 

@@ -980,6 +980,7 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
     material->SetSlidingFriction(friction.x());
     material->SetTorsionalFriction(friction.y());
     material->SetRollingFriction(friction.z());
+    material->SetContactPriority(model->geom_priority[geom_id]);
     switch (model->geom_condim[geom_id]) {
         case 1: material->SetContactFrictionMode("frictionless"); break;
         case 3: material->SetContactFrictionMode("sliding"); break;

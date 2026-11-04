@@ -128,6 +128,16 @@ class ArticulationBatch:
         return self._view.read_state() if self._provider is not None else self._state
 
     @torch.no_grad()
+    def refresh_kinematics(self):
+        """Refresh link state between ticks without a contact/force solve."""
+        self._require_open()
+        if self._provider is not None:
+            self._provider.refresh_kinematics()
+        else:
+            self._read_cpu()
+        return self.read_state()
+
+    @torch.no_grad()
     def set_joint_targets(self, targets):
         self._require_open()
         self._targets.copy_(self._tensor(targets, tuple(self._targets.shape), 'joint targets'))
@@ -161,11 +171,13 @@ class ArticulationBatch:
         torch.maximum(self._contacts['peak_force_norm'], force.norm(dim=-1), out=self._contacts['peak_force_norm'])
 
     @torch.no_grad()
-    def step_control(self):
+    def step_control(self, *, before_substep=None):
         self._require_open()
         for value in self._contacts.values():
             value.zero_()
-        for _ in range(self.decimation):
+        for substep in range(self.decimation):
+            if before_substep is not None:
+                before_substep(substep)
             if self._provider is not None:
                 self._provider.step(nsteps=1)
                 if self.contact_links:
@@ -249,6 +261,10 @@ class ArticulationBatch:
             self._read_cpu(raw)
         else:
             provider = self._provider
+            # Only fields supplied in this call require writes/recomputation.
+            # Previously stored COM overrides remain in the model across resets.
+            com = {name:com[name] for name in (link_center_of_mass_offsets or {})}
+            friction = {name:friction[name] for name in (shape_friction or {})}
             fields = ['geom_friction'] if friction else []
             if com:
                 # set_const launches over derived output dimensions. Expanding

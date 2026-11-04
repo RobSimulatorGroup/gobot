@@ -319,7 +319,7 @@ void ConfigureMaterialContact(mjsGeom* geom,
     geom->solref[1] = restitution_damping;
     geom->margin = contact_offset;
     geom->gap = std::max<RealType>(0.0, contact_offset - rest_offset);
-    geom->priority = 0;
+    geom->priority = material.contact_priority;
 }
 
 void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {

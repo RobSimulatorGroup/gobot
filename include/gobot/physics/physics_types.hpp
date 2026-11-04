@@ -197,6 +197,7 @@ struct PhysicsMaterialSnapshot {
     RealType contact_compliance{0.0};
     RealType contact_damping{1.0};
     std::string contact_friction_mode{"auto"};
+    int contact_priority{0};
 };
 
 struct PhysicsShapeSnapshot {

@@ -37,7 +37,7 @@ dependencies = [
     "scipy>=1.11",
     "tensorboard",
     "tensordict",
-    "torch>=2.7; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torch>=2.9; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "trimesh>=4.6.8; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "warp-lang==1.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
@@ -49,6 +49,7 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
 gobot_editor = "gobot_cli.editor:editor"
+gobot-train = "gobot.rl.train:main"
 
 [dependency-groups]
 dev = [

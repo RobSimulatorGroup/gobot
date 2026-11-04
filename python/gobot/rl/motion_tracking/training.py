@@ -1,181 +1,202 @@
-"""Checkpointed SuperMimic training over the scene-owned tracking environment."""
+"""Reference collect → world-model fit → actor BPTT → critic fit schedule."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict
-from pathlib import Path
-from typing import Callable
 import json
-import hashlib
+import math
+import time
+from pathlib import Path
+
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
-from gobot.rl.experiment_identity import canonical_digest
-from gobot.rl.policy import POLICY_MANIFEST_KEY, PolicyManifest, policy_manifest_from_checkpoint, write_policy_manifest_sidecar
-from gobot.rl.supermimic import SuperMimicConfig, SuperMimicLearner
-from .manifest import build_tracking_manifest
+from gobot.rl.supermimic.distributed import allreduce_mean, broadcast_params, rank, world_size
+from gobot.rl.supermimic.policy import Policy, Critic
+from gobot.rl.supermimic.policy_trainer import PolicyTrainer
+from gobot.rl.supermimic.world_model import WorldModel
+from gobot.rl.supermimic.wm_trainer import WorldModelTrainer
+from gobot.rl.supermimic.schedule import cosine_lr
+from .convert import digest
+from .identity import source_identity
 
-
-class TrainingStop(Exception):
-    """A controlled stop at an iteration boundary, preserving a full checkpoint."""
-
-
-def policy_input_contract(manifest: PolicyManifest):
-    metadata=manifest.metadata()
-    return {key:metadata[key] for key in ('observation_spec','action_spec','joint_names','control','model')}
+FORMAT = 'gobot_supermimic_reproduced_v1'
 
 
-def read_checkpoint(path):
-    # Hash the same open inode that torch.load read. Atomic last.pt replacement
-    # by another process cannot associate new metadata with older loaded weights.
-    with Path(path).open('rb') as stream:
-        payload=torch.load(stream,map_location='cpu',weights_only=True)
-        stream.seek(0);digest=hashlib.sha256()
-        for chunk in iter(lambda:stream.read(1024*1024),b''):digest.update(chunk)
-    return payload,'sha256:'+digest.hexdigest()
+class Trainer:
+    def __init__(self, env, cfg):
+        self.env, self.cfg = env, deepcopy(cfg)
+        self.rank, self.world = rank(), world_size()
+        self.log_dir = Path(cfg.log_root)/cfg.run_name
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.writer = SummaryWriter(str(self.log_dir/'tb')) if self.rank==0 else None
+        # Store base rates. Apply sqrt(world) exactly once, including after resume.
+        effective = deepcopy(cfg)
+        for c, key in ((effective.wm_trainer,'lr'),(effective.policy_trainer,'lr'),(effective.policy_trainer,'critic_lr')):
+            setattr(c,key,getattr(c,key)*self.world**.5)
+        self.effective = effective
+        self.wm = WorldModel(cfg.world_model, env.heads, env.device)
+        self.policy = Policy(cfg.policy).to(env.device)
+        self.critic = Critic(cfg.critic,pcfg=cfg.policy).to(env.device)
+        for m in (self.wm,self.policy,self.critic):
+            broadcast_params(m)
+        self.wm_trainer = WorldModelTrainer(self.wm,env.library,effective.wm_trainer)
+        self.policy_trainer = PolicyTrainer(self.wm,self.policy,self.critic,env.library,effective.policy_trainer)
+        self.iteration, self.start_iteration, self.num_updates, self.utd_acc = 0,0,0,0.
+        self.identity = {'physics':env.batch.artifact.digest, 'kinematics':env.fk.scene.digest,
+                         'data':[(p.name,digest(p)) for p in env.files], 'source':source_identity()}
+        if cfg.resume:
+            self.load(cfg.resume)
+        if self.rank==0:
+            import importlib.metadata as metadata
+            software = {key:metadata.version(key) for key in ('torch','mujoco','mujoco-warp','warp-lang')}
+            info = {'format':FORMAT,'base_config':asdict(self.cfg),'effective_config':asdict(effective),
+                    'world_size':self.world, 'identity':self.identity,'software':software,
+                    'params':{k:sum(p.numel() for p in m.parameters()) for k,m in (('wm',self.wm),('policy',self.policy),('critic',self.critic))}}
+            (self.log_dir/'config.json').write_text(json.dumps(info,indent=2,default=str)+'\n')
 
+    def counters(self):
+        def steps(opt):
+            return max((int(s['step']) for s in opt.state.values() if 'step' in s), default=0)
+        return {'control_steps_per_rank':self.iteration,
+                'global_env_transitions':self.iteration*self.env.num_envs*self.world,
+                'learner_updates':self.num_updates,
+                'world_model_optimizer_steps':steps(self.wm_trainer.opt),
+                'policy_optimizer_steps':steps(self.policy_trainer.opt),
+                'critic_optimizer_steps':steps(self.policy_trainer.critic_opt)}
 
-def training_contract(env, algorithm, *, software_digest):
-    options=asdict(algorithm)
-    # These settings govern duration and reporting, not a learning transition.
-    for name in ('iterations','ckpt_every','log_every','log_backend'):
-        options.pop(name,None)
-    manifest=build_tracking_manifest(env,algorithm)
-    task={key:value for key,value in asdict(env.cfg).items() if key not in ('project_path','motion_files')}
-    value={'version':1,'policy':policy_input_contract(manifest),'task':task,
-           'physics':env.batch.artifact.digest,'backend':env.batch.backend,'num_envs':env.num_envs,
-           'data':manifest.extras['data'],'algorithm':options,'software_digest':software_digest,
-           'resume_episodes':'fresh','resume_replay':'refill'}
-    return value,canonical_digest(value),manifest
-
-
-class TrackingTrainingSession(SuperMimicLearner):
-    """Own optimizer/task/RNG restoration and explicit physics-transfer phases.
-
-    A fork begins with fresh optimizer, critic and replay state. It preserves the
-    actor and its input statistics and keeps that actor frozen until a separately
-    validated promotion. Resume keeps the current phase and starts fresh episodes.
-    """
-
-    def __init__(self, env, cfg: SuperMimicConfig, log_dir, *, software_digest,
-                 should_stop: Callable[[], bool] | None = None, progress=None):
-        self.contract,self.contract_digest,self.manifest=training_contract(env,cfg,software_digest=software_digest)
-        self.phase='fresh'
-        self.lineage=[]
-        self.validation_history=[]
-        self._should_stop=should_stop
-        self._progress=progress
-        self._loaded_checkpoint=None
-        self._loaded_checkpoint_digest=None
-        super().__init__(env,cfg,log_dir,backend=env.batch.backend)
-
-    def _checkpoint(self, include_optimizers):
-        payload=super()._checkpoint(include_optimizers)
-        payload[POLICY_MANIFEST_KEY]=self.manifest.metadata()
-        payload['gobot_training']={
-            'version':1,'contract':self.contract,'contract_digest':self.contract_digest,
-            'phase':self.phase,'lineage':self.lineage,'validation_history':self.validation_history,
-            'task_state':self.env.training_state_dict(),
-            'torch_rng':torch.get_rng_state(),
-            'cuda_rng':torch.cuda.get_rng_state(self.device) if self.device.type=='cuda' else None,
-        }
-        return payload
-
-    def save(self, path=None, include_optimizers=True):
-        destination=super().save(path,include_optimizers)
-        write_policy_manifest_sidecar(destination,self.manifest)
-        return destination
-
-    def collect(self, n_steps):
-        if self._should_stop and self._should_stop():
-            raise TrainingStop('stop requested')
-        super().collect(n_steps)
-        if self._progress:
-            self._progress(self.iteration,self.sim_steps,self.phase)
-
-    def fork(self, checkpoint, *, source_manifest=None, source_identity=None, load_world_model=True):
-        if self.iteration or self.buffer.size:
-            raise ValueError('fork requires a fresh training session')
-        payload,source_digest=read_checkpoint(checkpoint)
-        manifest=policy_manifest_from_checkpoint(payload)
-        if manifest is None:
-            if source_manifest is None:
-                raise ValueError('legacy checkpoint import requires an explicit source policy manifest')
-            manifest=source_manifest if isinstance(source_manifest,PolicyManifest) else PolicyManifest.from_json(Path(source_manifest).read_text())
-            binding=manifest.extras.get('checkpoint_sha256')
-            if source_identity is not None:
-                identity=source_identity if isinstance(source_identity,dict) else json.loads(Path(source_identity).read_text())
-                binding=identity.get('checkpoint_sha256') or (identity.get('parent') or {}).get('sha256')
-            if not binding or binding.removeprefix('sha256:')!=source_digest.removeprefix('sha256:'):
-                raise ValueError('legacy manifest requires a matching checkpoint hash or source identity')
-        if canonical_digest(policy_input_contract(manifest))!=canonical_digest(policy_input_contract(self.manifest)):
-            raise ValueError('fork policy inputs/control differ; use explicit conversion or distillation')
-        source_split=manifest.extras.get('data',{}).get('split')
-        if self.env.cfg.split=='train' and source_split!='train':
-            raise ValueError('strict subject-split training cannot inherit all-library/unknown teacher weights')
-        old=payload.get('gobot_training',{})
-        ancestors=old.get('lineage',[])
-        if self.env.cfg.split=='train' and any(item.get('data_split')!='train' for item in ancestors):
-            raise ValueError('checkpoint lineage contains held-out or unknown data')
-        self.pi.load_state_dict(payload['pi'],strict=True)
-        if load_world_model:self.wm.load_state_dict(payload['wm'],strict=True)
-        self.lineage=[*ancestors,{'checkpoint_sha256':source_digest,'data_split':source_split,
-                                 'source_contract':old.get('contract_digest'),'mode':'fork',
-                                 'world_model_weights_loaded':bool(load_world_model)}]
-        self.phase='adaptation'
-        self.set_actor_frozen(True)
-        self.env.reset()
+    def save(self, name='ckpt_latest.pt'):
+        # One shard per rank: sampler and random streams must not be overwritten by rank 0.
+        name = name if self.rank==0 else name.replace('.pt',f'.rank{self.rank}.pt')
+        payload = {'format':FORMAT,'iteration':self.iteration,'num_updates':self.num_updates,'counters':self.counters(),
+            'wm':self.wm.state_dict(),'policy':self.policy.state_dict(),'critic':self.critic.state_dict(),
+            'wm_opt':self.wm_trainer.opt.state_dict(),'policy_opt':self.policy_trainer.opt.state_dict(),
+            'critic_opt':self.policy_trainer.critic_opt.state_dict(),
+            'bin_return':self.env.sampler.bin_return,'bin_memory':self.env.sampler.bin_memory,
+            'config':json.loads(json.dumps(asdict(self.cfg),default=str)), 'identity':self.identity,
+            'rank':self.rank,'world_size':self.world,
+            'startup_com':self.env.xi[:,30:33].detach().cpu().clone(),
+            'torch_rng':torch.get_rng_state(),'cuda_rng':torch.cuda.get_rng_state(self.env.device) if self.env.device.startswith('cuda') else None,
+            'resume_semantics':'fresh_episodes_and_replay_refill; UTD restarts at zero as in reference'}
+        target = self.log_dir/name
+        temporary = target.with_suffix('.tmp')
+        torch.save(payload,temporary)
+        temporary.replace(target)
 
     def load(self, path):
-        payload,source_digest=read_checkpoint(path)
-        saved=payload.get('gobot_training')
-        if not saved or saved.get('version')!=1:
-            raise ValueError('resume requires a Gobot training checkpoint; import legacy weights with fork')
-        if canonical_digest(saved.get('contract'))!=saved.get('contract_digest'):
-            raise ValueError('saved training contract is corrupt')
-        if saved['contract_digest']!=self.contract_digest:
-            raise ValueError('resume configuration/data/software/batch changed; use an explicit fork')
-        if saved.get('phase') not in ('fresh','adaptation','joint'):
-            raise ValueError('unknown saved training phase')
-        if saved['phase']=='adaptation' and not payload.get('actor_frozen'):
-            raise ValueError('adaptation checkpoint must keep the actor frozen')
-        required={'critic','opt_wm','opt_pi','opt_v'}
-        if not required<=payload.keys():
-            raise ValueError('resume requires a full checkpoint with optimizer and critic states')
-        self.env.load_training_state_dict(saved['task_state'])
-        self._restore_checkpoint(payload)
-        self.phase=saved['phase'];self.lineage=list(saved['lineage'])
-        self.validation_history=list(saved.get('validation_history',[]))
-        torch.set_rng_state(saved['torch_rng'].cpu())
-        if self.device.type=='cuda':
-            if saved.get('cuda_rng') is None:raise ValueError('CUDA resume checkpoint lacks generator state')
-            torch.cuda.set_rng_state(saved['cuda_rng'].cpu(),device=self.device)
-        self._loaded_checkpoint=Path(path)
-        self._loaded_checkpoint_digest=source_digest
+        path = Path(path)
+        if self.rank:
+            path = path.with_name(path.name.replace('.pt',f'.rank{self.rank}.pt'))
+        ck = torch.load(path,map_location=self.env.device,weights_only=True)
+        if ck.get('format') != FORMAT:
+            raise ValueError('resume requires a Gobot SuperMimic-Reproduced training checkpoint')
+        if ck['identity'] != self.identity or ck['world_size'] != self.world or ck['rank'] != self.rank:
+            raise ValueError('resume requires identical scene, data, rank count and rank identity')
+        old = ck['config']; new = json.loads(json.dumps(asdict(self.cfg),default=str))
+        for key in ('env','world_model','policy','critic','wm_trainer','policy_trainer','backend','deterministic','nconmax','njmax','seed'):
+            if old[key] != new[key]:
+                raise ValueError(f'resume configuration changed: {key}')
+        for key in ('total_iterations','updates_per_env_step','policy_updates_per_wm_update','warmup_iterations','lr_final_ratio','lr_decay_fraction'):
+            if old['schedule'][key] != new['schedule'][key]:
+                raise ValueError(f'resume schedule changed: {key}')
+        for key, target in (('wm',self.wm),('policy',self.policy),('critic',self.critic),
+                            ('wm_opt',self.wm_trainer.opt),('policy_opt',self.policy_trainer.opt),('critic_opt',self.policy_trainer.critic_opt)):
+            target.load_state_dict(ck[key])
+        for key in ('bin_return','bin_memory'):
+            getattr(self.env.sampler,key).copy_(ck[key])
+        startup_com=ck['startup_com'].to(self.env.device)
+        if startup_com.shape != self.env.xi[:,30:33].shape or not torch.isfinite(startup_com).all():
+            raise ValueError('invalid checkpoint startup COM context')
+        self.env.xi[:,30:33].copy_(startup_com)
+        self.env._apply_physics_context(include_com=True)
+        self.iteration = self.start_iteration = ck['iteration']
+        self.num_updates = ck['num_updates']
+        if self.world>1:
+            import torch.distributed as dist
+            counters=[None]*self.world
+            dist.all_gather_object(counters,self.counters())
+            if any(value!=counters[0] for value in counters[1:]):
+                raise ValueError('checkpoint shards contain different training counters')
+        torch.set_rng_state(ck['torch_rng'].cpu())
+        if ck['cuda_rng'] is not None:
+            torch.cuda.set_rng_state(ck['cuda_rng'].cpu(),self.env.device)
 
-    def promote(self, validation):
-        """Advance a resumed adaptation checkpoint only with matching evidence."""
-        if self.phase!='adaptation' or self._loaded_checkpoint is None:
-            raise ValueError('promotion requires a resumed adaptation checkpoint')
-        if validation.get('protocol')!='tracking_adaptation_validation_v1' or validation.get('passed') is not True:
-            raise ValueError('independent adaptation validation has not passed')
-        if (validation.get('metrics_only') is not False or validation.get('thresholds') is None or
-                validation.get('thresholds_digest')!=canonical_digest(validation['thresholds'])):
-            raise ValueError('promotion requires recorded, consistent acceptance thresholds')
-        if validation.get('checkpoint_sha256')!=self._loaded_checkpoint_digest or validation.get('contract_digest')!=self.contract_digest:
-            raise ValueError('validation belongs to a different checkpoint or training contract')
-        required=('world_model_1_8_32','critic','physical_rollout')
-        if any(validation.get('checks',{}).get(name,{}).get('passed') is not True for name in required):
-            raise ValueError('adaptation validation is incomplete')
-        self.validation_history.append(validation)
-        self.phase='joint';self.set_actor_frozen(False)
-
-    def train(self, resume=None):
-        if resume is not None:self.load(resume)
-        # Always leave a usable initial checkpoint if compilation/preemption
-        # interrupts the first update. The replay intentionally is not serialized.
+    def run(self):
+        cfg, sch = self.effective, self.cfg.schedule
+        env = self.env
+        stop = min(sch.total_iterations, self.cfg.stop_iteration or sch.total_iterations)
+        obs, _ = env.reset()
+        ep_sum = torch.zeros(env.num_envs,device=env.device)
+        ep_len = torch.zeros_like(ep_sum)
+        started = time.monotonic()
+        metrics = {}
+        aggregate, aggregate_n = {}, 0
+        interval_return = interval_count = interval_length = 0.
+        while self.iteration < stop:
+            with torch.no_grad():
+                action = self.policy(obs['policy'],obs['goal'])
+                obs,reward,term,timeout,_ = env.step(action)
+                ep_sum += reward; ep_len += 1
+                done = term|timeout
+                done_count = int(done.sum())
+                return_sum = float((ep_sum[done]/(.1*ep_len[done])).sum())
+                interval_return += return_sum; interval_count += done_count
+                interval_length += float(ep_len[done].sum())
+                ep_sum[done] = 0; ep_len[done] = 0
+            self.iteration += 1
+            if self.iteration-self.start_iteration >= sch.warmup_iterations:
+                self.utd_acc += sch.updates_per_env_step
+                while self.utd_acc >= 1.:
+                    self.utd_acc -= 1.
+                    lr = cosine_lr(self.iteration,sch.total_iterations,cfg.wm_trainer.lr,sch.lr_final_ratio,sch.lr_decay_fraction)
+                    self.wm_trainer.set_lr(lr)
+                    self.policy_trainer.set_lr(lr*cfg.policy_trainer.lr/cfg.wm_trainer.lr)
+                    metrics = {'wm/'+k:v for k,v in self.wm_trainer.update(env.buffer).items()}
+                    for _ in range(sch.policy_updates_per_wm_update):
+                        metrics.update({'policy/'+k:v for k,v in self.policy_trainer.update(env.buffer).items()})
+                    metrics['lr'] = lr
+                    self.num_updates += 1
+                    for key,value in metrics.items():
+                        aggregate[key] = value if key=='lr' else aggregate.get(key,0.)+value
+                    aggregate_n += 1
+                    if not all(math.isfinite(v) for v in metrics.values()):
+                        raise FloatingPointError(f'nonfinite learner metric at control iteration {self.iteration}')
+            # Collectives have identical control flow on all ranks, including zero finished episodes.
+            if self.iteration % sch.log_interval == 0 or self.iteration == stop:
+                total = allreduce_mean(interval_return); count = allreduce_mean(interval_count)
+                length = allreduce_mean(interval_length)
+                averages={k:v/(1 if k=='lr' else aggregate_n) for k,v in aggregate.items()} if aggregate_n else {}
+                row = {'iteration':self.iteration,'num_updates':self.num_updates,
+                       'transitions':self.iteration*env.num_envs*self.world,
+                       'elapsed_seconds':time.monotonic()-started,**self.counters(),**averages}
+                if count:
+                    row['train/return'] = total/count
+                    row['train/episode_length'] = length/count
+                interval_return = interval_count = interval_length = 0.
+                aggregate, aggregate_n = {}, 0
+                if self.rank==0:
+                    # Match the reference's rank-0 diagnostic sampling, including
+                    # its RNG consumption on scheduled logging iterations.
+                    if self.iteration%sch.log_interval==0 and env.buffer.size>2048:
+                        error=self.wm_trainer.online_error(env.buffer,n=1024,k=8)
+                        row['wm/online_nse_1step']=float(error[0])
+                        row['wm/online_nse_8step']=float(error[-1])
+                    row['sampler/bin_return_mean']=float(env.sampler.bin_return.mean())
+                    row['sampler/entropy']=float(env.sampler.metrics['sampling_entropy'][0])
+                    with open(self.log_dir/'metrics.jsonl','a') as stream:
+                        stream.write(json.dumps(row,allow_nan=False)+'\n')
+                    for key,value in row.items():
+                        self.writer.add_scalar(key,value,self.iteration)
+                    print(json.dumps(row,allow_nan=False),flush=True)
+                if sch.max_hours is not None and allreduce_mean(float((time.monotonic()-started)/3600 >= sch.max_hours))>0:
+                    break
+            if self.iteration % sch.checkpoint_interval == 0:
+                self.save(); self.save(f'ckpt_{self.iteration:07d}.pt')
         self.save()
-        try:
-            return super().train()
-        except TrainingStop:
-            self.save()
-            return {'completed':False,'iteration':self.iteration,'sim_steps':self.sim_steps,
-                    'phase':self.phase,'stop_reason':'controlled_stop'}
+        if self.writer:
+            self.writer.flush()
+        return {'iteration':self.iteration,'num_updates':self.num_updates,'counters':self.counters(),'checkpoint':str(self.log_dir/'ckpt_latest.pt')}
+
+    def close(self):
+        if self.writer:
+            self.writer.close()

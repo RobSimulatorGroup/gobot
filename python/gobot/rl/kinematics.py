@@ -52,6 +52,22 @@ class SceneKinematics(nn.Module):
         root_joint = parent_joints.get(base_link)
         if root_joint and root_joint['parent_link']:
             raise ValueError('base link must be the articulation root')
+        # An imported world can contain fixed world geometry alongside the
+        # articulation (for example mjlab's terrain body). FK describes the
+        # selected base tree, not unrelated static siblings. A disconnected
+        # movable joint remains an error rather than being silently discarded.
+        static = {name for name in links if name != base_link and
+                  (name not in parent_joints or
+                   (int(parent_joints[name]['type']) == 0 and not parent_joints[name]['parent_link']))}
+        while True:
+            added = {name for name, joint in parent_joints.items() if name in links and name not in static
+                     and int(joint['type']) == 0 and joint['parent_link'] in static}
+            if not added:
+                break
+            static.update(added)
+        if tracked_links and static.intersection(tracked_links):
+            raise ValueError('tracked links must belong to the selected articulation, not static world geometry')
+        links = {name: link for name, link in links.items() if name not in static}
         names = [base_link]
         while len(names) < len(links):
             added = [name for name in links if name not in names and name in parent_joints

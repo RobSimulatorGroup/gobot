@@ -36,6 +36,10 @@ public:
     void SetContactDamping(RealType value);
     RealType GetContactDamping() const;
 
+    // Higher priority selects this material when combining a contact pair.
+    void SetContactPriority(int value);
+    int GetContactPriority() const;
+
     void SetContactFrictionMode(const std::string& value);
     const std::string& GetContactFrictionMode() const;
 
@@ -46,6 +50,7 @@ private:
     RealType restitution_{0.0};
     RealType contact_compliance_{0.0};
     RealType contact_damping_{1.0};
+    int contact_priority_{0};
     std::string contact_friction_mode_{"auto"};
 };
 
