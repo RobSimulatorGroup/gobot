@@ -25,9 +25,12 @@ NATIVE_PAYLOAD = (
 GO1_POLICY_PAYLOAD = (
     "examples/go1/policies/go1_velocity.onnx",
 )
-OTHER_EXAMPLE_PAYLOAD = (
-    "examples/cartpole/policies/cartpole.onnx",
-    "examples/cartpole/policies/cartpole.pt",
+CARTPOLE_PAYLOAD = (
+    "examples/cartpole/project.gobot",
+    "examples/cartpole/cartpole.jscn",
+    "examples/cartpole/cartpole_task.py",
+    "examples/cartpole/cartpole_swingup.py",
+    "examples/cartpole/scripts/cartpole.py",
 )
 OPENUSD_PAYLOAD = (
     "openusd/lib/libtbb.so.12",
@@ -82,18 +85,15 @@ def missing_libraries(path: Path) -> set[str]:
     return missing
 
 
-def main() -> int:
-    import gobot
-    from gobot_cli import editor as editor_launcher
-
-    package_root = Path(gobot.__file__).resolve().parent
+def verify_payload(package_root: Path) -> None:
+    """Check installed files before importing providers or probing native libraries."""
     missing_payload = [
         name
         for name in (
             *NATIVE_PAYLOAD,
             *OPENUSD_PAYLOAD,
             *GO1_POLICY_PAYLOAD,
-            *OTHER_EXAMPLE_PAYLOAD,
+            *CARTPOLE_PAYLOAD,
         )
         if not (package_root / name).is_file()
     ]
@@ -110,6 +110,14 @@ def main() -> int:
             "installed wheel must contain exactly one Go1 policy: "
             + ", ".join(installed_policies)
         )
+
+
+def main() -> int:
+    import gobot
+    from gobot_cli import editor as editor_launcher
+
+    package_root = Path(gobot.__file__).resolve().parent
+    verify_payload(package_root)
 
     if gobot.render.RenderBuffer is not gobot._core.RenderBuffer:
         raise RuntimeError("gobot.render.RenderBuffer does not expose the native wheel type")

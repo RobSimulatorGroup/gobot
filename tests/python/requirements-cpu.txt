@@ -2,6 +2,7 @@
 # Keep MuJoCo aligned with GOB_MUJOCO_GIT_TAG and pyproject.toml.
 mujoco==3.17.0
 numpy>=2,<3
+packaging>=23.2
 pillow>=10.1
 scipy>=1.11
 trimesh>=4.6.8

@@ -357,6 +357,17 @@ set_tests_properties(test_python_build_backend
 )
 
 add_test(
+        NAME test_python_release_wheel
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_release_wheel.py
+)
+set_tests_properties(test_python_release_wheel
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_test(
         NAME test_python_bindings_smoke
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )

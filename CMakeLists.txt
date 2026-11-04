@@ -1249,6 +1249,7 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "newton_g1/assets" EXCLUDE
         PATTERN "g1/assets" EXCLUDE
         PATTERN "g1/policies" EXCLUDE
+        PATTERN "cartpole/policies" EXCLUDE
         PATTERN "*.ptx" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
