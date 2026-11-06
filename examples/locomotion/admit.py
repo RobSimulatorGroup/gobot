@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 from gobot.rl.locomotion.budget import TrainingBudget
-from .train import atomic_json
+from gobot.rl.locomotion.training import atomic_json
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     budget=TrainingBudget(a.budget_file,total_hours=a.budget_hours,run_hours=a.hours,metadata={'stage':'final_admission'})
     try:
         for seed in (1001,2002,3003):
-            for stage,slope,robust in [('rough',0.,False),('flat_gait',0.,False),('flat_gait',5.,False),('flat_gait',0.,True)]:
+            for stage,slope,robust in [('rough',0.,False),('flat',0.,False),('flat',5.,False),('flat',0.,True)]:
                 output=a.output/f'{stage}_{slope:g}_{seed}_{"robust" if robust else "nominal"}.json'
                 command=[sys.executable,'-B','-m','examples.locomotion.assessment','--checkpoint',str(a.checkpoint),
                     '--output',str(output),'--final','--seed',str(seed),'--steps','1000' if slope else '1500','--scenario-stage',stage,'--slope',str(slope),

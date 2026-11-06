@@ -1,0 +1,2502 @@
+{
+  "reference_revision": "dcdf6ce519abfd2ea45e9503ae6fb650b75bb869",
+  "source_sha256": {
+    "src/mjlab/asset_zoo/robots/unitree_go1/go1_constants.py": "fca9478fa292b4a0d7c473be31d6537ae613df7490f4941a885ad31d9723f565",
+    "src/mjlab/asset_zoo/robots/unitree_g1/g1_constants.py": "30805e420c1dd03518ee582465fbce9cf097f4dc2eb0c1c2fce55c0332040c07",
+    "src/mjlab/rl/runner.py": "400abfeca9fd256e7fb453bfb80ece1a3d34e7d587cd74ed2d7d230b5d859e83",
+    "src/mjlab/tasks/velocity/velocity_env_cfg.py": "8a272a8b3c81c4a0321027e404645c99a4143076522ed3521636bf293dd3137b",
+    "src/mjlab/tasks/velocity/mdp/rewards.py": "da3a7b51d5d5c8c67493714e0a26ad29adc7c159e8df875f88bd4bcf5e1de4d4",
+    "src/mjlab/tasks/velocity/mdp/curriculums.py": "60a857b7e3456f48ba0ddcc33a70c154998a04ef215dbd40200cbdcdad4cea8b",
+    "src/mjlab/tasks/velocity/config/go1/rl_cfg.py": "ac9744e0a2c11db9e60f819c0e8423e6479e094c4aaebe189a6965b06bb90f63",
+    "src/mjlab/tasks/velocity/config/g1/rl_cfg.py": "dcf4a23e031064085e081798c4d3b5bd1cda6ec58ad0081907f2e72c9142a131",
+    "src/mjlab/tasks/velocity/config/go1/env_cfgs.py": "3fe9a3f2882d0bb627c791fd009447911bf02dcb977d739ee87c26355909a7af",
+    "src/mjlab/tasks/velocity/config/g1/env_cfgs.py": "5d891ef40987118d1bb2d4bb8791922387d8fdae22752f1e1420dc31f4ddeabf"
+  },
+  "tasks": {
+    "go1_rough": {
+      "agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 10000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "go1_velocity",
+        "run_name": "",
+        "logger": "wandb",
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": null,
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      },
+      "weights": {
+        "track_linear_velocity": 2.0,
+        "track_angular_velocity": 2.0,
+        "upright": 1.0,
+        "pose": 1.0,
+        "body_ang_vel": 0.0,
+        "angular_momentum": 0.0,
+        "dof_pos_limits": -1.0,
+        "action_rate_l2": -0.1,
+        "air_time": 0.0,
+        "foot_clearance": -2.0,
+        "foot_swing_height": -0.25,
+        "foot_slip": -0.1,
+        "soft_landing": -1e-05,
+        "self_collisions": -0.1,
+        "shank_collision": -0.1,
+        "trunk_head_collision": -0.1
+      },
+      "physics_dt": 0.005,
+      "decimation": 4,
+      "episode_length_s": 20.0,
+      "actor_terms": [
+        "base_lin_vel",
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "command",
+        "height_scan"
+      ],
+      "noise": {
+        "base_lin_vel": [
+          -0.5,
+          0.5
+        ],
+        "base_ang_vel": [
+          -0.2,
+          0.2
+        ],
+        "projected_gravity": [
+          -0.05,
+          0.05
+        ],
+        "joint_pos": [
+          -0.01,
+          0.01
+        ],
+        "joint_vel": [
+          -1.5,
+          1.5
+        ],
+        "height_scan": [
+          -0.1,
+          0.1
+        ]
+      },
+      "commands": {
+        "rel_heading_envs": 0.3,
+        "rel_standing_envs": 0.1,
+        "rel_forward_envs": 0.2,
+        "heading_command": true,
+        "resampling_time_range": [
+          3.0,
+          8.0
+        ]
+      },
+      "command_ranges": {
+        "lin_vel_x": [
+          -1.0,
+          1.0
+        ],
+        "lin_vel_y": [
+          -1.0,
+          1.0
+        ],
+        "ang_vel_z": [
+          -0.5,
+          0.5
+        ],
+        "heading": [
+          -3.141592653589793,
+          3.141592653589793
+        ]
+      },
+      "terminations": [
+        "time_out",
+        "out_of_terrain_bounds",
+        "illegal_contact"
+      ],
+      "action_scale": {
+        ".*_hip_joint": 0.3727530387083568,
+        ".*_thigh_joint": 0.3727530387083568,
+        ".*_calf_joint": 0.24850202580557115
+      },
+      "solver": {
+        "solver": "newton",
+        "integrator": "implicitfast",
+        "cone": "elliptic",
+        "impratio": 10,
+        "iterations": 10,
+        "ls_iterations": 20,
+        "ccd_iterations": 500
+      },
+      "runtime_agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 10000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "go1_velocity",
+        "run_name": "",
+        "logger": {
+          "class_name": "WandbLogWriter",
+          "project_name": "mjlab"
+        },
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      }
+    },
+    "go1_flat": {
+      "agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 10000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "go1_velocity",
+        "run_name": "",
+        "logger": "wandb",
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": null,
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      },
+      "weights": {
+        "track_linear_velocity": 2.0,
+        "track_angular_velocity": 2.0,
+        "upright": 1.0,
+        "pose": 1.0,
+        "body_ang_vel": 0.0,
+        "angular_momentum": 0.0,
+        "dof_pos_limits": -1.0,
+        "action_rate_l2": -0.1,
+        "air_time": 0.0,
+        "foot_clearance": -2.0,
+        "foot_swing_height": -0.25,
+        "foot_slip": -0.1,
+        "soft_landing": -1e-05
+      },
+      "physics_dt": 0.005,
+      "decimation": 4,
+      "episode_length_s": 20.0,
+      "actor_terms": [
+        "base_lin_vel",
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "command"
+      ],
+      "noise": {
+        "base_lin_vel": [
+          -0.5,
+          0.5
+        ],
+        "base_ang_vel": [
+          -0.2,
+          0.2
+        ],
+        "projected_gravity": [
+          -0.05,
+          0.05
+        ],
+        "joint_pos": [
+          -0.01,
+          0.01
+        ],
+        "joint_vel": [
+          -1.5,
+          1.5
+        ]
+      },
+      "commands": {
+        "rel_heading_envs": 0.3,
+        "rel_standing_envs": 0.1,
+        "rel_forward_envs": 0.2,
+        "heading_command": true,
+        "resampling_time_range": [
+          3.0,
+          8.0
+        ]
+      },
+      "command_ranges": {
+        "lin_vel_x": [
+          -1.0,
+          1.0
+        ],
+        "lin_vel_y": [
+          -1.0,
+          1.0
+        ],
+        "ang_vel_z": [
+          -0.5,
+          0.5
+        ],
+        "heading": [
+          -3.141592653589793,
+          3.141592653589793
+        ]
+      },
+      "terminations": [
+        "time_out",
+        "fell_over"
+      ],
+      "action_scale": {
+        ".*_hip_joint": 0.3727530387083568,
+        ".*_thigh_joint": 0.3727530387083568,
+        ".*_calf_joint": 0.24850202580557115
+      },
+      "solver": {
+        "solver": "newton",
+        "integrator": "implicitfast",
+        "cone": "elliptic",
+        "impratio": 10,
+        "iterations": 10,
+        "ls_iterations": 20,
+        "ccd_iterations": 50
+      },
+      "runtime_agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 10000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "go1_velocity",
+        "run_name": "",
+        "logger": {
+          "class_name": "WandbLogWriter",
+          "project_name": "mjlab"
+        },
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      }
+    },
+    "g1_rough": {
+      "agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 30000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "g1_velocity",
+        "run_name": "",
+        "logger": "wandb",
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": null,
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      },
+      "weights": {
+        "track_linear_velocity": 2.0,
+        "track_angular_velocity": 2.0,
+        "upright": 1.0,
+        "pose": 1.0,
+        "body_ang_vel": -0.05,
+        "angular_momentum": -0.02,
+        "dof_pos_limits": -1.0,
+        "action_rate_l2": -0.1,
+        "air_time": 0.0,
+        "foot_clearance": -2.0,
+        "foot_swing_height": -0.25,
+        "foot_slip": -0.1,
+        "soft_landing": -1e-05,
+        "self_collisions": -1.0
+      },
+      "physics_dt": 0.005,
+      "decimation": 4,
+      "episode_length_s": 20.0,
+      "actor_terms": [
+        "base_lin_vel",
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "command",
+        "height_scan"
+      ],
+      "noise": {
+        "base_lin_vel": [
+          -0.5,
+          0.5
+        ],
+        "base_ang_vel": [
+          -0.2,
+          0.2
+        ],
+        "projected_gravity": [
+          -0.05,
+          0.05
+        ],
+        "joint_pos": [
+          -0.01,
+          0.01
+        ],
+        "joint_vel": [
+          -1.5,
+          1.5
+        ],
+        "height_scan": [
+          -0.1,
+          0.1
+        ]
+      },
+      "commands": {
+        "rel_heading_envs": 0.3,
+        "rel_standing_envs": 0.1,
+        "rel_forward_envs": 0.2,
+        "heading_command": true,
+        "resampling_time_range": [
+          3.0,
+          8.0
+        ]
+      },
+      "command_ranges": {
+        "lin_vel_x": [
+          -1.0,
+          1.0
+        ],
+        "lin_vel_y": [
+          -1.0,
+          1.0
+        ],
+        "ang_vel_z": [
+          -0.5,
+          0.5
+        ],
+        "heading": [
+          -3.141592653589793,
+          3.141592653589793
+        ]
+      },
+      "terminations": [
+        "time_out",
+        "fell_over",
+        "out_of_terrain_bounds"
+      ],
+      "action_scale": {
+        ".*_elbow_joint": 0.43857731392336724,
+        ".*_shoulder_pitch_joint": 0.43857731392336724,
+        ".*_shoulder_roll_joint": 0.43857731392336724,
+        ".*_shoulder_yaw_joint": 0.43857731392336724,
+        ".*_wrist_roll_joint": 0.43857731392336724,
+        ".*_hip_pitch_joint": 0.5475464629911068,
+        ".*_hip_yaw_joint": 0.5475464629911068,
+        "waist_yaw_joint": 0.5475464629911068,
+        ".*_hip_roll_joint": 0.35066146637882434,
+        ".*_knee_joint": 0.35066146637882434,
+        ".*_wrist_pitch_joint": 0.07450087032950714,
+        ".*_wrist_yaw_joint": 0.07450087032950714,
+        "waist_pitch_joint": 0.43857731392336724,
+        "waist_roll_joint": 0.43857731392336724,
+        ".*_ankle_pitch_joint": 0.43857731392336724,
+        ".*_ankle_roll_joint": 0.43857731392336724
+      },
+      "solver": {
+        "solver": "newton",
+        "integrator": "implicitfast",
+        "cone": "pyramidal",
+        "impratio": 1.0,
+        "iterations": 10,
+        "ls_iterations": 20,
+        "ccd_iterations": 500
+      },
+      "runtime_agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 30000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "g1_velocity",
+        "run_name": "",
+        "logger": {
+          "class_name": "WandbLogWriter",
+          "project_name": "mjlab"
+        },
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      }
+    },
+    "g1_flat": {
+      "agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 30000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "g1_velocity",
+        "run_name": "",
+        "logger": "wandb",
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "cnn_cfg": null,
+          "distribution_cfg": null,
+          "rnn_type": null,
+          "rnn_hidden_dim": 256,
+          "rnn_num_layers": 1,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      },
+      "weights": {
+        "track_linear_velocity": 2.0,
+        "track_angular_velocity": 2.0,
+        "upright": 1.0,
+        "pose": 1.0,
+        "body_ang_vel": -0.05,
+        "angular_momentum": -0.02,
+        "dof_pos_limits": -1.0,
+        "action_rate_l2": -0.1,
+        "air_time": 0.0,
+        "foot_clearance": -2.0,
+        "foot_swing_height": -0.25,
+        "foot_slip": -0.1,
+        "soft_landing": -1e-05,
+        "self_collisions": -1.0
+      },
+      "physics_dt": 0.005,
+      "decimation": 4,
+      "episode_length_s": 20.0,
+      "actor_terms": [
+        "base_lin_vel",
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "command"
+      ],
+      "noise": {
+        "base_lin_vel": [
+          -0.5,
+          0.5
+        ],
+        "base_ang_vel": [
+          -0.2,
+          0.2
+        ],
+        "projected_gravity": [
+          -0.05,
+          0.05
+        ],
+        "joint_pos": [
+          -0.01,
+          0.01
+        ],
+        "joint_vel": [
+          -1.5,
+          1.5
+        ]
+      },
+      "commands": {
+        "rel_heading_envs": 0.3,
+        "rel_standing_envs": 0.1,
+        "rel_forward_envs": 0.2,
+        "heading_command": true,
+        "resampling_time_range": [
+          3.0,
+          8.0
+        ]
+      },
+      "command_ranges": {
+        "lin_vel_x": [
+          -1.0,
+          1.0
+        ],
+        "lin_vel_y": [
+          -1.0,
+          1.0
+        ],
+        "ang_vel_z": [
+          -0.5,
+          0.5
+        ],
+        "heading": [
+          -3.141592653589793,
+          3.141592653589793
+        ]
+      },
+      "terminations": [
+        "time_out",
+        "fell_over"
+      ],
+      "action_scale": {
+        ".*_elbow_joint": 0.43857731392336724,
+        ".*_shoulder_pitch_joint": 0.43857731392336724,
+        ".*_shoulder_roll_joint": 0.43857731392336724,
+        ".*_shoulder_yaw_joint": 0.43857731392336724,
+        ".*_wrist_roll_joint": 0.43857731392336724,
+        ".*_hip_pitch_joint": 0.5475464629911068,
+        ".*_hip_yaw_joint": 0.5475464629911068,
+        "waist_yaw_joint": 0.5475464629911068,
+        ".*_hip_roll_joint": 0.35066146637882434,
+        ".*_knee_joint": 0.35066146637882434,
+        ".*_wrist_pitch_joint": 0.07450087032950714,
+        ".*_wrist_yaw_joint": 0.07450087032950714,
+        "waist_pitch_joint": 0.43857731392336724,
+        "waist_roll_joint": 0.43857731392336724,
+        ".*_ankle_pitch_joint": 0.43857731392336724,
+        ".*_ankle_roll_joint": 0.43857731392336724
+      },
+      "solver": {
+        "solver": "newton",
+        "integrator": "implicitfast",
+        "cone": "pyramidal",
+        "impratio": 1.0,
+        "iterations": 10,
+        "ls_iterations": 20,
+        "ccd_iterations": 50
+      },
+      "runtime_agent": {
+        "seed": 42,
+        "num_steps_per_env": 24,
+        "max_iterations": 30000,
+        "obs_groups": {
+          "actor": [
+            "actor"
+          ],
+          "critic": [
+            "critic"
+          ]
+        },
+        "save_interval": 50,
+        "experiment_name": "g1_velocity",
+        "run_name": "",
+        "logger": {
+          "class_name": "WandbLogWriter",
+          "project_name": "mjlab"
+        },
+        "wandb_project": "mjlab",
+        "wandb_tags": [],
+        "resume": false,
+        "load_run": ".*",
+        "load_checkpoint": "model_.*.pt",
+        "clip_actions": null,
+        "upload_model": true,
+        "class_name": "OnPolicyRunner",
+        "actor": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "distribution_cfg": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar"
+          },
+          "class_name": "MLPModel"
+        },
+        "critic": {
+          "hidden_dims": [
+            512,
+            256,
+            128
+          ],
+          "activation": "elu",
+          "obs_normalization": true,
+          "class_name": "MLPModel"
+        },
+        "algorithm": {
+          "num_learning_epochs": 5,
+          "num_mini_batches": 4,
+          "learning_rate": 0.001,
+          "schedule": "adaptive",
+          "gamma": 0.99,
+          "lam": 0.95,
+          "entropy_coef": 0.01,
+          "desired_kl": 0.01,
+          "max_grad_norm": 1.0,
+          "value_loss_coef": 1.0,
+          "use_clipped_value_loss": true,
+          "clip_param": 0.2,
+          "normalize_advantage_per_mini_batch": false,
+          "optimizer": "adam",
+          "share_cnn_encoders": false,
+          "class_name": "PPO"
+        }
+      }
+    }
+  },
+  "profiles": {
+    "go1": {
+      "FR_hip_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.1,
+        "action_scale": 0.3727530387083568
+      },
+      "FR_thigh_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.9,
+        "action_scale": 0.3727530387083568
+      },
+      "FL_hip_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": -0.1,
+        "action_scale": 0.3727530387083568
+      },
+      "FL_thigh_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.9,
+        "action_scale": 0.3727530387083568
+      },
+      "RR_hip_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.1,
+        "action_scale": 0.3727530387083568
+      },
+      "RR_thigh_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.9,
+        "action_scale": 0.3727530387083568
+      },
+      "RL_hip_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": -0.1,
+        "action_scale": 0.3727530387083568
+      },
+      "RL_thigh_joint": {
+        "kp": 15.89524265323492,
+        "kd": 1.0119225759919113,
+        "armature": 0.004026312,
+        "effort_limit": 23.7,
+        "default_position": 0.9,
+        "action_scale": 0.3727530387083568
+      },
+      "FR_calf_joint": {
+        "kp": 35.76429596977857,
+        "kd": 2.2768257959818006,
+        "armature": 0.009059202,
+        "effort_limit": 35.55,
+        "default_position": -1.8,
+        "action_scale": 0.24850202580557115
+      },
+      "FL_calf_joint": {
+        "kp": 35.76429596977857,
+        "kd": 2.2768257959818006,
+        "armature": 0.009059202,
+        "effort_limit": 35.55,
+        "default_position": -1.8,
+        "action_scale": 0.24850202580557115
+      },
+      "RR_calf_joint": {
+        "kp": 35.76429596977857,
+        "kd": 2.2768257959818006,
+        "armature": 0.009059202,
+        "effort_limit": 35.55,
+        "default_position": -1.8,
+        "action_scale": 0.24850202580557115
+      },
+      "RL_calf_joint": {
+        "kp": 35.76429596977857,
+        "kd": 2.2768257959818006,
+        "armature": 0.009059202,
+        "effort_limit": 35.55,
+        "default_position": -1.8,
+        "action_scale": 0.24850202580557115
+      }
+    },
+    "g1": {
+      "left_shoulder_pitch_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.2,
+        "action_scale": 0.43857731392336724
+      },
+      "left_shoulder_roll_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.2,
+        "action_scale": 0.43857731392336724
+      },
+      "left_shoulder_yaw_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "left_elbow_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.6,
+        "action_scale": 0.43857731392336724
+      },
+      "left_wrist_roll_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "right_shoulder_pitch_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.2,
+        "action_scale": 0.43857731392336724
+      },
+      "right_shoulder_roll_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": -0.2,
+        "action_scale": 0.43857731392336724
+      },
+      "right_shoulder_yaw_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "right_elbow_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.6,
+        "action_scale": 0.43857731392336724
+      },
+      "right_wrist_roll_joint": {
+        "kp": 14.25062309787429,
+        "kd": 0.907222843292423,
+        "armature": 0.003609725,
+        "effort_limit": 25.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "left_hip_pitch_joint": {
+        "kp": 40.17923863450712,
+        "kd": 2.557889775413375,
+        "armature": 0.01017752004132231,
+        "effort_limit": 88.0,
+        "default_position": -0.312,
+        "action_scale": 0.5475464629911068
+      },
+      "left_hip_yaw_joint": {
+        "kp": 40.17923863450712,
+        "kd": 2.557889775413375,
+        "armature": 0.01017752004132231,
+        "effort_limit": 88.0,
+        "default_position": 0.0,
+        "action_scale": 0.5475464629911068
+      },
+      "right_hip_pitch_joint": {
+        "kp": 40.17923863450712,
+        "kd": 2.557889775413375,
+        "armature": 0.01017752004132231,
+        "effort_limit": 88.0,
+        "default_position": -0.312,
+        "action_scale": 0.5475464629911068
+      },
+      "right_hip_yaw_joint": {
+        "kp": 40.17923863450712,
+        "kd": 2.557889775413375,
+        "armature": 0.01017752004132231,
+        "effort_limit": 88.0,
+        "default_position": 0.0,
+        "action_scale": 0.5475464629911068
+      },
+      "waist_yaw_joint": {
+        "kp": 40.17923863450712,
+        "kd": 2.557889775413375,
+        "armature": 0.01017752004132231,
+        "effort_limit": 88.0,
+        "default_position": 0.0,
+        "action_scale": 0.5475464629911068
+      },
+      "left_hip_roll_joint": {
+        "kp": 99.09842777666111,
+        "kd": 6.308801853496639,
+        "armature": 0.025101924999999997,
+        "effort_limit": 139.0,
+        "default_position": 0.0,
+        "action_scale": 0.35066146637882434
+      },
+      "left_knee_joint": {
+        "kp": 99.09842777666111,
+        "kd": 6.308801853496639,
+        "armature": 0.025101924999999997,
+        "effort_limit": 139.0,
+        "default_position": 0.669,
+        "action_scale": 0.35066146637882434
+      },
+      "right_hip_roll_joint": {
+        "kp": 99.09842777666111,
+        "kd": 6.308801853496639,
+        "armature": 0.025101924999999997,
+        "effort_limit": 139.0,
+        "default_position": 0.0,
+        "action_scale": 0.35066146637882434
+      },
+      "right_knee_joint": {
+        "kp": 99.09842777666111,
+        "kd": 6.308801853496639,
+        "armature": 0.025101924999999997,
+        "effort_limit": 139.0,
+        "default_position": 0.669,
+        "action_scale": 0.35066146637882434
+      },
+      "left_wrist_pitch_joint": {
+        "kp": 16.77832748089279,
+        "kd": 1.06814150219,
+        "armature": 0.00425,
+        "effort_limit": 5.0,
+        "default_position": 0.0,
+        "action_scale": 0.07450087032950714
+      },
+      "left_wrist_yaw_joint": {
+        "kp": 16.77832748089279,
+        "kd": 1.06814150219,
+        "armature": 0.00425,
+        "effort_limit": 5.0,
+        "default_position": 0.0,
+        "action_scale": 0.07450087032950714
+      },
+      "right_wrist_pitch_joint": {
+        "kp": 16.77832748089279,
+        "kd": 1.06814150219,
+        "armature": 0.00425,
+        "effort_limit": 5.0,
+        "default_position": 0.0,
+        "action_scale": 0.07450087032950714
+      },
+      "right_wrist_yaw_joint": {
+        "kp": 16.77832748089279,
+        "kd": 1.06814150219,
+        "armature": 0.00425,
+        "effort_limit": 5.0,
+        "default_position": 0.0,
+        "action_scale": 0.07450087032950714
+      },
+      "waist_roll_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "waist_pitch_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "left_ankle_pitch_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": -0.363,
+        "action_scale": 0.43857731392336724
+      },
+      "left_ankle_roll_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      },
+      "right_ankle_pitch_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": -0.363,
+        "action_scale": 0.43857731392336724
+      },
+      "right_ankle_roll_joint": {
+        "kp": 28.50124619574858,
+        "kd": 1.814445686584846,
+        "armature": 0.00721945,
+        "effort_limit": 50.0,
+        "default_position": 0.0,
+        "action_scale": 0.43857731392336724
+      }
+    }
+  },
+  "reward_probe": {
+    "inputs": {
+      "command": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.20000000298023224
+        ],
+        [
+          -0.4000000059604645,
+          0.10000000149011612,
+          -0.10000000149011612
+        ],
+        [
+          2.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "quaternion": [
+        [
+          0.5224958658218384,
+          0.17180782556533813,
+          -0.8051205277442932,
+          -0.22194842994213104
+        ],
+        [
+          -0.5505996346473694,
+          0.4634384214878082,
+          0.6769838929176331,
+          0.15413524210453033
+        ],
+        [
+          0.7112321257591248,
+          0.28571972250938416,
+          0.5996544361114502,
+          0.23006011545658112
+        ],
+        [
+          -0.3967077434062958,
+          -0.7658798098564148,
+          0.1436263620853424,
+          0.48520368337631226
+        ]
+      ],
+      "linear_body": [
+        [
+          -0.8255172371864319,
+          0.5849161148071289,
+          1.9284923076629639
+        ],
+        [
+          -1.3869538307189941,
+          -0.2559441328048706,
+          0.22779861092567444
+        ],
+        [
+          -3.591064929962158,
+          1.059006690979004,
+          -1.6296418905258179
+        ],
+        [
+          -0.7318717837333679,
+          0.9295675754547119,
+          0.3779696524143219
+        ]
+      ],
+      "angular_body": [
+        [
+          0.5857603549957275,
+          -0.6565313935279846,
+          -0.31696704030036926
+        ],
+        [
+          -0.22753006219863892,
+          0.16739223897457123,
+          -0.785283625125885
+        ],
+        [
+          0.5627110600471497,
+          1.7584948539733887,
+          1.699561595916748
+        ],
+        [
+          1.7654839754104614,
+          2.0741379261016846,
+          1.5580743551254272
+        ]
+      ],
+      "joint_position": [
+        [
+          -0.7740378379821777,
+          2.3082644939422607,
+          -0.6067063808441162,
+          -1.0168392658233643,
+          0.22675412893295288,
+          -0.8875304460525513,
+          -2.14241886138916,
+          0.8990590572357178,
+          0.3780553936958313,
+          0.3559470772743225,
+          1.2719941139221191,
+          -1.2036285400390625
+        ],
+        [
+          -0.40459516644477844,
+          -2.144077777862549,
+          -0.11783499270677567,
+          -0.10388439148664474,
+          -0.9727771282196045,
+          0.8970444202423096,
+          -0.3914487361907959,
+          0.38534265756607056,
+          0.1719820499420166,
+          -0.7278670072555542,
+          -0.7739887237548828,
+          1.5778249502182007
+        ],
+        [
+          1.1206042766571045,
+          -1.2182085514068604,
+          0.011030783876776695,
+          -0.8322634100914001,
+          -1.3420581817626953,
+          -1.7033849954605103,
+          -0.8777957558631897,
+          0.303771436214447,
+          -0.5627883672714233,
+          -0.8307470679283142,
+          0.10483653843402863,
+          -0.17802540957927704
+        ],
+        [
+          0.28692764043807983,
+          1.5209311246871948,
+          0.19628819823265076,
+          -1.5446186065673828,
+          1.1653777360916138,
+          -0.02166622132062912,
+          0.31981590390205383,
+          1.1267839670181274,
+          0.140497624874115,
+          -1.0178701877593994,
+          1.0047060251235962,
+          0.4256044924259186
+        ]
+      ],
+      "action": [
+        [
+          -0.5279819369316101,
+          0.15980811417102814,
+          -1.0013741254806519,
+          0.5818390250205994,
+          0.6552963852882385,
+          -0.1396196335554123,
+          -0.4971127212047577,
+          1.152941346168518,
+          -0.5947973728179932,
+          1.1937767267227173,
+          0.3620654344558716,
+          -2.3487329483032227
+        ],
+        [
+          0.8634048104286194,
+          -1.3382142782211304,
+          0.6942639946937561,
+          1.117234468460083,
+          -0.0311120618134737,
+          -0.2709316611289978,
+          0.46274328231811523,
+          -1.3503456115722656,
+          -1.5922521352767944,
+          -0.7683401107788086,
+          0.6075504422187805,
+          0.2778303623199463
+        ],
+        [
+          -1.2894407510757446,
+          -0.13026109337806702,
+          1.0535786151885986,
+          0.8124570250511169,
+          -0.8717032074928284,
+          -0.252703458070755,
+          0.2617281973361969,
+          -0.9802345037460327,
+          -0.2799350917339325,
+          -1.4070221185684204,
+          2.9595277309417725,
+          2.601842164993286
+        ],
+        [
+          -0.19266347587108612,
+          1.8414045572280884,
+          -0.38554084300994873,
+          0.3632219135761261,
+          1.4931530952453613,
+          0.12923048436641693,
+          -0.03341418504714966,
+          0.6028630137443542,
+          -0.6418537497520447,
+          0.7100087404251099,
+          -0.15948423743247986,
+          3.698620557785034
+        ]
+      ],
+      "previous_action": [
+        [
+          -0.240927055478096,
+          -0.08912468701601028,
+          1.0173653364181519,
+          0.35426077246665955,
+          0.3562471866607666,
+          0.04596039280295372,
+          0.05198892578482628,
+          1.0072269439697266,
+          0.2607163190841675,
+          -0.9650561809539795,
+          0.23512455821037292,
+          -0.13122747838497162
+        ],
+        [
+          -1.9281773567199707,
+          -0.02264515496790409,
+          0.8551461100578308,
+          -0.09842793643474579,
+          -0.7816014885902405,
+          0.2887304425239563,
+          1.14961576461792,
+          -0.5105792284011841,
+          0.9523986577987671,
+          -0.20449994504451752,
+          0.8303481936454773,
+          0.3836226165294647
+        ],
+        [
+          0.07748188823461533,
+          -0.5193418264389038,
+          -0.6110575199127197,
+          -1.2248060703277588,
+          1.0213457345962524,
+          -0.62149977684021,
+          0.20686250925064087,
+          0.5153182744979858,
+          0.30709725618362427,
+          1.3544096946716309,
+          0.22935226559638977,
+          1.1975083351135254
+        ],
+        [
+          -2.645836591720581,
+          -0.06288031488656998,
+          -1.1330511569976807,
+          0.28159597516059875,
+          0.1523115187883377,
+          0.4656032621860504,
+          0.3511180877685547,
+          -1.0051648616790771,
+          -0.31296709179878235,
+          -0.21889901161193848,
+          -0.5037877559661865,
+          -1.2636445760726929
+        ]
+      ],
+      "foot_velocity": [
+        [
+          [
+            0.5984032154083252,
+            0.3270416259765625,
+            -0.07471029460430145
+          ],
+          [
+            0.5467352867126465,
+            -1.6093096733093262,
+            1.3019814491271973
+          ],
+          [
+            0.5464466214179993,
+            -1.0850868225097656,
+            -1.2350777387619019
+          ],
+          [
+            1.4350910186767578,
+            -0.23900152742862701,
+            -0.9155511856079102
+          ]
+        ],
+        [
+          [
+            -1.5114037990570068,
+            1.501127004623413,
+            0.30569055676460266
+          ],
+          [
+            1.3588286638259888,
+            -1.1561254262924194,
+            0.032269690185785294
+          ],
+          [
+            0.42606717348098755,
+            -1.5656315088272095,
+            1.3011318445205688
+          ],
+          [
+            -0.7663021683692932,
+            -0.8312442302703857,
+            -0.5246255397796631
+          ]
+        ],
+        [
+          [
+            0.22196967899799347,
+            0.052904289215803146,
+            0.2938070595264435
+          ],
+          [
+            -0.07248188555240631,
+            1.9142346382141113,
+            1.288446307182312
+          ],
+          [
+            1.3731340169906616,
+            0.8587520122528076,
+            -1.2293931245803833
+          ],
+          [
+            -1.81056547164917,
+            -0.8160125613212585,
+            -0.48162034153938293
+          ]
+        ],
+        [
+          [
+            -0.4720664620399475,
+            -0.24005568027496338,
+            1.7702572345733643
+          ],
+          [
+            -0.47315579652786255,
+            -0.7292569875717163,
+            -0.16491034626960754
+          ],
+          [
+            -1.1788051128387451,
+            0.9291785359382629,
+            -0.6391156911849976
+          ],
+          [
+            0.8507538437843323,
+            1.1104060411453247,
+            -1.3700065612792969
+          ]
+        ]
+      ],
+      "foot_height": [
+        [
+          0.005253426730632782,
+          0.08850899338722229,
+          0.07656123489141464,
+          0.12903089821338654
+        ],
+        [
+          0.012621340341866016,
+          0.10665775835514069,
+          0.0002802870294544846,
+          0.2243228703737259
+        ],
+        [
+          0.04871832951903343,
+          0.08988725394010544,
+          0.046701110899448395,
+          0.13162794709205627
+        ],
+        [
+          0.053098034113645554,
+          0.031256478279829025,
+          0.14094634354114532,
+          0.15217360854148865
+        ]
+      ],
+      "peak_before": [
+        [
+          0.16139881312847137,
+          0.042630407959222794,
+          0.008648679591715336,
+          0.012708397582173347
+        ],
+        [
+          0.15281258523464203,
+          0.025110552087426186,
+          0.002447967417538166,
+          0.08715891093015671
+        ],
+        [
+          0.01790083944797516,
+          0.051766958087682724,
+          0.07591794431209564,
+          0.13942629098892212
+        ],
+        [
+          0.03981555625796318,
+          0.0038707610219717026,
+          0.15738241374492645,
+          0.02558404579758644
+        ]
+      ],
+      "foot_contact": [
+        [
+          1.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "first_contact": [
+        [
+          true,
+          false,
+          false,
+          false
+        ],
+        [
+          false,
+          false,
+          true,
+          false
+        ],
+        [
+          false,
+          true,
+          false,
+          true
+        ],
+        [
+          false,
+          false,
+          false,
+          true
+        ]
+      ],
+      "contact_force": [
+        [
+          [
+            20.998706817626953,
+            -16.304494857788086,
+            32.54319381713867
+          ],
+          [
+            -22.16594886779785,
+            26.206026077270508,
+            28.805618286132812
+          ],
+          [
+            -17.012073516845703,
+            15.568137168884277,
+            34.997955322265625
+          ],
+          [
+            -10.214781761169434,
+            -19.05864906311035,
+            14.572366714477539
+          ]
+        ],
+        [
+          [
+            -23.949172973632812,
+            -28.10373306274414,
+            -15.699563980102539
+          ],
+          [
+            10.648141860961914,
+            -6.032451629638672,
+            -23.755428314208984
+          ],
+          [
+            1.7333747148513794,
+            7.489897727966309,
+            18.796892166137695
+          ],
+          [
+            -4.675698280334473,
+            -9.789281845092773,
+            35.0259895324707
+          ]
+        ],
+        [
+          [
+            8.6107177734375,
+            -42.7808952331543,
+            20.61252784729004
+          ],
+          [
+            -19.122304916381836,
+            -4.15144157409668,
+            -18.63493537902832
+          ],
+          [
+            24.585102081298828,
+            -18.0206298828125,
+            -6.184226989746094
+          ],
+          [
+            -5.912312984466553,
+            -0.34635844826698303,
+            -18.935344696044922
+          ]
+        ],
+        [
+          [
+            -7.565255641937256,
+            -10.553241729736328,
+            4.7953033447265625
+          ],
+          [
+            12.066118240356445,
+            -22.331279754638672,
+            1.633008599281311
+          ],
+          [
+            31.444053649902344,
+            -23.11127471923828,
+            -26.36227035522461
+          ],
+          [
+            28.38956069946289,
+            13.324007034301758,
+            -18.990665435791016
+          ]
+        ]
+      ],
+      "force_history": [
+        [
+          [
+            [
+              -7.485645294189453,
+              3.6410255432128906,
+              -2.63187837600708
+            ],
+            [
+              3.6765682697296143,
+              0.9904379844665527,
+              3.8314976692199707
+            ],
+            [
+              -1.6139185428619385,
+              1.806807518005371,
+              -1.6514558792114258
+            ],
+            [
+              -10.14256477355957,
+              4.699925899505615,
+              -2.7872798442840576
+            ]
+          ],
+          [
+            [
+              4.670924663543701,
+              11.532979011535645,
+              2.3891117572784424
+            ],
+            [
+              8.863763809204102,
+              -1.7288565635681152,
+              -3.9936599731445312
+            ],
+            [
+              -5.5260772705078125,
+              -8.298913955688477,
+              -6.615275859832764
+            ],
+            [
+              -0.30517321825027466,
+              2.1571836471557617,
+              2.326537847518921
+            ]
+          ],
+          [
+            [
+              -0.06234268099069595,
+              4.864077568054199,
+              1.1237839460372925
+            ],
+            [
+              5.638147830963135,
+              -1.0035455226898193,
+              -5.817088603973389
+            ],
+            [
+              -2.3752269744873047,
+              9.17780876159668,
+              3.9020440578460693
+            ],
+            [
+              14.17738151550293,
+              1.4783871173858643,
+              -8.858552932739258
+            ]
+          ],
+          [
+            [
+              -9.204840660095215,
+              -1.3113582134246826,
+              3.0955560207366943
+            ],
+            [
+              -0.26824766397476196,
+              -2.982692241668701,
+              -2.333799123764038
+            ],
+            [
+              -3.3457136154174805,
+              1.3210093975067139,
+              2.8646347522735596
+            ],
+            [
+              -3.5491065979003906,
+              -5.344244956970215,
+              4.3368330001831055
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              6.82624626159668,
+              10.44581127166748,
+              5.590633869171143
+            ],
+            [
+              3.736825704574585,
+              -12.91637134552002,
+              0.5947052240371704
+            ],
+            [
+              -0.8040727972984314,
+              6.35260009765625,
+              -2.5524306297302246
+            ],
+            [
+              -6.010105133056641,
+              14.306974411010742,
+              2.5597286224365234
+            ]
+          ],
+          [
+            [
+              -7.742815971374512,
+              -0.3271665573120117,
+              -3.0320024490356445
+            ],
+            [
+              6.31868839263916,
+              -3.889187812805176,
+              10.728052139282227
+            ],
+            [
+              2.003359079360962,
+              -2.972067356109619,
+              -8.882702827453613
+            ],
+            [
+              3.522716522216797,
+              14.64708137512207,
+              -7.14372444152832
+            ]
+          ],
+          [
+            [
+              -1.2720533609390259,
+              -1.0984294414520264,
+              -5.012741565704346
+            ],
+            [
+              -2.6931724548339844,
+              2.0989990234375,
+              1.9442229270935059
+            ],
+            [
+              -0.5196775794029236,
+              -5.7237043380737305,
+              1.4751324653625488
+            ],
+            [
+              -3.163095474243164,
+              4.823018550872803,
+              4.6158127784729
+            ]
+          ],
+          [
+            [
+              -2.3420212268829346,
+              3.6236765384674072,
+              14.272218704223633
+            ],
+            [
+              -9.250528335571289,
+              -5.269159317016602,
+              2.390472650527954
+            ],
+            [
+              -10.528858184814453,
+              -3.2119226455688477,
+              -1.1716405153274536
+            ],
+            [
+              -7.899397850036621,
+              1.4396235942840576,
+              0.3260250687599182
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              3.118370532989502,
+              6.305092811584473,
+              3.5547800064086914
+            ],
+            [
+              4.307044982910156,
+              -3.402916431427002,
+              -8.261717796325684
+            ],
+            [
+              7.687838554382324,
+              0.680918276309967,
+              5.791109085083008
+            ],
+            [
+              2.104377269744873,
+              -2.6276583671569824,
+              9.821746826171875
+            ]
+          ],
+          [
+            [
+              3.7953572273254395,
+              -1.777536392211914,
+              -7.3779401779174805
+            ],
+            [
+              -0.5697606801986694,
+              0.4073064923286438,
+              6.8378801345825195
+            ],
+            [
+              -3.5611939430236816,
+              -3.72664737701416,
+              3.1784982681274414
+            ],
+            [
+              -6.515228748321533,
+              8.357710838317871,
+              0.7238819599151611
+            ]
+          ],
+          [
+            [
+              -1.307917594909668,
+              -3.478687286376953,
+              -0.9766793847084045
+            ],
+            [
+              1.4165252447128296,
+              3.351184844970703,
+              -1.8651001453399658
+            ],
+            [
+              -5.4272871017456055,
+              -1.0714834928512573,
+              -2.8848206996917725
+            ],
+            [
+              4.91923713684082,
+              10.170154571533203,
+              1.8557792901992798
+            ]
+          ],
+          [
+            [
+              1.59736967086792,
+              -6.522349834442139,
+              6.913010597229004
+            ],
+            [
+              0.8767502903938293,
+              -6.856166839599609,
+              -5.007443428039551
+            ],
+            [
+              -3.5269596576690674,
+              -2.382113218307495,
+              -14.511608123779297
+            ],
+            [
+              1.82782781124115,
+              -13.063114166259766,
+              4.656195640563965
+            ]
+          ]
+        ],
+        [
+          [
+            [
+              -3.3770017623901367,
+              2.7192907333374023,
+              -5.993772029876709
+            ],
+            [
+              -2.4428532123565674,
+              -5.861457824707031,
+              0.8064660429954529
+            ],
+            [
+              7.944967269897461,
+              -3.46005916595459,
+              -2.7114555835723877
+            ],
+            [
+              -2.9255599975585938,
+              -10.7615966796875,
+              -0.06435695290565491
+            ]
+          ],
+          [
+            [
+              0.8762379884719849,
+              3.312533378601074,
+              0.8599870204925537
+            ],
+            [
+              6.090349197387695,
+              -2.8969454765319824,
+              6.8844709396362305
+            ],
+            [
+              -1.6206269264221191,
+              -7.6479105949401855,
+              2.3448002338409424
+            ],
+            [
+              0.49048635363578796,
+              -6.611106872558594,
+              8.036918640136719
+            ]
+          ],
+          [
+            [
+              -1.8410990238189697,
+              -5.885864734649658,
+              2.6756954193115234
+            ],
+            [
+              5.946138858795166,
+              0.3895012140274048,
+              -1.2271196842193604
+            ],
+            [
+              7.460991382598877,
+              2.1569745540618896,
+              -1.1622365713119507
+            ],
+            [
+              -2.7830681800842285,
+              -0.8025197982788086,
+              -8.130147933959961
+            ]
+          ],
+          [
+            [
+              9.064471244812012,
+              4.094761848449707,
+              -1.5117323398590088
+            ],
+            [
+              1.961145043373108,
+              -8.561220169067383,
+              -1.3028459548950195
+            ],
+            [
+              0.27652186155319214,
+              7.320651054382324,
+              -5.323024749755859
+            ],
+            [
+              1.8343274593353271,
+              9.102618217468262,
+              9.535679817199707
+            ]
+          ]
+        ]
+      ],
+      "air_time": [
+        [
+          0.0,
+          0.20000000298023224,
+          0.0,
+          0.6000000238418579
+        ],
+        [
+          0.30000001192092896,
+          0.10000000149011612,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.05000000074505806,
+          0.0,
+          0.49000000953674316,
+          0.0
+        ]
+      ],
+      "angular_momentum": [
+        [
+          1.1312165260314941,
+          -1.0383901596069336,
+          1.6670811176300049
+        ],
+        [
+          0.7188341617584229,
+          -0.2163120061159134,
+          -1.457505226135254
+        ],
+        [
+          -1.1210862398147583,
+          -0.8128383159637451,
+          0.08024920523166656
+        ],
+        [
+          -0.6123470664024353,
+          2.2156777381896973,
+          1.0763039588928223
+        ]
+      ],
+      "pose_standing": [
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806,
+        0.05000000074505806
+      ],
+      "pose_walking": [
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896,
+        0.30000001192092896
+      ],
+      "pose_running": [
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579,
+        0.6000000238418579
+      ]
+    },
+    "rates": {
+      "track_linear_velocity": [
+        5.7690829891043904e-09,
+        7.914081889826008e-11,
+        1.2570342724668042e-24,
+        1.9317977613750184e-15
+      ],
+      "track_angular_velocity": [
+        0.17390719056129456,
+        0.12231597304344177,
+        1.6833247400427354e-06,
+        2.8013809050264626e-09
+      ],
+      "upright": [
+        0.012674144469201565,
+        0.012266905046999454,
+        0.007219994906336069,
+        0.008479009382426739
+      ],
+      "pose": [
+        0.0,
+        6.071260941098444e-05,
+        9.112268890021369e-05,
+        0.10354188084602356
+      ],
+      "body_ang_vel": [
+        0.8312210440635681,
+        0.6960910558700562,
+        5.310060501098633,
+        9.835668563842773
+      ],
+      "angular_momentum": [
+        5.137064456939697,
+        2.6878349781036377,
+        1.923980474472046,
+        6.442626953125
+      ],
+      "dof_pos_limits": [
+        3.443145275115967,
+        1.9946799278259277,
+        1.784256100654602,
+        1.980287790298462
+      ],
+      "action_rate_l2": [
+        15.04399299621582,
+        19.93482208251953,
+        32.296775817871094,
+        40.568077087402344
+      ],
+      "air_time": [
+        0.0,
+        2.0,
+        0.0,
+        1.0
+      ],
+      "foot_clearance": [
+        0.0,
+        0.5003694295883179,
+        0.18020597100257874,
+        0.21904119849205017
+      ],
+      "foot_swing_height": [
+        0.0,
+        0.9516398906707764,
+        0.38808590173721313,
+        0.5537734627723694
+      ],
+      "foot_slip": [
+        0.0,
+        3.910921096801758,
+        10.288592338562012,
+        2.7124757766723633
+      ],
+      "soft_landing": [
+        0.0,
+        20.30828094482422,
+        46.861358642578125,
+        36.66253662109375
+      ],
+      "self_collisions": [
+        3.0,
+        4.0,
+        2.0,
+        2.0
+      ],
+      "shank_collision": [
+        3.0,
+        4.0,
+        2.0,
+        2.0
+      ],
+      "trunk_head_collision": [
+        3.0,
+        4.0,
+        2.0,
+        2.0
+      ]
+    },
+    "weights": {
+      "track_linear_velocity": 0.1,
+      "track_angular_velocity": 0.2,
+      "upright": 0.3,
+      "pose": 0.4,
+      "body_ang_vel": 0.5,
+      "angular_momentum": 0.6,
+      "dof_pos_limits": 0.7,
+      "action_rate_l2": 0.8,
+      "air_time": 0.9,
+      "foot_clearance": 1.0,
+      "foot_swing_height": 1.1,
+      "foot_slip": 1.2,
+      "soft_landing": 1.3,
+      "self_collisions": 1.4,
+      "shank_collision": 1.5,
+      "trunk_head_collision": 1.6
+    },
+    "reward": [
+      0.6296365261077881,
+      1.4354817867279053,
+      2.275423765182495,
+      2.086250066757202
+    ]
+  }
+}

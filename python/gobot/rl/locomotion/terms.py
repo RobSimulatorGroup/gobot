@@ -30,16 +30,3 @@ def locomotion_failure_mask(gravity_z, clearance, illegal_contacts, trunk_contac
     if terminate_on_trunk:
         failed = failed | (trunk_contacts > 0)
     return failed
-
-
-def adaptive_tracking_terms(command, linear_velocity, angular_velocity, cfg, xp):
-    """Task tracking with a non-flat progress signal at low commanded speeds."""
-    speed2 = (command[..., :2] ** 2).sum(-1)
-    speed = speed2 ** .5
-    sigma = (cfg.tracking_std_scale * speed).clip(min=cfg.tracking_std_floor, max=cfg.tracking_std_ceiling)
-    linear_error = ((linear_velocity[..., :2] - command[..., :2]) ** 2).sum(-1)
-    yaw_sigma = (.5 * abs(command[..., 2])).clip(min=.15, max=.5)
-    yaw_error = (angular_velocity[..., 2] - command[..., 2]) ** 2
-    progress = ((linear_velocity[..., :2] * command[..., :2]).sum(-1) / speed2.clip(min=1.e-6)).clip(min=-1.,max=1.)
-    progress = progress * (speed > cfg.command_threshold)
-    return xp.exp(-linear_error / sigma ** 2), xp.exp(-yaw_error / yaw_sigma ** 2), progress

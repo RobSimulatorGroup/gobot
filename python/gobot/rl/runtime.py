@@ -727,12 +727,12 @@ class NativeLocomotionBatchBackend:
             raise RuntimeError("Gobot native locomotion batch view has no command-step resampling toggle")
         set_enabled(bool(enabled))
 
-    def advance_commands(self) -> None:
+    def advance_commands(self, reset_mask=None) -> None:
         self._require_view()
         advance = getattr(self._view, "advance_commands", None)
         if advance is None:
             raise RuntimeError("Gobot native locomotion batch view has no explicit command advance API")
-        advance()
+        advance(reset_mask)
 
     def update_command_frames(self) -> None:
         self._require_view()

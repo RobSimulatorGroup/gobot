@@ -40,7 +40,7 @@ from .training_state import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .terms import posture_std, locomotion_failure_mask
 from .math import find_node_by_name
-from .curriculum import progress_masks, directed_increment
+from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 
 
 
@@ -325,7 +325,7 @@ class WarpVelocityEnv:
             ("run_progress", "bound_gait")
             if self.cfg_obj.training_profile == "run"
             else ()
-        ) + (("command_progress", "body_lin_vel_z") if cfg.rewards.adaptive_tracking else ())
+        )
         self._foot_count = len(self.cfg_obj.foot_names)
         self._gait_foot_indices = torch.tensor(
             self.cfg_obj.gait_foot_indices,
@@ -420,9 +420,9 @@ class WarpVelocityEnv:
             )
         )
 
-        self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
+        self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0)
         self.critic_obs_schema = velocity_critic_observation_schema(
-            self.num_actions, self._height_scan_dim, self._foot_count
+            self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0, self._foot_count
         )
         self.observation_spec = self.actor_obs_schema
         self.critic_observation_spec = self.critic_obs_schema
@@ -933,6 +933,8 @@ class WarpVelocityEnv:
         low: float,
         high: float,
     ) -> torch.Tensor:
+        if low == high:
+            return torch.full(tuple(shape), float(low), device=self._torch_device)
         if low <= 0.0 or high <= 0.0:
             return self._uniform(shape, low, high)
         return self._uniform(shape, math.log(low), math.log(high)).exp_()
@@ -1059,6 +1061,7 @@ class WarpVelocityEnv:
             # Before reset and command resampling: these belong to the executed action.
             self._compute_observations()
             transition_obs = {key: value.clone() for key, value in self._state.obs.items()}
+        self._apply_pushes()
         reset_ids = torch.nonzero(done, as_tuple=False).flatten()
         if reset_ids.numel() > 0:
             self._update_terrain_curriculum(reset_ids)
@@ -1066,8 +1069,11 @@ class WarpVelocityEnv:
         self._profile_mark(profile_marks, "reset")
 
         self.provider.forward()
-        self._compute_commands(dt=self.step_dt)
-        self._apply_pushes()
+        command_dt = (~done).float() * self.step_dt
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            self._commanded_displacement.add_(command_displacement_step(
+                self._command, self._arrays["xquat"][:, self._base_body_id], command_dt, torch))
+        self._compute_commands(dt=command_dt)
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
@@ -1357,7 +1363,7 @@ class WarpVelocityEnv:
             self.provider.reset(self._reset_mask, qpos=self._reset_qpos, qvel=self._reset_qvel,
                                 ctrl=self._reset_ctrl, forward=False)
 
-        self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode == "command_progress" else origins[:, :2]
+        self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode in {"command_progress", "command_displacement"} else origins[:, :2]
         self._commanded_displacement[env_ids] = 0.
         self._commanded_path[env_ids] = self._directed_progress[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
@@ -1403,7 +1409,15 @@ class WarpVelocityEnv:
             if self.common_step_counter == 0:
                 move_up.zero_()
                 move_down.zero_()
-        move_up &= ~self._terminated[env_ids]
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            distance = (position - self._episode_start_xy[env_ids]).square().sum(-1).sqrt()
+            remaining = self.cfg_obj.episode_length_s - self.episode_length_buf[env_ids] * self.step_dt
+            move_up, move_down = displacement_masks(distance, self._commanded_displacement[env_ids],
+                self._command[env_ids], remaining, patch_size[0])
+            if self.common_step_counter == 0:
+                move_up.zero_(); move_down.zero_()
+        else:
+            move_up &= ~self._terminated[env_ids]
         levels = self._terrain_levels[env_ids] + move_up.long() - move_down.long()
         random_levels = torch.randint(
             0,
@@ -1539,7 +1553,7 @@ class WarpVelocityEnv:
 
     def _compute_commands(self, *, dt: float) -> None:
         if self.cfg_obj.command.source == "external": return
-        self._command_time_left.sub_(float(dt))
+        self._command_time_left.sub_(dt)
         resample_ids = torch.nonzero(self._command_time_left <= 0.0, as_tuple=False).flatten()
         self._resample_commands(resample_ids)
         cfg = self.cfg_obj.command
@@ -1863,18 +1877,14 @@ class WarpVelocityEnv:
 
         terms = self._reward_terms
         terms.zero_()
-        if reward_cfg.adaptive_tracking:
-            from .terms import adaptive_tracking_terms
-            linear_tracking,yaw_tracking,progress = adaptive_tracking_terms(self._command,linear_body,angular_body,reward_cfg,torch)
-        else:
-            linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
-            yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
+        linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
+        yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
         terms[:,0] = self._reward_weights[0] * linear_tracking
         terms[:,1] = self._reward_weights[1] * yaw_tracking
         terms[:, 2] = self._reward_weights[2] * torch.exp(
             -upright_error / max(float(reward_cfg.upright_std) ** 2, 1.0e-6)
         )
-        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error) * torch.where(active>0,reward_cfg.moving_pose_scale,1.)
+        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error)
         torso_ang = self._arrays["cvel"][:, self._torso_body_id, :3]
         terms[:, 4] = self._reward_weights[4] * torso_ang[:, :2].square().sum(dim=1)
         terms[:, 5] = self._reward_weights[5] * self._arrays["sensordata"][:, self._sensor_slices[2]].square().sum(dim=1)
@@ -1915,11 +1925,7 @@ class WarpVelocityEnv:
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
-        if reward_cfg.adaptive_tracking:
-            terms[:,self._reward_term_names.index("command_progress")] = reward_cfg.command_progress*progress
-            terms[:,self._reward_term_names.index("body_lin_vel_z")] = reward_cfg.body_lin_vel_z*linear_body[:,2].square()
-        else:
-            torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 
@@ -1949,10 +1955,11 @@ class WarpVelocityEnv:
         actor[:, joint_velocity_start:action_start].copy_(joint_velocity)
         actor[:, action_start:command_start].copy_(self._action)
         actor[:, command_start:height_start].copy_(self._command)
-        actor[:, height_start:].copy_(
-            self._terrain_scan_height
-            / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
-        )
+        if self.cfg_obj.observations.include_height_scan:
+            actor[:, height_start:].copy_(
+                self._terrain_scan_height
+                / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
+            )
 
         critic = self._critic_obs
         critic[:, : self.num_obs].copy_(actor)
@@ -1971,6 +1978,7 @@ class WarpVelocityEnv:
         critic[:, critic_offset:].copy_(
             torch.sign(contact_force) * torch.log1p(contact_force.abs())
         )
+        actor[:, 9:9 + self.num_actions].add_(self._encoder_bias)
         if self.cfg_obj.observations.actor_noise:
             self._apply_actor_noise()
         if hasattr(self, "_state"):

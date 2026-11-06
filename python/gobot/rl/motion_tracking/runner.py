@@ -6,8 +6,9 @@ import torch
 from gobot.rl.supermimic.distributed import init_distributed, finalize
 
 
-def run(cfg, task_id='Gobot-Tracking-Flat-G1-SuperMimic-v0'):
-    from gobot.rl import tasks
+def run(cfg):
+    from .env import MotionTrackingEnv
+    from .training import Trainer
     cfg = deepcopy(cfg)
     cfg.validate()
     rank, local_rank, world = init_distributed(cfg.device)
@@ -21,8 +22,8 @@ def run(cfg, task_id='Gobot-Tracking-Flat-G1-SuperMimic-v0'):
     cfg.policy_trainer.history = cfg.policy.history
     env = trainer = None
     try:
-        env = tasks.make_env(task_id,cfg)
-        trainer = tasks.make_runner(task_id,env,cfg)
+        env = MotionTrackingEnv(cfg)
+        trainer = Trainer(env,cfg)
         return trainer.run()
     finally:
         if trainer:

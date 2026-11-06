@@ -23,7 +23,7 @@ def velocity_actor_observation_schema(action_dim: int, height_scan_dim: int) -> 
             SpecField("joint_vel", int(action_dim), "rad/s"),
             SpecField("last_action", int(action_dim)),
             SpecField("command", 3),
-            SpecField("height_scan", int(height_scan_dim), "normalized"),
+            *((SpecField("height_scan", int(height_scan_dim), "normalized"),) if height_scan_dim else ()),
         ),
     )
 

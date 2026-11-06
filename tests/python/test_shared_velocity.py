@@ -112,7 +112,7 @@ def test_g1_cpu_reset_and_terms():
         assert len(specs[0].local_offsets) == 25
         scanner.grid_size = (1.6, 1.)
         saved = env.training_state_dict()
-        assert saved['curriculum_mode'] == 'command_progress'
+        assert saved['curriculum_mode'] == 'command_displacement'
         env.load_training_state_dict(saved)
         try:
             env.load_training_state_dict({**saved, 'curriculum_mode': 'legacy'})

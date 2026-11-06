@@ -32,6 +32,22 @@ std::array<float, 3> CommandForEnvironment(const LocomotionCommandRuntime& runti
     return {commands[offset + 0], commands[offset + 1], commands[offset + 2]};
 }
 
+TEST(TestLocomotionCommandRuntime, FreshResetKeepsItsCommandTimer) {
+    LocomotionCommandRuntime runtime(2);
+    auto config = DeterministicCommandConfig(17);
+    config.resampling_time = {1.0, 1.0};
+    runtime.Configure(config);
+    runtime.Reset(std::array<std::size_t, 2>{0, 1});
+    const std::array<float, 8> rotations{1., 0., 0., 0., 1., 0., 0., 0.};
+    runtime.Advance(rotations, std::array<std::uint8_t, 2>{1, 0});
+    EXPECT_FLOAT_EQ(runtime.TimeLeft()[0], 1.0f);
+    EXPECT_NEAR(runtime.TimeLeft()[1], 1.0 - config.step_dt, 1.e-6);
+    runtime.Advance(rotations, std::array<std::uint8_t, 2>{0, 1});
+    EXPECT_NEAR(runtime.TimeLeft()[0], 1.0 - config.step_dt, 1.e-6);
+    EXPECT_NEAR(runtime.TimeLeft()[1], 1.0 - config.step_dt, 1.e-6);
+    EXPECT_THROW(runtime.Advance(rotations, std::array<std::uint8_t, 1>{1}), std::invalid_argument);
+}
+
 TEST(TestLocomotionCommandRuntime, EnvZeroSequenceDoesNotDependOnBatchSize) {
     LocomotionCommandRuntime single_environment(1);
     LocomotionCommandRuntime batch(8);

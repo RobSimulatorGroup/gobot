@@ -30,5 +30,5 @@ fi
 GOBOT_OUTPUT="${GOBOT_RUN_ROOT:-$GOBOT_ROOT/examples/g1/logs/cluster}/smoke_${SLURM_JOB_ID:-manual}"
 cd "$GOBOT_ROOT"
 exec "$GOBOT_PYTHON" -m torch.distributed.run --standalone --nproc-per-node="$GOBOT_NPROC_PER_NODE" \
-  -m gobot.rl.train --project "$GOBOT_SCENE_PROJECT" --data "$GOBOT_MOTION_DATA" \
+  -m gobot.rl.train g1-tracking --project "$GOBOT_SCENE_PROJECT" --data "$GOBOT_MOTION_DATA" \
   --config examples/g1/train/reproduced_smoke.json --output "$GOBOT_OUTPUT" "$@"

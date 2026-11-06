@@ -15,10 +15,10 @@ class Script(gobot.NodeScript):
         example_root = str(project.parents[1])
         if example_root not in sys.path:
             sys.path.insert(0, example_root)
-        from examples.locomotion.experiment import Experiment, task_config
+        from gobot.rl.locomotion.experiment import Experiment, task_config
         value = os.environ.get('GOBOT_GO1_POLICY', 'res://policies/go1_natural.onnx')
         policy = project/value.removeprefix('res://') if value.startswith('res://') else Path(value)
-        cfg = task_config(Experiment(robot='go1', recipe='natural', stage='mixed'), play=True)
+        cfg = task_config(Experiment(robot='go1', recipe='gait', stage='mixed'), play=True)
         cfg.project_path = project
         self.playback = VelocityPolicyPlayback(self.context, self.get_root(), cfg, policy)
 

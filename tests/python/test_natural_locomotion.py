@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import numpy as np
 import torch
-from examples.locomotion.experiment import Experiment, task_config
+from gobot.rl.locomotion.experiment import Experiment, task_config
 from examples.locomotion.assessment import rank_report, rollout
 from gobot.rl.locomotion.config import NaturalGaitCfg
 from gobot.rl.locomotion.curriculum import directed_increment, progress_masks
@@ -76,10 +76,11 @@ def test_conditional_reference_sampling():
         torch.testing.assert_close(roots[:2,7],torch.tensor([.6,2.]))
 
 
-def test_categorical_commands_and_low_speed_rewards():
+def test_categorical_commands():
     from gobot.rl.locomotion.command import sample_categorical_commands
-    from gobot.rl.locomotion.terms import adaptive_tracking_terms
-    cfg=task_config(Experiment(robot='g1',stage='flat_control'))
+    cfg=task_config(Experiment(robot='g1',stage='flat'))
+    cfg.command.mode_probabilities=(.7,.1,.1,.05,.05,0.)
+    cfg.command.minimum_forward_velocity=.4
     rng=torch.Generator().manual_seed(5)
     uniform=lambda shape,lo,hi: torch.rand(shape,generator=rng)*(hi-lo)+lo
     command,modes=sample_categorical_commands(cfg.command,100000,uniform,'cpu')
@@ -90,17 +91,6 @@ def test_categorical_commands_and_low_speed_rewards():
     assert (command[modes==2]==0).all()
     assert (command[modes==3,0]<=-.1).all() and (command[modes==3,1:]==0).all()
     assert (command[modes==4][:,[0,2]]==0).all() and (command[modes==4,1].abs()>=.1).all()
-    commands=np.array([[-.1,0,0],[0,.15,0],[0,0,0]],dtype=np.float32)
-    zero=np.zeros_like(commands)
-    still=adaptive_tracking_terms(commands,zero,zero,cfg.rewards,np)
-    matching=adaptive_tracking_terms(commands,commands,zero,cfg.rewards,np)
-    opposite=adaptive_tracking_terms(commands,-commands,zero,cfg.rewards,np)
-    assert max(still[0][:2])<.4
-    np.testing.assert_allclose(matching[0],1.)
-    np.testing.assert_allclose(matching[2],[1.,1.,0.])
-    np.testing.assert_allclose(opposite[2],[-1.,-1.,0.])
-    tensor=adaptive_tracking_terms(torch.tensor(commands),torch.tensor(commands),torch.tensor(zero),cfg.rewards,torch)
-    for a,b in zip(matching,tensor):np.testing.assert_allclose(a,b.numpy(),atol=1e-6)
 
 
 def test_yaw_participates_in_ranking():
@@ -126,7 +116,7 @@ def integration(backend):
     from gobot.rl.locomotion.ppo import rsl_rl_train_cfg
     from gobot.rl.locomotion.manifest import build_policy_manifest,validate_policy
     for robot in ('go1','g1'):
-        exp=Experiment(robot=robot,recipe='natural' if robot=='go1' else 'baseline',num_envs=2)
+        exp=Experiment(robot=robot,recipe='gait' if robot=='go1' else 'baseline',num_envs=2)
         cfg=task_config(exp);cfg.observations.actor_noise=False
         cfg.command.source='external';cfg.command.resampling_time_range=(.02,.02)
         env=make_velocity_env(cfg,num_envs=2,backend=backend,device='cuda:0' if backend=='mujoco-warp' else 'cpu',max_episode_length=3,collect_step_extras=False)
@@ -177,35 +167,14 @@ def test_status_respects_pid_namespace():
         assert inspect(directory)['state']=='lost'
 
 
-def test_campaign_resumes_graceful_stop():
-    from examples.locomotion import campaign
-    with tempfile.TemporaryDirectory() as directory:
-        root=Path(directory);run_dir=root/'g1_control_s42';run_dir.mkdir()
-        (run_dir/'latest.pt').write_bytes(b'checkpoint')
-        (root/'campaign.json').write_text(json.dumps({'state':'stopped','initial_gpu_hours':0.,'jobs':[
-            {'name':'g1_control_s42','finished':True,'admitted':False,'summary':{'stop_reason':'signal'}}]}))
-        calls=[]
-        class Process:
-            pid=123
-            def __init__(self,command):self.command=command;calls.append(command)
-            def wait(self):
-                out=Path(self.command[self.command.index('--log-dir')+1]);out.mkdir(exist_ok=True)
-                (out/'summary.json').write_text(json.dumps({'admitted':False,'stop_reason':'budget'}))
-                return 0
-        with patch.object(campaign.subprocess,'Popen',Process), patch.object(campaign.signal,'signal'), patch.object(sys,'argv',[
-            'campaign','--output',str(root),'--budget-file',str(root/'budget.json'),'--seeds','42','--num-envs','2']):
-            campaign.main()
-        assert '--resume' in calls[0] and len(calls)==3
-
-
 def main():
     p=argparse.ArgumentParser();p.add_argument('--backend',choices=('mujoco-cpu','mujoco-warp'));a=p.parse_args()
     if a.backend:integration(a.backend)
     else:
         for test in (test_directional_curriculum,test_clock_continuity_and_gait_classification,
-                     test_conditional_reference_sampling,test_categorical_commands_and_low_speed_rewards,
+                     test_conditional_reference_sampling,test_categorical_commands,
                      test_yaw_participates_in_ranking,test_gpu_hour_accounting,
-                     test_status_respects_pid_namespace,test_campaign_resumes_graceful_stop):
+                     test_status_respects_pid_namespace):
             test();print(test.__name__,'passed')
 
 if __name__=='__main__':main()

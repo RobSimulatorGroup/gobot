@@ -230,19 +230,25 @@ void LocomotionCommandRuntime::SetStepResamplingEnabled(bool enabled) {
     step_resampling_enabled_ = enabled;
 }
 
-void LocomotionCommandRuntime::Advance(std::span<const float> base_quaternions) {
+void LocomotionCommandRuntime::Advance(std::span<const float> base_quaternions,
+                                       std::span<const std::uint8_t> reset_mask) {
     if (!configured_) {
         return;
     }
     if (base_quaternions.size() != environment_count_ * kQuaternionDimension) {
         throw std::invalid_argument("base_quaternions must contain environment_count * 4 values");
     }
+    if (!reset_mask.empty() && reset_mask.size() != environment_count_) {
+        throw std::invalid_argument("reset_mask must contain environment_count entries");
+    }
     if (step_resampling_enabled_) {
         for (std::size_t environment_index = 0; environment_index < environment_count_; ++environment_index) {
-            AdvanceStepAndResample(environment_index);
+            if (reset_mask.empty() || !reset_mask[environment_index]) {
+                AdvanceStepAndResample(environment_index);
+            }
         }
     } else {
-        AdvanceTimersAndResample();
+        AdvanceTimersAndResample(reset_mask);
     }
     UpdateFrames(base_quaternions);
 }
@@ -432,9 +438,10 @@ float LocomotionCommandRuntime::WrapToPi(float value) {
     return value - pi;
 }
 
-void LocomotionCommandRuntime::AdvanceTimersAndResample() {
+void LocomotionCommandRuntime::AdvanceTimersAndResample(std::span<const std::uint8_t> reset_mask) {
     if (config_.external_commands) return;
     for (std::size_t environment_index = 0; environment_index < environment_count_; ++environment_index) {
+        if (!reset_mask.empty() && reset_mask[environment_index]) continue;
         time_left_[environment_index] -= static_cast<float>(config_.step_dt);
         if (time_left_[environment_index] <= 0.0f) {
             Resample(environment_index);

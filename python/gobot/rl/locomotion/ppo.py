@@ -38,6 +38,8 @@ def rsl_rl_train_cfg(
         },
         "algorithm": {
             "class_name": "PPO",
+            "optimizer": "adam",
+            "share_cnn_encoders": False,
             "num_learning_epochs": 5,
             "num_mini_batches": 4,
             "clip_param": 0.2,

@@ -4,7 +4,7 @@
 """Data-parallel training helpers (plan D13 / 6.3).
 
 Launch with torchrun, one process per GPU:
-  torchrun --nproc_per_node 4 -m gobot.rl.train --config recipe.json ...
+  torchrun --nproc_per_node 4 -m gobot.rl.train g1-tracking --config recipe.json ...
 
 Each rank owns its own simulator (num_envs envs), replay buffer and sampler; the
 world model / policy / critic are replicated and their gradients are averaged with

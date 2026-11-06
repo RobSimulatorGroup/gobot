@@ -6,8 +6,8 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import tempfile
 import torch
-from examples.locomotion.experiment import Experiment
-from examples.locomotion.train import run
+from gobot.rl.locomotion.experiment import Experiment
+from gobot.rl.locomotion.training import run
 from examples.locomotion.assessment import evaluate
 
 
@@ -16,17 +16,17 @@ def main():
     device='cuda:0' if a.backend=='mujoco-warp' else 'cpu'
     with tempfile.TemporaryDirectory(prefix='gobot-training-test-') as directory:
         root=Path(directory)
-        for robot,recipe in [('go1','natural'),('g1','baseline'),('g1','natural')]:
-            exp=Experiment(robot=robot,recipe=recipe,stage='flat_gait' if robot=='g1' and recipe=='natural' else 'flat_control',
+        for robot,recipe in [('go1','gait'),('g1','baseline'),('g1','amp')]:
+            exp=Experiment(robot=robot,recipe=recipe,stage='flat',
                            iterations=2,num_envs=4,hours=.1,eval_steps=20,eval_envs=2)
-            if recipe=='natural' and robot=='g1' and a.backend=='mujoco-warp':exp=replace(exp,reference_reset_probability=.5)
+            if recipe=='amp' and a.backend=='mujoco-warp':exp=replace(exp,reference_reset_probability=.5)
             out=root/f'{robot}_{recipe}'
-            run(exp,out,backend=a.backend,device=device,no_eval=True,require_gate=False)
+            run(exp,out,backend=a.backend,device=device,no_eval=True)
             original=torch.load(out/'model_final.pt',map_location='cpu',weights_only=False)
-            run(replace(exp,iterations=1),out/'resumed',backend=a.backend,device=device,resume=out/'model_final.pt',no_eval=True,require_gate=False)
+            run(replace(exp,iterations=1),out/'resumed',backend=a.backend,device=device,resume=out/'model_final.pt',no_eval=True)
             restored=torch.load(out/'resumed/model_final.pt',map_location='cpu',weights_only=False)
             assert restored['iter']==original['iter']+1
-            if robot=='g1' and recipe=='natural':
+            if recipe=='amp':
                 assert restored['motion_prior']['update_count']==3
                 assert restored['motion_prior']['replay_size']>0
                 assert torch.isfinite(restored['motion_prior']['mean']).all()

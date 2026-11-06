@@ -1,4 +1,4 @@
-"""G1 rough velocity preset, adapted from mjlab 8bb2bc9e (Apache-2.0).
+"""G1 rough velocity preset, adapted from mjlab dcdf6ce5 (Apache-2.0).
 
 The existing 43-joint asset retains its hands; the policy controls 29 body joints.
 """
@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from gobot.rl.locomotion.config import FootCfg, LocomotionRobotCfg, VelocityTaskCfg
 
-REFERENCE_REVISION = "8bb2bc9e187797689ec82c78c35019afd2fd0376"
+REFERENCE_REVISION = "dcdf6ce519abfd2ea45e9503ae6fb650b75bb869"
 JOINT_NAMES = tuple(
     [f"{side}_{name}_joint" for side in ("left", "right")
      for name in ("hip_pitch", "hip_roll", "hip_yaw", "knee", "ankle_pitch", "ankle_roll")]
@@ -68,11 +68,14 @@ def g1_velocity_cfg(*, project_path=None, play=False):
     )
     cfg = VelocityTaskCfg(robot=profile, name="g1_rough_velocity", task_version="g1_rough_velocity_v1",
         project_path=project_path or Path(__file__).parent, scene_path="res://g1_scene.jscn",
-        base_clearance=.76, max_init_terrain_level=1, curriculum_mode="command_progress",
-        fall_angle=math.radians(70), nconmax=100,
+        base_clearance=.76, max_init_terrain_level=5, curriculum_mode="command_displacement",
+        fall_angle=math.radians(70), nconmax=70,
         action_scale={name: .25 * m[1] / gain for name, m, gain in zip(JOINT_NAMES, motors, kp, strict=True)})
-    cfg.mujoco_solver_settings = {"solver": "Newton", "integrator": "ImplicitFast", "cone": "Elliptic", "iterations": 10,
-        "line_search_iterations": 20, "convex_collision_iterations": 500, "impedance_ratio": 10.}
+    cfg.mujoco_solver_settings = {"solver": "Newton", "integrator": "ImplicitFast", "cone": "Pyramidal", "iterations": 10,
+        "line_search_iterations": 20, "convex_collision_iterations": 500, "impedance_ratio": 1.}
+    cfg.domain_randomization.foot_friction_slide_range = (.3, 1.2)
+    cfg.domain_randomization.foot_friction_spin_range = (.005, .005)
+    cfg.domain_randomization.foot_friction_roll_range = (.0001, .0001)
     cfg.illegal_contact.terminate_on_thigh = False
     cfg.illegal_contact.thigh_shape_patterns = ()
     cfg.illegal_contact.shank_shape_patterns = ()
@@ -103,6 +106,9 @@ def g1_amp_cfg(*, project_path=None, stage="rough", play=False):
     if stage not in {"flat", "rough", "mixed"}:
         raise ValueError(f"unknown G1 AMP stage {stage!r}")
     cfg = g1_velocity_cfg(project_path=project_path, play=play)
+    cfg.mujoco_solver_settings.update(cone="Elliptic", impedance_ratio=10.)
+    cfg.domain_randomization.foot_friction_spin_range = (1.e-4, 2.e-2)
+    cfg.domain_randomization.foot_friction_roll_range = (1.e-5, 5.e-3)
     cfg.name = "g1_amp_velocity"
     cfg.task_version = "g1_amp_velocity_v3"
     cfg.scene_path = "res://g1_flat_scene.jscn" if stage == "flat" else "res://g1_scene.jscn"

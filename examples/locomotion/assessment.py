@@ -13,7 +13,7 @@ from gobot.rl.locomotion.gait_metrics import BipedGaitMetrics, QuadrupedGaitMetr
 from gobot.rl.locomotion.manifest import validate_policy
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
-from .experiment import Experiment, task_config
+from gobot.rl.locomotion.experiment import Experiment, task_config
 from .budget import add_budget_arguments, evaluation_budget
 from gobot.rl.locomotion.capabilities import assess_capabilities
 
@@ -43,9 +43,12 @@ def evaluation_scene(cfg, directory, seed, *, continuous=False, speed=3., second
     directory = Path(directory).resolve()
     # Resources must remain inside the project for res:// resolution.
     directory.mkdir(parents=True,exist_ok=True)
-    is_g1 = cfg.robot_name == 'g1'
-    resource_name = 'flat_terrain.jres' if 'flat' in cfg.scene_path else ('rough_terrain.jres' if is_g1 else 'practical_terrain.jres')
-    resource = json.loads((root/'terrain'/resource_name).read_text())
+    scene = (root/cfg.scene_path.removeprefix('res://')).read_text()
+    terrain_paths = [item['__PATH__'] for item in json.loads(scene)['__EXT_RESOURCES__']
+                     if item['__TYPE__'] == 'TerrainGeneratorConfig']
+    if len(terrain_paths) != 1:
+        raise ValueError('evaluation requires one authored terrain resource')
+    resource = json.loads((root/terrain_paths[0].removeprefix('res://')).read_text())
     values = resource['__RESOURCE__']; values['seed'] = int(seed)
     if continuous:
         values['num_rows'] = values['num_cols'] = 1
@@ -58,7 +61,6 @@ def evaluation_scene(cfg, directory, seed, *, continuous=False, speed=3., second
     name=f'{seed}_{"continuous" if continuous else "cells"}_{slope:g}'
     target = directory/f'{name}.jres'
     target.write_text(json.dumps(resource,indent=2)+'\n')
-    scene = (root/cfg.scene_path.removeprefix('res://')).read_text()
     import re
     scene = re.sub(r'res://terrain/[^"\s]+\.jres','res://'+str(target.relative_to(root)),scene)
     scene_path=directory/f'{name}.jscn'; scene_path.write_text(scene)
@@ -86,7 +88,10 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
                 for begin, value in sequence:
                     if step*env.step_dt >= begin: current=np.asarray(value,dtype=np.float32)
             env.set_command(current)
-            state=env.step(policy(env.get_observations()['actor']))
+            observation = env.get_observations()['actor']
+            if not isinstance(observation, torch.Tensor):
+                observation = torch.as_tensor(np.array(observation, copy=True), device=getattr(env, 'device', 'cpu'))
+            state=env.step(policy(observation))
             physical={key:array(value) for key,value in state.info['transition_state'].items()}
             contact=np.linalg.norm(physical['foot_force'],axis=-1)>10.
             gait.update(contact,physical['foot_position'],alive)
@@ -201,16 +206,17 @@ def evaluate(checkpoint, output, *, steps=None, count=None, seed=71, final=False
         rows,cols=env.terrain_grid_shape
         indices=np.arange(count)%(rows*cols)
         env.set_terrain_assignments(indices//cols,indices%cols,fixed=True)
-        slow=exp.stage=='flat_control'
+        slow=exp.stage=='flat'
         commands=[(.8,0,0),(-.1 if slow else -.3,0,0),(0,.15 if slow else .3,0),
                   (0,0,.3 if slow else .6),(0,0,0)]
         if final: commands += [(0,-.3,0),(0,0,-.6),(.5,0,0),(1.2,0,0)]
-        if is_flat and exp.stage=='flat_gait':
+        if is_flat and exp.recipe != 'baseline':
             commands += [(1.8 if exp.robot=='g1' else 1.4,0,0),(2.2 if exp.robot=='g1' else 2.8,0,0)]
         reference=None
-        if exp.robot=='g1' and exp.stage=='flat_gait':
-            from examples.g1.reference_gaits import build_reference
-            reference=build_reference(Path(exp.motion_dataset),split='holdout' if final else 'validation')
+        if exp.recipe=='amp' and is_flat:
+            from gobot.rl.training.projects import example_module
+            reference=example_module('g1.reference_gaits').build_reference(
+                Path(exp.motion_dataset),split='holdout' if final else 'validation')
         results=[]
         for command in commands:
             speed=math.hypot(*command[:2])
@@ -229,12 +235,11 @@ def evaluate(checkpoint, output, *, steps=None, count=None, seed=71, final=False
             results.append(rollout(env,policy,command=(.8,0,0),steps=1500,seed=seed,sequence=sequence))
         threshold=.95 if final else .9
         passed=all(r['admission']>=threshold and min(c['admission'] for c in r['cells'])>=.9 for r in results)
-        if exp.stage=='flat_gait': passed &= all(r['natural_admission']>=threshold for r in results if r['command'][0]>.2)
+        if exp.recipe!='baseline' and is_flat: passed &= all(r['natural_admission']>=threshold for r in results if r['command'][0]>.2)
         report={'schema_version':1,'robot':exp.robot,'stage':exp.stage,'checkpoint':str(checkpoint),
                 'protocol':'heldout_admission' if final else 'validation', 'slope_degrees':slope, 'robustness':robust, 'passed':bool(passed),'scenarios':results}
-        if exp.schema_version >= 2:
-            report.update(assess_capabilities(results, exp.stage, final=final,
-                natural=exp.stage=='flat_gait', run_speed=1.6 if exp.robot=='g1' else 1.9))
+        report.update(assess_capabilities(results, 'flat' if is_flat else 'rough', final=final,
+                natural=exp.recipe!='baseline' and is_flat, run_speed=1.6 if exp.robot=='g1' else 1.9))
         report['score']=rank_report(report)
         Path(output).parent.mkdir(parents=True,exist_ok=True)
         Path(output).write_text(json.dumps(report,indent=2)+'\n')
@@ -248,7 +253,7 @@ def main():
     p.add_argument('--checkpoint',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--seed',type=int,default=71);p.add_argument('--steps',type=int);p.add_argument('--num-envs',type=int)
     p.add_argument('--final',action='store_true');p.add_argument('--device',default='cuda:0')
-    p.add_argument('--scenario-stage',choices=('flat_control','flat_gait','rough','mixed'))
+    p.add_argument('--scenario-stage',choices=('flat','rough','mixed'))
     p.add_argument('--slope',type=float,default=0.)
     p.add_argument('--robust',action='store_true')
     p.add_argument('--backend',default='mujoco-warp',choices=('mujoco-cpu','mujoco-warp'))

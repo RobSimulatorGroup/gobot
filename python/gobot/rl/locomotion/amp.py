@@ -66,8 +66,6 @@ class MotionPriorPPO(TransitionPPO):
 
     def update(self):
         result = super().update()
-        if result.get("update_rejected",0):
-            return {**result,"amp":0.,"amp_reward":self.motion_reward_mean,"amp_style_raw":self.style_raw_mean}
         self.update_count += 1
         if self.prior_cfg.weight == 0 or self.replay_size == 0:
             return {**result, "amp": 0., "amp_reward": 0.}

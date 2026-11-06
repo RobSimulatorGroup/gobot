@@ -11,7 +11,7 @@ from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
 from gobot.rl.locomotion import make_velocity_env
 from gobot.rl.locomotion.manifest import validate_policy
-from .experiment import Experiment, task_config
+from gobot.rl.locomotion.experiment import Experiment, task_config
 from .assessment import fixed_commands
 
 
@@ -33,7 +33,7 @@ def main():
         with torch.inference_mode():
             for _ in range(64):
                 env.set_command((.8, 0., 0.))
-                obs = env.get_observations()['actor'].clone()
+                obs = torch.as_tensor(np.array(env.get_observations()['actor'], copy=True))
                 observations.append(obs)
                 env.step(policy(obs).numpy())
             batch = torch.cat(observations)

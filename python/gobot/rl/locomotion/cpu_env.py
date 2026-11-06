@@ -35,7 +35,7 @@ from gobot.rl.locomotion.math import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .gait import bound_gait_score_numpy
 from .terms import posture_std, locomotion_failure_mask
-from .curriculum import progress_masks, directed_increment
+from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 from .scene import prepare_velocity_scene
 from .training_state import (
     build_terrain_curriculum_state,
@@ -136,7 +136,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             ("run_progress", "bound_gait")
             if self.cfg_obj.training_profile == "run"
             else ()
-        ) + (("command_progress", "body_lin_vel_z") if cfg.rewards.adaptive_tracking else ())
+        )
         self._advance_task_time = False
 
         self._foot_count = len(self.cfg_obj.foot_names)
@@ -166,7 +166,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         max_difficulty = max(float(np.max(self._spawn_difficulties)), 1.0e-6)
         self._spawn_levels = np.clip(self._spawn_difficulties / max_difficulty, 0.0, 1.0).astype(np.float32)
 
-        if cfg.capture_transitions:
+        if cfg.capture_transitions or cfg.robot_resource_path:
             from gobot.sim.providers import CompiledSceneArtifact
             self.compiled_artifact = CompiledSceneArtifact.from_mapping(self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu))
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
@@ -531,6 +531,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             transition_state = {key: value.copy() for key, value in self.locomotion_state().items()}
             a, c = self._build_generic_velocity_observations(batch_state)
             transition_obs = {"actor": a.copy(), "critic": c.copy()}
+        self._apply_pushes()
         reset_env_ids = np.flatnonzero(done_envs).astype(np.int64)
         if reset_env_ids.size:
             for env_id in reset_env_ids:
@@ -547,12 +548,14 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._previous_actions[active_envs] = batch_state.previous_action[active_envs]
         self._last_actions[active_envs] = batch_state.last_action[active_envs]
 
-        if reset_env_ids.size:
-            batch_state = self.backend.state
-        self.backend.advance_commands()
+        # Refresh after events and resets, before command-frame updates and observations.
+        batch_state = self.backend.refresh()
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            self._commanded_displacement += command_displacement_step(
+                np.asarray(batch_state.command), np.asarray(batch_state.base_quaternion),
+                (~done_envs).astype(np.float32) * self.step_dt, np)
+        self.backend.advance_commands(done_envs)
         self._limit_running_commands()
-        self._apply_pushes()
-        batch_state = self.backend.state
         self._mark_profile(profile_marks, "termination_reset")
         reset_done_ms = (self.perf_counter() - t0) * 1000.0
 
@@ -655,7 +658,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             self.backend.state.command[:] = value
         actor, critic = self._build_generic_velocity_observations(self.backend.state)
         self._obs, self._critic_obs = actor.copy(), critic.copy()
-        self._state.obs = {"actor": self._obs, "critic": self._critic_obs}
+        np.copyto(self._state_obs_actor, self._obs)
+        np.copyto(self._state_obs_critic, self._critic_obs)
 
     def locomotion_state(self):
         state = self.backend.state
@@ -792,8 +796,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
     def _make_observation_schemas(self) -> tuple[ObservationSpec, ObservationSpec]:
         return (
-            velocity_actor_observation_schema(self.num_actions, self._height_scan_dim),
-            velocity_critic_observation_schema(self.num_actions, self._height_scan_dim, self._foot_count),
+            velocity_actor_observation_schema(self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0),
+            velocity_critic_observation_schema(self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0, self._foot_count),
         )
 
     def _apply_actor_obs_noise(self, obs: np.ndarray) -> np.ndarray:
@@ -817,7 +821,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             corrupt=True,
         )
         offset += self.num_actions * 2 + 3
-        if self._height_scan_dim > 0:
+        if self._height_scan_dim > 0 and self.cfg_obj.observations.include_height_scan:
             scale = max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6)
             height = obs[:, offset : offset + self._height_scan_dim] * scale
             obs[:, offset : offset + self._height_scan_dim] = self._obs_noise(
@@ -1242,7 +1246,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             command,
         ]
         height_scan = np.asarray(state.height_scan, dtype=np.float32)
-        if height_scan.shape[1] > 0:
+        if height_scan.shape[1] > 0 and self.cfg_obj.observations.include_height_scan:
             actor_parts.append(height_scan * height_scan_scale)
         actor_obs = np.concatenate(actor_parts, axis=1).astype(np.float32, copy=False)
         contact_force_log = np.sign(state.foot_contact_force) * np.log1p(np.abs(state.foot_contact_force))
@@ -1256,6 +1260,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             ],
             axis=1,
         ).astype(np.float32, copy=False)
+        actor_obs[:, 9:9 + self.num_actions] += np.asarray(state.encoder_bias, dtype=np.float32)
         return actor_obs, critic_obs
 
     def _run_velocity_task_numpy(self) -> None:
@@ -1294,7 +1299,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         ang_error = np.square(command[:, 2] - ang_vel[:, 2]) + np.sum(np.square(ang_vel[:, :2]), axis=1)
         terrain_up_b = self._terrain_up_body_from_scan(state) if reward_cfg.upright_reference == "terrain" else _quat_rotate_inv_batch(
             np.broadcast_to(np.array([0., 0., 1.], dtype=np.float32), (self.num_envs, 3)), base_quaternion)
-        body_ang_vel = ang_vel
+        body_ang_vel = np.asarray(state.base_angular_velocity, dtype=np.float32)
         if self.cfg_obj.robot is not None and self.cfg_obj.robot.torso_link != self.cfg_obj.base_link:
             torso = self._batch_link_index[self.cfg_obj.robot.torso_link]
             torso_quat = np.asarray(state.link_quaternion)[:, torso]
@@ -1329,15 +1334,11 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         soft_landing = np.sum(np.asarray(state.landing_force, dtype=np.float32), axis=1)
 
         terms = self._zero_reward_terms(state)
-        if reward_cfg.adaptive_tracking:
-            from .terms import adaptive_tracking_terms
-            linear_tracking,yaw_tracking,progress = adaptive_tracking_terms(command,lin_vel,ang_vel,reward_cfg,np)
-        else:
-            linear_tracking,yaw_tracking = np.exp(-lin_error/lin_vel_std2),np.exp(-ang_error/ang_vel_std2)
+        linear_tracking,yaw_tracking = np.exp(-lin_error/lin_vel_std2),np.exp(-ang_error/ang_vel_std2)
         self._set_reward_term(terms, "track_linear_velocity", weights[0] * linear_tracking)
         self._set_reward_term(terms, "track_angular_velocity", weights[1] * yaw_tracking)
         self._set_reward_term(terms, "upright", weights[2] * np.exp(-upright_error / upright_std2))
-        self._set_reward_term(terms, "pose", weights[3] * np.exp(-pose_error) * np.where(active > 0,reward_cfg.moving_pose_scale,1.))
+        self._set_reward_term(terms, "pose", weights[3] * np.exp(-pose_error))
         self._set_reward_term(terms, "body_ang_vel", weights[4] * np.sum(np.square(body_ang_vel[:, :2]), axis=1))
         self._set_reward_term(terms, "angular_momentum", weights[5] * np.sum(np.square(getattr(state, "angular_momentum", np.zeros((self.num_envs, 3), dtype=np.float32))), axis=1))
         self._set_reward_term(terms, "dof_pos_limits", weights[6] * dof_pos_limits)
@@ -1392,11 +1393,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             self._set_reward_term(terms, "bound_gait", weights[gait_index] * gait_score)
-        if reward_cfg.adaptive_tracking:
-            self._set_reward_term(terms,"command_progress",reward_cfg.command_progress*progress)
-            self._set_reward_term(terms,"body_lin_vel_z",reward_cfg.body_lin_vel_z*lin_vel[:,2]**2)
-        else:
-            np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
 
         terminated = locomotion_failure_mask(np.asarray(state.projected_gravity)[:, 2],
@@ -1602,7 +1599,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
             self._spawn_indices[env_id] = spawn_index
             self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
-            self._episode_start_xy[env_id] = spawn[:2] if self.cfg_obj.curriculum_mode == "command_progress" else terrain_origin[:2]
+            self._episode_start_xy[env_id] = spawn[:2] if self.cfg_obj.curriculum_mode in {"command_progress", "command_displacement"} else terrain_origin[:2]
             self._commanded_displacement[env_id] = 0.
             self._commanded_path[env_id] = self._directed_progress[env_id] = 0.
             self._episode_length_np[env_id] = 0
@@ -1685,6 +1682,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
     def _sample_log_uniform(self, value_range: tuple[float, float], count: int) -> np.ndarray:
         lo, hi = float(value_range[0]), float(value_range[1])
+        if lo == hi:
+            return np.full(int(count), lo, dtype=np.float32)
         if lo <= 0.0 or hi <= 0.0:
             return self._rng.uniform(lo, hi, int(count)).astype(np.float32)
         log_values = self._rng.uniform(math.log(lo), math.log(hi), int(count)).astype(np.float32)
@@ -1758,7 +1757,13 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 np.asarray(self._commanded_path[env_id]), self._terrain_patch_size()[0])
             if self.common_step_counter == 0:
                 move_up = move_down = False
-        if reset_reason == 1:
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            remaining = np.asarray(self.cfg_obj.episode_length_s - self._episode_length_np[env_id] * self.step_dt)
+            move_up, move_down = displacement_masks(np.asarray(distance), self._commanded_displacement[env_id],
+                self.command_b[env_id], remaining, self._terrain_patch_size()[0])
+            if self.common_step_counter == 0:
+                move_up = move_down = False
+        elif reset_reason == 1:
             move_up = False
         level = int(self._spawn_env_levels[env_id]) + (1 if move_up else 0) - (1 if move_down else 0)
         if level >= rows:
