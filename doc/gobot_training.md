@@ -154,6 +154,18 @@ Slurm 模板 `examples/locomotion/cluster/train_velocity.sbatch` 默认申请 8 
 设置 `GOBOT_REPO`、`GOBOT_OUTPUT` 后提交。不同随机种子的对照实验分别提交，并使用独立的
 输出目录和预算文件。与 mjlab 比较时记录速度误差、跌倒率、地形通过率、训练时间和显存。
 
+### EPA 碰撞缓冲警告
+
+`Warning: EPA horizon = 24 isn't large enough` 表示凸碰撞穿透计算的临时边缓冲不足，
+不是 PPO rollout 长度，也不是显存耗尽。仅关闭 `warn_overflow` 会隐藏输出，不能恢复
+失败的碰撞计算；`nconmax` 和 `njmax` 也不控制这块缓冲。
+
+Gobot 的 Warp 后端在预热和 CUDA graph 捕获前将该缓冲至少扩为 64，保留溢出警告和检查。
+这是对当前固定依赖 MuJoCo Warp 3.17 的内部缓冲分配调整，不修改安装包文件。
+更新 Python 代码后重启训练进程即可生效，不需要重编译 Gobot。现有 PPO 检查点可以用
+原来的参数和 `--resume` 继续；无需重新初始化策略。若扩容后仍报 EPA 溢出，应记录触发
+姿态和碰撞网格进一步排查。
+
 ## SuperMimic 训练与复现
 
 G1 tracking 使用固定版本 SuperMimic-Reproduced，启动时显式选择对应任务。

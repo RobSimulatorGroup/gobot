@@ -302,6 +302,21 @@ _OVERFLOW_NAMES = {
 
 _SOLVER_LIMIT_MASK = (1 << 9) | (1 << 10)
 
+
+def _prepare_epa_horizon() -> int:
+    """Reserve more edges before collision warmup and CUDA graph capture.
+
+    MuJoCo Warp 3.17 allocates EPA scratch space from this module constant;
+    it has no model option for the capacity. The upstream 24-edge buffer can
+    overflow on deeply overlapping convex meshes during robot falls. Keep the
+    overflow flag/warning enabled so an insufficient buffer is still reported.
+    """
+    from mujoco_warp._src import collision_convex
+
+    collision_convex.MJ_MAX_EPAHORIZON = max(collision_convex.MJ_MAX_EPAHORIZON, 64)
+    return collision_convex.MJ_MAX_EPAHORIZON
+
+
 _CONTACT_FIELD_BITS = {
     "found": 0,
     "force": 1,
@@ -402,6 +417,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._raycast_runtimes: dict[str, _MuJoCoWarpRaycastRuntime] = {}
         self._raycast_views: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
         self._render_context = None
+        self._epa_horizon = _prepare_epa_horizon()
         provider_version = str(getattr(self._mjw, "__version__", "unknown"))
         self._runtime_fingerprint = self.artifact.runtime_fingerprint(
             "mujoco-warp",
@@ -412,6 +428,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 "nconmax": nconmax,
                 "njmax": njmax,
                 "njmax_nnz": njmax_nnz,
+                "epa_horizon": self._epa_horizon,
                 "contact_sensor_maxmatch": contact_sensor_maxmatch,
                 "ls_parallel": ls_parallel,
                 "capture_graphs": self._capture_enabled,
@@ -630,6 +647,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 "nconmax": int(self._data.naconmax // self._num_envs),
                 "njmax": int(self._data.njmax),
                 "njmax_nnz": int(self._data.njmax_nnz),
+                "epa_horizon": self._epa_horizon,
             }
         )
 
@@ -901,9 +919,12 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         for world_id, mask in zip(world_ids, values, strict=True):
             names = [name for flag, name in _OVERFLOW_NAMES.items() if int(mask) & flag]
             details.append(f"env {world_id}: {', '.join(names) if names else f'unknown mask {mask}'}")
+        if bool((capacity_overflow & (1 << 8)).any()):
+            guidance = "EPA needs a larger horizon buffer or simpler collision meshes; nconmax/njmax do not control it"
+        else:
+            guidance = "increase the reported contact/constraint capacity and rebuild the session"
         raise SimulationCapacityError(
-            "MuJoCo Warp fixed capacity overflow; increase nconmax/njmax/njmax_nnz and rebuild the "
-            f"session ({'; '.join(details)})."
+            f"MuJoCo Warp fixed capacity overflow; {guidance} ({'; '.join(details)})."
         )
 
     def solver_limit_counts(self) -> Mapping[str, int]:
