@@ -169,7 +169,8 @@ def test_full_ppo_updates_match_reference_runner():
     torch.set_num_threads(2)
     from rsl_rl.algorithms import PPO
     from tensordict import TensorDict
-    from gobot.rl.locomotion.training import update_policy
+    from gobot.rl.locomotion.training import build_algorithm, update_policy
+    from gobot.rl.locomotion.distributed import DistributedTraining
 
     class Environment:
         num_envs=4
@@ -200,17 +201,19 @@ def test_full_ppo_updates_match_reference_runner():
         torch.manual_seed(617)
         config=deepcopy(REFERENCE['tasks']['go1_rough']['runtime_agent']) if reference else agent_config(Experiment(robot='go1'))
         env=Environment()
-        runner=OnPolicyRunner(env,config,device='cpu')
-        assert type(runner.alg) is PPO
         if reference:
+            runner=OnPolicyRunner(env,config,device='cpu')
+            alg=runner.alg
             runner.learn(2,init_at_random_ep_len=True)
         else:
+            alg=build_algorithm(env,config,'cpu',DistributedTraining('cpu'))
             env.episode_length_buf=torch.randint_like(env.episode_length_buf,high=env.max_episode_length)
             observation=env.get_observations()
-            runner.alg.train_mode()
+            alg.train_mode()
             for _ in range(2):
-                observation,_=update_policy(runner.alg,env,observation,config['num_steps_per_env'])
-        return runner.alg.save()
+                observation,_=update_policy(alg,env,observation,config['num_steps_per_env'])
+        assert type(alg) is PPO
+        return alg.save()
 
     expected=run(True)
     actual=run(False)

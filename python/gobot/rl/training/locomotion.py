@@ -124,7 +124,7 @@ def training_spec(*, robot="go1", recipe="baseline") -> TrainingSpec:
 
     return TrainingSpec(
         config_factory=factory, run=_run, description=f"{robot} velocity {'AMP' if recipe == 'amp' else 'PPO'}",
-        step_unit="ppo_updates", common_paths={
+        step_unit="ppo_updates", supports_distributed=recipe != "amp", common_paths={
             "backend": "backend", "device": "device", "num_envs": "experiment.num_envs",
             "seed": "experiment.seed", "output": "output", "resume": "resume",
         }, add_arguments=_arguments, configure=_configure,

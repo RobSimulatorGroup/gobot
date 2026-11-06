@@ -27,8 +27,8 @@ python -m gobot.rl.train g1-amp \
 切换后端用于新实验，不意味着可跨后端恢复优化器及训练状态。
 
 PPO/AMP 的 `--iterations` 计数为 **PPO 更新次数**；SuperMimic 的 `--stop-iteration` 是
-**每 rank 的绝对控制步停止点**，不会缩短学习率调度。SuperMimic 支持 `torchrun` 同步多卡，
-当前 PPO/AMP runner 仍要求每 GPU 独立实验。
+**每 rank 的绝对控制步停止点**，不会缩短学习率调度。速度 PPO、Go1 步态 PPO 和
+SuperMimic 支持 `torchrun` 同步多卡；AMP 的判别器尚未接入多卡同步，仍使用单进程训练。
 
 标准速度任务用 `--terrain flat|rough` 选择地形，可直接开始训练，无需通过前置阶段。
 `--initialize` 只载入 actor 与观测归一化参数；`--resume` 恢复算法、优化器、课程和随机状态。
@@ -104,15 +104,55 @@ launch(spec, cfg)
 训练前准备对应机器人场景和 AMP/跟踪数据。自动评测会在项目内生成评测地形，
 因此应使用可写项目或源码 checkout；安装包中的只读示例目录不适合作为完整评测工作目录。
 
-## 多 GPU 对照
+## 多 GPU 共同训练 PPO
 
-先在不同 GPU 上独立跑 seeds 7、42、123，保持机器人、地形、环境数、训练步数和依赖一致。
-Slurm 模板为 `examples/locomotion/cluster/train_velocity.sbatch`，使用统一训练入口，
-每个 seed 有独立输出和预算文件。设置 `GOBOT_REPO`、`GOBOT_OUTPUT` 后提交；默认每次运行
-1024 个环境、10000 次 PPO 更新，最长 3.8 小时。不会自动提交任务。
+每张卡运行一个进程，各自产生 `--num-envs` 个环境的采样，RSL-RL 在每个 minibatch
+平均梯度，并同步观测归一化统计、KL 与自适应学习率。启动时广播相同模型，环境和采样使用
+`seed + rank`。不自动放大学习率，也不改变 PPO 的 rollout、epoch 或 minibatch 配置。
 
-与 mjlab 比较时同时记录速度误差、跌倒率、地形通过率、训练时间和显存，不能只比较总 reward。
-这份模板运行独立种子；同步多卡的 SuperMimic 仍使用下面的 `torchrun` 流程。
+8 卡 Go1 粗糙地形训练：
+
+```bash
+.venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train go1-velocity \
+  --terrain rough --backend mujoco-warp --num-envs 1024 \
+  --iterations 10000 --hours 12 --budget-hours 96 --seed 42 --no-eval \
+  --budget-file logs/go1_8gpu/budget.json --output logs/go1_8gpu
+```
+
+`--num-envs 1024` 是**每张卡**的环境数，8 卡共 8192 个环境；默认 rollout 为 24，
+每次更新采样 196608 个控制步。`--iterations` 仍是共同策略的更新次数，不自动除以卡数。
+`LOCAL_RANK` 自动选择当前可见设备；例如 `CUDA_VISIBLE_DEVICES=2,3` 配合
+`--nproc-per-node=2` 使用物理卡 2 和 3，无需逐卡设置 `--device`。
+同一入口支持 `g1-velocity`、`go1-gait`，也可在 `mujoco-cpu` 后端用多进程验证。
+
+先将环境数设为 128、更新次数设为 10，用新的输出目录做冒烟测试。没有添加 `--no-eval`
+时，只有主进程启动评测，其余进程等待结果并共同检查停止信号。日志中的吞吐量是所有卡的
+合计值，episode 指标按所有卡实际完成的 episode 数加权统计；模型、配置、日志与预算
+文件都只由主进程写入。
+
+恢复同一训练：
+
+```bash
+.venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train go1-velocity \
+  --terrain rough --backend mujoco-warp --num-envs 1024 \
+  --iterations 10000 --hours 12 --budget-hours 192 --seed 42 --no-eval \
+  --resume logs/go1_8gpu/latest.pt \
+  --budget-file logs/go1_8gpu/budget.json --output logs/go1_8gpu
+```
+
+`--resume` 中的更新次数表示继续运行的次数；保持相同卡数、每卡环境数、任务和算法配置。
+检查点保存共同策略、critic、优化器，以及每个进程的课程和随机状态；恢复时重新开始物理
+episode，不保存接触求解器的瞬时状态。更换卡数、每卡环境数或使用旧格式检查点时，
+用 `--initialize checkpoint.pt` 和新的输出目录开始训练。初始化保留 actor 与观测归一化，
+critic、优化器和 action std 重新初始化。
+
+`--hours` 是本次运行的墙钟小时上限；`--budget-hours` 是预算文件累计的 GPU 小时上限。
+例如 8 卡运行 12 小时需要 96 GPU 小时，恢复训练会继续累加同一预算文件的用量。
+单卡与多卡使用相同的 PPO 更新规则；更多卡意味着每次更新采样更多，实际吞吐和收敛需要实测。
+
+Slurm 模板 `examples/locomotion/cluster/train_velocity.sbatch` 默认申请 8 卡共同训练一个模型。
+设置 `GOBOT_REPO`、`GOBOT_OUTPUT` 后提交。不同随机种子的对照实验分别提交，并使用独立的
+输出目录和预算文件。与 mjlab 比较时记录速度误差、跌倒率、地形通过率、训练时间和显存。
 
 ## SuperMimic 训练与复现
 

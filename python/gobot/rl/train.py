@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -24,7 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, help="JSON configuration for the selected training workflow")
     parser.add_argument("--backend", help="explicit physics backend; unsupported combinations are rejected")
     parser.add_argument("--device", help="training device; defaults to cpu or cuda:0 for the selected backend")
-    parser.add_argument("--num-envs", type=int)
+    parser.add_argument("--num-envs", type=int, help="environments per process (per GPU under torchrun)")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--output", "--log-dir", dest="output", type=Path)
     parser.add_argument("--resume", type=Path, help="resume a compatible training checkpoint")
@@ -128,7 +129,7 @@ def main(argv: Sequence[str] | None = None):
         print(json.dumps(result, indent=2, allow_nan=False))
         return result
     result = launch(spec, cfg)
-    if result is not None:
+    if result is not None and int(os.environ.get("RANK", "0")) == 0:
         print(json.dumps(result, indent=2, default=str))
     return result
 

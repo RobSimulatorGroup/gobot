@@ -131,10 +131,10 @@ def test_invalid_settings_fail_before_simulation(args, message, monkeypatch, cap
     assert not output.exists()
 
 
-def test_distributed_workflow_rejected_before_run(monkeypatch, capsys):
+def test_distributed_amp_rejected_before_run(monkeypatch, capsys):
     monkeypatch.setenv("WORLD_SIZE", "2")
     with pytest.raises(SystemExit):
-        main([GO1, "--dry-run"])
+        main([AMP, "--dry-run"])
     assert "does not support synchronized" in capsys.readouterr().err
 
 
@@ -219,3 +219,18 @@ assert cfg.resolve_agent()['algorithm']['class_name'] == 'PPO'
     result = subprocess.run([sys.executable, *flags, '-c', source], cwd=tmp_path, env=env,
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("task", [GO1, G1, "go1-gait"])
+def test_distributed_ppo_keeps_per_rank_environment_count(monkeypatch, task):
+    monkeypatch.setenv("WORLD_SIZE", "8")
+    result = main([task, "--num-envs", "1024", "--dry-run"])
+    assert result["config"]["experiment"]["num_envs"] == 1024
+    assert tasks.load_training_spec(task).supports_distributed
+
+
+def test_custom_amp_cannot_bypass_distributed_check(monkeypatch, capsys):
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    with pytest.raises(SystemExit):
+        main([G1, "--set", 'experiment.recipe="amp"', "--dry-run"])
+    assert "AMP discriminator synchronization" in capsys.readouterr().err
