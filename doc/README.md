@@ -12,7 +12,7 @@ Commands in these guides run from the repository root unless stated otherwise.
 | Training, evaluation, policy playback | [Go1](../examples/go1/README.md) |
 | Engine ownership and API contracts | [Architecture](architecture.md) |
 | CPU and CUDA training contracts and roadmap | [MuJoCo RL](mujoco_rl_plan.md) |
-| Built-in SuperMimic and G1 result alignment | [Training framework](gobot_training.md) · [Alignment plan](supermimic_reproduced_alignment_plan.md) · [Progress](supermimic_reproduced_progress.md) |
+| Built-in SuperMimic and G1 result alignment | [Training framework](gobot_training.md) · [Alignment plan](supermimic_reproduced_alignment_plan.md) · [Progress](supermimic_reproduced_progress.md) · [100k results](g1_bones_100k_results.md) |
 | MuJoCo SDK configuration | [MuJoCo setup](physics_mujoco_setup.md) |
 | Native CPU batch integration | [MuJoCo native batch](mujoco_cpu_batch.md) |
 | Import and runtime parity | [MJCF equivalence](mjcf_equivalence.md) |

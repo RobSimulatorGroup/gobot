@@ -4,6 +4,9 @@ G1 tracking 的唯一训练实现是固定版本 SuperMimic-Reproduced 的迁入
 旧 Uni-SuperMimic learner、旧观测/目标、fork/promote 适应流程及相应测试、工具和配方已删除。
 PPO/AMP locomotion 是独立任务，仍然保留。
 
+2026-11-06 已完成一次八卡 BONES 100k 从头训练与完整评测，见[结果报告](g1_bones_100k_results.md)。
+完整操作入口：[数据准备/评测/视频](../examples/g1/reproduction/README.md)。
+
 训练入口为 `python -m gobot.rl.train` / `gobot-train`。场景和 robot profile 由 Gobot 拥有，
 训练不依赖 mjlab、编辑器或 NodeScript。mjlab 仅用于独立参考对照。
 
@@ -43,6 +46,11 @@ python -m gobot.rl.motion_tracking.convert --project /data/g1_project \
 BONES CSV 支持厘米、欧拉角度和关节度数的输入格式，必须显式填写真实输入 FPS。
 不能用公开评估片段清单替代原始训练数据清单。
 
+全量 BONES 使用 `examples.g1.reproduction.export_bones_reference` 和 `prepare_bones`，
+分别导出固定参考输入、分批转换并按历史规则独立筛选；详细命令见工具 README。
+训练库和评估子集清单分开保存，已完成的数据包含 129943 条训练动作与 129491 条评估子集动作。
+`library.pt` 是 71D fp16 动作数据，`ckpt_latest.pt` 才是模型及优化器 checkpoint；LAFAN1 单独存储。
+
 ## 训练和恢复
 
 ```bash
@@ -69,6 +77,11 @@ torchrun --standalone --nproc-per-node 4 -m gobot.rl.train \
 发布 e8 有 92k 恢复历史，更新数 39968；默认不中断 100k 重建配方为约 39984 次更新，两者必须分别记录。
 `metrics.jsonl`、TensorBoard 和 checkpoint 都使用控制步计数。
 
+八卡 4090 实测使用独立的 `examples/g1/train/reproduced_bones_nj500.json`，只将约束容量
+从 250 改为 500。原配方仍保留。不能在 `--resume` 时修改容量；也不能把八卡增加的全局
+样本量与学习率当成和四卡等价。每 rank 保存一份 checkpoint，八卡续训须保留全部八份。
+每 500 控制步打印一次；第一次日志前可能包含初始化、编译和 warmup。
+
 ## 完整片段评估
 
 ```bash
@@ -82,6 +95,12 @@ python -m examples.g1.evaluate_tracking --project /data/g1_project --data /data/
 `--nconmax 128 --njmax 500`；报告会记录容量，不能将它视为正式 35/250 配方。
 公开 teacher 评估使用 `--release` 并强制验证固定 SHA256；
 teacher 评估结果与 Gobot 从头训练结果分别标记。
+
+上述入口适用于 LAFAN1 或有限片段。全量 BONES 使用
+`python -m examples.g1.reproduction.evaluate_bones prepare|worker|merge` 分批加载 dense NPZ，
+不要把全库一次塞进显存。最终报告保留全量和过滤子集、逐片段失败、实际步数和 coverage。
+视频使用 `python -m examples.g1.reproduction.record_tracking --outcome success|failure ...`；
+成功视频必须完成整条片段，失败视频在终止处结束。工具 README 提供可执行命令。
 
 ## 代码与验证
 

@@ -4,6 +4,8 @@ G1 motion tracking uses the built-in SuperMimic-Reproduced training framework.
 See [preparation, training, resume and complete-clip evaluation](../../doc/gobot_training.md),
 [the alignment plan](../../doc/supermimic_reproduced_alignment_plan.md), and
 [measured progress](../../doc/supermimic_reproduced_progress.md).
+The [100k BONES result](../../doc/g1_bones_100k_results.md) records the completed
+eight-GPU run, complete-clip evaluation and success/failure videos.
 
 The older Uni-SuperMimic tracking workflow has been removed. The independent
 PPO/AMP locomotion workflow below remains available.
