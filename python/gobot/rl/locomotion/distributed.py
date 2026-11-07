@@ -101,7 +101,7 @@ class DistributedTraining:
         return values
 
     def reduce(self, values, *, maximum=False):
-        tensor = torch.tensor(values, dtype=torch.float64, device=self.device)
+        tensor = torch.as_tensor(values, dtype=torch.float64, device=self.device).clone()
         if self.world_size > 1:
             dist.all_reduce(tensor, op=dist.ReduceOp.MAX if maximum else dist.ReduceOp.SUM)
         return tensor.tolist()

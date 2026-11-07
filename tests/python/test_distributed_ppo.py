@@ -170,6 +170,13 @@ def test_two_worker_ppo(tmp_path, mode):
     assert (summary['completed_updates'], summary['stop_reason']) == expected
     lines = (tmp_path / 'run' / 'metrics.jsonl').read_text().splitlines()
     assert len(lines) == expected[0]  # Only rank 0 writes metrics.
+    for index, line in enumerate(lines):
+        metrics = json.loads(line)
+        assert metrics['total_steps'] == (index + 1) * 8 * 4
+        assert metrics['collection_s'] > 0 and metrics['learning_s'] > 0
+        assert 'Episode_Reward/track_linear_velocity' in metrics['log']
+        assert sum(value for key, value in metrics['log'].items()
+                   if key.startswith('Episode_Termination/')) == metrics['episodes_completed']
     checkpoint = torch.load(tmp_path / 'run' / 'model_final.pt', weights_only=False)
     assert len(checkpoint['infos']['rank_states']) == 2
     states = checkpoint['infos']['rank_states']

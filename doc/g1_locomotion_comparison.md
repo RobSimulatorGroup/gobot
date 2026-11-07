@@ -112,3 +112,29 @@ python tests/support/evaluate_mjlab_locomotion.py \
 本次原始报告、checkpoint 哈希、逐次结果和视频位于被 Git 忽略的 `logs/g1_alignment/`，
 汇总为 `comparison.json`。模型参考固定在 `tests/fixtures/mjlab_g1.xml`，
 对应的来源哈希与配置在 `tests/fixtures/mjlab_velocity.json`。
+
+
+## mjlab 独立训练入口
+
+`tests/support/train_mjlab_locomotion.py` 直接调用固定提交的 mjlab G1 配置和原始 PPO runner，
+不导入 Gobot。依赖与本次对照固定一致；运行 `--check` 可先核对。118 的独立环境安装清单位于
+`logs/mjlab_comparison_setup/requirements.txt`，这是实验环境文件，不参与 Gobot 安装。
+
+在 mjlab 源码目录，通过其 Python 环境启动：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+.venv/bin/torchrun --standalone --nproc-per-node=8 \
+  ../tests/support/train_mjlab_locomotion.py \
+  --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
+  --output logs/g1_comparison_seed42
+```
+
+每卡 1024 环境、每次采样 24 步，共同训练一个策略。先用 `--num-envs 64 --iterations 10` 和单独
+输出目录做短测试。`--resume path/to/model_N.pt` 恢复同配置训练；这里的 `--iterations` 是目标总更新数，
+区别于 Gobot 入口的追加更新数。物理 episode 重新开始，不是完整物理轨迹恢复。
+
+求解器保持 10 次迭代、20 次线搜索。启动前只关闭这两类逐内核重复打印，在每轮训练日志中汇总
+`Solver/iterations_limit_fraction` / `Solver/linesearch_limit_fraction`。比例按全体 GPU 上所有环境的
+物理子步和 forward 求解调用加权，reset 清理前已收集结果，其余容量警告保留。
+这改变日志形式，不证明求解器已经收敛。需要提高迭代参数时应作为单独实验记录。

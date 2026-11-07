@@ -323,3 +323,24 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 恢复 checkpoint 包含每个 rank 的 startup COM；恢复时不依赖环境重新构造所消耗的随机数。
 多 rank 恢复会比较控制步、learner 更新和三套优化器计数，拒绝混合不同进度的 shards。
 配置的正整数维度、采样模式、学习率和 replay/window 要求会在创建仿真前检查。
+
+## 训练终端日志
+
+速度 PPO/AMP 训练每次更新打印对齐的统计表，CPU、CUDA 和 torchrun 共用同一个入口。
+八卡由 rank 0 打印全局统计，`metrics.jsonl` 仍然每次更新保存一行 JSON，详细项保存在 `log` 字段。
+恢复训练后，总步数包含已完成的更新；`--iterations` 仍表示本次追加的更新次数。
+
+- `Collection time` 是采样耗时；`Learning time` 包含 GAE、PPO 更新和相关进程同步。
+  CUDA 在阶段边界等待任务完成后计时。多卡显示各阶段最慢进程的耗时。
+- `Mean reward` 和 episode 长度按本轮实际结束的 episode 汇总；跨更新但未结束的累计值保留。
+  没有结束的 episode 显示 `—`，JSON 为 `null`。
+- `Episode_Reward/*` 使用与 mjlab 相同的归一化：每个 episode 的加权奖励积分除以配置的最长 episode 秒数。
+  多卡按实际 episode 数加权；这不等于按每一步即时奖励取平均。
+- `Metrics/*` 中的角动量按环境步平均；触地最高点、落地冲击按落地次数加权；滑动速度按接触脚样本数加权。
+  没有落地或接触样本时显示 `—`。
+- `Metrics/twist/error_vel_xy` / `error_vel_yaw` 是已结束 episode 的时间平均误差，单位分别为 m/s 和 rad/s。
+  mjlab 原训练日志采用指令时间上限归一化，两者的这两个日志字段不能直接做数值对比；正式对照仍用独立评测报告。
+- `Episode_Termination/*` 是所有卡在本次更新中的 episode 结束次数，不是百分比，也不是 mjlab 的每步平均结束数。
+  数值恢复独立列出。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
+
+日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。

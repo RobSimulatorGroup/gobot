@@ -91,6 +91,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         sim_workers: int = 0,
         profile_step: bool = False,
         collect_step_extras: bool = True,
+        collect_training_stats: bool = False,
         task_runtime: str | None = None,
         context: gobot.AppContext | None = None,
     ) -> None:
@@ -118,6 +119,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self.device = device
         self.sim_workers = max(0, int(sim_workers))
         self.collect_step_extras = bool(collect_step_extras)
+        self.collect_training_stats = bool(collect_training_stats)
         self.task_runtime_mode = self._resolve_task_runtime(task_runtime)
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
@@ -497,6 +499,19 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 name: np.asarray(batch_state.reward_terms[:, index], dtype=np.float32)
                 for index, name in enumerate(self._reward_term_names)
             }
+        training_stats = None
+        if self.collect_training_stats:
+            from .training_log import step_statistics
+            training_stats = {
+                "reward_terms": np.asarray(batch_state.reward_terms).copy(),
+                "metrics": step_statistics(
+                    np, momentum=np.asarray(batch_state.angular_momentum),
+                    foot_velocity=np.asarray(batch_state.foot_velocity), contact=np.asarray(batch_state.foot_contact),
+                    first_contact=np.asarray(batch_state.first_contact), peak_height=np.asarray(batch_state.foot_peak_height),
+                    foot_force=np.asarray(batch_state.foot_contact_force),
+                    linear_velocity=np.asarray(batch_state.base_linear_velocity_body),
+                    angular_velocity=np.asarray(batch_state.base_angular_velocity_body), command=self.command_b),
+            }
         self._mark_profile(profile_marks, "reward")
         log_values: dict[str, float] = {}
         if self.collect_step_extras:
@@ -597,6 +612,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 "log": extras["log"],
             },
         )
+        if training_stats is not None:
+            training_stats["reset_reason"] = reset_reason
+            self._state.info["training_stats"] = training_stats
         if reward_terms:
             self._state.info["reward_terms"] = reward_terms
         if transition_obs is not None:

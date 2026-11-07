@@ -284,6 +284,7 @@ class WarpVelocityEnv:
         max_episode_length: int | None = None,
         profile_step: bool = False,
         collect_step_extras: bool = True,
+        collect_training_stats: bool = False,
         context: gobot.AppContext | None = None,
         capture_graphs: bool = True,
         reuse_scene: bool = False,
@@ -307,6 +308,7 @@ class WarpVelocityEnv:
         self._generator.manual_seed(self.seed)
         self.profile_step = bool(profile_step)
         self.collect_step_extras = bool(collect_step_extras)
+        self.collect_training_stats = bool(collect_training_stats)
         self.rsl_rl_include_reward_terms = self.collect_step_extras
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
@@ -1100,6 +1102,11 @@ class WarpVelocityEnv:
         self._profile_mark(profile_marks, "observation")
 
         info = self._make_step_info(reset_reason, truncated)
+        if self.collect_training_stats:
+            self._training_step_metrics.masked_fill_(self._numerical_reset.unsqueeze(1), 0.)
+            info["training_stats"] = {"reward_terms": self._reward_terms,
+                                      "metrics": self._training_step_metrics,
+                                      "reset_reason": reset_reason}
         if transition_obs is not None:
             info["transition_observation"] = transition_obs
             info["transition_state"] = transition_state
@@ -1904,6 +1911,13 @@ class WarpVelocityEnv:
             float(reward_cfg.foot_clearance_target_height), 1.0e-6
         ) - 1.0
         swing_height = (swing_error.square() * first_contact.float()).sum(dim=1) * active
+        if getattr(self, "collect_training_stats", False):
+            from .training_log import step_statistics
+            self._training_step_metrics = step_statistics(
+                torch, momentum=self._arrays["sensordata"][:, self._sensor_slices[2]],
+                foot_velocity=foot_velocity, contact=foot_found, first_contact=first_contact,
+                peak_height=self._foot_peak_height, foot_force=foot_force,
+                linear_velocity=linear_body, angular_velocity=angular_body, command=self._command)
         self._foot_peak_height.copy_(
             torch.where(first_contact, torch.zeros_like(self._foot_peak_height), self._foot_peak_height)
         )

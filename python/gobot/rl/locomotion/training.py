@@ -176,10 +176,17 @@ def restore_rng(rng, device):
         torch.cuda.set_rng_state(rng['cuda'].cpu(), device)
 
 
-def update_policy(algorithm, environment, observation, steps, record=None, distributed=None):
+def update_policy(algorithm, environment, observation, steps, record=None, distributed=None, timings=None):
     """Use RSL-RL's rollout, GAE and PPO update without modifying the optimizer."""
     from rsl_rl.utils import check_nan
 
+    def clock():
+        device = getattr(environment, "device", "cpu")
+        if str(device).startswith("cuda"):
+            torch.cuda.synchronize(device)
+        return time.monotonic()
+
+    started = clock() if timings is not None else 0.
     error = None
     try:
         with torch.inference_mode():
@@ -190,6 +197,7 @@ def update_policy(algorithm, environment, observation, steps, record=None, distr
                 algorithm.process_env_step(observation, reward, done, extras)
                 if record is not None:
                     record(action, reward, done, extras)
+            collected = clock() if timings is not None else 0.
             algorithm.compute_returns(observation)
     except Exception as caught:
         error = caught
@@ -205,6 +213,8 @@ def update_policy(algorithm, environment, observation, steps, record=None, distr
         distributed.check_error(error, phase='optimizer')
     elif error is not None:
         raise error
+    if timings is not None:
+        timings.update(collection_s=collected - started, learning_s=clock() - collected)
     return observation, losses
 
 
@@ -280,6 +290,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
     """
     from contextlib import ExitStack
     from .distributed import DistributedTraining, cpu_state
+    from .training_log import TrainingStatistics, format_training_log
 
     if backend not in {'mujoco-cpu', 'mujoco-warp'}:
         raise ValueError(f'unsupported locomotion training backend {backend!r}')
@@ -354,7 +365,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             import warp as wp
             resources.enter_context(wp.ScopedDevice(device))
         env = make_velocity_env(cfg, backend=backend, num_envs=exp.num_envs, device=device,
-                                seed=seed, collect_step_extras=False)
+                                seed=seed, collect_step_extras=False, collect_training_stats=True)
         use_amp = 'motion_prior_cfg' in config['algorithm']
         wrapper = RslRlVecEnvWrapper(env, device=device)
         manifest = build_policy_manifest(wrapper, cfg, config, Path(cfg.project_path))
@@ -410,8 +421,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         iteration = first - 1
         if distributed.main:
             trace = (directory / 'metrics.jsonl').open('a', buffering=1)
-        total = torch.zeros(exp.num_envs, device=device)
-        lengths = torch.zeros_like(total)
+        statistics = TrainingStatistics(exp.num_envs, env.num_actions, env._reward_term_names, cfg, device)
+        iteration_seconds = 0.
         observation = wrapper.get_observations()
 
         def save(*paths):
@@ -443,7 +454,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 reason = stopped
                 break
             tick = time.monotonic()
-            episode_rewards, episode_lengths, clip_rates, saturation, numerical_resets = [], [], [], [], []
+            clip_rates, saturation, numerical_resets = [], [], []
+            statistics.begin_update()
 
             def record(action, reward, done, extras):
                 if cfg.action_clip:
@@ -458,38 +470,37 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                     diagnostic = directory / f'numerical_failure_rank{distributed.rank}.pt'
                     torch.save(extras['numerical_failure'], diagnostic)
                     print(f'Numerical physics failure on rank {distributed.rank}; reset affected worlds; state: {diagnostic}', flush=True)
-                total.add_(reward)
-                lengths.add_(1)
-                ids = done.nonzero(as_tuple=False).flatten()
-                episode_rewards.extend(total[ids].tolist())
-                episode_lengths.extend(lengths[ids].tolist())
-                total[ids] = 0
-                lengths[ids] = 0
+                statistics.record(action, reward, done, extras['training_stats'])
 
-            observation, losses = update_policy(alg, wrapper, observation, config['num_steps_per_env'], record, distributed)
+            timings = {}
+            observation, losses = update_policy(alg, wrapper, observation, config['num_steps_per_env'], record, distributed, timings)
             completed += 1
             effective_std = alg.actor.output_std.detach()
             averaged = {'action_std': float(effective_std.mean()),
                         'action_clip_fraction': float(torch.stack(clip_rates).mean()) if clip_rates else 0.,
                         'joint_effort_saturation_fraction': float(torch.stack(saturation).mean()) if saturation else 0.,
-                        'terrain_level': float(torch.as_tensor(env.terrain_assignments[0]).float().mean()), **losses}
+                        **losses}
             reset_count = int(torch.stack(numerical_resets).sum()) if numerical_resets else 0
-            sums = distributed.reduce([sum(episode_rewards), sum(episode_lengths), len(episode_rewards), reset_count, *averaged.values()])
-            duration, std_max = distributed.reduce([time.monotonic() - tick, float(effective_std.max())], maximum=True)
-            metrics = {'iteration': iteration,
-                       'steps_per_second': exp.num_envs * distributed.world_size * config['num_steps_per_env'] / duration,
-                       'episode_reward': sums[0] / sums[2] if sums[2] else None,
-                       'episode_steps': sums[1] / sums[2] if sums[2] else None,
-                       'numerical_resets': int(sums[3]),
+            sums = distributed.reduce([reset_count, *averaged.values()])
+            summary = statistics.summarize(distributed, env)
+            duration, std_max, collection_s, learning_s = distributed.reduce(
+                [time.monotonic() - tick, float(effective_std.max()), timings['collection_s'], timings['learning_s']], maximum=True)
+            iteration_seconds += duration
+            steps_per_update = exp.num_envs * distributed.world_size * config['num_steps_per_env']
+            metrics = {'iteration': iteration, 'total_steps': (iteration + 1) * steps_per_update,
+                       'steps_per_second': steps_per_update / duration, 'iteration_s': duration,
+                       'collection_s': collection_s, 'learning_s': learning_s,
+                       'numerical_resets': int(sums[0]), **summary,
                        'action_std_max': std_max, 'learning_rate': alg.learning_rate,
                        'world_size': distributed.world_size, 'total_num_envs': exp.num_envs * distributed.world_size,
-                       **{key: value / distributed.world_size for key, value in zip(averaged, sums[4:], strict=True)}}
+                       **{key: value / distributed.world_size for key, value in zip(averaged, sums[1:], strict=True)}}
 
             def log():
                 metrics['elapsed_s'] = budget.elapsed
                 trace.write(json.dumps(metrics) + '\n')
-                if iteration % 25 == 0 or metrics['numerical_resets']:
-                    print(json.dumps(metrics), flush=True)
+                print(format_training_log(metrics, target_iteration=first + exp.iterations,
+                    remaining_iterations=first + exp.iterations - iteration - 1,
+                    average_iteration_s=iteration_seconds / completed), flush=True)
                 budget.update(updates=completed, last_iteration=iteration)
                 report('running', updates_completed=completed, elapsed_s=budget.elapsed, latest_metrics=metrics)
             distributed.on_main(log)
