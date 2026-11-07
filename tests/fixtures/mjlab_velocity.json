@@ -10,7 +10,8 @@
     "src/mjlab/tasks/velocity/config/go1/rl_cfg.py": "ac9744e0a2c11db9e60f819c0e8423e6479e094c4aaebe189a6965b06bb90f63",
     "src/mjlab/tasks/velocity/config/g1/rl_cfg.py": "dcf4a23e031064085e081798c4d3b5bd1cda6ec58ad0081907f2e72c9142a131",
     "src/mjlab/tasks/velocity/config/go1/env_cfgs.py": "3fe9a3f2882d0bb627c791fd009447911bf02dcb977d739ee87c26355909a7af",
-    "src/mjlab/tasks/velocity/config/g1/env_cfgs.py": "5d891ef40987118d1bb2d4bb8791922387d8fdae22752f1e1420dc31f4ddeabf"
+    "src/mjlab/tasks/velocity/config/g1/env_cfgs.py": "5d891ef40987118d1bb2d4bb8791922387d8fdae22752f1e1420dc31f4ddeabf",
+    "src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml": "febdcbeffbbf84051556ae41a5ac1b43fb479a5d76bdb3f54824dbc2721c20aa"
   },
   "tasks": {
     "go1_rough": {

@@ -287,3 +287,29 @@ def test_external_commands_do_not_delay_observations_or_reset():
         assert state.truncated.all()
         np.testing.assert_allclose(state.obs['actor'][:,:6],0.,atol=1e-6)
     finally:env.close()
+
+
+def test_g1_locomotion_model_matches_reference_physics():
+    """Mass, inertia, joints, contacts and actuators, beyond configuration equality."""
+    import gobot
+    import mujoco
+    from examples.g1.prepare_tracking import audit_model
+    from gobot.rl.locomotion.scene import configure_robot_drives
+    cfg = task_config(Experiment(robot='g1'))
+    context = gobot.app.create_context()
+    try:
+        context.set_project_path(str(cfg.project_path))
+        context.load_scene(cfg.robot_resource_path)
+        configure_robot_drives(context.root, cfg)
+        artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        reference = mujoco.MjModel.from_xml_path(str(ROOT/'tests/fixtures/mjlab_g1.xml'))
+        assert (reference.nq, reference.nv, reference.nu) == (36, 35, 29)
+        report = audit_model(reference, artifact, 'g1_')
+        assert report['passed'], report['failed_checks']
+        data = json.loads((Path(cfg.project_path)/'g1.jscn').read_text())
+        meshes = [node for node in data['__NODES__'] if node['type'] == 'MeshInstance3D']
+        assert len(meshes) == 35 and all(node['properties']['mesh'] for node in meshes)
+        for resource in data['__EXT_RESOURCES__']:
+            assert (Path(cfg.project_path)/resource['__PATH__'].removeprefix('res://')).is_file()
+    finally:
+        context.clear_scene()

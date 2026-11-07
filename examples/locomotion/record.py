@@ -27,6 +27,7 @@ def main():
     p.add_argument('--speed', type=float, default=.8)
     p.add_argument('--transition', action='store_true')
     p.add_argument('--continuous', action='store_true')
+    p.add_argument('--allow-model-change', action='store_true', help='Record an explicit transfer to the current robot model')
     p.add_argument('--seed', type=int, default=101)
     add_budget_arguments(p)
     args = p.parse_args()
@@ -44,13 +45,13 @@ def record(args):
     fixed_commands(cfg)
     cfg.scene_path = evaluation_scene(cfg, Path(cfg.project_path)/'assets/evaluation/video', args.seed,
         continuous=args.continuous, speed=max(args.speed,3.), seconds=args.seconds)
-    cfg.spawn_offset_xy = (-24., 0.) if args.continuous else (-3., 0.)
+    cfg.spawn_offset_xy = (-24., 0.) if args.continuous else (-3.25, 0.)
     env = make_velocity_env(cfg, backend='mujoco-warp', num_envs=1, device='cuda:0', seed=args.seed, collect_step_extras=False)
     writer = None
     sensor = view = camera = None
     try:
         manifest = policy_manifest_from_checkpoint(payload)
-        validate_policy(manifest, env, cfg)
+        validate_policy(manifest, env, cfg, allow_model_change=args.allow_model_change)
         policy = CheckpointPolicy(payload['actor_state_dict'], manifest).eval().cuda()
         env.set_terrain_assignments([0 if args.continuous else args.level], [0 if args.continuous else args.terrain_type], fixed=True)
         env.reset(seed=args.seed)
@@ -106,12 +107,12 @@ def record(args):
                 if not args.continuous:
                     level, kind = map(lambda x: int(x[0]), env.terrain_assignments)
                     origin = env.terrain_origins[level * env.terrain_grid_shape[1] + kind].cpu().numpy()
-                    if position[0] - origin[0] >= 3.: break
+                    if position[0] - origin[0] >= 3.25: break
         writer.stdin.close()
         if writer.wait() != 0: raise RuntimeError('video encoder failed')
         writer = None
         args.output.with_suffix('.json').write_text(json.dumps({'checkpoint': str(args.checkpoint), 'frames': frames,
-            'scenario': cfg.scene_path, 'candidate_only': True, 'trajectory': trajectory}, indent=2) + '\n')
+            'scenario': cfg.scene_path, 'model_change_allowed': args.allow_model_change, 'candidate_only': True, 'trajectory': trajectory}, indent=2) + '\n')
         print(f'Recorded {frames} frames to {args.output}; fallen={trajectory[-1]["fallen"] if trajectory else None}')
     finally:
         if writer is not None:

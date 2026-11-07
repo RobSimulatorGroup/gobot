@@ -1,6 +1,5 @@
-"""Shared velocity contracts, G1 topology and backend-independent task semantics."""
+"""Shared velocity profiles, G1 topology and backend-independent task behavior."""
 from __future__ import annotations
-from dataclasses import replace
 import math
 import argparse
 from pathlib import Path
@@ -8,11 +7,10 @@ import numpy as np
 import torch
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from examples.g1.config import g1_velocity_cfg, HAND_JOINTS
+from examples.g1.config import g1_velocity_cfg
 from gobot.rl.locomotion import make_velocity_env
 from gobot.rl.locomotion.curriculum import progress_masks
 from gobot.rl.locomotion.terms import posture_std
-from gobot.rl.runtime import BatchSimulationRuntime
 from gobot.sim.providers.mujoco_warp import MuJoCoWarpProvider
 from gobot.sim.providers.base import SimulationCapacityError
 
@@ -50,19 +48,12 @@ def test_solver_limits_are_not_capacity_loss():
 def test_g1_profile():
     cfg = g1_velocity_cfg()
     assert len(cfg.joint_names) == 29
-    assert len(cfg.robot.held_joint_targets) == 14
-    assert not set(cfg.joint_names) & set(HAND_JOINTS)
+    assert all("hand_" not in name for name in cfg.joint_names)
     assert [len(foot.collision_shapes) for foot in cfg.robot.feet] == [7, 7]
     values = posture_std(cfg.joint_names, cfg.rewards.pose_std_walking, .3, .6)
     assert values.shape == (29,) and np.all(values > 0)
     assert cfg.robot.torso_link == 'torso_link'
     assert cfg.rewards.angular_momentum < 0
-    try:
-        replace(cfg.robot, held_joint_targets={cfg.joint_names[0]: 0.})
-    except ValueError:
-        pass
-    else:
-        raise AssertionError('overlapping policy and held joints must fail')
 
 
 def test_g1_cpu_reset_and_terms():
@@ -90,10 +81,7 @@ def test_g1_cpu_reset_and_terms():
         before = env.locomotion_state()['joint_position'][1].copy()
         env.reset(np.array([0]))
         np.testing.assert_array_equal(env.locomotion_state()['joint_position'][1], before)
-        hands = BatchSimulationRuntime(env.context, robot='g1', base_link='pelvis', joint_names=HAND_JOINTS)
-        hand_state = hands.robot_state()
-        np.testing.assert_allclose(np.asarray(hand_state['joint_position'])[0], 0., atol=1e-6)
-        np.testing.assert_allclose(np.asarray(hand_state['joint_velocity'])[0], 0., atol=1e-6)
+
         # Real angular momentum from physical joint motion must contribute.
         env.backend.set_base_velocity(0, (0., 0., 0.), (1., .4, .2))
         state = env.step(np.zeros((2, 29), dtype=np.float32))
@@ -129,7 +117,7 @@ def main():
     parser.add_argument("--integration", action="store_true")
     args = parser.parse_args()
     if args.integration:
-        if not (Path(__file__).resolve().parents[2] / "examples/g1/assets/meshes/pelvis.STL").exists():
+        if not (Path(__file__).resolve().parents[2] / "examples/g1/g1.meshes/pelvis.ply").exists():
             print("Prepare G1 assets with python -m examples.g1.prepare before the integration test")
             raise SystemExit(77)
         tests = (test_g1_cpu_reset_and_terms,)

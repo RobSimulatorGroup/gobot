@@ -9,21 +9,30 @@ The [100k BONES result](../../doc/g1_bones_100k_results.md) records the complete
 SuperMimic eight-GPU run and complete-clip evaluation. See the
 [reference/data tools](reproduction/README.md) for preparing and evaluating that task.
 
-## Prepare velocity and AMP assets
+## Locomotion model and AMP data
+
+The checked-in `g1.jscn` and `g1.meshes/` contain the 29-joint G1 with rigid palms
+from mjlab `dcdf6ce5`. Training, evaluation and playback use this same asset.
+Masses, inertias, collision shapes and drives are checked against the reference;
+there are no finger actuators. No separate mesh download is needed.
+
+To deliberately regenerate the robot from that reference checkout:
 
 ```bash
-uv run python -m examples.g1.prepare
+uv run python -m examples.g1.prepare --source mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml
+```
+
+AMP motion data must be prepared for the current robot model:
+
+```bash
 uv run python -m examples.g1.prepare_motion
 uv run python -m examples.g1.reference_gaits
 ```
 
-Robot preparation reads Unitree assets from `examples/newton_g1/assets`, retaining
-original inertias and visual meshes and adding the reference collision proxies and
-link exclusions. `--asset-root` selects another asset copy. Motion preparation
-records pinned LAFAN1 data provenance, validates joint order/quaternions and converts
-30 Hz motion to 50 Hz using forward kinematics from the Gobot robot scene.
+Old articulated-hand checkpoints describe different dynamics. Normal resume and
+playback reject them. Use the evaluator's explicit `--allow-model-change` option
+for a measured policy-transfer experiment; this does not migrate optimizer state.
 
-The velocity policy controls 29 body joints; 14 hand joints retain fixed targets.
 Standard velocity PPO uses one observation frame; its flat task omits the terrain scan.
 AMP adds ten proprioceptive frames and the terrain scan. The critic has privileged state. Physics runs at 200 Hz and control at 50 Hz.
 
@@ -67,7 +76,7 @@ uv run gobot_editor --path examples/g1
 Evaluation measures physical velocity/yaw errors, traversal, clearance, contact and
 footfall metrics. A failure ends the recorded rollout; automatic reset is never
 presented as recovery. Export checks Torch/ONNX inference with the observation
-normalizer and embeds the policy contract.
+normalizer and embeds the policy metadata.
 
 Set `GOBOT_G1_POLICY` to the exported ONNX for editor playback. W/S controls forward
 velocity, Q/E strafe, A/D yaw, T running command, and R reset. Play uses a runtime

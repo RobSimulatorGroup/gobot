@@ -21,7 +21,7 @@ def main():
             for stage,slope,robust in [('rough',0.,False),('flat',0.,False),('flat',5.,False),('flat',0.,True)]:
                 output=a.output/f'{stage}_{slope:g}_{seed}_{"robust" if robust else "nominal"}.json'
                 command=[sys.executable,'-B','-m','examples.locomotion.assessment','--checkpoint',str(a.checkpoint),
-                    '--output',str(output),'--final','--seed',str(seed),'--steps','1000' if slope else '1500','--scenario-stage',stage,'--slope',str(slope),
+                    '--output',str(output),'--final','--seed',str(seed),'--steps','1000' if slope else '1500','--terrain',stage,'--slope',str(slope),
                     '--budget-file',str(a.budget_file.resolve()),'--budget-parent-pid',str(os.getpid())]
                 if robust:command.append('--robust')
                 with (a.output/'admission.log').open('a',buffering=1) as log:

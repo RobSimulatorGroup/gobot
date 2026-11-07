@@ -1,62 +1,78 @@
-"""Derive the authored G1 training scene from the existing Unitree asset.
+"""Author the pinned mjlab G1 as a self-contained Gobot locomotion scene.
 
-The input MJCF is only an import artifact. Training always loads g1_scene.jscn.
-Collision primitives are adapted from mjlab 8bb2bc9e, Apache-2.0.
+MJCF is an offline input; training and evaluation load only g1.jscn and its meshes.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
-import shutil
-import os
 from pathlib import Path
 import tempfile
-import xml.etree.ElementTree as ET
+import mujoco
+import numpy as np
 import gobot
 from gobot.rl.locomotion.scene import configure_robot_drives
 from gobot.rl.locomotion.math import find_node_by_name
-from .config import g1_velocity_cfg
+from .config import g1_velocity_cfg, REFERENCE_REVISION
 
 
-def prepare(asset_root=None, project_path=None):
+SOURCE_SHA256 = "febdcbeffbbf84051556ae41a5ac1b43fb479a5d76bdb3f54824dbc2721c20aa"
+
+
+def prepare(source=None, project_path=None):
     cfg = g1_velocity_cfg(project_path=project_path)
     project = Path(cfg.project_path).resolve()
-    asset = Path(asset_root or project.parent / 'newton_g1/assets/unitree_g1').resolve()
-    source = asset / 'mjcf/g1_29dof_with_hand_rev_1_0.xml'
+    source = Path(source or Path(__file__).resolve().parents[2] /
+                  'mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml').resolve()
     if not source.is_file():
-        raise FileNotFoundError(f"G1 source asset is missing: {source}; pass --asset-root")
-    tree = ET.parse(source)
-    root = tree.getroot()
-    meshes = project / 'assets/meshes'
-    meshes.mkdir(parents=True, exist_ok=True)
-    for mesh in root.findall('./asset/mesh'):
-        name = mesh.get('file')
-        shutil.copy2(asset / 'meshes' / name, meshes / name)
-    root.find('compiler').set('meshdir', str(meshes))
-    preset = json.loads((Path(__file__).parent / 'collision_preset.json').read_text())['bodies']
-    # Keep original visual meshes and inertias; use simple locomotion contacts.
-    for body in root.findall('.//body'):
-        for geom in list(body.findall('geom')):
-            if geom.get('contype', '1') != '0' or geom.get('conaffinity', '1') != '0':
-                body.remove(geom)
-        for attrs in preset.get(body.get('name'), ()):
-            ET.SubElement(body, 'geom', attrs)
-    # mjlab's overlapping neighboring link proxies require these exclusions.
-    contact = root.find('contact')
-    if contact is not None:
-        root.remove(contact)
-    contact = ET.SubElement(root, 'contact')
-    for first, second in (("left_elbow_link", "left_wrist_pitch_link"),
-                          ("right_elbow_link", "right_wrist_pitch_link"),
-                          ("pelvis", "right_hip_roll_link"), ("pelvis", "left_hip_roll_link")):
-        ET.SubElement(contact, 'exclude', body1=first, body2=second)
-    for tag in ('sensor', 'keyframe'):
-        element = root.find(tag)
-        if element is not None:
-            root.remove(element)
+        raise FileNotFoundError(f"Pass --source pointing to mjlab {REFERENCE_REVISION}'s G1 XML: {source}")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != SOURCE_SHA256:
+        raise ValueError("G1 source differs from the pinned mjlab model; review the source before regenerating")
+    spec = mujoco.MjSpec.from_file(str(source))
+    model = spec.compile()
+    if (model.nq, model.nv) != (36, 35):
+        raise ValueError('locomotion requires the 29-joint G1 with rigid palms')
+    # Store visuals beside the scene; training never needs the reference checkout.
+    mesh_directory = project / 'g1.meshes'
+    mesh_directory.mkdir(parents=True, exist_ok=True)
+    for mesh in spec.meshes:
+        i = model.mesh(mesh.name).id
+        rotation = np.zeros(9)
+        mujoco.mju_quat2Mat(rotation, model.mesh_quat[i])
+        first, count = model.mesh_vertadr[i], model.mesh_vertnum[i]
+        vertices = (model.mesh_vert[first:first+count] @ rotation.reshape(3, 3).T + model.mesh_pos[i]).astype('<f4')
+        first, count = model.mesh_faceadr[i], model.mesh_facenum[i]
+        faces = model.mesh_face[first:first+count]
+        records = np.empty(count, dtype=[('count', 'u1'), ('indices', '<i4', (3,))])
+        records['count'] = 3
+        records['indices'] = faces
+        header = (f'ply\nformat binary_little_endian 1.0\nelement vertex {len(vertices)}\n'
+                  f'property float x\nproperty float y\nproperty float z\nelement face {len(faces)}\n'
+                  'property list uchar int vertex_indices\nend_header\n')
+        with (mesh_directory / f'{mesh.name}.ply').open('wb') as stream:
+            stream.write(header.encode())
+            stream.write(vertices.tobytes())
+            stream.write(records.tobytes())
+        # Inline input meshes keep the temporary MJCF independent of mesh directories.
+        mesh.uservert = vertices.ravel()
+        mesh.userface = faces.ravel()
+        mesh.file = ''
+    # FULL_COLLISION in the pinned mjlab G1 preset: foot friction, priorities and dimensions.
+    for geom in spec.geoms:
+        if geom.name.endswith('_collision'):
+            foot = '_foot' in geom.name
+            geom.condim = 3 if foot else 1
+            geom.priority = int(foot)
+            if foot:
+                geom.friction[0] = .6
+    for sensor in list(spec.sensors):
+        spec.delete(sensor)
+    for key in list(spec.keys):
+        spec.delete(key)
     gobot.set_project_path(str(project))
     with tempfile.TemporaryDirectory(prefix='gobot-g1-import-') as directory:
         xml = Path(directory) / 'g1.xml'
-        tree.write(xml, encoding='unicode')
+        xml.write_text(spec.to_xml())
         gobot.import_mjcf_scene(str(xml), 'res://g1.jscn', name='g1')
     scene = gobot.load_scene('res://g1.jscn')
     robot = scene.root
@@ -86,7 +102,7 @@ def prepare(asset_root=None, project_path=None):
     for foot in cfg.robot.feet:
         link = find_node_by_name(robot, foot.link)
         height = add(link, 'TerrainHeightSensor3D', foot.height_sensor)
-        height.position = (.04, 0., -.035)
+        height.position = (.04, 0., -.037)
         height.pattern_mode = gobot.RayPatternMode.Custom
         height.sample_offsets = list(foot.sample_offsets)
         height.ray_alignment = gobot.RayAlignmentMode.Yaw
@@ -95,28 +111,34 @@ def prepare(asset_root=None, project_path=None):
         height.max_distance = 1.
         height.reduction_mode = gobot.RayReductionMode.Min
         contact = add(link, 'ContactSensor3D', foot.contact_sensor)
-        contact.position = (.04, 0., -.035)
+        contact.position = (.04, 0., -.037)
         contact.radius = .15
         contact.min_threshold = 0.
-        for name in foot.collision_shapes:
-            collision = find_node_by_name(robot, name)
-            collision.physics_material = {'sliding_friction': .6, 'torsional_friction': 0., 'rolling_friction': 0.,
-                                          'contact_compliance': 1.e-4, 'contact_damping': 1.}
     gobot.save_scene(robot, 'res://g1.jscn')
+    # The source identifier is provenance only, not a runtime dependency.
     scene_file = project / 'g1.jscn'
     data = json.loads(scene_file.read_text())
+    visuals = {}
+    for i in range(model.ngeom):
+        if model.geom_type[i] == mujoco.mjtGeom.mjGEOM_MESH:
+            mesh_name = model.mesh(int(model.geom_dataid[i])).name
+            name = model.geom(i).name or f'{mesh_name}_visual_{i}'
+            visuals[name] = mesh_name
+    for mesh in spec.meshes:
+        data['__EXT_RESOURCES__'].append({'__ID__': f'mesh_{mesh.name}', '__TYPE__': 'ArrayMesh',
+                                         '__PATH__': f'res://g1.meshes/{mesh.name}.ply'})
     for node in data['__NODES__']:
+        if node['type'] == 'MeshInstance3D':
+            node['properties']['mesh'] = f'ExtResource(mesh_{visuals[node["name"]]})'
         if 'source_path' in node.get('properties', {}):
-            node['properties']['source_path'] = 'res://' + Path(os.path.relpath(source, project)).as_posix()
-    for resource in data['__EXT_RESOURCES__']:
-        if resource['__TYPE__'] == 'ArrayMesh':
-            resource['__PATH__'] = 'res://assets/meshes/' + Path(resource['__PATH__']).name
+            node['properties']['source_path'] = ''
     scene_file.write_text(json.dumps(data, indent=4) + '\n')
-    print(f"Prepared {project / 'g1.jscn'} (29 policy joints, 14 held joints)")
+    print(f"Prepared {scene_file} (29 joints, rigid palms; mjlab {REFERENCE_REVISION[:8]})")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--asset-root')
-    parser.add_argument('--project-path')
+    parser.add_argument('--source', type=Path)
+    parser.add_argument('--project-path', type=Path)
     args = parser.parse_args()
-    prepare(args.asset_root, args.project_path)
+    prepare(args.source, args.project_path)

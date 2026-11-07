@@ -28,9 +28,6 @@ def build_policy_manifest(
         decimation=int(env.decimation),
         control={
             "mode": "position_offset",
-            "held_joint_targets": dict(cfg.robot.held_joint_targets),
-            "held_joint_kp": cfg.robot.held_joint_kp,
-            "held_joint_kd": cfg.robot.held_joint_kd,
             "default_joint_position": np.asarray(env.default_joint_pos, dtype=np.float32),
             "action_scale": np.asarray(env.action_scale, dtype=np.float32),
             "action_clip": cfg.action_clip,
@@ -76,7 +73,7 @@ def build_policy_manifest(
     )
 
 
-def validate_policy(manifest, env, cfg):
+def validate_policy(manifest, env, cfg, *, allow_model_change=False):
     if manifest.extras.get("scene_digest_kind") == "robot_physics_v1":
         from .robot_model import robot_physics_digest
         digest = robot_physics_digest(env.compiled_artifact, cfg.robot_name)
@@ -85,7 +82,7 @@ def validate_policy(manifest, env, cfg):
     manifest.validate_runtime(observation_spec=env.observation_spec, action_spec=env.action_spec,
         joint_names=env.joint_names, physics_dt=env.physics_dt, decimation=env.decimation,
         task_name=cfg.name, task_version=cfg.task_version,
-        scene_digest=digest)
+        scene_digest=None if allow_model_change else digest)
     saved_gait = manifest.extras.get("natural_gait")
     if saved_gait is not None:
         saved_gait = {"active_threshold": .1, **saved_gait}
@@ -103,12 +100,6 @@ def validate_policy(manifest, env, cfg):
         raise ValueError("policy sensor timing does not match the task")
     if dict(manifest.extras.get("solver_settings", {})) != dict(cfg.mujoco_solver_settings):
         raise ValueError("policy solver settings do not match the task")
-    if cfg.robot.held_joint_targets:
-        for key in ("held_joint_kp", "held_joint_kd"):
-            if not np.isclose(float(manifest.control.get(key, float("nan"))), float(getattr(cfg.robot, key))):
-                raise ValueError(f"policy {key} does not match the robot profile")
-    if dict(manifest.control.get("held_joint_targets", {})) != dict(cfg.robot.held_joint_targets):
-        raise ValueError("policy held-joint targets do not match the robot profile")
     for key, values in (("kp", cfg.kp), ("kd", cfg.kd), ("default_joint_position", cfg.default_joint_pos), ("action_scale", env.action_scale)):
         actual = np.asarray(manifest.control.get(key, ()), dtype=np.float32)
         expected = np.asarray(values, dtype=np.float32)

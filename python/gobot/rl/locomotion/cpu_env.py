@@ -402,7 +402,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             self._terrain_curriculum_limits[:] = 0.0
             self._push_count[:] = 0
         self._reset_envs(env_ids, np.zeros(env_ids.size, dtype=np.int64))
-        self._apply_held_joint_targets()
         self.backend.update_command_frames()
         batch_state = self.backend.state
         self._run_task_runtime(advance_time=False)
@@ -462,7 +461,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             progress_start = np.asarray(self.backend.state.base_position)[:, :2].copy()
             command_speed = np.linalg.norm(world_command, axis=1)
             self._commanded_path += command_speed * self.step_dt
-        self._apply_held_joint_targets()
         self.backend.step_task_inputs(
             action_np,
             self.decimation,
@@ -1532,12 +1530,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             rows.size,
         )
         return linear_velocity, angular_velocity
-
-    def _apply_held_joint_targets(self):
-        held = self.cfg_obj.robot.held_joint_targets
-        if held:
-            targets = np.broadcast_to(np.asarray(tuple(held.values()), dtype=np.float64), (self.num_envs, len(held))).copy()
-            self.context.set_batch_joint_position_targets(self.cfg_obj.robot_name, list(held), targets)
 
     def _reset_env(self, env_id: int, *, reason: int) -> None:
         self._reset_envs(np.asarray([env_id], dtype=np.int64), np.asarray([reason], dtype=np.int64))

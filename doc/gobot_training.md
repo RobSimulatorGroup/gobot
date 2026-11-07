@@ -54,9 +54,33 @@ critic 使用真实位置。奖励和终止在最后物理子步后计算，随�
 比较配置、NumPy/Torch 奖励和完整 PPO 更新。
 这些检查不替代多 seed 的训练效果比较。
 
-物理仍从 Gobot 场景编译。G1 当前场景保留 14 个固定目标的手部关节，策略控制 29 个身体关节；
-整机动态和训练成绩对照还需要统一机器人模型、地形及依赖版本。Gobot 的原生 CPU 批处理要求 MuJoCo 3.17，
-进行配对训练时也应让参考程序使用同一套依赖。
+物理仍从 Gobot 场景编译。G1 行走、AMP 与回放使用同一个 `g1.jscn`：29 个身体关节、固定手掌，
+删除了 14 个手指驱动。质量、惯量、关节、碰撞和驱动参数通过 `tests/fixtures/mjlab_g1.xml`
+与固定版本的 mjlab 模型逐项核对。网格随仓库提供，不再依赖本机未跟踪的手指 STL 文件。
+旧模型 checkpoint 的物理标识不同，不能直接 `--resume`；`--initialize` 也仍要求模型一致。
+评测可显式加 `--allow-model-change` 测迁移，报告同时记录训练模型和实际模型标识。
+Gobot 的原生 CPU 批处理要求 MuJoCo 3.17，配对运行应使用同一套依赖。
+
+评测的 `--terrain` 只选择评测地形，保留 checkpoint 的观测、控制和求解器设置。例如把粗糙地形策略
+放到平地评测，不会删掉它的高度扫描输入：
+
+```bash
+python -m examples.locomotion.assessment \
+  --checkpoint logs/g1_ppo_8gpu/model_final.pt \
+  --terrain flat --speeds -.3 .8 1.5 2.5 --steps 1000 --num-envs 32 \
+  --allow-model-change --output logs/g1_transfer/flat.json
+python -m examples.locomotion.assessment \
+  --checkpoint logs/g1_ppo_8gpu/model_final.pt \
+  --terrain rough --speeds .8 --steps 1000 --num-envs 70 \
+  --allow-model-change --output logs/g1_transfer/rough.json
+```
+
+`velocity_error_after_warmup` 是排除起步 2 秒后的水平速度向量误差（m/s），只统计首次结束前的样本；
+`tracking_episodes` 同时给出有有效样本的次数，不能忽略提前跌倒的情况。
+`fall_rate` 统计物理跌倒终止，`numerical_failure_rate` 单列数值异常，`off_route_rate` 单列偏离路线。
+`terrain_pass_rate` 是到达对侧终点且未失败的比例，未及时到达也不算通过；
+它与附加速度/轨迹阈值的 `admission` 分开。当前 8 米地形块的起终点距中心 3.25 米，
+位于边缘平台内部，避免原先 3 米处的楼梯接缝。各难度、地形类型和每次运行的明细都保留在报告里。
 
 ## 修改奖励和训练配置
 

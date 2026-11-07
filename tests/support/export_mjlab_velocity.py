@@ -26,7 +26,7 @@ from mjlab.rl.runner import MjlabOnPolicyRunner
 
 root=Path(__file__).resolve().parents[2]
 reference=root/'mjlab'
-source_files=['src/mjlab/asset_zoo/robots/unitree_go1/go1_constants.py','src/mjlab/asset_zoo/robots/unitree_g1/g1_constants.py','src/mjlab/rl/runner.py','src/mjlab/tasks/velocity/velocity_env_cfg.py','src/mjlab/tasks/velocity/mdp/rewards.py','src/mjlab/tasks/velocity/mdp/curriculums.py','src/mjlab/tasks/velocity/config/go1/rl_cfg.py','src/mjlab/tasks/velocity/config/g1/rl_cfg.py','src/mjlab/tasks/velocity/config/go1/env_cfgs.py','src/mjlab/tasks/velocity/config/g1/env_cfgs.py']
+source_files=['src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml','src/mjlab/asset_zoo/robots/unitree_go1/go1_constants.py','src/mjlab/asset_zoo/robots/unitree_g1/g1_constants.py','src/mjlab/rl/runner.py','src/mjlab/tasks/velocity/velocity_env_cfg.py','src/mjlab/tasks/velocity/mdp/rewards.py','src/mjlab/tasks/velocity/mdp/curriculums.py','src/mjlab/tasks/velocity/config/go1/rl_cfg.py','src/mjlab/tasks/velocity/config/g1/rl_cfg.py','src/mjlab/tasks/velocity/config/go1/env_cfgs.py','src/mjlab/tasks/velocity/config/g1/env_cfgs.py']
 out={'reference_revision':'dcdf6ce519abfd2ea45e9503ae6fb650b75bb869','source_sha256':{name:hashlib.sha256((reference/name).read_bytes()).hexdigest() for name in source_files},'tasks':{}}
 for robot,rough,flat,agent in [('go1',unitree_go1_rough_env_cfg,unitree_go1_flat_env_cfg,unitree_go1_ppo_runner_cfg),('g1',unitree_g1_rough_env_cfg,unitree_g1_flat_env_cfg,unitree_g1_ppo_runner_cfg)]:
     for terrain,factory in [('rough',rough),('flat',flat)]:
@@ -103,3 +103,16 @@ inputs={'command':command,'quaternion':quat,'linear_body':lin,'angular_body':ang
 out['reward_probe']={'inputs':{k:v.tolist() for k,v in inputs.items()},'rates':{k:v.tolist() for k,v in rates.items()},'weights':weights,'reward':sum(weights[k]*v for k,v in rates.items()).mul(.02).tolist()}
 (root/'tests/fixtures/mjlab_velocity.json').write_text(json.dumps(out,indent=2)+'\n')
 print('Exported',len(out['tasks']),'task configurations and',len(rates),'independent reward terms')
+
+# Keep a self-contained physical model for scene compiler regression tests.
+from mjlab.entity import Entity
+from mjlab.asset_zoo.robots.unitree_g1.g1_constants import get_g1_robot_cfg
+spec = Entity(get_g1_robot_cfg()).spec
+for geom in list(spec.geoms):
+    if not geom.contype and not geom.conaffinity:
+        spec.delete(geom)
+for mesh in list(spec.meshes):
+    spec.delete(mesh)
+spec.compile()
+(root/'tests/fixtures/mjlab_g1.xml').write_text(
+    '<!-- mjlab '+out['reference_revision']+'; visual-only meshes omitted. -->\n'+spec.to_xml())

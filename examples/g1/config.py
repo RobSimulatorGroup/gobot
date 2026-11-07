@@ -1,6 +1,6 @@
 """G1 rough velocity preset, adapted from mjlab dcdf6ce5 (Apache-2.0).
 
-The existing 43-joint asset retains its hands; the policy controls 29 body joints.
+The locomotion model has 29 actuated body joints and rigid palms.
 """
 from __future__ import annotations
 import math
@@ -15,9 +15,6 @@ JOINT_NAMES = tuple(
     + [f"{side}_{name}_joint" for side in ("left", "right")
        for name in ("shoulder_pitch", "shoulder_roll", "shoulder_yaw", "elbow", "wrist_roll", "wrist_pitch", "wrist_yaw")]
 )
-HAND_JOINTS = tuple(f"{side}_hand_{finger}_{segment}_joint"
-    for side in ("left", "right") for finger, segments in (("index", 2), ("middle", 2), ("thumb", 3))
-    for segment in range(segments))
 
 def _inertia(rotors, gears):
     return rotors[0] * (gears[0] * gears[1]) ** 2 + rotors[1] * gears[1] ** 2 + rotors[2]
@@ -64,7 +61,6 @@ def g1_velocity_cfg(*, project_path=None, play=False):
         feet=tuple(FootCfg(side, f"{side}_ankle_roll_link", tuple(f"{side}_foot{i}_collision" for i in range(1, 8)),
             f"{side}_foot_contact", f"{side}_foot_height_scan", offsets)
             for side in ("left", "right")),
-        held_joint_targets={name: 0. for name in HAND_JOINTS},
     )
     cfg = VelocityTaskCfg(robot=profile, name="g1_rough_velocity", task_version="g1_rough_velocity_v1",
         project_path=project_path or Path(__file__).parent, scene_path="res://g1_scene.jscn",

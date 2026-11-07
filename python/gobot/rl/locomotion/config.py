@@ -30,9 +30,6 @@ class LocomotionRobotCfg:
     feet: tuple[FootCfg, ...]
     imu_sensor: str = "imu"
     angular_momentum_sensor: str = "root_angmom"
-    held_joint_targets: Mapping[str, float] = field(default_factory=dict)
-    held_joint_kp: float = 10.0
-    held_joint_kd: float = 2.0
 
     def __post_init__(self):
         n = len(self.joint_names)
@@ -41,8 +38,6 @@ class LocomotionRobotCfg:
         for name in ("default_joint_pos", "kp", "kd", "armature", "effort_limit", "velocity_limit"):
             if len(getattr(self, name)) != n:
                 raise ValueError(f"{name} must have one value per policy joint")
-        if set(self.joint_names) & set(self.held_joint_targets):
-            raise ValueError("policy joints and held joints must be disjoint")
         shapes = [shape for foot in self.feet for shape in foot.collision_shapes]
         if not self.feet or any(not foot.collision_shapes for foot in self.feet) or len(shapes) != len(set(shapes)):
             raise ValueError("each foot requires a disjoint, nonempty collision group")

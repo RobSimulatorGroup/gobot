@@ -390,12 +390,6 @@ class WarpVelocityEnv:
         )
         self._base_body_id = int(self._layout.base_body_id)
         self._torso_body_id = self.provider.resolve_object_ids("body", (prefix + self.cfg_obj.robot.torso_link,))[0]
-        self._held_layout = None
-        if self.cfg_obj.robot.held_joint_targets:
-            self._held_layout = self.provider.resolve_robot_layout(self.cfg_obj.robot_name,
-                base_link=self.cfg_obj.base_link, joint_names=tuple(self.cfg_obj.robot.held_joint_targets))
-            self._held_targets = torch.tensor(tuple(self.cfg_obj.robot.held_joint_targets.values()), device=self._torch_device).expand(self.num_envs, -1).contiguous()
-
         self._joint_qpos_ids = torch.tensor(
             self._layout.joint_qpos_addresses,
             dtype=torch.long,
@@ -1018,8 +1012,6 @@ class WarpVelocityEnv:
             - self._encoder_bias
         )
         self.provider.set_joint_position_targets(self._layout, self._joint_targets)
-        if self._held_layout is not None:
-            self.provider.set_joint_position_targets(self._held_layout, self._held_targets)
         self._profile_mark(profile_marks, "action")
 
         if self.cfg_obj.curriculum_mode == "command_progress":
@@ -1388,9 +1380,6 @@ class WarpVelocityEnv:
         self._reset_qvel[env_ids] = 0.0
         self._reset_ctrl[env_ids] = 0.0
         self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
-        if self._held_layout is not None:
-            self._reset_qpos[env_ids[:, None], list(self._held_layout.joint_qpos_addresses)] = self._held_targets[env_ids]
-            self._reset_ctrl[env_ids[:, None], list(self._held_layout.actuator_ids)] = self._held_targets[env_ids]
         self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
