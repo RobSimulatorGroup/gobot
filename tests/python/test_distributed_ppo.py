@@ -35,7 +35,20 @@ def _worker(rank, directory, ports, mode):
 
     def capture_environment(*args, **kwargs):
         seeds.append(kwargs['seed'])
-        return make(*args, **kwargs)
+        env = make(*args, **kwargs)
+        if mode == 'rollout_error' and rank == 1:
+            step = env.step
+            calls = 0
+
+            def fail_after_checkpoint(action):
+                nonlocal calls
+                calls += 1
+                state = step(action)
+                if calls == 5:
+                    state.obs['actor'][0, 0] = float('nan')
+                return state
+            env.step = fail_after_checkpoint
+        return env
 
     def capture_update(alg, env, observation, *args):
         before_update.append((env.training_state_dict()['common_step_counter'], alg.learning_rate))
@@ -56,11 +69,12 @@ def _worker(rank, directory, ports, mode):
     config['algorithm'].update(num_learning_epochs=2, num_mini_batches=2)
     run_dir = root / 'run'
 
-    if mode == 'error':
+    if mode in {'error', 'rollout_error'}:
         try:
             training.run(exp, run_dir, backend='mujoco-cpu', no_eval=True, agent_cfg=config)
         except (ValueError, RuntimeError) as error:
-            assert 'output directory is not empty' in str(error)
+            expected = 'output directory is not empty' if mode == 'error' else "rollout failed: rank 1: ValueError: The observation group 'actor'"
+            assert expected in str(error)
         else:
             raise AssertionError('all workers must receive the output error')
         assert not torch.distributed.is_initialized()
@@ -108,7 +122,7 @@ def _compare(a, b):
         assert a == b
 
 
-@pytest.mark.parametrize('mode', ['resume', 'signal', 'budget', 'error', 'eval'])
+@pytest.mark.parametrize('mode', ['resume', 'signal', 'budget', 'error', 'eval', 'rollout_error'])
 def test_two_worker_ppo(tmp_path, mode):
     if mode == 'error':
         (tmp_path / 'run').mkdir()
@@ -137,6 +151,18 @@ def test_two_worker_ppo(tmp_path, mode):
                     process.join(timeout=5)
     if mode == 'error':
         assert sorted(p.name for p in (tmp_path / 'run').iterdir()) == ['keep.txt']
+        return
+    if mode == 'rollout_error':
+        status = json.loads((tmp_path / 'run' / 'status.json').read_text())
+        assert status['state'] == 'failed'
+        assert 'rank 1' in status['error'] and 'actor' in status['error']
+        checkpoint = torch.load(tmp_path / 'run' / 'latest.pt', weights_only=False)
+        assert checkpoint['iter'] == 0
+        assert not (tmp_path / 'run' / 'model_final.pt').exists()
+        for role in ('actor', 'critic'):
+            assert all(torch.isfinite(value).all() for value in checkpoint[f'{role}_state_dict'].values())
+        budget = json.loads((tmp_path / 'run' / 'gpu_budget.json').read_text())
+        assert budget.get('active_run') is None
         return
     summary = json.loads((tmp_path / 'run' / 'summary.json').read_text())
     expected = {'resume': (2, 'iterations'), 'signal': (1, 'signal'),

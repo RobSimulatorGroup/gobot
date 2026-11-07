@@ -148,6 +148,7 @@ def test_torch_reward_terms_match_mjlab_without_cuda():
     env._reward_term_names=VELOCITY_REWARD_TERM_NAMES
     env._reward_weights=torch.tensor([REFERENCE['reward_probe']['weights'][key] for key in VELOCITY_REWARD_TERM_NAMES])
     env._reward_terms=torch.zeros(count,len(VELOCITY_REWARD_TERM_NAMES));env._reward=torch.zeros(count);env._episode_returns=torch.zeros(count)
+    env._numerical_reset=torch.zeros(count,dtype=torch.bool)
     env._compute_rewards()
     probe=REFERENCE['reward_probe']
     for i,key in enumerate(VELOCITY_REWARD_TERM_NAMES):

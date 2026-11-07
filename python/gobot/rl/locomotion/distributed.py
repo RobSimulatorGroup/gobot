@@ -74,6 +74,25 @@ class DistributedTraining:
             raise RuntimeError(f'rank 0 failed: {result[1]}')
         return result[0]
 
+    def check_error(self, error, *, phase):
+        """Finish a local rollout before any worker enters PPO collectives.
+
+        Rollout collection has no collectives. A worker that fails must still
+        meet its peers here, or they block in the next PPO all-reduce.
+        """
+        if self.world_size == 1:
+            if error is not None:
+                raise error
+            return
+        failed = self.reduce([error is not None], maximum=True)[0]
+        if not failed:
+            return
+        errors = [None] * self.world_size
+        message = None if error is None else f'rank {self.rank}: {type(error).__name__}: {error}'
+        dist.all_gather_object(errors, message)
+        detail = '; '.join(message for message in errors if message is not None)
+        raise RuntimeError(f'{phase} failed: {detail}') from error
+
     def gather(self, value):
         if self.world_size == 1:
             return [value]

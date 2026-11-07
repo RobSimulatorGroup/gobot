@@ -45,6 +45,10 @@ from .curriculum import progress_masks, directed_increment, command_displacement
 
 
 _CONTACT_HISTORY_LENGTH = 4
+# These are numerical-failure limits, far outside locomotion operating speeds.
+# Checking finite values alone lets a diverging world poison PPO before NaNs appear.
+_MAX_LOCOMOTION_VELOCITY = 1000.0
+_MAX_LOCOMOTION_POSITION = 1.0e6
 
 
 def _quat_apply(quaternion: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
@@ -614,6 +618,9 @@ class WarpVelocityEnv:
         self._reset_reasons = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
+        self._numerical_reset = torch.zeros(self.num_envs, dtype=torch.bool, device=self._torch_device)
+        self._numerical_failure = None
+        self._numerical_failure_captured = False
         self.common_step_counter = 0
         self.profile_step_counter = 0
         self.step_counter = 0
@@ -997,6 +1004,8 @@ class WarpVelocityEnv:
     def step(self, actions: Any) -> BatchEnvState:
         profile_marks: list[tuple[str, torch.cuda.Event]] = []
         self._profile_mark(profile_marks, "start")
+        self._numerical_reset.zero_()
+        self._numerical_failure = None
         action = self._prepare_actions(actions)
         self.common_step_counter += 1
         self.profile_step_counter += 1
@@ -1030,12 +1039,15 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
+        self._recover_numerical_failures()
         if self.cfg_obj.post_step_sensing:
             self.provider.forward()
             self.provider.sense()
             self._update_raycast_outputs()
             self._refresh_foot_contacts()
         self._compute_terminations()
+        self._terminated.logical_or_(self._numerical_reset)
+        self._truncated.logical_and_(~self._numerical_reset)
         self._compute_rewards()
         self._profile_mark(profile_marks, "reward_termination")
         reward = self._reward.clone()
@@ -1054,6 +1066,7 @@ class WarpVelocityEnv:
                 ),
             ),
         )
+        reset_reason.masked_fill_(self._numerical_reset, 4)
         done = terminated | truncated
         transition_state = transition_obs = None
         if self.cfg_obj.capture_transitions:
@@ -1062,7 +1075,9 @@ class WarpVelocityEnv:
             self._compute_observations()
             transition_obs = {key: value.clone() for key, value in self._state.obs.items()}
         self._apply_pushes()
-        reset_ids = torch.nonzero(done, as_tuple=False).flatten()
+        # Numerically invalid worlds were reset before computing rewards. Do not
+        # advance their terrain curriculum or reset them a second time.
+        reset_ids = torch.nonzero(done & ~self._numerical_reset, as_tuple=False).flatten()
         if reset_ids.numel() > 0:
             self._update_terrain_curriculum(reset_ids)
             self._reset_idx(reset_ids, reset_reason.index_select(0, reset_ids))
@@ -1077,7 +1092,19 @@ class WarpVelocityEnv:
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
+        self._recover_numerical_failures()
         self._compute_observations()
+        reward.masked_fill_(self._numerical_reset, 0.0)
+        self._reward_terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
+        terminated.logical_or_(self._numerical_reset)
+        truncated.logical_and_(~self._numerical_reset)
+        reset_reason.masked_fill_(self._numerical_reset, 4)
+        done = terminated | truncated
+        if transition_obs is not None and bool(self._numerical_reset.any()):
+            for key, value in transition_obs.items():
+                value[self._numerical_reset] = self._state.obs[key][self._numerical_reset]
+            for key, value in self.locomotion_state().items():
+                transition_state[key][self._numerical_reset] = value[self._numerical_reset]
         self._profile_mark(profile_marks, "observation")
 
         info = self._make_step_info(reset_reason, truncated)
@@ -1094,6 +1121,42 @@ class WarpVelocityEnv:
         self.extras = info
         self._finish_step_profile(profile_marks)
         return self._state
+
+    def _physics_failure_mask(self) -> torch.Tensor:
+        invalid = torch.zeros_like(self._numerical_reset)
+        for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "sensordata", "cvel"):
+            invalid |= ~torch.isfinite(self._arrays[name]).flatten(1).all(dim=1)
+        invalid |= (self._arrays["qvel"].abs() > _MAX_LOCOMOTION_VELOCITY).any(dim=1)
+        invalid |= (self._arrays["qpos"].abs() > _MAX_LOCOMOTION_POSITION).any(dim=1)
+        return invalid
+
+    def _recover_numerical_failures(self) -> None:
+        """Reset bad worlds before squared rewards or observations reach PPO."""
+        invalid = self._physics_failure_mask()
+        ids = torch.nonzero(invalid, as_tuple=False).flatten()
+        if ids.numel() == 0:
+            return
+        self._numerical_reset.logical_or_(invalid)
+        if not self._numerical_failure_captured:
+            selected = ids[:8]
+            self._numerical_failure = {
+                "step": self.common_step_counter,
+                "env_ids": selected.detach().cpu(),
+                "state": {name: self._arrays[name][selected].detach().cpu().clone()
+                          for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata")},
+                "command": self._command[selected].detach().cpu().clone(),
+                "action": self._action[selected].detach().cpu().clone(),
+                "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
+                "terrain_type": self._terrain_types[selected].detach().cpu().clone(),
+            }
+            self._numerical_failure_captured = True
+        self._reset_idx(ids, torch.full_like(ids, 4))
+        self.provider.forward()
+        self.provider.sense()
+        self._update_raycast_outputs()
+        self._refresh_foot_contacts()
+        if bool(self._physics_failure_mask().any()):
+            raise FloatingPointError("physics state remains invalid after resetting numerical failures")
 
     def _profile_mark(
         self,
@@ -1926,6 +1989,7 @@ class WarpVelocityEnv:
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
         torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 
@@ -2014,7 +2078,10 @@ class WarpVelocityEnv:
             "steps": self.episode_length_buf,
             "time_outs": time_outs,
             "reset_reason": reset_reason,
+            "numerical_reset": self._numerical_reset.clone(),
         }
+        if self._numerical_failure is not None:
+            info["numerical_failure"] = self._numerical_failure
         if not self.collect_step_extras:
             return info
         linear_body, _ = self._root_velocity_body()

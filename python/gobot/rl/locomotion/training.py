@@ -176,22 +176,35 @@ def restore_rng(rng, device):
         torch.cuda.set_rng_state(rng['cuda'].cpu(), device)
 
 
-def update_policy(algorithm, environment, observation, steps, record=None):
+def update_policy(algorithm, environment, observation, steps, record=None, distributed=None):
     """Use RSL-RL's rollout, GAE and PPO update without modifying the optimizer."""
     from rsl_rl.utils import check_nan
 
-    with torch.inference_mode():
-        for _ in range(steps):
-            action = algorithm.act(observation)
-            observation, reward, done, extras = environment.step(action)
-            check_nan(observation, reward, done)
-            algorithm.process_env_step(observation, reward, done, extras)
-            if record is not None:
-                record(action, reward, done, extras)
-        algorithm.compute_returns(observation)
+    error = None
+    try:
+        with torch.inference_mode():
+            for _ in range(steps):
+                action = algorithm.act(observation)
+                observation, reward, done, extras = environment.step(action)
+                check_nan(observation, reward, done)
+                algorithm.process_env_step(observation, reward, done, extras)
+                if record is not None:
+                    record(action, reward, done, extras)
+            algorithm.compute_returns(observation)
+    except Exception as caught:
+        error = caught
+    if distributed is not None:
+        distributed.check_error(error, phase='rollout')
+    elif error is not None:
+        raise error
     losses = algorithm.update()
+    error = None
     if not all(np.isfinite(float(value)) for value in losses.values()):
-        raise FloatingPointError('non-finite optimizer metric')
+        error = FloatingPointError('non-finite optimizer metric')
+    if distributed is not None:
+        distributed.check_error(error, phase='optimizer')
+    elif error is not None:
+        raise error
     return observation, losses
 
 
@@ -430,7 +443,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 reason = stopped
                 break
             tick = time.monotonic()
-            episode_rewards, episode_lengths, clip_rates, saturation = [], [], [], []
+            episode_rewards, episode_lengths, clip_rates, saturation, numerical_resets = [], [], [], [], []
 
             def record(action, reward, done, extras):
                 if cfg.action_clip:
@@ -439,6 +452,12 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                     effort = extras['transition_state']['joint_effort']
                     limits = effort.new_tensor(cfg.robot.effort_limit)
                     saturation.append((effort.abs() >= .95 * limits).float().mean())
+                if 'numerical_reset' in extras:
+                    numerical_resets.append(extras['numerical_reset'].sum())
+                if 'numerical_failure' in extras:
+                    diagnostic = directory / f'numerical_failure_rank{distributed.rank}.pt'
+                    torch.save(extras['numerical_failure'], diagnostic)
+                    print(f'Numerical physics failure on rank {distributed.rank}; reset affected worlds; state: {diagnostic}', flush=True)
                 total.add_(reward)
                 lengths.add_(1)
                 ids = done.nonzero(as_tuple=False).flatten()
@@ -447,27 +466,29 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 total[ids] = 0
                 lengths[ids] = 0
 
-            observation, losses = update_policy(alg, wrapper, observation, config['num_steps_per_env'], record)
+            observation, losses = update_policy(alg, wrapper, observation, config['num_steps_per_env'], record, distributed)
             completed += 1
             effective_std = alg.actor.output_std.detach()
             averaged = {'action_std': float(effective_std.mean()),
                         'action_clip_fraction': float(torch.stack(clip_rates).mean()) if clip_rates else 0.,
                         'joint_effort_saturation_fraction': float(torch.stack(saturation).mean()) if saturation else 0.,
                         'terrain_level': float(torch.as_tensor(env.terrain_assignments[0]).float().mean()), **losses}
-            sums = distributed.reduce([sum(episode_rewards), sum(episode_lengths), len(episode_rewards), *averaged.values()])
+            reset_count = int(torch.stack(numerical_resets).sum()) if numerical_resets else 0
+            sums = distributed.reduce([sum(episode_rewards), sum(episode_lengths), len(episode_rewards), reset_count, *averaged.values()])
             duration, std_max = distributed.reduce([time.monotonic() - tick, float(effective_std.max())], maximum=True)
             metrics = {'iteration': iteration,
                        'steps_per_second': exp.num_envs * distributed.world_size * config['num_steps_per_env'] / duration,
                        'episode_reward': sums[0] / sums[2] if sums[2] else None,
                        'episode_steps': sums[1] / sums[2] if sums[2] else None,
+                       'numerical_resets': int(sums[3]),
                        'action_std_max': std_max, 'learning_rate': alg.learning_rate,
                        'world_size': distributed.world_size, 'total_num_envs': exp.num_envs * distributed.world_size,
-                       **{key: value / distributed.world_size for key, value in zip(averaged, sums[3:], strict=True)}}
+                       **{key: value / distributed.world_size for key, value in zip(averaged, sums[4:], strict=True)}}
 
             def log():
                 metrics['elapsed_s'] = budget.elapsed
                 trace.write(json.dumps(metrics) + '\n')
-                if iteration % 25 == 0:
+                if iteration % 25 == 0 or metrics['numerical_resets']:
                     print(json.dumps(metrics), flush=True)
                 budget.update(updates=completed, last_iteration=iteration)
                 report('running', updates_completed=completed, elapsed_s=budget.elapsed, latest_metrics=metrics)
