@@ -40,11 +40,15 @@ from .training_state import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .terms import posture_std, locomotion_failure_mask
 from .math import find_node_by_name
-from .curriculum import progress_masks, directed_increment
+from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 
 
 
 _CONTACT_HISTORY_LENGTH = 4
+# These are numerical-failure limits, far outside locomotion operating speeds.
+# Checking finite values alone lets a diverging world poison PPO before NaNs appear.
+_MAX_LOCOMOTION_VELOCITY = 1000.0
+_MAX_LOCOMOTION_POSITION = 1.0e6
 
 
 def _quat_apply(quaternion: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
@@ -280,6 +284,7 @@ class WarpVelocityEnv:
         max_episode_length: int | None = None,
         profile_step: bool = False,
         collect_step_extras: bool = True,
+        collect_training_stats: bool = False,
         context: gobot.AppContext | None = None,
         capture_graphs: bool = True,
         reuse_scene: bool = False,
@@ -303,6 +308,7 @@ class WarpVelocityEnv:
         self._generator.manual_seed(self.seed)
         self.profile_step = bool(profile_step)
         self.collect_step_extras = bool(collect_step_extras)
+        self.collect_training_stats = bool(collect_training_stats)
         self.rsl_rl_include_reward_terms = self.collect_step_extras
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
@@ -325,7 +331,7 @@ class WarpVelocityEnv:
             ("run_progress", "bound_gait")
             if self.cfg_obj.training_profile == "run"
             else ()
-        ) + (("command_progress", "body_lin_vel_z") if cfg.rewards.adaptive_tracking else ())
+        )
         self._foot_count = len(self.cfg_obj.foot_names)
         self._gait_foot_indices = torch.tensor(
             self.cfg_obj.gait_foot_indices,
@@ -386,12 +392,6 @@ class WarpVelocityEnv:
         )
         self._base_body_id = int(self._layout.base_body_id)
         self._torso_body_id = self.provider.resolve_object_ids("body", (prefix + self.cfg_obj.robot.torso_link,))[0]
-        self._held_layout = None
-        if self.cfg_obj.robot.held_joint_targets:
-            self._held_layout = self.provider.resolve_robot_layout(self.cfg_obj.robot_name,
-                base_link=self.cfg_obj.base_link, joint_names=tuple(self.cfg_obj.robot.held_joint_targets))
-            self._held_targets = torch.tensor(tuple(self.cfg_obj.robot.held_joint_targets.values()), device=self._torch_device).expand(self.num_envs, -1).contiguous()
-
         self._joint_qpos_ids = torch.tensor(
             self._layout.joint_qpos_addresses,
             dtype=torch.long,
@@ -420,9 +420,9 @@ class WarpVelocityEnv:
             )
         )
 
-        self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
+        self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0)
         self.critic_obs_schema = velocity_critic_observation_schema(
-            self.num_actions, self._height_scan_dim, self._foot_count
+            self.num_actions, self._height_scan_dim if self.cfg_obj.observations.include_height_scan else 0, self._foot_count
         )
         self.observation_spec = self.actor_obs_schema
         self.critic_observation_spec = self.critic_obs_schema
@@ -614,6 +614,9 @@ class WarpVelocityEnv:
         self._reset_reasons = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
+        self._numerical_reset = torch.zeros(self.num_envs, dtype=torch.bool, device=self._torch_device)
+        self._numerical_failure = None
+        self._numerical_failure_captured = False
         self.common_step_counter = 0
         self.profile_step_counter = 0
         self.step_counter = 0
@@ -933,6 +936,8 @@ class WarpVelocityEnv:
         low: float,
         high: float,
     ) -> torch.Tensor:
+        if low == high:
+            return torch.full(tuple(shape), float(low), device=self._torch_device)
         if low <= 0.0 or high <= 0.0:
             return self._uniform(shape, low, high)
         return self._uniform(shape, math.log(low), math.log(high)).exp_()
@@ -995,6 +1000,8 @@ class WarpVelocityEnv:
     def step(self, actions: Any) -> BatchEnvState:
         profile_marks: list[tuple[str, torch.cuda.Event]] = []
         self._profile_mark(profile_marks, "start")
+        self._numerical_reset.zero_()
+        self._numerical_failure = None
         action = self._prepare_actions(actions)
         self.common_step_counter += 1
         self.profile_step_counter += 1
@@ -1007,8 +1014,6 @@ class WarpVelocityEnv:
             - self._encoder_bias
         )
         self.provider.set_joint_position_targets(self._layout, self._joint_targets)
-        if self._held_layout is not None:
-            self.provider.set_joint_position_targets(self._held_layout, self._held_targets)
         self._profile_mark(profile_marks, "action")
 
         if self.cfg_obj.curriculum_mode == "command_progress":
@@ -1028,12 +1033,15 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
+        self._recover_numerical_failures()
         if self.cfg_obj.post_step_sensing:
             self.provider.forward()
             self.provider.sense()
             self._update_raycast_outputs()
             self._refresh_foot_contacts()
         self._compute_terminations()
+        self._terminated.logical_or_(self._numerical_reset)
+        self._truncated.logical_and_(~self._numerical_reset)
         self._compute_rewards()
         self._profile_mark(profile_marks, "reward_termination")
         reward = self._reward.clone()
@@ -1052,6 +1060,7 @@ class WarpVelocityEnv:
                 ),
             ),
         )
+        reset_reason.masked_fill_(self._numerical_reset, 4)
         done = terminated | truncated
         transition_state = transition_obs = None
         if self.cfg_obj.capture_transitions:
@@ -1059,22 +1068,45 @@ class WarpVelocityEnv:
             # Before reset and command resampling: these belong to the executed action.
             self._compute_observations()
             transition_obs = {key: value.clone() for key, value in self._state.obs.items()}
-        reset_ids = torch.nonzero(done, as_tuple=False).flatten()
+        self._apply_pushes()
+        # Numerically invalid worlds were reset before computing rewards. Do not
+        # advance their terrain curriculum or reset them a second time.
+        reset_ids = torch.nonzero(done & ~self._numerical_reset, as_tuple=False).flatten()
         if reset_ids.numel() > 0:
             self._update_terrain_curriculum(reset_ids)
             self._reset_idx(reset_ids, reset_reason.index_select(0, reset_ids))
         self._profile_mark(profile_marks, "reset")
 
         self.provider.forward()
-        self._compute_commands(dt=self.step_dt)
-        self._apply_pushes()
+        command_dt = (~done).float() * self.step_dt
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            self._commanded_displacement.add_(command_displacement_step(
+                self._command, self._arrays["xquat"][:, self._base_body_id], command_dt, torch))
+        self._compute_commands(dt=command_dt)
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
+        self._recover_numerical_failures()
         self._compute_observations()
+        reward.masked_fill_(self._numerical_reset, 0.0)
+        self._reward_terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
+        terminated.logical_or_(self._numerical_reset)
+        truncated.logical_and_(~self._numerical_reset)
+        reset_reason.masked_fill_(self._numerical_reset, 4)
+        done = terminated | truncated
+        if transition_obs is not None and bool(self._numerical_reset.any()):
+            for key, value in transition_obs.items():
+                value[self._numerical_reset] = self._state.obs[key][self._numerical_reset]
+            for key, value in self.locomotion_state().items():
+                transition_state[key][self._numerical_reset] = value[self._numerical_reset]
         self._profile_mark(profile_marks, "observation")
 
         info = self._make_step_info(reset_reason, truncated)
+        if self.collect_training_stats:
+            self._training_step_metrics.masked_fill_(self._numerical_reset.unsqueeze(1), 0.)
+            info["training_stats"] = {"reward_terms": self._reward_terms,
+                                      "metrics": self._training_step_metrics,
+                                      "reset_reason": reset_reason}
         if transition_obs is not None:
             info["transition_observation"] = transition_obs
             info["transition_state"] = transition_state
@@ -1088,6 +1120,42 @@ class WarpVelocityEnv:
         self.extras = info
         self._finish_step_profile(profile_marks)
         return self._state
+
+    def _physics_failure_mask(self) -> torch.Tensor:
+        invalid = torch.zeros_like(self._numerical_reset)
+        for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "sensordata", "cvel"):
+            invalid |= ~torch.isfinite(self._arrays[name]).flatten(1).all(dim=1)
+        invalid |= (self._arrays["qvel"].abs() > _MAX_LOCOMOTION_VELOCITY).any(dim=1)
+        invalid |= (self._arrays["qpos"].abs() > _MAX_LOCOMOTION_POSITION).any(dim=1)
+        return invalid
+
+    def _recover_numerical_failures(self) -> None:
+        """Reset bad worlds before squared rewards or observations reach PPO."""
+        invalid = self._physics_failure_mask()
+        ids = torch.nonzero(invalid, as_tuple=False).flatten()
+        if ids.numel() == 0:
+            return
+        self._numerical_reset.logical_or_(invalid)
+        if not self._numerical_failure_captured:
+            selected = ids[:8]
+            self._numerical_failure = {
+                "step": self.common_step_counter,
+                "env_ids": selected.detach().cpu(),
+                "state": {name: self._arrays[name][selected].detach().cpu().clone()
+                          for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata")},
+                "command": self._command[selected].detach().cpu().clone(),
+                "action": self._action[selected].detach().cpu().clone(),
+                "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
+                "terrain_type": self._terrain_types[selected].detach().cpu().clone(),
+            }
+            self._numerical_failure_captured = True
+        self._reset_idx(ids, torch.full_like(ids, 4))
+        self.provider.forward()
+        self.provider.sense()
+        self._update_raycast_outputs()
+        self._refresh_foot_contacts()
+        if bool(self._physics_failure_mask().any()):
+            raise FloatingPointError("physics state remains invalid after resetting numerical failures")
 
     def _profile_mark(
         self,
@@ -1319,9 +1387,6 @@ class WarpVelocityEnv:
         self._reset_qvel[env_ids] = 0.0
         self._reset_ctrl[env_ids] = 0.0
         self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
-        if self._held_layout is not None:
-            self._reset_qpos[env_ids[:, None], list(self._held_layout.joint_qpos_addresses)] = self._held_targets[env_ids]
-            self._reset_ctrl[env_ids[:, None], list(self._held_layout.actuator_ids)] = self._held_targets[env_ids]
         self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
@@ -1357,7 +1422,7 @@ class WarpVelocityEnv:
             self.provider.reset(self._reset_mask, qpos=self._reset_qpos, qvel=self._reset_qvel,
                                 ctrl=self._reset_ctrl, forward=False)
 
-        self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode == "command_progress" else origins[:, :2]
+        self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode in {"command_progress", "command_displacement"} else origins[:, :2]
         self._commanded_displacement[env_ids] = 0.
         self._commanded_path[env_ids] = self._directed_progress[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
@@ -1403,7 +1468,15 @@ class WarpVelocityEnv:
             if self.common_step_counter == 0:
                 move_up.zero_()
                 move_down.zero_()
-        move_up &= ~self._terminated[env_ids]
+        if self.cfg_obj.curriculum_mode == "command_displacement":
+            distance = (position - self._episode_start_xy[env_ids]).square().sum(-1).sqrt()
+            remaining = self.cfg_obj.episode_length_s - self.episode_length_buf[env_ids] * self.step_dt
+            move_up, move_down = displacement_masks(distance, self._commanded_displacement[env_ids],
+                self._command[env_ids], remaining, patch_size[0])
+            if self.common_step_counter == 0:
+                move_up.zero_(); move_down.zero_()
+        else:
+            move_up &= ~self._terminated[env_ids]
         levels = self._terrain_levels[env_ids] + move_up.long() - move_down.long()
         random_levels = torch.randint(
             0,
@@ -1539,7 +1612,7 @@ class WarpVelocityEnv:
 
     def _compute_commands(self, *, dt: float) -> None:
         if self.cfg_obj.command.source == "external": return
-        self._command_time_left.sub_(float(dt))
+        self._command_time_left.sub_(dt)
         resample_ids = torch.nonzero(self._command_time_left <= 0.0, as_tuple=False).flatten()
         self._resample_commands(resample_ids)
         cfg = self.cfg_obj.command
@@ -1838,6 +1911,13 @@ class WarpVelocityEnv:
             float(reward_cfg.foot_clearance_target_height), 1.0e-6
         ) - 1.0
         swing_height = (swing_error.square() * first_contact.float()).sum(dim=1) * active
+        if getattr(self, "collect_training_stats", False):
+            from .training_log import step_statistics
+            self._training_step_metrics = step_statistics(
+                torch, momentum=self._arrays["sensordata"][:, self._sensor_slices[2]],
+                foot_velocity=foot_velocity, contact=foot_found, first_contact=first_contact,
+                peak_height=self._foot_peak_height, foot_force=foot_force,
+                linear_velocity=linear_body, angular_velocity=angular_body, command=self._command)
         self._foot_peak_height.copy_(
             torch.where(first_contact, torch.zeros_like(self._foot_peak_height), self._foot_peak_height)
         )
@@ -1863,18 +1943,14 @@ class WarpVelocityEnv:
 
         terms = self._reward_terms
         terms.zero_()
-        if reward_cfg.adaptive_tracking:
-            from .terms import adaptive_tracking_terms
-            linear_tracking,yaw_tracking,progress = adaptive_tracking_terms(self._command,linear_body,angular_body,reward_cfg,torch)
-        else:
-            linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
-            yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
+        linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
+        yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
         terms[:,0] = self._reward_weights[0] * linear_tracking
         terms[:,1] = self._reward_weights[1] * yaw_tracking
         terms[:, 2] = self._reward_weights[2] * torch.exp(
             -upright_error / max(float(reward_cfg.upright_std) ** 2, 1.0e-6)
         )
-        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error) * torch.where(active>0,reward_cfg.moving_pose_scale,1.)
+        terms[:, 3] = self._reward_weights[3] * torch.exp(-pose_error)
         torso_ang = self._arrays["cvel"][:, self._torso_body_id, :3]
         terms[:, 4] = self._reward_weights[4] * torso_ang[:, :2].square().sum(dim=1)
         terms[:, 5] = self._reward_weights[5] * self._arrays["sensordata"][:, self._sensor_slices[2]].square().sum(dim=1)
@@ -1915,11 +1991,8 @@ class WarpVelocityEnv:
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
-        if reward_cfg.adaptive_tracking:
-            terms[:,self._reward_term_names.index("command_progress")] = reward_cfg.command_progress*progress
-            terms[:,self._reward_term_names.index("body_lin_vel_z")] = reward_cfg.body_lin_vel_z*linear_body[:,2].square()
-        else:
-            torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 
@@ -1949,10 +2022,11 @@ class WarpVelocityEnv:
         actor[:, joint_velocity_start:action_start].copy_(joint_velocity)
         actor[:, action_start:command_start].copy_(self._action)
         actor[:, command_start:height_start].copy_(self._command)
-        actor[:, height_start:].copy_(
-            self._terrain_scan_height
-            / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
-        )
+        if self.cfg_obj.observations.include_height_scan:
+            actor[:, height_start:].copy_(
+                self._terrain_scan_height
+                / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
+            )
 
         critic = self._critic_obs
         critic[:, : self.num_obs].copy_(actor)
@@ -1971,6 +2045,7 @@ class WarpVelocityEnv:
         critic[:, critic_offset:].copy_(
             torch.sign(contact_force) * torch.log1p(contact_force.abs())
         )
+        actor[:, 9:9 + self.num_actions].add_(self._encoder_bias)
         if self.cfg_obj.observations.actor_noise:
             self._apply_actor_noise()
         if hasattr(self, "_state"):
@@ -2006,7 +2081,10 @@ class WarpVelocityEnv:
             "steps": self.episode_length_buf,
             "time_outs": time_outs,
             "reset_reason": reset_reason,
+            "numerical_reset": self._numerical_reset.clone(),
         }
+        if self._numerical_failure is not None:
+            info["numerical_failure"] = self._numerical_failure
         if not self.collect_step_extras:
             return info
         linear_body, _ = self._root_velocity_body()

@@ -1,0 +1,23 @@
+{
+  "experiment": {
+    "robot": "go1",
+    "recipe": "baseline",
+    "stage": "rough",
+    "seed": 42,
+    "num_envs": 1024,
+    "iterations": 10000,
+    "hours": 0.75,
+    "budget_hours": 24.0,
+    "learning_rate": 0.001,
+    "entropy_coef": 0.01,
+    "save_interval": 100,
+    "eval_interval": 500,
+    "eval_envs": 64,
+    "eval_steps": 600,
+    "reference_reset_probability": 0.0,
+    "motion_dataset": "examples/g1/assets/motions/locomotion.npz",
+    "style_weight": 2.0,
+    "eval_seed": 71,
+    "initial_action_std": 1.0
+  }
+}

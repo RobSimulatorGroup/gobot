@@ -11,12 +11,12 @@ import torch
 
 import gobot
 
-from examples.go1.go1_velocity_contract import GO1_TASK_VERSION
+from examples.go1.go1_policy_info import GO1_TASK_VERSION
 from examples.go1.train.go1_velocity_cfg import (
     GO1_ROUGH_REWARD_TERM_NAMES,
     go1_velocity_cfg,
 )
-from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 
 from .go1_parity import (
     PARITY_ACTIONS,
@@ -74,7 +74,7 @@ def deterministic_cfg():
     return cfg
 
 
-def _snapshot(env: Go1WarpVelocityEnv, obs, *, step: int, action, state=None) -> dict:
+def _snapshot(env: WarpVelocityEnv, obs, *, step: int, action, state=None) -> dict:
     terrain = env.provider.raycast_sensor("terrain_scan")
     snapshot = {
         "step": step,
@@ -105,7 +105,7 @@ def _snapshot(env: Go1WarpVelocityEnv, obs, *, step: int, action, state=None) ->
     return to_json_value(snapshot)
 
 
-def _assign_terrain_matrix(env: Go1WarpVelocityEnv) -> None:
+def _assign_terrain_matrix(env: WarpVelocityEnv) -> None:
     levels = torch.arange(
         PARITY_TERRAIN_ROWS, dtype=torch.long, device=env.device
     ).repeat_interleave(len(PARITY_TERRAIN_TYPES))
@@ -117,7 +117,7 @@ def _assign_terrain_matrix(env: Go1WarpVelocityEnv) -> None:
     env._env_origins.copy_(env._terrain_origin_for(env._all_env_ids))
 
 
-def _terrain_matrix_snapshot(env: Go1WarpVelocityEnv, obs, *, state=None) -> dict:
+def _terrain_matrix_snapshot(env: WarpVelocityEnv, obs, *, state=None) -> dict:
     result = {
         "qpos": env.provider.arrays["qpos"],
         "qvel": env.provider.arrays["qvel"],
@@ -133,7 +133,7 @@ def _terrain_matrix_snapshot(env: Go1WarpVelocityEnv, obs, *, state=None) -> dic
 
 
 def export_trace(*, output: str | Path, device: str) -> Path:
-    env = Go1WarpVelocityEnv(
+    env = WarpVelocityEnv(
         deterministic_cfg(),
         num_envs=PARITY_NUM_ENVS,
         device=device,

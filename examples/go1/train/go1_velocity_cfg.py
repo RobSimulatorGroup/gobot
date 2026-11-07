@@ -18,7 +18,7 @@ from ..go1_profile import (
     GO1_KD,
     GO1_KP,
 )
-from ..go1_velocity_contract import GO1_TASK_NAME
+from ..go1_policy_info import GO1_TASK_NAME
 
 
 GO1_PHYSICS_DT = 0.005

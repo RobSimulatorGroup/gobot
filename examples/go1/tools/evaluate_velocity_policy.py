@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import torch
 
     from examples.go1.tools.checkpoint_policy import CheckpointPolicy
-    from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+    from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 else:
     try:
         import torch
@@ -78,7 +78,7 @@ def _evaluation_cfg(*, command_x: float, command_y: float, command_yaw: float):
 
 
 def _terrain_assignments(
-    env: Go1WarpVelocityEnv,
+    env: WarpVelocityEnv,
     episodes_per_cell: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     _require_torch()
@@ -95,7 +95,7 @@ def _terrain_assignments(
 
 
 def _reset_to_assignments(
-    env: Go1WarpVelocityEnv,
+    env: WarpVelocityEnv,
     levels: torch.Tensor,
     types: torch.Tensor,
     *,
@@ -122,7 +122,7 @@ def _load_policy(path: Path, device: str) -> CheckpointPolicy:
     return CheckpointPolicy(actor_state, manifest).eval().to(device)
 
 
-def _terrain_type_names(env: Go1WarpVelocityEnv) -> list[str]:
+def _terrain_type_names(env: WarpVelocityEnv) -> list[str]:
     entries = env._terrain_config.get("sub_terrains", [])
     result: list[str] = []
     for index in range(env._spawn_cols):
@@ -250,7 +250,7 @@ def _group_metrics(
 
 @_torch_inference_mode
 def evaluate_checkpoint(
-    env: Go1WarpVelocityEnv,
+    env: WarpVelocityEnv,
     checkpoint: Path,
     *,
     levels: torch.Tensor,
@@ -489,7 +489,7 @@ def evaluate(
     min_progress_ratio: float,
 ) -> dict[str, Any]:
     _require_torch()
-    from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+    from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 
     cfg = _evaluation_cfg(
         command_x=command_x,
@@ -505,7 +505,7 @@ def evaluate(
         authoring_context.clear_scene()
     num_envs = num_cells * episodes_per_cell
 
-    env = Go1WarpVelocityEnv(
+    env = WarpVelocityEnv(
         cfg,
         num_envs=num_envs,
         device=device,

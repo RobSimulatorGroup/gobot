@@ -1,20 +1,18 @@
-"""Register task configuration, environment and runner factories independently."""
+"""Optional names for training workflows; Python factories work without a registry."""
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
+
+from gobot.rl.training import TrainingSpec
 
 
 @dataclass(frozen=True)
 class TaskSpec:
-    env_cfg_factory: Callable[..., Any]
-    runner_cfg_factory: Callable[..., Any]
-    env_factory: Callable[..., Any]
-    runner_factory: Callable[..., Any]
-    play_env_cfg_factory: Callable[..., Any] | None = None
-    algorithm: str = "supermimic"
-    description: str = ""
+    training_factory: Callable[[], TrainingSpec]
+    algorithm: str
+    description: str
+    supported_backends: tuple[str, ...] = ("mujoco-cpu", "mujoco-warp")
 
 
 _TASKS: dict[str, TaskSpec] = {}
@@ -39,21 +37,11 @@ def get_task(task_id: str) -> TaskSpec:
         raise ValueError(f"unknown task {task_id!r}; available: {', '.join(list_tasks())}") from None
 
 
-def load_env_cfg(task_id: str, *, play: bool = False, **kwargs):
-    spec = get_task(task_id)
-    factory = spec.play_env_cfg_factory if play else spec.env_cfg_factory
-    if factory is None:
-        raise ValueError(f"task {task_id!r} has no play configuration")
-    return deepcopy(factory(**kwargs))
-
-
-def load_runner_cfg(task_id: str, **kwargs):
-    return deepcopy(get_task(task_id).runner_cfg_factory(**kwargs))
-
-
-def make_env(task_id: str, cfg, **kwargs):
-    return get_task(task_id).env_factory(cfg, **kwargs)
-
-
-def make_runner(task_id: str, env, cfg, **kwargs):
-    return get_task(task_id).runner_factory(env, cfg, **kwargs)
+def load_training_spec(task_id: str) -> TrainingSpec:
+    task = get_task(task_id)
+    spec = task.training_factory()
+    if not isinstance(spec, TrainingSpec):
+        raise TypeError(f"training_factory for {task_id!r} must return TrainingSpec")
+    if spec.supported_backends != task.supported_backends:
+        raise ValueError(f"backend metadata differs between task {task_id!r} and its training workflow")
+    return spec

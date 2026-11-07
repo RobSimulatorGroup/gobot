@@ -18,8 +18,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from examples.go1.train.go1_velocity_cfg import go1_velocity_cfg
-from examples.go1.train.go1_velocity_env import Go1VelocityEnv
-from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+from gobot.rl.locomotion.cpu_env import CpuVelocityEnv
+from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 
 
 def main() -> None:
@@ -62,7 +62,7 @@ def main() -> None:
 
     initialization_begin = time.perf_counter()
     if args.backend == "mujoco-warp":
-        env = Go1WarpVelocityEnv(
+        env = WarpVelocityEnv(
             cfg,
             num_envs=args.num_envs,
             device=args.device,
@@ -73,7 +73,7 @@ def main() -> None:
             capture_graphs=not args.no_capture_graphs,
         )
     else:
-        env = Go1VelocityEnv(
+        env = CpuVelocityEnv(
             cfg,
             num_envs=args.num_envs,
             device=args.device,
@@ -187,7 +187,7 @@ def main() -> None:
 
 
 def _make_actions(
-    env: Go1VelocityEnv | Go1WarpVelocityEnv,
+    env: CpuVelocityEnv | WarpVelocityEnv,
     mode: str,
     generator: np.random.Generator,
 ) -> np.ndarray | torch.Tensor:
@@ -196,7 +196,7 @@ def _make_actions(
         values = np.zeros(shape, dtype=np.float32)
     else:
         values = generator.uniform(-1.0, 1.0, size=shape).astype(np.float32)
-    if isinstance(env, Go1WarpVelocityEnv):
+    if isinstance(env, WarpVelocityEnv):
         return torch.as_tensor(values, dtype=torch.float32, device=env.device)
     return values
 
@@ -210,7 +210,7 @@ def _synchronize(device: str) -> None:
 def build_benchmark_metrics(
     *,
     cfg_name: str,
-    env: Go1VelocityEnv | Go1WarpVelocityEnv,
+    env: CpuVelocityEnv | WarpVelocityEnv,
     args,
     elapsed: float,
     timing_records: dict[str, list[float]],

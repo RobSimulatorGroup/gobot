@@ -6,7 +6,6 @@ training uses Gobot scenes and services.
 
 - [Training/install guide](../../../doc/gobot_training.md)
 - [Measured 100k BONES results](../../../doc/g1_bones_100k_results.md)
-- [Detailed progress and historical diagnostics](../../../doc/supermimic_reproduced_progress.md)
 
 Run commands from the repository root with the installed Gobot environment.
 Large data, checkpoints and logs are ignored by Git. The compact measured-result
@@ -23,8 +22,6 @@ record in `results/` contains summary values, provenance and report hashes.
 | `evaluate_bones` | Prepare a fixed plan, evaluate GPU shards and merge complete results |
 | `record_tracking` | Replay one successful or failed clip and render actual/reference videos |
 | `compare_benchmarks` | Compare already completed reports with identical clip names/frame counts |
-
-`record_failure` remains a small compatibility entry point to `record_tracking`.
 
 ## 1. Pin reference inputs
 
@@ -192,14 +189,14 @@ Preparation and evaluation plans bind their own script hashes. Keep the exact
 `prepare_bones.py` / `evaluate_bones.py` that produced a run if you need to resume
 or record it later. Cleanup does not bypass those identity checks. Neither the
 training math nor the frozen preparer/evaluator source was changed in the 2026-11-06
-workflow cleanup; `record_failure` delegates to the generalized recorder.
+workflow cleanup.
 
 The optional diagnostic modules `check_kinematics`, `check_controls`, `math_fixture`,
 `training_fixture`, `check_release_policy`, `check_task`, `check_context`, `check_update`
 and `reference_benchmark` remain available (`--help`). They isolate model, algorithm,
 randomization and fixed-policy parity; their results do not replace from-scratch
-training and complete-clip evaluation. See [progress](../../../doc/supermimic_reproduced_progress.md)
-for measured tolerances and historical limitations.
+training and complete-clip evaluation. The [results report](../../../doc/g1_bones_100k_results.md)
+records the complete measured run and its comparison limits.
 
 Run local data/report/recording boundary tests without GPU training:
 

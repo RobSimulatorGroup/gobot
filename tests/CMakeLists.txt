@@ -605,6 +605,17 @@ set_tests_properties(test_python_terrain_generation_scene
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+if(GOB_BUILD_MUJOCO)
+    add_test(NAME test_python_training
+            COMMAND ${Python3_EXECUTABLE} -S -m pytest -q
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_unified_training.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_training_tasks.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_training_behavior.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mjlab_training.py)
+    set_tests_properties(test_python_training PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV};CUDA_VISIBLE_DEVICES=;PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
 add_test(NAME test_python_shared_velocity_cpu
          COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_shared_velocity.py --integration)
 set_tests_properties(test_python_shared_velocity_cpu PROPERTIES

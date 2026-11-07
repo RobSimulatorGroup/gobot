@@ -78,7 +78,7 @@ stays inside the physics implementation.
 CPU stepping follows:
 
 ```text
-Go1VelocityEnv.step
+CpuVelocityEnv.step
   -> NativeLocomotionBatchBackend.step_task_inputs
   -> PhysicsWorld::StepRobotBatch
   -> MuJoCo native batch workers and typed state/contact/sensor results
@@ -97,7 +97,7 @@ graph recapture. Overflow, non-finite state, incompatible artifacts, and
 unavailable CUDA must produce explicit errors. Backend selection never silently
 falls back to CPU.
 
-`Go1WarpVelocityEnv` keeps physics, sensing, task state, observations, rewards,
+`WarpVelocityEnv` keeps physics, sensing, task state, observations, rewards,
 resets, and actions on CUDA. CPU remains the short-horizon parity oracle.
 Model randomization should use expanded per-world fields; data randomization
 and reset should reuse persistent buffers. Each environment retains its own

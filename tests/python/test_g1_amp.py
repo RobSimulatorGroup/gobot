@@ -206,8 +206,9 @@ def main():
 
 def test_standing_is_not_locomotion_admission():
     from types import SimpleNamespace
-    from examples.g1.evaluate_amp import rollout
+    from examples.locomotion.assessment import rollout
     class StandingEnv:
+        cfg_obj = SimpleNamespace(robot=SimpleNamespace(feet=("left", "right")))
         num_envs = 2
         step_dt = .02
         terrain_grid_shape = (1, 1)
@@ -226,9 +227,9 @@ def test_standing_is_not_locomotion_admission():
             return SimpleNamespace(terminated=np.zeros(2,bool), truncated=np.zeros(2,bool),
                 info={'transition_state': data, 'reset_reason': np.zeros(2,int)})
     env = StandingEnv()
-    result = rollout(env, lambda obs: np.zeros((2, 1)), steps=20, command=(.8,0,0))
+    result = rollout(env, lambda obs: np.zeros((2, 1)), steps=20, command=(.8,0,0), route=True)
     assert result['survival'] == 1. and result['admission'] == 0.
-    result = rollout(env, lambda obs: np.zeros((2, 1)), steps=20, command=(0,0,0), cell_exit=False)
+    result = rollout(env, lambda obs: np.zeros((2, 1)), steps=20, command=(0,0,0), route=False)
     assert result['admission'] == 1.
 
 if __name__ == '__main__': main()

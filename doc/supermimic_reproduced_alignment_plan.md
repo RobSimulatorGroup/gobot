@@ -13,8 +13,7 @@ MuJoCo CPU/Warp provider、任务注册、独立视频与运行记录。Gobot �
 
 这份计划不把已完成的入口整理、旧 Uni-SuperMimic 对照或短训练测试计为新基线对齐。
 以下是实验设计与验收门槛，不是所有项目均已完成的声明。
-已完成项和历史失败保留在 [实施记录](supermimic_reproduced_progress.md)，最新单 seed
-结果单独记录。发布成绩比较不能代替同配置、同训练量的多 seed 配对实验。
+最新单 seed 训练与完整评测记录在 [正式结果](g1_bones_100k_results.md)。发布成绩比较不能代替同配置、同训练量的多 seed 配对实验。
 
 **1. 固定基线与验收对象（P0）**
 

@@ -1,14 +1,201 @@
-# Gobot 内置 SuperMimic 训练
+# Gobot 统一训练入口
 
-G1 tracking 的唯一训练实现是固定版本 SuperMimic-Reproduced 的迁入版本。
-旧 Uni-SuperMimic learner、旧观测/目标、fork/promote 适应流程及相应测试、工具和配方已删除。
-PPO/AMP locomotion 是独立任务，仍然保留。
+`gobot-train` 与 `python -m gobot.rl.train` 使用同一入口，支持下列任务；机器人和地形仍由
+Gobot 场景描述，训练不依赖编辑器或 NodeScript。配置分开描述任务、算法和仿真后端，
+既可以使用任务名称，也可以直接提供 Python 工厂。
 
+| 任务名称 | 工作流 |
+| --- | --- |
+| `go1-velocity` | Go1 速度控制 PPO |
+| `go1-gait` | Go1 步态相位奖励 PPO |
+| `g1-velocity` | G1 速度控制 PPO |
+| `g1-amp` | G1 速度控制与 AMP 动作先验 |
+| `g1-tracking` | G1 SuperMimic 参考动作跟踪 |
+
+```bash
+python -m gobot.rl.train --list
+python -m gobot.rl.train go1-velocity \
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/go1_cpu
+python -m gobot.rl.train g1-amp \
+  --backend mujoco-warp --device cuda:0 --num-envs 1024 \
+  --dataset /data/g1/locomotion.npz --iterations 1000 --output logs/g1_amp
+```
+
+共同参数有 `--backend`、`--device`、`--num-envs`、`--seed`、`--output`、`--resume`。
+上述任务只支持 `mujoco-cpu` 和 `mujoco-warp`；引擎中的 Newton、IPC 等后端尚未接入这些训练工作流，
+不接受请求后静默回退。单独切换后端会选择相应默认 device；CPU 物理也可显式配合 CUDA learner。
+切换后端用于新实验，不意味着可跨后端恢复优化器及训练状态。
+
+PPO/AMP 的 `--iterations` 计数为 **PPO 更新次数**；SuperMimic 的 `--stop-iteration` 是
+**每 rank 的绝对控制步停止点**，不会缩短学习率调度。速度 PPO、Go1 步态 PPO 和
+SuperMimic 支持 `torchrun` 同步多卡；AMP 的判别器尚未接入多卡同步，仍使用单进程训练。
+
+标准速度任务用 `--terrain flat|rough` 选择地形，可直接开始训练，无需通过前置阶段。
+`--initialize` 只载入 actor 与观测归一化参数；`--resume` 恢复算法、优化器、课程和随机状态。
+AMP、Go1 步态扩展可另外使用 `--terrain mixed`。旧任务名称和实验配置已删除。
+
+## 标准速度训练
+
+`go1-velocity` 和 `g1-velocity` 参照仓库内 mjlab
+`dcdf6ce519abfd2ea45e9503ae6fb650b75bb869` 的平地/粗糙地形配置，使用 RSL-RL 5.5.2 的标准 PPO。
+默认设置为学习率 `1e-3`、自适应学习率、熵系数 `0.01`、初始动作标准差 `1.0`，
+每次更新采样 24 步，优化 5 轮、每轮 4 个 minibatch。没有更新回滚、归一化预热或额外跌倒扣分。
+
+奖励权重、速度误差公式、观测噪声、命令采样和课程按该参考设置。actor 的关节位置包含编码器偏置，
+critic 使用真实位置。奖励和终止在最后物理子步后计算，随后处理推力和重置、刷新观测；
+刚重置的环境保留完整命令持续时间。平地策略不接收地形高度扫描。
+
+`go1-gait` 显式增加步态相位；`g1-amp` 保留动作先验；`g1-tracking` 使用 SuperMimic。
+它们的附加奖励和观测不进入标准速度任务。
+
+独立参考数据保存在 `tests/fixtures/mjlab_velocity.json`，由
+`tests/support/export_mjlab_velocity.py` 在 mjlab 环境中生成。它记录来源文件哈希、四份有效配置和
+16 个奖励项以及机器人关节增益、力矩限制和动作缩放。`tests/python/test_mjlab_training.py`
+比较配置、NumPy/Torch 奖励和完整 PPO 更新。
+这些检查不替代多 seed 的训练效果比较。
+
+物理仍从 Gobot 场景编译。G1 行走、AMP 与回放使用同一个 `g1.jscn`：29 个身体关节、固定手掌，
+删除了 14 个手指驱动。质量、惯量、关节、碰撞和驱动参数通过 `tests/fixtures/mjlab_g1.xml`
+与固定版本的 mjlab 模型逐项核对。网格随仓库提供，不再依赖本机未跟踪的手指 STL 文件。
+旧模型 checkpoint 的物理标识不同，不能直接 `--resume`；`--initialize` 也仍要求模型一致。
+评测可显式加 `--allow-model-change` 测迁移，报告同时记录训练模型和实际模型标识。
+Gobot 的原生 CPU 批处理要求 MuJoCo 3.17，配对运行应使用同一套依赖。
+
+评测的 `--terrain` 只选择评测地形，保留 checkpoint 的观测、控制和求解器设置。例如把粗糙地形策略
+放到平地评测，不会删掉它的高度扫描输入：
+
+```bash
+python -m examples.locomotion.assessment \
+  --checkpoint logs/g1_ppo_8gpu/model_final.pt \
+  --terrain flat --speeds -.3 .8 1.5 2.5 --steps 1000 --num-envs 32 \
+  --allow-model-change --output logs/g1_transfer/flat.json
+python -m examples.locomotion.assessment \
+  --checkpoint logs/g1_ppo_8gpu/model_final.pt \
+  --terrain rough --speeds .8 --steps 1000 --num-envs 70 \
+  --allow-model-change --output logs/g1_transfer/rough.json
+```
+
+`velocity_error_after_warmup` 是排除起步 2 秒后的水平速度向量误差（m/s），只统计首次结束前的样本；
+`tracking_episodes` 同时给出有有效样本的次数，不能忽略提前跌倒的情况。
+`fall_rate` 统计物理跌倒终止，`numerical_failure_rate` 单列数值异常，`off_route_rate` 单列偏离路线。
+`terrain_pass_rate` 是到达对侧终点且未失败的比例，未及时到达也不算通过；
+它与附加速度/轨迹阈值的 `admission` 分开。当前 8 米地形块的起终点距中心 3.25 米，
+位于边缘平台内部，避免原先 3 米处的楼梯接缝。各难度、地形类型和每次运行的明细都保留在报告里。
+
+## 修改奖励和训练配置
+
+`--config` 使用所选工作流的 JSON 配置。速度任务包含 `experiment`、`env`、`agent`、
+`backend` 等字段；SuperMimic 使用自己的算法配置树。
+`--set PATH=JSON` 在配置和普通命令行参数之后应用；`--dry-run` 校验并打印配置，不创建仿真或输出目录。
+
+```bash
+python -m gobot.rl.train go1-velocity \
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval \
+  --set env.rewards.foot_slip=-0.1 \
+  --set agent.algorithm.learning_rate=0.0002 \
+  --output logs/go1_custom --dry-run
+```
+
+移除 `--dry-run` 后启动训练。自定义 `env`（包括奖励）要求 `--no-eval`，因为现有独立验收器
+按内置任务配方重建环境；自定义任务应使用匹配的评测程序。完整解析后的任务与算法配置写入运行目录。
+速度任务的 `reward_terms` 是加权奖励率，最终 reward 按 `physics_dt × decimation` 积分一次。
+标准 PPO 按 RSL-RL 的方式处理超时，真实终止与超时分开传入。AMP 使用重置前的观测进行超时计算，
+动作先验及终止惩罚由 `agent.algorithm.motion_prior_cfg` 配置；有限时域超时不算跌倒。
+AMP 当前动作先验使用 50 Hz 相邻帧，入口会检查 `physics_dt × decimation = 0.02`，
+避免修改控制频率后继续使用不匹配的先验。
+
+Python 可直接修改配置，无需注册任务：
+
+```python
+from gobot.rl.training import launch
+from gobot.rl.training.locomotion import training_spec
+
+spec = training_spec(robot="go1", recipe="baseline")
+cfg = spec.config_factory()
+cfg.backend = "mujoco-cpu"
+cfg.experiment.num_envs = 4
+cfg.experiment.iterations = 10
+cfg.env = {"rewards": {"foot_slip": -0.1}}
+cfg.agent = {"algorithm": {"learning_rate": 0.0002}}
+cfg.no_eval = True
+launch(spec, cfg)
+```
+
+也可以让可导入模块 `my_training.py` 中的无参 `make_training()` 返回一个 `TrainingSpec`，
+再运行 `python -m gobot.rl.train my_training:make_training --backend mujoco-cpu ...`。
+`TrainingSpec` 描述配置工厂、运行函数和支持的后端；任务注册只是可选的名称索引。
+
+训练前准备对应机器人场景和 AMP/跟踪数据。自动评测会在项目内生成评测地形，
+因此应使用可写项目或源码 checkout；安装包中的只读示例目录不适合作为完整评测工作目录。
+
+## 多 GPU 共同训练 PPO
+
+每张卡运行一个进程，各自产生 `--num-envs` 个环境的采样，RSL-RL 在每个 minibatch
+平均梯度，并同步观测归一化统计、KL 与自适应学习率。启动时广播相同模型，环境和采样使用
+`seed + rank`。不自动放大学习率，也不改变 PPO 的 rollout、epoch 或 minibatch 配置。
+
+8 卡 Go1 粗糙地形训练：
+
+```bash
+.venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train go1-velocity \
+  --terrain rough --backend mujoco-warp --num-envs 1024 \
+  --iterations 10000 --hours 12 --budget-hours 96 --seed 42 --no-eval \
+  --budget-file logs/go1_8gpu/budget.json --output logs/go1_8gpu
+```
+
+`--num-envs 1024` 是**每张卡**的环境数，8 卡共 8192 个环境；默认 rollout 为 24，
+每次更新采样 196608 个控制步。`--iterations` 仍是共同策略的更新次数，不自动除以卡数。
+`LOCAL_RANK` 自动选择当前可见设备；例如 `CUDA_VISIBLE_DEVICES=2,3` 配合
+`--nproc-per-node=2` 使用物理卡 2 和 3，无需逐卡设置 `--device`。
+同一入口支持 `g1-velocity`、`go1-gait`，也可在 `mujoco-cpu` 后端用多进程验证。
+
+先将环境数设为 128、更新次数设为 10，用新的输出目录做冒烟测试。没有添加 `--no-eval`
+时，只有主进程启动评测，其余进程等待结果并共同检查停止信号。日志中的吞吐量是所有卡的
+合计值，episode 指标按所有卡实际完成的 episode 数加权统计；模型、配置、日志与预算
+文件都只由主进程写入。
+
+恢复同一训练：
+
+```bash
+.venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train go1-velocity \
+  --terrain rough --backend mujoco-warp --num-envs 1024 \
+  --iterations 10000 --hours 12 --budget-hours 192 --seed 42 --no-eval \
+  --resume logs/go1_8gpu/latest.pt \
+  --budget-file logs/go1_8gpu/budget.json --output logs/go1_8gpu
+```
+
+`--resume` 中的更新次数表示继续运行的次数；保持相同卡数、每卡环境数、任务和算法配置。
+检查点保存共同策略、critic、优化器，以及每个进程的课程和随机状态；恢复时重新开始物理
+episode，不保存接触求解器的瞬时状态。更换卡数、每卡环境数或使用旧格式检查点时，
+用 `--initialize checkpoint.pt` 和新的输出目录开始训练。初始化保留 actor 与观测归一化，
+critic、优化器和 action std 重新初始化。
+
+`--hours` 是本次运行的墙钟小时上限；`--budget-hours` 是预算文件累计的 GPU 小时上限。
+例如 8 卡运行 12 小时需要 96 GPU 小时，恢复训练会继续累加同一预算文件的用量。
+单卡与多卡使用相同的 PPO 更新规则；更多卡意味着每次更新采样更多，实际吞吐和收敛需要实测。
+
+Slurm 模板 `examples/locomotion/cluster/train_velocity.sbatch` 默认申请 8 卡共同训练一个模型。
+设置 `GOBOT_REPO`、`GOBOT_OUTPUT` 后提交。不同随机种子的对照实验分别提交，并使用独立的
+输出目录和预算文件。与 mjlab 比较时记录速度误差、跌倒率、地形通过率、训练时间和显存。
+
+### EPA 碰撞缓冲警告
+
+`Warning: EPA horizon = 24 isn't large enough` 表示凸碰撞穿透计算的临时边缓冲不足，
+不是 PPO rollout 长度，也不是显存耗尽。仅关闭 `warn_overflow` 会隐藏输出，不能恢复
+失败的碰撞计算；`nconmax` 和 `njmax` 也不控制这块缓冲。
+
+Gobot 的 Warp 后端在预热和 CUDA graph 捕获前将该缓冲至少扩为 64，保留溢出警告和检查。
+这是对当前固定依赖 MuJoCo Warp 3.17 的内部缓冲分配调整，不修改安装包文件。
+更新 Python 代码后重启训练进程即可生效，不需要重编译 Gobot。现有 PPO 检查点可以用
+原来的参数和 `--resume` 继续；无需重新初始化策略。若扩容后仍报 EPA 溢出，应记录触发
+姿态和碰撞网格进一步排查。
+
+## SuperMimic 训练与复现
+
+G1 tracking 使用固定版本 SuperMimic-Reproduced，启动时显式选择对应任务。
 2026-11-06 已完成一次八卡 BONES 100k 从头训练与完整评测，见[结果报告](g1_bones_100k_results.md)。
 完整操作入口：[数据准备/评测/视频](../examples/g1/reproduction/README.md)。
-
-训练入口为 `python -m gobot.rl.train` / `gobot-train`。场景和 robot profile 由 Gobot 拥有，
-训练不依赖 mjlab、编辑器或 NodeScript。mjlab 仅用于独立参考对照。
+mjlab 仅用于独立参考对照，以下配方与恢复协议保持不变。
 
 ## 固定目标
 
@@ -21,7 +208,24 @@ PPO/AMP locomotion 是独立任务，仍然保留。
 - 320000 控制步调度、250000 衰减结束、100000 停止分开表达。
 
 Gobot 的原生批处理依赖 MuJoCo 3.17。原始发布栈 3.16 复核和同 3.17 栈配对实验分开记录，
-不能把 3.17 上的诊断当作原始发布栈复现。[当前证据](supermimic_reproduced_progress.md)列出已验证项目和缺口。
+不能把 3.17 上的诊断当作原始发布栈复现。[结果报告](g1_bones_100k_results.md)记录训练、评测与比较条件。
+
+## 训练中的数值异常
+
+Warp 速度环境会检查物理状态中的 NaN/Inf，以及明显超出运动范围的有限数值
+（广义速度绝对值超过 1000，或广义位置绝对值超过 1e6）。异常环境会结束当前
+回合并重置；该步奖励置零，不做超时 bootstrap，也不提升地形等级。
+AMP 不把这次重置产生的动作对送入判别器回放。
+正常环境仍使用原来的奖励与 PPO 参数。
+
+`metrics.jsonl` 的 `numerical_resets` 是本次更新中所有 GPU 的异常重置数。
+每个进程首次发生异常时，会在训练目录保存 `numerical_failure_rankN.pt`，包含
+环境编号、物理状态、动作、速度指令和地形信息。若重置频繁，应检查这些状态中的
+关节和碰撞问题，不能把持续的仿真发散当成正常训练。
+
+采样阶段的异常会在 PPO 更新前通知所有进程，共同退出并保留上次 checkpoint，
+避免其余进程等待 NCCL 超时。排除问题后可用同一配置和 `--resume .../latest.pt`
+继续；恢复会重新开始物理回合，不会重现崩溃时的瞬时物理状态。
 
 ## 本地构建与诊断
 
@@ -55,16 +259,16 @@ BONES CSV 支持厘米、欧拉角度和关节度数的输入格式，必须显�
 
 ```bash
 # 完整网络、缩小批次和 rollout 的功能检查；不是成绩实验。
-python -m gobot.rl.train --project /data/g1_project --data /data/lafan1_npz \
+python -m gobot.rl.train g1-tracking --project /data/g1_project --data /data/lafan1_npz \
   --config examples/g1/train/reproduced_smoke.json --output logs/smoke
 
 # 单节点同步四卡，目标 e8 配方；必须有实际 BONES 训练库。
-torchrun --standalone --nproc-per-node 4 -m gobot.rl.train \
+torchrun --standalone --nproc-per-node 4 -m gobot.rl.train g1-tracking \
   --project /data/g1_project --library /data/bones/library.pt \
   --config examples/g1/train/reproduced_bones.json --output logs/g1_e8_s0
 
 # 按相同 rank 数恢复；先重新填充 replay，再继续绝对控制步调度。
-torchrun --standalone --nproc-per-node 4 -m gobot.rl.train \
+torchrun --standalone --nproc-per-node 4 -m gobot.rl.train g1-tracking \
   --project /data/g1_project --library /data/bones/library.pt \
   --config examples/g1/train/reproduced_bones.json --output logs/g1_e8_s0_resume \
   --resume logs/g1_e8_s0/ckpt_latest.pt
@@ -119,3 +323,24 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 恢复 checkpoint 包含每个 rank 的 startup COM；恢复时不依赖环境重新构造所消耗的随机数。
 多 rank 恢复会比较控制步、learner 更新和三套优化器计数，拒绝混合不同进度的 shards。
 配置的正整数维度、采样模式、学习率和 replay/window 要求会在创建仿真前检查。
+
+## 训练终端日志
+
+速度 PPO/AMP 训练每次更新打印对齐的统计表，CPU、CUDA 和 torchrun 共用同一个入口。
+八卡由 rank 0 打印全局统计，`metrics.jsonl` 仍然每次更新保存一行 JSON，详细项保存在 `log` 字段。
+恢复训练后，总步数包含已完成的更新；`--iterations` 仍表示本次追加的更新次数。
+
+- `Collection time` 是采样耗时；`Learning time` 包含 GAE、PPO 更新和相关进程同步。
+  CUDA 在阶段边界等待任务完成后计时。多卡显示各阶段最慢进程的耗时。
+- `Mean reward` 和 episode 长度按本轮实际结束的 episode 汇总；跨更新但未结束的累计值保留。
+  没有结束的 episode 显示 `—`，JSON 为 `null`。
+- `Episode_Reward/*` 使用与 mjlab 相同的归一化：每个 episode 的加权奖励积分除以配置的最长 episode 秒数。
+  多卡按实际 episode 数加权；这不等于按每一步即时奖励取平均。
+- `Metrics/*` 中的角动量按环境步平均；触地最高点、落地冲击按落地次数加权；滑动速度按接触脚样本数加权。
+  没有落地或接触样本时显示 `—`。
+- `Metrics/twist/error_vel_xy` / `error_vel_yaw` 是已结束 episode 的时间平均误差，单位分别为 m/s 和 rad/s。
+  mjlab 原训练日志采用指令时间上限归一化，两者的这两个日志字段不能直接做数值对比；正式对照仍用独立评测报告。
+- `Episode_Termination/*` 是所有卡在本次更新中的 episode 结束次数，不是百分比，也不是 mjlab 的每步平均结束数。
+  数值恢复独立列出。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
+
+日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。

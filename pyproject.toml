@@ -33,7 +33,7 @@ dependencies = [
     "onnx>=1.16",
     "onnxruntime>=1.19",
     "pillow>=10.1",
-    "rsl-rl-lib==5.2.0",
+    "rsl-rl-lib==5.5.2",
     "scipy>=1.11",
     "tensorboard",
     "tensordict",
