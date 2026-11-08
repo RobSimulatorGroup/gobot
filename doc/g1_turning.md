@@ -1,69 +1,77 @@
-# G1 转向跟踪对照
+# G1 持续偏航排查
 
-原 Gobot / mjlab 基线已经使用相同的三轴角速度奖励，但它们的独立训练结果仍有持续偏航。
-本实验只修改角速度奖励项：同时要求水平速度和身体 z 轴角速度跟上指令，不在同一项中混合滚转和俯仰速度，并将 yaw std 从 sqrt(0.5) 改为 0.5。
-奖励权重仍为 2，姿态、身体摆动、动作平滑度等奖励保留。
+**原奖励保持与 mjlab 一致。本轮两个奖励候选均未通过短验证，已从正式入口删除；保留固定转向命令评测。**
+没有声称偏航已经修好，也没有启动下一轮完整训练。
 
-- 原基线：`2 * exp(-(wx² + wy² + (wz-command_wz)²) / 0.5)`。
-- 转向对照：`2 * exp(-(wz-command_wz)² / 0.25 - ((vx-command_vx)² + (vy-command_vy)²) / 0.25)`。
+## 为什么相同奖励仍有不同偏航
 
-只有偏航准确但停着不走，不能获得高分；当平移命令本身为零时，正常保留原地转向和站立任务。
+对 `g1_observation_fix_seed42` 和 `g1_shared_mjlab_seed42` 的三个评测种子汇总，在 0.8 m/s、零转向、20 秒平地测试中：
 
-CPU、Warp 和 mjlab 对照入口调用同一个角速度误差函数。默认 `angular_tracking="body"` 保留原基线；
-`examples/g1/turning.json` 显式选择新奖励。它是一个双方一致的新实验，不是 mjlab 上游原任务已经修好了直行。
-本改动不添加航向控制器，也不把评测中的零转向偷偷换成纠偏指令。现有 checkpoint 的动作不会因此改变，需要训练新策略。
+| 指标 | Gobot | mjlab |
+|---|---:|---:|
+| 平均绝对瞬时 yaw 误差 rad/s | 0.19994 | 0.26749 |
+| 带方向的平均 yaw 误差 rad/s | +0.08697 | -0.03180 |
+| 累计世界航向变化 | +99.55° | -36.46° |
 
-## 短对照筛查
+正值向左、负值向右。Gobot 的瞬时绝对误差更小，但剩下的单向平均误差更大。
+约 `0.087 × 20 × 180/π = 100°`；身体 yaw 速度与世界航向导数略有差异，因此这里只是近似解释。
+mjlab 的正负误差抵消得更多。这说明平均瞬时误差改善不保证累计航向改善。
 
-已做一次配对的 500 更新短微调：原奖励控制组与只跟踪 yaw 的候选组使用同一个 actor 起点、
-相同的 4 × 512 环境和采样设置。只跟踪 yaw 的候选在 0.8 m/s 档几乎停住（速度误差 0.799 m/s），
-虽然偏航仅约 2°，仍未通过验收，已否决。这个结果促使本配置加入水平速度条件，避免奖励停走。
-只跟踪 yaw 的临时配置已删除，原始短对照日志留在 `logs/g1_turning_audit/`。
+相同奖励只是相同目标，不是同一策略。现有目标覆盖很多命令和地形，并以瞬时误差计算奖励；
+它没有给长期直行作硬性保证。上述数据不能唯一证明训练中是哪一项引起偏置，也不能据单个训练 seed 判定 Gobot 系统性更差。
 
-下面的完整训练命令是新目标的从头实验；不能把短微调结果当作已经解决偏航。
+## 初始化已经实测核对
 
-## 从头训练
+使用 118 上两边的实际构造流程、每卡 1024 环境、seed 42，在 PPO 更新前核对：
 
-Gobot（118）：
+- Actor 初始参数 SHA256 完全一致。
+- Critic 初始参数 SHA256 完全一致。
+- 构造网络前的 CPU RNG 状态相同。
+- 第一批观测、随机 episode 长度、首次动作采样前 CUDA RNG 状态和第一批动作不同。
 
-```bash
-cd /home/h3c-r5300-g6/wqq/gobot
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-.venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/g1/turning.json \
-  --backend mujoco-warp --terrain rough \
-  --terrain-reference logs/g1_training_terrain.json \
-  --num-envs 1024 --iterations 18000 --seed 42 \
-  --hours 8 --budget-hours 64 --save-interval 500 \
-  --output logs/g1_turning_seed42 \
-  --budget-file logs/g1_turning_seed42/budget.json
-```
+Gobot 环境使用独立 generator，mjlab 环境与策略的随机数消耗顺序不同。
+因此排除了网络初始权重不同，但没有把训练轨迹锁定为相同。随机采样顺序不同是事实，
+不等于已经证明它是偏航差距的全部原因。
 
-相同奖励设置的 mjlab 对照，完成 Gobot 后再跑：
+同一个 Gobot 最终策略放到 mjlab 运行仍左偏约 95°，接近在 Gobot 中的 100°。
+当前证据支持差距主要跟随策略，而不是某个回放器固定把方向或角度算错。
 
-```bash
-cd /home/h3c-r5300-g6/wqq/gobot/mjlab
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-.venv/bin/torchrun --standalone --nproc-per-node=8 \
-  ../tests/support/train_mjlab_locomotion.py \
-  --terrain-reference ../logs/g1_training_terrain.json \
-  --angular-tracking planar --ang-vel-std 0.5 \
-  --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
-  --output logs/g1_turning_seed42
-```
+## 被否决的短对照
 
-两边都从头训练以保证相同预算。新目标不 resume 旧目标；训练配置摘要会拒绝这种混用。
-如只想判断 Gobot 是否改善，先完成 Gobot 一轮及下面的评测，不必同时占用两轮完整训练时间。
+三个微调组均从同一个 actor 开始，各 500 更新、4 × 512 环境、rollout 24（每组 24,576,000 个样本）。
+critic 和 optimizer 重新初始化，initial action std=0.2、初始学习率 1e-4、entropy=0.005。
+使用共同地形、seed 42，以及与训练末期相同的命令范围，关闭命令范围课程。这些设置对三个组相同。
+这是短微调筛查，不是原 18,000 更新训练的续跑，也不是从头训练效果的充分证明。
 
-## 固定命令验收
+1. 原奖励控制组。
+2. 只跟踪 yaw，std=0.5，权重保持 2。
+3. yaw 奖励同时要求水平速度跟上指令，避免停止前进后轻易获得高分。
 
-在空闲卡上检查低速、中速、高速直行，以及行进和原地左右转。所有命令按身体坐标给出，
-每组运行 20 秒，不添加航向反馈。旧模型和新模型使用相同的评测入口；这些评测比较行为指标，不比较不同奖励下的 return。
+同一评测 seed 71、16 环境、每组 20 秒的低速直行结果：
+
+| 策略 | 0.8 m/s 水平速度误差 m/s | 航向变化 | 严格验收 |
+|---|---:|---:|---:|
+| 原始最终策略 | 0.0587 | 左 98.7° | 0/16 |
+| 原奖励微调 | 0.1846 | 左 113.7° | 0/16 |
+| 只跟踪 yaw | 0.7994 | 左 1.9° | 0/16 |
+| 联合速度奖励 | 0.1937 | 左 98.7° | 0/16 |
+
+只跟踪 yaw 的策略几乎停住，不能用其低偏航宣称成功。联合目标恢复了前进，但没有消除偏航；
+其他速度和原地转向也未通过本次验收。这些证据不足以推荐新的奖励用于下一轮长训练，候选代码与配置已撤回。
+短试不能证明这些目标从头训练一定无效；这里的决定是没有把未经证实的候选混入对齐基线。
+
+实验源码和配置记录在对应训练输出的 `sources.tar.gz` / `config.json` 中；本轮记录目录为
+`logs/g1_turning_audit/`。所有实验模型留在 118，未导出到本机。
+
+## 保留的固定命令评测
+
+新增 `--commands VX VY WZ`，可重复传入。命令采用身体坐标，单位为 m/s、m/s、rad/s；
+评测不添加航向纠偏。原策略和之后的策略都使用相同命令，检查前进能力和转向能力是否同时成立。
 
 ```bash
 cd /home/h3c-r5300-g6/wqq/gobot
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m examples.locomotion.assessment \
-  --checkpoint logs/g1_turning_seed42/model_final.pt \
+  --checkpoint logs/g1_observation_fix_seed42/model_final.pt \
   --output logs/g1_turning_review/commands_71.json \
   --backend mujoco-warp --terrain flat --num-envs 32 --steps 1000 --seed 71 \
   --commands 0.8 0 0 --commands 1.5 0 0 --commands 2.5 0 0 \
@@ -72,23 +80,11 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m examples.locomotion.assessment \
   --hours .5 --budget-hours 2 --budget-file logs/g1_turning_review/budget.json
 ```
 
-随后把 seed 改为 72、73，输出文件名也分别更换。粗糙地形仍使用既有的共同地形/重置评测，避免仅优化平地而损失跨地形能力。
+关注速度误差、累计航向、平均 yaw 偏差和跌倒；原地转向不能用站着不动通过，短路线通过不能代替持续直行。
+参考训练入口记录原始角速度目标，并拒绝恢复到不同奖励，避免误把本轮实验 checkpoint 继续当作原基线训练。
 
-- 直行看 `heading_drift_abs_deg`、`cross_track_max_m` 和水平速度误差。
-- 转弯看 `yaw_error`、`yaw_rate_bias_rad_s`，实际平均身体 yaw 速度为指令值加该偏差。
-- 同时报告跌倒、数值失败和地形通过率。
-- 原地转弯不能通过“站着不动”验收；行进中转弯不能只看前进速度。
-- 短路线穿越成功不能代替 20 秒连续直行的航向检查。
+## 下一步
 
-改变目标的短微调仅用于筛查，不能替代从头、同预算的 Gobot/mjlab 对照，也不能证明多个训练 seed 的稳定性。
-
-## 同 seed 的初始化核对
-
-用 118 上两边的实际训练构造流程、每卡 1024 环境、seed 42 做未更新策略的核对：
-Actor 和 Critic 的初始参数哈希分别完全一致；CPU 随机数状态也相同。
-但第一批观测、随机 episode 长度和首次动作采样前的 CUDA 随机数状态已经不同。
-Gobot 环境使用独立的 Torch generator，mjlab 环境事件与策略采样的随机数消耗顺序不同。
-
-因此当前证据排除了网络初始权重差异，但没有对齐训练轨迹。数据路径不同能够使 PPO 得到不同策略，
-不能仅凭这一对结果推断 Gobot 存在系统性训练劣势，也不能断言偏航差距完全由随机性造成。
-原始初始化核对保存在 `logs/g1_turning_audit/initial_gobot.json` 和 `initial_mjlab.json`。
+先以仓库中的 mjlab 为参照逐步核对和对齐训练数据路径：随机数消耗、域随机化、重置、命令、噪声、推力和 PPO 数据传递。
+不能仅用相同 seed 代替实际输入核对，也不能把 GPU 浮点轨迹差异误判为数据流错误。
+对齐后保留原奖励，再补双方相同预算的训练 seed。三次评测 seed 不能替代三个训练 seed。

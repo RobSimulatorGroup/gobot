@@ -160,3 +160,16 @@ def test_signed_turn_bias_and_unwrapped_heading_stop_at_first_episode_end():
     turning = rollout(Env(), lambda obs: np.zeros((2,1)), command=(.8,0,.2), steps=3)
     assert turning['heading_drift_deg'] is None
     assert turning['heading_drift_max_deg'] is None
+
+
+def test_fixed_turn_commands_are_passed_without_rewriting(monkeypatch, capsys):
+    from contextlib import nullcontext
+    from examples.locomotion import assessment
+    calls=[]
+    monkeypatch.setattr(assessment,'evaluation_budget',lambda *a,**k:nullcontext())
+    monkeypatch.setattr(assessment,'evaluate',lambda *a,**kw:(calls.append(kw) or {'scenarios':[]}))
+    monkeypatch.setattr('sys.argv',['assessment','--checkpoint','unused.pt','--output','unused.json',
+        '--commands','.8','0','.5','--commands','.8','0','-.5','--commands','.8','0','0'])
+    assessment.main()
+    assert calls[0]['commands']==[[.8,0.,.5],[.8,0.,-.5],[.8,0.,0.]]
+    capsys.readouterr()

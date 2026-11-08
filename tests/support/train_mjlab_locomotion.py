@@ -3,7 +3,6 @@ import argparse
 from dataclasses import asdict
 import importlib.metadata as metadata
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -75,13 +74,11 @@ def main():
     parser.add_argument('--num-envs', type=positive, default=1024, help='environments per GPU')
     parser.add_argument('--iterations', type=positive, default=18000)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--angular-tracking', choices=('body', 'planar'), default='body')
-    parser.add_argument('--ang-vel-std', type=float, default=math.sqrt(.5))
     parser.add_argument('--save-interval', type=positive, default=500)
     parser.add_argument('--resume', type=Path, help='Continue this comparison checkpoint to --iterations total updates')
     parser.add_argument('--check', action='store_true', help='check dependencies and configuration without training')
     args = parser.parse_args()
-    from mjlab_training import helper, training_terrain, set_initial_terrain, TrainingLog, configure_angular_tracking
+    from mjlab_training import helper, training_terrain, set_initial_terrain, TrainingLog
     terrain_module = helper('terrain_reference')
     terrain_data = terrain_module.load(args.terrain_reference)
     source = args.source.resolve()
@@ -117,7 +114,6 @@ def main():
     local_rank = int(os.environ.get('LOCAL_RANK', '0'))
     world_size = int(os.environ.get('WORLD_SIZE', '1'))
     cfg = unitree_g1_rough_env_cfg()
-    angular_tracking = configure_angular_tracking(cfg, args.angular_tracking, args.ang_vel_std)
     cfg.scene.num_envs = args.num_envs
     cfg.seed = args.seed + rank
     import mujoco_warp as mjw
@@ -145,7 +141,10 @@ def main():
                 'capacities': {'njmax': 1500, 'nconmax': 70, 'epa_horizon': 64},
                 'solver_warnings': 'global_fraction_per_update',
                 'statistics': 'all_workers_completed_episodes', 'contact_timing': 'physics_dt',
-                'angular_tracking': angular_tracking,
+                'angular_tracking': {'mode': 'body',
+                    'std': cfg.rewards['track_angular_velocity'].params['std'],
+                    'linear_std': cfg.rewards['track_linear_velocity'].params['std'],
+                    'weight': cfg.rewards['track_angular_velocity'].weight},
                 'terrain_sha256': terrain_data['sha256'],
                 'allow_tf32': False, 'output': str(args.output.resolve())}
     if rank == 0:

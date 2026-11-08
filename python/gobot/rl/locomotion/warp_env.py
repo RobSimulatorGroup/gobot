@@ -38,7 +38,7 @@ from .training_state import (
     restore_terrain_curriculum_assignments,
 )
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
-from .terms import posture_std, locomotion_failure_mask, angular_tracking_error
+from .terms import posture_std, locomotion_failure_mask
 from .math import find_node_by_name
 from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 
@@ -1857,10 +1857,9 @@ class WarpVelocityEnv:
             (self._command[:, :2] - linear_body[:, :2]).square().sum(dim=1)
             + linear_body[:, 2].square()
         )
-        angular_error = angular_tracking_error(
-            self._command, linear_body, angular_body, mode=reward_cfg.angular_tracking,
-            angular_variance=max(float(reward_cfg.ang_vel_std)**2, 1.e-6),
-            linear_variance=max(float(reward_cfg.lin_vel_std)**2, 1.e-6)
+        angular_error = (
+            (self._command[:, 2] - angular_body[:, 2]).square()
+            + angular_body[:, :2].square().sum(dim=1)
         )
         terrain_normal = self._terrain_normal_world() if reward_cfg.upright_reference == "terrain" else self._terrain_up_world
         terrain_up_body = _quat_apply_inverse(self._arrays["xquat"][:, self._torso_body_id], terrain_normal)
@@ -1942,7 +1941,7 @@ class WarpVelocityEnv:
         terms = self._reward_terms
         terms.zero_()
         linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
-        yaw_tracking = torch.exp(-angular_error)
+        yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
         terms[:,0] = self._reward_weights[0] * linear_tracking
         terms[:,1] = self._reward_weights[1] * yaw_tracking
         terms[:, 2] = self._reward_weights[2] * torch.exp(

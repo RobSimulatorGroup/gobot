@@ -1,9 +1,0 @@
-{
-  "env": {
-    "rewards": {
-      "angular_tracking": "planar",
-      "ang_vel_std": 0.5
-    }
-  },
-  "no_eval": true
-}

@@ -30,20 +30,3 @@ def locomotion_failure_mask(gravity_z, clearance, illegal_contacts, trunk_contac
     if terminate_on_trunk:
         failed = failed | (trunk_contacts > 0)
     return failed
-
-
-def angular_tracking_error(command, linear_velocity, angular_velocity, *,
-                           mode="body", angular_variance=.5, linear_variance=.25):
-    """Normalized error for the angular reward, with NumPy or Torch arrays.
-
-    The reference tracks all body angular axes. Planar tracking requires both
-    horizontal velocity and yaw rate to match, so standing still cannot earn
-    the full turning reward while a forward command is active.
-    """
-    yaw_error = (command[..., 2] - angular_velocity[..., 2]) ** 2
-    if mode == "body":
-        return (yaw_error + (angular_velocity[..., :2] ** 2).sum(-1)) / angular_variance
-    if mode == "planar":
-        velocity_error = ((command[..., :2] - linear_velocity[..., :2]) ** 2).sum(-1)
-        return yaw_error / angular_variance + velocity_error / linear_variance
-    raise ValueError('angular_tracking must be body or planar')
