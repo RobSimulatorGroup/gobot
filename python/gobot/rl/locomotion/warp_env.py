@@ -1062,8 +1062,9 @@ class WarpVelocityEnv:
         transition_state = transition_obs = None
         if self.cfg_obj.capture_transitions:
             transition_state = {key: value.clone() for key, value in self.locomotion_state().items()}
-            # Before reset and command resampling: these belong to the executed action.
-            self._compute_observations()
+            # Snapshot the executed transition without consuming policy noise.
+            # Diagnostics must not advance the RNG used by commands and resets.
+            self._compute_observations(add_noise=False)
             transition_obs = {key: value.clone() for key, value in self._state.obs.items()}
         self._apply_pushes()
         # Numerically invalid worlds were reset before computing rewards. Do not
@@ -1992,7 +1993,7 @@ class WarpVelocityEnv:
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 
-    def _compute_observations(self) -> None:
+    def _compute_observations(self, *, add_noise: bool = True) -> None:
         self._refresh_foot_contacts()
         self._observation_buffer_index = (self._observation_buffer_index + 1) % len(self._actor_obs_buffers)
         self._actor_obs = self._actor_obs_buffers[self._observation_buffer_index]
@@ -2042,7 +2043,7 @@ class WarpVelocityEnv:
             torch.sign(contact_force) * torch.log1p(contact_force.abs())
         )
         actor[:, 9:9 + self.num_actions].add_(self._encoder_bias)
-        if self.cfg_obj.observations.actor_noise:
+        if add_noise and self.cfg_obj.observations.actor_noise:
             self._apply_actor_noise()
         if hasattr(self, "_state"):
             self._state.obs = self._observation_views[self._observation_buffer_index]

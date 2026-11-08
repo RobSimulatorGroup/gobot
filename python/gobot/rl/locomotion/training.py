@@ -405,6 +405,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             semantic.pop(name, None)
         signature_data = {'experiment': semantic, 'task': task_identity,
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
+                          'transition_observation_noise': False,
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
         distributed.on_main(lambda: atomic_json(directory / 'training_signature.json', {'signature': signature}))
