@@ -38,7 +38,7 @@ from .training_state import (
     restore_terrain_curriculum_assignments,
 )
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
-from .terms import posture_std, locomotion_failure_mask
+from .terms import posture_std, locomotion_failure_mask, angular_tracking_error
 from .math import find_node_by_name
 from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 
@@ -1857,9 +1857,8 @@ class WarpVelocityEnv:
             (self._command[:, :2] - linear_body[:, :2]).square().sum(dim=1)
             + linear_body[:, 2].square()
         )
-        angular_error = (
-            (self._command[:, 2] - angular_body[:, 2]).square()
-            + angular_body[:, :2].square().sum(dim=1)
+        angular_error = angular_tracking_error(
+            self._command, angular_body, reward_cfg.ang_vel_axes
         )
         terrain_normal = self._terrain_normal_world() if reward_cfg.upright_reference == "terrain" else self._terrain_up_world
         terrain_up_body = _quat_apply_inverse(self._arrays["xquat"][:, self._torso_body_id], terrain_normal)

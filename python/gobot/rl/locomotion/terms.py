@@ -30,3 +30,17 @@ def locomotion_failure_mask(gravity_z, clearance, illegal_contacts, trunk_contac
     if terminate_on_trunk:
         failed = failed | (trunk_contacts > 0)
     return failed
+
+
+def angular_tracking_error(command, angular_velocity, axes="xyz"):
+    """Squared body angular-velocity error for NumPy or Torch arrays.
+
+    The reference task also tracks zero roll/pitch velocity. The yaw experiment
+    keeps the existing upright/body-motion terms and tracks turning separately.
+    """
+    error = (command[..., 2] - angular_velocity[..., 2]) ** 2
+    if axes == "xyz":
+        return error + (angular_velocity[..., :2] ** 2).sum(-1)
+    if axes == "z":
+        return error
+    raise ValueError('ang_vel_axes must be xyz or z')

@@ -34,7 +34,7 @@ from gobot.rl.locomotion.math import (
 
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .gait import bound_gait_score_numpy
-from .terms import posture_std, locomotion_failure_mask
+from .terms import posture_std, locomotion_failure_mask, angular_tracking_error
 from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
 from .scene import prepare_velocity_scene
 from .training_state import (
@@ -1312,7 +1312,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         active = (command_speed > command_threshold).astype(np.float32)
 
         lin_error = np.sum(np.square(command[:, :2] - lin_vel[:, :2]), axis=1) + np.square(lin_vel[:, 2])
-        ang_error = np.square(command[:, 2] - ang_vel[:, 2]) + np.sum(np.square(ang_vel[:, :2]), axis=1)
+        ang_error = angular_tracking_error(command, ang_vel, reward_cfg.ang_vel_axes)
         terrain_up_b = self._terrain_up_body_from_scan(state) if reward_cfg.upright_reference == "terrain" else _quat_rotate_inv_batch(
             np.broadcast_to(np.array([0., 0., 1.], dtype=np.float32), (self.num_envs, 3)), base_quaternion)
         body_ang_vel = np.asarray(state.base_angular_velocity, dtype=np.float32)

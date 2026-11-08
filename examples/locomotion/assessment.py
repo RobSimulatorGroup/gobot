@@ -323,14 +323,17 @@ def main():
     p.add_argument('--final',action='store_true');p.add_argument('--device',default='cuda:0')
     p.add_argument('--terrain',choices=('flat','rough'))
     p.add_argument('--allow-model-change',action='store_true',help='Evaluate policy transfer to a different robot model; observations and controls must still match')
-    p.add_argument('--speeds',type=float,nargs='+',help='Evaluate these forward/backward speeds (m/s)')
+    command_args=p.add_mutually_exclusive_group()
+    command_args.add_argument('--speeds',type=float,nargs='+',help='Evaluate these forward/backward speeds (m/s)')
+    command_args.add_argument('--commands',type=float,nargs=3,action='append',metavar=('VX','VY','WZ'),
+        help='Repeat for fixed body velocity commands (m/s, m/s, rad/s); no heading feedback is added')
     p.add_argument('--slope',type=float,default=0.)
     p.add_argument('--robust',action='store_true')
     p.add_argument('--backend',default='mujoco-warp',choices=('mujoco-cpu','mujoco-warp'))
     add_budget_arguments(p)
     a=p.parse_args();torch.set_num_threads(4)
     with evaluation_budget(a, stage='assessment'):
-        result=evaluate(a.checkpoint,a.output,steps=a.steps,count=a.num_envs,seed=a.seed,final=a.final,device=a.device,backend=a.backend,terrain=a.terrain,allow_model_change=a.allow_model_change,commands=[(speed,0.,0.) for speed in a.speeds] if a.speeds else None,slope=a.slope,robust=a.robust)
+        result=evaluate(a.checkpoint,a.output,steps=a.steps,count=a.num_envs,seed=a.seed,final=a.final,device=a.device,backend=a.backend,terrain=a.terrain,allow_model_change=a.allow_model_change,commands=[(speed,0.,0.) for speed in a.speeds] if a.speeds else a.commands,slope=a.slope,robust=a.robust)
     print(json.dumps({k:v for k,v in result.items() if k!='scenarios'}))
 
 if __name__=='__main__':main()

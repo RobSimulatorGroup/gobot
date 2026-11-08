@@ -1,0 +1,9 @@
+{
+  "env": {
+    "rewards": {
+      "ang_vel_axes": "z",
+      "ang_vel_std": 0.5
+    }
+  },
+  "no_eval": true
+}

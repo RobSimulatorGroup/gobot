@@ -82,8 +82,10 @@ def _probe():
     return inputs,cfg
 
 
-def _cpu_probe():
+def _cpu_probe(axes="xyz", std=None):
     inp,cfg=_probe();count,joints=inp['joint_position'].shape
+    cfg.rewards.ang_vel_axes=axes
+    if std is not None:cfg.rewards.ang_vel_std=std
     env=CpuVelocityEnv.__new__(CpuVelocityEnv)
     env.cfg_obj=cfg;env.num_envs=count;env.num_actions=joints;env._height_scan_dim=1;env.step_dt=.02
     env._reward_term_names=VELOCITY_REWARD_TERM_NAMES
@@ -95,6 +97,7 @@ def _cpu_probe():
     params=np.zeros(len(_TASK_PARAM),np.float32)
     for name,value in {'step_dt':.02,'lin_vel_std2':.25,'ang_vel_std2':.5,'upright_std2':.2,'command_threshold':.05,'height_scan_max_distance':5.}.items():
         params[_TASK_PARAM[name]]=value
+    params[_TASK_PARAM['ang_vel_std2']]=cfg.rewards.ang_vel_std**2
     state=NS(task_params=params,reward_weights=np.array([REFERENCE['reward_probe']['weights'][key] for key in VELOCITY_REWARD_TERM_NAMES],np.float32),
         command=inp['command'],base_quaternion=inp['quaternion'],base_linear_velocity=linear,base_angular_velocity=angular,
         base_linear_velocity_body=inp['linear_body'],base_angular_velocity_body=inp['angular_body'],projected_gravity=np.tile([0.,0.,-1.],(count,1)),
@@ -123,8 +126,10 @@ def test_cpu_reward_terms_match_mjlab():
     np.testing.assert_allclose(state.reward,probe['reward'],rtol=2e-5,atol=3e-6)
 
 
-def test_torch_reward_terms_match_mjlab_without_cuda():
+def _torch_probe(axes="xyz", std=None):
     raw,cfg=_probe();inp={k:torch.tensor(v) for k,v in raw.items()};count,joints=inp['joint_position'].shape
+    cfg.rewards.ang_vel_axes=axes
+    if std is not None:cfg.rewards.ang_vel_std=std
     env=WarpVelocityEnv.__new__(WarpVelocityEnv)
     env.cfg_obj=cfg;env.num_envs=count;env.num_actions=joints;env.step_dt=.02
     env._root_velocity_body=lambda:(inp['linear_body'],inp['angular_body'])
@@ -150,6 +155,11 @@ def test_torch_reward_terms_match_mjlab_without_cuda():
     env._reward_terms=torch.zeros(count,len(VELOCITY_REWARD_TERM_NAMES));env._reward=torch.zeros(count);env._episode_returns=torch.zeros(count)
     env._numerical_reset=torch.zeros(count,dtype=torch.bool)
     env._compute_rewards()
+    return env
+
+
+def test_torch_reward_terms_match_mjlab_without_cuda():
+    env=_torch_probe()
     probe=REFERENCE['reward_probe']
     for i,key in enumerate(VELOCITY_REWARD_TERM_NAMES):
         expected=torch.tensor(probe['rates'][key])*probe['weights'][key]
@@ -313,3 +323,20 @@ def test_g1_locomotion_model_matches_reference_physics():
             assert (Path(cfg.project_path)/resource['__PATH__'].removeprefix('res://')).is_file()
     finally:
         context.clear_scene()
+
+
+def test_yaw_experiment_changes_only_angular_reward_and_matches_both_backends():
+    original_cpu,original_state=_cpu_probe()
+    cpu,state=_cpu_probe('z',.5)
+    original_torch=_torch_probe()
+    tensor=_torch_probe('z',.5)
+    probe=REFERENCE['reward_probe']
+    command=np.asarray(probe['inputs']['command'],dtype=np.float32)
+    angular=np.asarray(probe['inputs']['angular_body'],dtype=np.float32)
+    expected=probe['weights']['track_angular_velocity']*np.exp(-(command[:,2]-angular[:,2])**2/.25)
+    np.testing.assert_allclose(state.reward_terms[:,1],expected,rtol=2e-5,atol=3e-6)
+    np.testing.assert_allclose(tensor._reward_terms[:,1].numpy(),expected,rtol=2e-5,atol=3e-6)
+    others=[i for i in range(len(VELOCITY_REWARD_TERM_NAMES)) if i!=1]
+    np.testing.assert_array_equal(state.reward_terms[:,others],original_state.reward_terms[:,others])
+    torch.testing.assert_close(tensor._reward_terms[:,others],original_torch._reward_terms[:,others],rtol=0,atol=0)
+    np.testing.assert_allclose(state.reward,tensor._reward.numpy(),rtol=2e-5,atol=3e-6)

@@ -205,3 +205,25 @@ class TrainingLog:
         logger.tot_time += duration
         self.statistics.begin_update()
         self.collection_start = None
+
+
+def angular_velocity_reward(env, std, command_name, axes):
+    """Optional comparison reward; the pinned mjlab source stays unchanged."""
+    error = helper('terms').angular_tracking_error(
+        env.command_manager.get_command(command_name),
+        env.scene['robot'].data.root_link_ang_vel_b, axes)
+    return torch.exp(-error / std**2)
+
+
+def configure_angular_tracking(cfg, axes, std):
+    if axes not in {'xyz', 'z'}:
+        raise ValueError('ang_vel_axes must be xyz or z')
+    import math
+    if not math.isfinite(std) or std <= 0:
+        raise ValueError('ang_vel_std must be finite and positive')
+    term = cfg.rewards['track_angular_velocity']
+    term.params['std'] = std
+    if axes == 'z' or term.func is angular_velocity_reward:
+        term.func = angular_velocity_reward
+        term.params['axes'] = axes
+    return {'axes': axes, 'std': std, 'weight': term.weight}
