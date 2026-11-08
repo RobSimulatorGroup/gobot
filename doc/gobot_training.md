@@ -346,3 +346,16 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。
 
 下一轮 G1 共同地形、初始分配和统一统计的命令见 [g1_shared_training.md](g1_shared_training.md)。
+
+## 直行偏航与检查点
+
+独立评测新增 `yaw_rate_bias_rad_s`（有符号的身体偏航角速度误差均值），保留原来的绝对误差 `yaw_error`。
+零转向的直行场景另外报告 `heading_drift_deg`、`heading_drift_abs_deg`、`heading_drift_max_deg`，
+分别为首次结束时的平均航向变化、平均绝对变化、全程最大绝对变化，单位为度。
+逐 episode 字段 `heading_change_deg` / `heading_change_max_deg` 正确跨越 ±180°，结束后不再累加。
+主动转向或变速序列没有直行航向基准，顶层 heading_drift 字段为 null；通过判据不变。
+
+每个 `--save-interval` 保留 `model_000499.pt` 等编号检查点及 manifest，同时更新 `latest.pt`。
+关闭评测也会保存历史，便于排查策略何时开始退步；不再只保留最后的 latest。
+
+本次 G1 偏航诊断见 [g1_flat_diagnosis.md](g1_flat_diagnosis.md)。

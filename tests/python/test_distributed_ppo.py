@@ -158,6 +158,8 @@ def test_two_worker_ppo(tmp_path, mode):
         assert 'rank 1' in status['error'] and 'actor' in status['error']
         checkpoint = torch.load(tmp_path / 'run' / 'latest.pt', weights_only=False)
         assert checkpoint['iter'] == 0
+        numbered = torch.load(tmp_path / 'run' / 'model_000000.pt', weights_only=False)
+        assert numbered['iter'] == 0
         assert not (tmp_path / 'run' / 'model_final.pt').exists()
         for role in ('actor', 'critic'):
             assert all(torch.isfinite(value).all() for value in checkpoint[f'{role}_state_dict'].values())
@@ -177,6 +179,12 @@ def test_two_worker_ppo(tmp_path, mode):
         assert 'Episode_Reward/track_linear_velocity' in metrics['log']
         assert sum(value for key, value in metrics['log'].items()
                    if key.startswith('Episode_Termination/')) == metrics['episodes_completed']
+    numbered = sorted((tmp_path / 'run').glob('model_[0-9]*.pt'))
+    assert len(numbered) == expected[0]
+    for index, path in enumerate(numbered):
+        stored = torch.load(path, weights_only=False)
+        assert stored['iter'] == index
+        assert path.with_suffix('.pt.manifest.json').is_file()
     checkpoint = torch.load(tmp_path / 'run' / 'model_final.pt', weights_only=False)
     assert len(checkpoint['infos']['rank_states']) == 2
     states = checkpoint['infos']['rank_states']

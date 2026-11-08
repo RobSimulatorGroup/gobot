@@ -527,7 +527,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 report('running', updates_completed=completed, elapsed_s=budget.elapsed, latest_metrics=metrics)
             distributed.on_main(log)
             if (iteration + 1) % exp.save_interval == 0:
-                save(directory / 'latest.pt')
+                save(directory / f'model_{iteration:06d}.pt', directory / 'latest.pt')
             if not no_eval and (iteration + 1) % exp.eval_interval == 0:
                 candidate = directory / f'candidate_{iteration:06d}.pt'
                 save(candidate)

@@ -67,13 +67,22 @@ def evaluation_scene(cfg, directory, seed, *, continuous=False, speed=3., second
     return 'res://'+str(scene_path.relative_to(root))
 
 
+def heading_angle(quaternion):
+    """World heading in radians from a wxyz quaternion."""
+    w, x, y, z = np.asarray(quaternion).T
+    return np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
 def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None, reference=None,
             route_half_length=3.25, route_half_width=3.5, warmup_s=2.):
     count = env.num_envs
     feet = len(env.cfg_obj.robot.feet)
     gait = (BipedGaitMetrics if feet == 2 else QuadrupedGaitMetrics)(count,env.step_dt)
     env.reset(seed=seed)
-    start=array(env.locomotion_state()['base_position'])[:,:2].copy()
+    initial_state=env.locomotion_state()
+    start=array(initial_state['base_position'])[:,:2].copy()
+    previous_heading=heading_angle(array(initial_state['base_quaternion']))
+    heading_change=np.zeros(count); heading_peak=np.zeros(count); signed_yaw_error=np.zeros(count)
     levels, types = map(array,env.terrain_assignments)
     centers=array(env.terrain_origins)[levels*env.terrain_grid_shape[1]+types,:2]
     command=np.asarray(command,dtype=np.float32)
@@ -105,7 +114,14 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
             if step*env.step_dt >= warmup_s:
                 tracking_errors[alive]+=instantaneous_error[alive]
                 tracking_samples[alive]+=1
-            yaw[alive]+=np.abs(physical['base_angular_velocity_body'][:,2]-current[2])[alive]
+            yaw_difference=physical['base_angular_velocity_body'][:,2]-current[2]
+            yaw[alive]+=np.abs(yaw_difference)[alive]
+            signed_yaw_error[alive]+=yaw_difference[alive]
+            heading=heading_angle(physical['base_quaternion'])
+            delta=heading-previous_heading
+            heading_change[alive]+=np.arctan2(np.sin(delta),np.cos(delta))[alive]
+            heading_peak[alive]=np.maximum(heading_peak[alive],np.abs(heading_change[alive]))
+            previous_heading=heading
             slip[alive]+=(np.square(physical['foot_velocity'][...,:2]).sum(-1)*contact).sum(1)[alive]
             progress[alive]+=(velocity@direction)[alive]
             command_speed_sum[alive]+=np.linalg.norm(current[:2])
@@ -178,6 +194,7 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
                       'fall_rate':float(falls[mask].mean()),
                       'terrain_pass_rate':float((reached & ~failed)[mask].mean()) if route else None,
                       'velocity_error':float(velocity_error[mask].mean())})
+    straight=not sequence and abs(command[2])<1.e-6 and np.linalg.norm(command[:2])>.05
     return {'command':command.tolist(),'sequence':sequence,'seed':seed,'steps':steps,'route':route,'admission':float(mobility.mean()),
             'natural_admission':float((mobility&natural).mean()),'survival':float((~failed).mean()),
             'episodes':count,'fall_rate':float(falls.mean()),'numerical_failure_rate':float(numerical.mean()),
@@ -188,11 +205,18 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
             'velocity_error_after_warmup':float((tracking_errors[tracking_samples>0]/tracking_samples[tracking_samples>0]).mean()) if (tracking_samples>0).any() else None,
             'tracking_episodes':int((tracking_samples>0).sum()),
             'velocity_error':float(velocity_error.mean()),'yaw_error':float(yaw_error.mean()),
+            'yaw_rate_bias_rad_s':float((signed_yaw_error/divisor).mean()),
+            'heading_drift_deg':float(np.rad2deg(heading_change).mean()) if straight else None,
+            'heading_drift_abs_deg':float(np.rad2deg(np.abs(heading_change)).mean()) if straight else None,
+            'heading_drift_max_deg':float(np.rad2deg(heading_peak).max()) if straight else None,
             'cross_track_max_m':float(deviation.max()),'foot_slip_m2_s2':float((slip/divisor).mean()),
             'minimum_base_clearance_m':float(clearance.min()),'gait':{k:np.asarray(v).mean(axis=0).tolist() for k,v in gait_data.items()},
             'failure_reasons':{str(i):int((reasons==i).sum()) for i in np.unique(reasons)},'cells':cells,
             'episode_metrics':{'admitted':mobility.tolist(),'natural':natural.tolist(),
                                'velocity_error':velocity_error.tolist(),'yaw_error':yaw_error.tolist(),
+                               'yaw_rate_bias_rad_s':(signed_yaw_error/divisor).tolist(),
+                               'heading_change_deg':np.rad2deg(heading_change).tolist(),
+                               'heading_change_max_deg':np.rad2deg(heading_peak).tolist(),
                                'fell':falls.tolist(),'numerical_failure':numerical.tolist(),
                                'off_route':off_route.tolist(),'reached':reached.tolist(),
                                'duration_s':(samples*env.step_dt).tolist(),

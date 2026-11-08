@@ -33,12 +33,13 @@ def test_route_outcomes_distinguish_falls_departures_and_numerical_failures():
             return {'actor': np.zeros((5, 1))}
 
         def locomotion_state(self):
-            return {'base_position': np.tile([-3.25, 0, .76], (5, 1))}
+            return {'base_position': np.tile([-3.25, 0, .76], (5, 1)),
+                    'base_quaternion': np.tile([1., 0., 0., 0.], (5, 1))}
 
         def step(self, action):
             self.steps += 1
             position = np.array([[3.26, 0, .76], [0, 0, .1], [0, 3.6, .76], [0, 0, .76], [-3.25, 0, .76]])
-            state = {'base_position': position, 'base_linear_velocity_body': np.tile([.8, 0, 0], (5, 1)),
+            state = {'base_position': position, 'base_quaternion': np.tile([1.,0.,0.,0.], (5,1)), 'base_linear_velocity_body': np.tile([.8, 0, 0], (5, 1)),
                      'base_angular_velocity_body': np.zeros((5, 3)), 'foot_force': np.zeros((5, 2, 3)),
                      'foot_position': np.zeros((5, 2, 3)), 'foot_velocity': np.zeros((5, 2, 3)),
                      'base_clearance': np.full(5, .76)}
@@ -102,3 +103,60 @@ def test_model_transfer_is_explicit_and_keeps_control_checks():
             validate_policy(wrong_control, env, cfg, allow_model_change=True)
     finally:
         env.close()
+
+
+def test_signed_turn_bias_and_unwrapped_heading_stop_at_first_episode_end():
+    class Env:
+        num_envs = 2
+        step_dt = 1.
+        cfg_obj = NS(robot=NS(feet=('left', 'right')))
+        terrain_grid_shape = (1, 1)
+        terrain_type_names = ('flat',)
+        terrain_origins = np.zeros((1, 3))
+        terrain_assignments = (np.zeros(2, int), np.zeros(2, int))
+
+        @staticmethod
+        def quaternion(degrees):
+            half = np.deg2rad(degrees) / 2
+            return np.stack((np.cos(half), np.zeros(2), np.zeros(2), np.sin(half)), 1)
+
+        def reset(self, seed=None):
+            self.steps = 0
+
+        def set_command(self, command):
+            pass
+
+        def get_observations(self):
+            return {'actor': np.zeros((2, 1))}
+
+        def locomotion_state(self):
+            return {'base_position': np.tile([-3.25, 0, .76], (2, 1)),
+                    'base_quaternion': self.quaternion([179., -179.])}
+
+        def step(self, action):
+            self.steps += 1
+            # World 0 ends after two steps, then autoresets to a different heading.
+            angle = [-179., 179.] if self.steps == 1 else [-177., 177.] if self.steps == 2 else [30., 175.]
+            state = {'base_position': np.tile([-3.25, 0, .76], (2, 1)),
+                     'base_quaternion': self.quaternion(angle),
+                     'base_linear_velocity_body': np.tile([.8,0,0], (2,1)),
+                     'base_angular_velocity_body': np.array([[0,0,.1], [0,0,-.1]]),
+                     'foot_force': np.zeros((2,2,3)), 'foot_position': np.zeros((2,2,3)),
+                     'foot_velocity': np.zeros((2,2,3)), 'base_clearance': np.ones(2)*.76}
+            ended = self.steps == 2
+            return NS(terminated=np.array([ended,False]), truncated=np.zeros(2,bool),
+                      info={'transition_state':state,'reset_reason':np.array([1 if ended else 0,0])})
+
+    report = rollout(Env(), lambda obs: np.zeros((2,1)), command=(.8,0,0), steps=3)
+    np.testing.assert_allclose(report['episode_metrics']['heading_change_deg'], [4.,-6.], atol=1e-6)
+    np.testing.assert_allclose(report['episode_metrics']['heading_change_max_deg'], [4.,6.], atol=1e-6)
+    assert report['heading_drift_deg'] == pytest.approx(-1.)
+    assert report['heading_drift_abs_deg'] == pytest.approx(5.)
+    assert report['heading_drift_max_deg'] == pytest.approx(6.)
+    np.testing.assert_allclose(report['episode_metrics']['yaw_rate_bias_rad_s'], [.1,-.1])
+    assert report['yaw_rate_bias_rad_s'] == pytest.approx(0.)
+    assert report['yaw_error'] == pytest.approx(.1)
+    # Deliberate turning is not classified as straight-line heading drift.
+    turning = rollout(Env(), lambda obs: np.zeros((2,1)), command=(.8,0,.2), steps=3)
+    assert turning['heading_drift_deg'] is None
+    assert turning['heading_drift_max_deg'] is None
