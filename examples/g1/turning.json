@@ -1,7 +1,7 @@
 {
   "env": {
     "rewards": {
-      "ang_vel_axes": "z",
+      "angular_tracking": "planar",
       "ang_vel_std": 0.5
     }
   },

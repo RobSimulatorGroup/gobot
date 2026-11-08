@@ -69,6 +69,12 @@ def build_policy_manifest(
             ),
             "bound_gait_reward": float(cfg.rewards.bound_gait),
             "run_progress_reward": float(cfg.rewards.run_progress),
+            "angular_tracking": {
+                "mode": cfg.rewards.angular_tracking,
+                "std": float(cfg.rewards.ang_vel_std),
+                "linear_std": float(cfg.rewards.lin_vel_std),
+                "weight": float(cfg.rewards.track_angular_velocity),
+            },
         },
     )
 

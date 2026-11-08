@@ -207,23 +207,26 @@ class TrainingLog:
         self.collection_start = None
 
 
-def angular_velocity_reward(env, std, command_name, axes):
+def angular_velocity_reward(env, std, command_name, mode, lin_vel_std):
     """Optional comparison reward; the pinned mjlab source stays unchanged."""
+    data = env.scene['robot'].data
     error = helper('terms').angular_tracking_error(
-        env.command_manager.get_command(command_name),
-        env.scene['robot'].data.root_link_ang_vel_b, axes)
-    return torch.exp(-error / std**2)
+        env.command_manager.get_command(command_name), data.root_link_lin_vel_b,
+        data.root_link_ang_vel_b, mode=mode, angular_variance=std**2,
+        linear_variance=lin_vel_std**2)
+    return torch.exp(-error)
 
 
-def configure_angular_tracking(cfg, axes, std):
-    if axes not in {'xyz', 'z'}:
-        raise ValueError('ang_vel_axes must be xyz or z')
+def configure_angular_tracking(cfg, mode, std):
+    if mode not in {'body', 'planar'}:
+        raise ValueError('angular_tracking must be body or planar')
     import math
     if not math.isfinite(std) or std <= 0:
         raise ValueError('ang_vel_std must be finite and positive')
     term = cfg.rewards['track_angular_velocity']
+    linear_std = cfg.rewards['track_linear_velocity'].params['std']
     term.params['std'] = std
-    if axes == 'z' or term.func is angular_velocity_reward:
+    if mode == 'planar' or term.func is angular_velocity_reward:
         term.func = angular_velocity_reward
-        term.params['axes'] = axes
-    return {'axes': axes, 'std': std, 'weight': term.weight}
+        term.params.update(mode=mode, lin_vel_std=linear_std)
+    return {'mode': mode, 'std': std, 'linear_std': linear_std, 'weight': term.weight}

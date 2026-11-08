@@ -1312,7 +1312,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         active = (command_speed > command_threshold).astype(np.float32)
 
         lin_error = np.sum(np.square(command[:, :2] - lin_vel[:, :2]), axis=1) + np.square(lin_vel[:, 2])
-        ang_error = angular_tracking_error(command, ang_vel, reward_cfg.ang_vel_axes)
+        ang_error = angular_tracking_error(command, lin_vel, ang_vel,
+            mode=reward_cfg.angular_tracking, angular_variance=ang_vel_std2, linear_variance=lin_vel_std2)
         terrain_up_b = self._terrain_up_body_from_scan(state) if reward_cfg.upright_reference == "terrain" else _quat_rotate_inv_batch(
             np.broadcast_to(np.array([0., 0., 1.], dtype=np.float32), (self.num_envs, 3)), base_quaternion)
         body_ang_vel = np.asarray(state.base_angular_velocity, dtype=np.float32)
@@ -1350,7 +1351,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         soft_landing = np.sum(np.asarray(state.landing_force, dtype=np.float32), axis=1)
 
         terms = self._zero_reward_terms(state)
-        linear_tracking,yaw_tracking = np.exp(-lin_error/lin_vel_std2),np.exp(-ang_error/ang_vel_std2)
+        linear_tracking,yaw_tracking = np.exp(-lin_error/lin_vel_std2),np.exp(-ang_error)
         self._set_reward_term(terms, "track_linear_velocity", weights[0] * linear_tracking)
         self._set_reward_term(terms, "track_angular_velocity", weights[1] * yaw_tracking)
         self._set_reward_term(terms, "upright", weights[2] * np.exp(-upright_error / upright_std2))

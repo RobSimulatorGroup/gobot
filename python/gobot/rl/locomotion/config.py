@@ -109,7 +109,7 @@ class VelocityRewardCfg:
     bound_gait_trot_penalty: float = 0.5
     lin_vel_std: float = math.sqrt(0.25)
     ang_vel_std: float = math.sqrt(0.5)
-    ang_vel_axes: Literal["xyz", "z"] = "xyz"
+    angular_tracking: Literal["body", "planar"] = "body"
     upright_std: float = math.sqrt(0.2)
     command_threshold: float = 0.05
     foot_clearance_target_height: float = 0.1
@@ -127,8 +127,8 @@ class VelocityRewardCfg:
     pose_std_running_calf: float = 0.6
 
     def __post_init__(self):
-        if self.ang_vel_axes not in {"xyz", "z"}:
-            raise ValueError('ang_vel_axes must be xyz or z')
+        if self.angular_tracking not in {"body", "planar"}:
+            raise ValueError('angular_tracking must be body or planar')
         if not math.isfinite(self.ang_vel_std) or self.ang_vel_std <= 0:
             raise ValueError('ang_vel_std must be finite and positive')
 

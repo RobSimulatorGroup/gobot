@@ -1858,7 +1858,9 @@ class WarpVelocityEnv:
             + linear_body[:, 2].square()
         )
         angular_error = angular_tracking_error(
-            self._command, angular_body, reward_cfg.ang_vel_axes
+            self._command, linear_body, angular_body, mode=reward_cfg.angular_tracking,
+            angular_variance=max(float(reward_cfg.ang_vel_std)**2, 1.e-6),
+            linear_variance=max(float(reward_cfg.lin_vel_std)**2, 1.e-6)
         )
         terrain_normal = self._terrain_normal_world() if reward_cfg.upright_reference == "terrain" else self._terrain_up_world
         terrain_up_body = _quat_apply_inverse(self._arrays["xquat"][:, self._torso_body_id], terrain_normal)
@@ -1940,7 +1942,7 @@ class WarpVelocityEnv:
         terms = self._reward_terms
         terms.zero_()
         linear_tracking = torch.exp(-linear_error / max(float(reward_cfg.lin_vel_std)**2,1.e-6))
-        yaw_tracking = torch.exp(-angular_error / max(float(reward_cfg.ang_vel_std)**2,1.e-6))
+        yaw_tracking = torch.exp(-angular_error)
         terms[:,0] = self._reward_weights[0] * linear_tracking
         terms[:,1] = self._reward_weights[1] * yaw_tracking
         terms[:, 2] = self._reward_weights[2] * torch.exp(

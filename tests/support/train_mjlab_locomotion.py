@@ -75,7 +75,7 @@ def main():
     parser.add_argument('--num-envs', type=positive, default=1024, help='environments per GPU')
     parser.add_argument('--iterations', type=positive, default=18000)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--ang-vel-axes', choices=('xyz', 'z'), default='xyz')
+    parser.add_argument('--angular-tracking', choices=('body', 'planar'), default='body')
     parser.add_argument('--ang-vel-std', type=float, default=math.sqrt(.5))
     parser.add_argument('--save-interval', type=positive, default=500)
     parser.add_argument('--resume', type=Path, help='Continue this comparison checkpoint to --iterations total updates')
@@ -117,7 +117,7 @@ def main():
     local_rank = int(os.environ.get('LOCAL_RANK', '0'))
     world_size = int(os.environ.get('WORLD_SIZE', '1'))
     cfg = unitree_g1_rough_env_cfg()
-    angular_tracking = configure_angular_tracking(cfg, args.ang_vel_axes, args.ang_vel_std)
+    angular_tracking = configure_angular_tracking(cfg, args.angular_tracking, args.ang_vel_std)
     cfg.scene.num_envs = args.num_envs
     cfg.seed = args.seed + rank
     import mujoco_warp as mjw

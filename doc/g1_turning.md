@@ -1,15 +1,26 @@
 # G1 转向跟踪对照
 
 原 Gobot / mjlab 基线已经使用相同的三轴角速度奖励，但它们的独立训练结果仍有持续偏航。
-本实验只修改角速度奖励项：跟踪身体 z 轴角速度，不在同一项中混合滚转和俯仰速度，并将 std 从 sqrt(0.5) 改为 0.5。
+本实验只修改角速度奖励项：同时要求水平速度和身体 z 轴角速度跟上指令，不在同一项中混合滚转和俯仰速度，并将 yaw std 从 sqrt(0.5) 改为 0.5。
 奖励权重仍为 2，姿态、身体摆动、动作平滑度等奖励保留。
 
 - 原基线：`2 * exp(-(wx² + wy² + (wz-command_wz)²) / 0.5)`。
-- 转向对照：`2 * exp(-(wz-command_wz)² / 0.25)`。
+- 转向对照：`2 * exp(-(wz-command_wz)² / 0.25 - ((vx-command_vx)² + (vy-command_vy)²) / 0.25)`。
 
-CPU、Warp 和 mjlab 对照入口调用同一个角速度误差函数。默认 `ang_vel_axes="xyz"` 保留原基线；
+只有偏航准确但停着不走，不能获得高分；当平移命令本身为零时，正常保留原地转向和站立任务。
+
+CPU、Warp 和 mjlab 对照入口调用同一个角速度误差函数。默认 `angular_tracking="body"` 保留原基线；
 `examples/g1/turning.json` 显式选择新奖励。它是一个双方一致的新实验，不是 mjlab 上游原任务已经修好了直行。
 本改动不添加航向控制器，也不把评测中的零转向偷偷换成纠偏指令。现有 checkpoint 的动作不会因此改变，需要训练新策略。
+
+## 短对照筛查
+
+已做一次配对的 500 更新短微调：原奖励控制组与只跟踪 yaw 的候选组使用同一个 actor 起点、
+相同的 4 × 512 环境和采样设置。只跟踪 yaw 的候选在 0.8 m/s 档几乎停住（速度误差 0.799 m/s），
+虽然偏航仅约 2°，仍未通过验收，已否决。这个结果促使本配置加入水平速度条件，避免奖励停走。
+只跟踪 yaw 的临时配置已删除，原始短对照日志留在 `logs/g1_turning_audit/`。
+
+下面的完整训练命令是新目标的从头实验；不能把短微调结果当作已经解决偏航。
 
 ## 从头训练
 
@@ -36,7 +47,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
   --terrain-reference ../logs/g1_training_terrain.json \
-  --ang-vel-axes z --ang-vel-std 0.5 \
+  --angular-tracking planar --ang-vel-std 0.5 \
   --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
   --output logs/g1_turning_seed42
 ```
