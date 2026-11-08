@@ -126,6 +126,7 @@ python tests/support/evaluate_mjlab_locomotion.py \
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
+  --terrain-reference ../logs/g1_training_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
   --output logs/g1_comparison_seed42
 ```
@@ -138,3 +139,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 `Solver/iterations_limit_fraction` / `Solver/linesearch_limit_fraction`。比例按全体 GPU 上所有环境的
 物理子步和 forward 求解调用加权，reset 清理前已收集结果，其余容量警告保留。
 这改变日志形式，不证明求解器已经收敛。需要提高迭代参数时应作为单独实验记录。
+
+该训练入口现已要求共同地形文件，并统一全卡统计。先按 [g1_shared_training.md](g1_shared_training.md) 导出地形，再使用新输出目录从头建立下一轮基线。

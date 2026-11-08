@@ -19,6 +19,7 @@ class LocomotionTrainConfig:
     initialize: Path | None = None
     budget_file: Path | None = None
     no_eval: bool = False
+    terrain_reference: Path | None = None
     # Partial overrides of the selected task/agent defaults. Python callers may
     # also supply a complete VelocityTaskCfg as env.
     env: Any = field(default_factory=dict)
@@ -49,6 +50,11 @@ class LocomotionTrainConfig:
 
     def validate(self):
         self.experiment.__post_init__()
+        if self.terrain_reference is not None:
+            if self.experiment.stage != 'rough' or self.experiment.recipe != 'baseline':
+                raise ValueError('--terrain-reference requires rough baseline training')
+            from gobot.rl.locomotion.terrain_reference import load
+            load(self.terrain_reference)
         if self.resume and self.initialize:
             raise ValueError("choose --resume or --initialize, not both")
         if self.env and not self.no_eval:
@@ -82,6 +88,7 @@ def _arguments(parser):
         parser.add_argument("--" + name, type=kind)
     parser.add_argument("--initialize", "--fork", dest="initialize", type=Path)
     parser.add_argument("--budget-file", type=Path)
+    parser.add_argument("--terrain-reference", type=Path, help="Verify and sample the shared authored training terrain")
     parser.add_argument("--no-eval", action="store_true", default=None)
     parser.add_argument("--dataset", type=Path, help="AMP motion feature dataset")
 
@@ -94,7 +101,7 @@ def _configure(cfg, args):
         changes["motion_dataset"] = str(args.dataset)
     cfg = replace(cfg, experiment=replace(cfg.experiment, **changes))
     return replace(cfg, **{key: getattr(args, key) for key in (
-        "initialize", "budget_file", "no_eval"
+        "initialize", "budget_file", "no_eval", "terrain_reference"
     ) if getattr(args, key) is not None})
 
 
@@ -103,7 +110,7 @@ def _run(cfg):
     return run(
         cfg.experiment, cfg.output, backend=cfg.backend, device=cfg.device,
         budget_file=cfg.budget_file, resume=cfg.resume, initialize=cfg.initialize,
-        no_eval=cfg.no_eval,
+        no_eval=cfg.no_eval, terrain_reference=cfg.terrain_reference,
         task_cfg=cfg.resolve_env() if cfg.env else None,
         agent_cfg=cfg.resolve_agent() if cfg.agent else None,
     )

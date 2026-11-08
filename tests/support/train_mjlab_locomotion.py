@@ -68,6 +68,7 @@ class SolverStatistics:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--terrain-reference', type=Path, required=True, help='Authored terrain exported by export_training_terrain.py')
     parser.add_argument('--source', type=Path, default=Path.cwd())
     parser.add_argument('--output', type=Path, default=Path('logs/g1_comparison_seed42'))
     parser.add_argument('--num-envs', type=positive, default=1024, help='environments per GPU')
@@ -77,6 +78,9 @@ def main():
     parser.add_argument('--resume', type=Path, help='Continue this comparison checkpoint to --iterations total updates')
     parser.add_argument('--check', action='store_true', help='check dependencies and configuration without training')
     args = parser.parse_args()
+    from mjlab_training import helper, training_terrain, set_initial_terrain, TrainingLog
+    terrain_module = helper('terrain_reference')
+    terrain_data = terrain_module.load(args.terrain_reference)
     source = args.source.resolve()
     revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
     if revision != REFERENCE:
@@ -136,6 +140,8 @@ def main():
                 'total_transitions': args.iterations * agent.num_steps_per_env * args.num_envs * world_size,
                 'capacities': {'njmax': 1500, 'nconmax': 70, 'epa_horizon': 64},
                 'solver_warnings': 'global_fraction_per_update',
+                'statistics': 'all_workers_completed_episodes', 'contact_timing': 'physics_dt',
+                'terrain_sha256': terrain_data['sha256'],
                 'allow_tf32': False, 'output': str(args.output.resolve())}
     if rank == 0:
         print(json.dumps(settings, indent=2), flush=True)
@@ -147,8 +153,8 @@ def main():
             raise FileNotFoundError(args.resume)
         previous = json.loads((args.resume.parent / 'comparison.json').read_text())
         for key in ('reference_revision', 'versions', 'seed', 'world_size', 'num_envs_per_gpu',
-                    'num_steps_per_env', 'capacities', 'allow_tf32'):
-            if previous[key] != settings[key]:
+                    'num_steps_per_env', 'capacities', 'allow_tf32', 'terrain_sha256', 'contact_timing'):
+            if previous.get(key) != settings[key]:
                 raise ValueError(f'resume changes {key}')
         checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
         if int(checkpoint['iter']) + 1 >= args.iterations:
@@ -159,16 +165,29 @@ def main():
             raise RuntimeError(f'output is not empty: {output}; choose a new output directory')
         output.mkdir(parents=True, exist_ok=True)
         (output / 'comparison.json').write_text(json.dumps(settings, indent=2) + '\n')
+        (output / 'training_terrain.json').write_text(json.dumps(terrain_data, indent=2) + '\n')
         dump_yaml(output / 'params/env.yaml', asdict(cfg))
         dump_yaml(output / 'params/agent.yaml', asdict(agent))
     torch.set_num_threads(int(os.environ.get('OMP_NUM_THREADS', '4')))
     torch.cuda.set_device(local_rank)
     configure_torch_backends(allow_tf32=False)
-    env = ManagerBasedRlEnv(cfg, device=f'cuda:{local_rank}')
+    with training_terrain(cfg, terrain_data):
+        env = ManagerBasedRlEnv(cfg, device=f'cuda:{local_rank}')
     try:
         solver_statistics = SolverStatistics(env.sim)
+        initial_digest = set_initial_terrain(env, terrain_data, args.seed + rank)
         wrapped = RslRlVecEnvWrapper(env, clip_actions=agent.clip_actions)
         runner = VelocityOnPolicyRunner(wrapped, asdict(agent), str(output), f'cuda:{local_rank}')
+        initial_digests = [initial_digest]
+        if torch.distributed.is_initialized():
+            initial_digests = [None] * world_size
+            torch.distributed.all_gather_object(initial_digests, initial_digest)
+        if rank == 0:
+            (output / 'terrain.json').write_text(json.dumps({'sha256': terrain_data['sha256'],
+                'seed': terrain_data['seed'], 'initial_assignments': initial_digests}, indent=2) + '\n')
+            # Store the resolved terrain/config after applying the shared generation input.
+            dump_yaml(output / 'params/env.yaml', asdict(cfg))
+        TrainingLog(env, runner, agent, output)
         solver_statistics.attach(runner)
         if args.resume is not None:
             runner.load(str(args.resume))

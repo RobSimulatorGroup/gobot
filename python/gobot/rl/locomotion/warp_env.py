@@ -849,9 +849,6 @@ class WarpVelocityEnv:
         self._last_air_time = torch.zeros_like(self._current_air_time)
         self._current_contact_time = torch.zeros_like(self._current_air_time)
         self._last_contact_time = torch.zeros_like(self._current_air_time)
-        self._contact_last_time = torch.zeros(
-            self.num_envs, dtype=torch.float32, device=self._torch_device
-        )
         self._contact_histories = {
             name: torch.zeros(
                 (
@@ -1446,7 +1443,6 @@ class WarpVelocityEnv:
         self._last_air_time[env_ids] = 0.0
         self._current_contact_time[env_ids] = 0.0
         self._last_contact_time[env_ids] = 0.0
-        self._contact_last_time[env_ids] = self._arrays["time"][env_ids]
         for history in self._contact_histories.values():
             history[env_ids] = 0.0
 
@@ -1684,8 +1680,9 @@ class WarpVelocityEnv:
         self._feet_contact["force"].zero_().scatter_add_(1, self._foot_shape_index[None, :, None].expand(self.num_envs, -1, 3), self._raw_feet_contact["force"])
 
     def _update_contact_state_substep(self) -> None:
-        current_time = self._arrays["time"]
-        elapsed = (current_time - self._contact_last_time).unsqueeze(-1)
+        # Called once per physics substep. Float32 clock subtraction loses
+        # precision during long episodes and can miss the first-contact window.
+        elapsed = self.physics_dt
         self._refresh_foot_contacts()
         in_contact = self._feet_contact["found"] > 0
         first_contact = (self._current_air_time > 0.0) & in_contact
@@ -1718,7 +1715,6 @@ class WarpVelocityEnv:
                 torch.zeros_like(self._current_contact_time),
             )
         )
-        self._contact_last_time.copy_(current_time)
         cursor = self._contact_history_cursor
         for name, values in self._collision_contacts.items():
             self._contact_histories[name][:, :, cursor, :].copy_(values["force"])

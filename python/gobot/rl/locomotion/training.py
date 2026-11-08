@@ -281,7 +281,7 @@ def _evaluate_checkpoint(exp, candidate, output, *, distributed, backend, budget
 
 
 def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
-        resume=None, initialize=None, no_eval=False, task_cfg=None, agent_cfg=None):
+        resume=None, initialize=None, no_eval=False, task_cfg=None, agent_cfg=None, terrain_reference=None):
     """Train velocity PPO, one environment batch per process under torchrun.
 
     RSL-RL synchronizes PPO gradients, adaptive learning rates and observation
@@ -296,6 +296,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         raise ValueError(f'unsupported locomotion training backend {backend!r}')
     if task_cfg is not None and not no_eval:
         raise ValueError('custom task_cfg requires no_eval=True; the built-in independent evaluator only supports built-in presets')
+    if terrain_reference is not None and (exp.stage != 'rough' or exp.recipe != 'baseline'):
+        raise ValueError('--terrain-reference requires rough baseline training')
     if resume and initialize:
         raise ValueError('choose resume or initialize, not both')
     cfg = deepcopy(task_cfg) if task_cfg is not None else task_config(exp)
@@ -366,6 +368,24 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             resources.enter_context(wp.ScopedDevice(device))
         env = make_velocity_env(cfg, backend=backend, num_envs=exp.num_envs, device=device,
                                 seed=seed, collect_step_extras=False, collect_training_stats=True)
+        terrain_info = None
+        if terrain_reference is not None:
+            from .terrain_reference import load, verify_environment, initial_assignments, assignment_digest
+            terrain_data = distributed.on_main(lambda: load(terrain_reference))
+            error = None
+            try:
+                verify_environment(env, terrain_data)
+            except Exception as caught:
+                error = caught
+            distributed.check_error(error, phase='training terrain')
+            levels, types = initial_assignments(terrain_data, exp.num_envs, seed)
+            env.set_terrain_assignments(levels, types, fixed=False)
+            env.reset(seed=seed)
+            assignments = distributed.gather(assignment_digest(levels, types))
+            terrain_info = {'sha256': terrain_data['sha256'], 'seed': terrain_data['seed'],
+                            'initial_assignments': assignments}
+            distributed.on_main(lambda: atomic_json(directory / 'terrain.json', terrain_info))
+            distributed.on_main(lambda: atomic_json(directory / 'training_terrain.json', terrain_data))
         use_amp = 'motion_prior_cfg' in config['algorithm']
         wrapper = RslRlVecEnvWrapper(env, device=device)
         manifest = build_policy_manifest(wrapper, cfg, config, Path(cfg.project_path))
@@ -384,7 +404,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                      'eval_interval', 'eval_envs', 'eval_steps', 'eval_seed'):
             semantic.pop(name, None)
         signature_data = {'experiment': semantic, 'task': task_identity,
-                          'backend': backend, 'agent': effective_agent_config}
+                          'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
+                          'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
         distributed.on_main(lambda: atomic_json(directory / 'training_signature.json', {'signature': signature}))
         if use_amp and alg.reference.metadata['robot_digest'] != manifest.scene_digest:
@@ -438,7 +459,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                     POLICY_MANIFEST_KEY: manifest.metadata(), 'rank_states': rank_states,
                     'world_size': distributed.world_size, 'num_envs_per_rank': exp.num_envs,
                     'experiment': exp.metadata(), 'source_digest': source_digest, 'best_score': best,
-                    'validation': last_validation, 'training_signature': signature})
+                    'validation': last_validation, 'training_signature': signature,
+                    'terrain_sha256': terrain_info['sha256'] if terrain_info else None})
                 for path in paths:
                     temporary = path.with_suffix('.tmp')
                     torch.save(payload, temporary)
@@ -453,7 +475,6 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 iteration -= 1
                 reason = stopped
                 break
-            tick = time.monotonic()
             clip_rates, saturation, numerical_resets = [], [], []
             statistics.begin_update()
 
@@ -484,7 +505,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             sums = distributed.reduce([reset_count, *averaged.values()])
             summary = statistics.summarize(distributed, env)
             duration, std_max, collection_s, learning_s = distributed.reduce(
-                [time.monotonic() - tick, float(effective_std.max()), timings['collection_s'], timings['learning_s']], maximum=True)
+                [timings['collection_s'] + timings['learning_s'], float(effective_std.max()),
+                 timings['collection_s'], timings['learning_s']], maximum=True)
             iteration_seconds += duration
             steps_per_update = exp.num_envs * distributed.world_size * config['num_steps_per_env']
             metrics = {'iteration': iteration, 'total_steps': (iteration + 1) * steps_per_update,
