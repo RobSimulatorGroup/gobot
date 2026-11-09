@@ -1,4 +1,4 @@
-"""Evaluation counts first-episode outcomes and uses traversable spawn platforms."""
+"""Evaluation counts first-episode outcomes and checks spawn collisions."""
 from pathlib import Path
 from types import SimpleNamespace as NS
 import os
@@ -78,7 +78,22 @@ def test_all_terrain_cells_have_valid_evaluation_spawns(backend):
                 assert bool(torch.isfinite(torch.as_tensor(observations['actor'])).all())
                 state = env.locomotion_state()
                 clearance = torch.tensor(np.array(state['base_clearance'])) if backend == 'mujoco-cpu' else state['base_clearance']
-                assert bool(((clearance > .7) & (clearance < .85)).all())
+                assert bool(((clearance > .7) & (clearance < 1.35)).all())
+                # Base height alone misses toes intersecting an uphill surface.
+                import mujoco
+                model = mujoco.MjModel.from_xml_string(env.compiled_artifact.content)
+                data = mujoco.MjData(model)
+                prefix = env.compiled_artifact.robot_prefix(cfg.robot_name)
+                joint_qpos = [model.jnt_qposadr[model.joint(prefix + name).id] for name in env.joint_names]
+                def numpy(value):
+                    return value.detach().cpu().numpy() if torch.is_tensor(value) else np.asarray(value)
+                for position, quaternion, joints in zip(numpy(state['base_position']),
+                        numpy(state['base_quaternion']), numpy(state['joint_position']), strict=True):
+                    data.qpos[:] = model.qpos0
+                    data.qpos[:3], data.qpos[3:7], data.qpos[joint_qpos] = position, quaternion, joints
+                    mujoco.mj_fwdPosition(model, data)
+                    ground = [c.dist for c in data.contact if 0 in model.geom_bodyid[c.geom]]
+                    assert min(ground, default=0.) >= -1.e-5
         finally:
             env.close()
 

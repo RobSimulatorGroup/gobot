@@ -1621,6 +1621,19 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             self._reset_push_timer(env_id)
             self._reset_reasons[env_id] = int(reasons[row])
 
+        if any(self.cfg_obj.spawn_offset_xy):
+            if not hasattr(self, "_spawn_placement"):
+                from gobot.sim.providers import CompiledSceneArtifact
+                from gobot.sim.providers.mujoco_spawn import MuJoCoSpawnPlacement
+                if not hasattr(self, "compiled_artifact"):
+                    self.compiled_artifact = CompiledSceneArtifact.from_mapping(
+                        self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu))
+                self._spawn_placement = MuJoCoSpawnPlacement(self.compiled_artifact,
+                    robot_name=self.cfg_obj.robot_name, base_link=self.cfg_obj.base_link,
+                    joint_names=self.joint_names)
+            base_positions = self._spawn_placement.positions(
+                base_positions, base_orientations, joint_positions)
+
         self.backend.reset_robot_states(
             env_ids.tolist(),
             base_positions=base_positions,

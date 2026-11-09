@@ -1433,6 +1433,17 @@ class WarpVelocityEnv:
             if bool((scan["distances"][env_ids, center] < 0).any()):
                 raise RuntimeError("evaluation spawn is outside terrain collision geometry")
             positions[:, 2] = scan["hit_pos_w"][env_ids, center, 2] + self.cfg_obj.base_clearance + z_offset
+            # A center ray alone can bury toes in an uphill surface. Check the
+            # full robot pose against scene geometry before starting evaluation.
+            if not hasattr(self, "_spawn_placement"):
+                from gobot.sim.providers.mujoco_spawn import MuJoCoSpawnPlacement
+                self._spawn_placement = MuJoCoSpawnPlacement(self.compiled_artifact,
+                    robot_name=self.cfg_obj.robot_name, base_link=self.cfg_obj.base_link,
+                    joint_names=self.joint_names)
+            corrected = self._spawn_placement.positions(positions.cpu().numpy(),
+                self._reset_qpos[env_ids, 3:7].cpu().numpy(),
+                self._reset_qpos[env_ids[:, None], self._joint_qpos_ids].cpu().numpy())
+            positions.copy_(torch.as_tensor(corrected, device=self._torch_device))
             self._reset_qpos[env_ids, 2] = positions[:, 2]
             self.provider.reset(self._reset_mask, qpos=self._reset_qpos, qvel=self._reset_qvel,
                                 ctrl=self._reset_ctrl, forward=False)
