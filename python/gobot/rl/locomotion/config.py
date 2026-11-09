@@ -98,8 +98,8 @@ class VelocityRewardCfg:
     foot_slip: float = -0.1
     soft_landing: float = -1.0e-5
     self_collisions: float = -0.1
-    shank_collision: float = -0.1
-    trunk_head_collision: float = -0.1
+    shank_collision: float = 0.0
+    trunk_head_collision: float = 0.0
     run_progress: float = 0.0
     bound_gait: float = 0.0
     bound_gait_motion_std: float = 1.0
@@ -115,27 +115,21 @@ class VelocityRewardCfg:
     soft_joint_pos_limit_factor: float = 0.9
     pose_walking_threshold: float = 0.05
     pose_running_threshold: float = 1.5
-    pose_std_standing: Mapping[str, float] = field(default_factory=dict)
-    pose_std_walking: Mapping[str, float] = field(default_factory=dict)
-    pose_std_running: Mapping[str, float] = field(default_factory=dict)
-    pose_std_standing_hip_thigh: float = 0.05
-    pose_std_standing_calf: float = 0.1
-    pose_std_walking_hip_thigh: float = 0.3
-    pose_std_walking_calf: float = 0.6
-    pose_std_running_hip_thigh: float = 0.3
-    pose_std_running_calf: float = 0.6
+    pose_std_standing: Mapping[str, float] = field(default_factory=lambda: {".*": 0.05})
+    pose_std_walking: Mapping[str, float] = field(default_factory=lambda: {".*": 0.3})
+    pose_std_running: Mapping[str, float] = field(default_factory=lambda: {".*": 0.3})
 
 
 @dataclass
 class VelocityIllegalContactCfg:
     enabled: bool = True
-    terminate_on_thigh: bool = True
+    terminate_on_thigh: bool = False
     terminate_on_trunk_contact: bool = False
     ground_force_threshold: float = 10.0
     self_collision_force_threshold: float = 10.0
-    thigh_shape_patterns: tuple[str, ...] = (r".*_thigh_collision[123]",)
-    shank_shape_patterns: tuple[str, ...] = (r".*_calf_collision[12]",)
-    trunk_head_shape_patterns: tuple[str, ...] = (r"trunk_collision", r"head_collision")
+    thigh_shape_patterns: tuple[str, ...] = ()
+    shank_shape_patterns: tuple[str, ...] = ()
+    trunk_head_shape_patterns: tuple[str, ...] = ()
 
 
 @dataclass
@@ -187,14 +181,27 @@ class NaturalGaitCfg:
     blend_width: float = 0.2
     frequencies: tuple[float, float, float] = (1.3, 2.2, 2.8)
     duty_factors: tuple[float, float, float] = (0.7, 0.5, 0.35)
+    # Each row uses the foot ordering in LocomotionRobotCfg.feet.
+    phase_offsets: tuple[tuple[float, ...], ...] = ()
 
     def __post_init__(self):
-        if not 0 < self.walk_speed < self.run_speed or self.blend_width <= 0 or self.weight < 0:
+        values = (self.active_threshold, self.weight, self.walk_speed, self.run_speed,
+                  self.blend_width, *self.frequencies, *self.duty_factors)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("natural gait parameters must be finite")
+        if (not 0 < self.walk_speed < self.run_speed or self.blend_width <= 0
+                or self.weight < 0 or self.active_threshold < 0):
             raise ValueError("invalid natural gait speed intervals or weight")
         if len(self.frequencies) != 3 or min(self.frequencies) <= 0:
             raise ValueError("three positive gait frequencies are required")
         if len(self.duty_factors) != 3 or not all(0 < x < 1 for x in self.duty_factors):
             raise ValueError("three gait duty factors in (0, 1) are required")
+        if self.enabled or self.phase_offsets:
+            if (len(self.phase_offsets) != 3 or not self.phase_offsets[0]
+                    or any(len(row) != len(self.phase_offsets[0]) for row in self.phase_offsets)
+                    or any(not math.isfinite(value) or not 0 <= value < 1
+                           for row in self.phase_offsets for value in row)):
+                raise ValueError("gait phase_offsets requires three equal nonempty rows with phases in [0, 1)")
 
 
 @dataclass
@@ -203,8 +210,7 @@ class VelocityTaskCfg:
 
     robot: LocomotionRobotCfg | None = None
     task_version: str = "velocity_v1"
-    post_step_sensing: bool = True
-    capture_transitions: bool = False
+    capture_transitions: bool = True
     gait: NaturalGaitCfg = field(default_factory=NaturalGaitCfg)
     state_link_names: tuple[str, ...] = ()
     robot_resource_path: str | None = None
@@ -302,7 +308,10 @@ class VelocityTaskCfg:
             self.foot_link_names = tuple(foot.link for foot in profile.feet)
         if self.rewards.upright_reference not in {"world", "terrain"}:
             raise ValueError("upright_reference must be world or terrain")
-        if self.gait.enabled and (not self.capture_transitions or len(self.robot.feet) != 4):
-            raise ValueError("natural gait requires four feet and transition capture")
+        if self.gait.enabled:
+            self.gait.__post_init__()
+            if (not self.capture_transitions or self.robot is None
+                    or len(self.gait.phase_offsets[0]) != len(self.robot.feet)):
+                raise ValueError("natural gait requires transition capture and one configured phase per foot")
         if self.curriculum_mode not in {"legacy", "command_progress", "command_displacement"}:
             raise ValueError("unknown terrain curriculum mode")

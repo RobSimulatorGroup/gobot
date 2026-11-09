@@ -1,13 +1,10 @@
-"""Soft quadruped contact timing, with an observable clock and pre-reset rewards."""
+"""Configured foot-contact timing, with an observable clock and pre-reset rewards."""
 from __future__ import annotations
 from dataclasses import replace
 import math
 import torch
 from gobot.rl.batch import BatchEnvState
 from gobot.rl.spec import ObservationSpec, SpecField
-
-# FR, FL, RR, RL: lateral-sequence walk, diagonal trot, left-lead gallop.
-PHASES = ((0., .5, .75, .25), (0., .5, .5, 0.), (.6, .5, .1, 0.))
 
 
 def gait_weights(speed, cfg):
@@ -17,7 +14,7 @@ def gait_weights(speed, cfg):
 
 
 def desired_contact(phase, weights, cfg):
-    offsets = phase.new_tensor(PHASES)
+    offsets = phase.new_tensor(cfg.phase_offsets)
     duty = phase.new_tensor(cfg.duty_factors)
     angle = (phase[:, None, None] - offsets[None] - duty[None, :, None] / 2) * math.tau
     # Soft boundaries preserve swing/stance freedom when a foot encounters an obstacle.
@@ -28,10 +25,10 @@ def desired_contact(phase, weights, cfg):
 class NaturalGaitEnv:
     """Shared CPU/CUDA wrapper. The actor observes everything used by the clock."""
     def __init__(self, env):
-        if len(env.cfg_obj.robot.feet) != 4 or not env.cfg_obj.capture_transitions:
-            raise ValueError('natural gait requires quadruped pre-reset transitions')
-        if tuple(env.cfg_obj.foot_names) != ('FR', 'FL', 'RR', 'RL'):
-            raise ValueError('natural gait expects named FR, FL, RR, RL feet')
+        env.cfg_obj.gait.__post_init__()
+        if (not env.cfg_obj.capture_transitions or not env.cfg_obj.gait.phase_offsets
+                or len(env.cfg_obj.gait.phase_offsets[0]) != len(env.cfg_obj.robot.feet)):
+            raise ValueError('natural gait requires pre-reset transitions and one configured phase per foot')
         self.env = env
         self.device = env.device
         self.phase = torch.zeros(env.num_envs, device=self.device)

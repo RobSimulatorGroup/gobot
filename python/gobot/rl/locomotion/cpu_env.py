@@ -133,6 +133,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._directed_progress = np.zeros(self.num_envs, dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.common_step_counter = 0
+        self.numerical_failure = None
         self.profile_step_counter = 0
         self._reward_term_names = VELOCITY_REWARD_TERM_NAMES + (
             ("run_progress", "bound_gait")
@@ -406,11 +407,16 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._reset_envs(env_ids, np.zeros(env_ids.size, dtype=np.int64))
         self.backend.update_command_frames()
         batch_state = self.backend.state
-        self._run_task_runtime(advance_time=False)
-        obs = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
-        critic = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
+        actor, critic = self._build_generic_velocity_observations(batch_state)
+        self._copy_obs(batch_state, actor, critic)
+        obs = actor.copy()
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
-            obs = self._apply_actor_obs_noise(obs)
+            obs[env_ids] = self._apply_actor_obs_noise(obs[env_ids])
+        if not full_reset:
+            retained = np.ones(self.num_envs, dtype=bool)
+            retained[env_ids] = False
+            obs[retained] = self._obs[retained]
+            critic[retained] = self._critic_obs[retained]
         self._obs = obs
         self._critic_obs = critic
         if self._state is not None:
@@ -468,13 +474,14 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             self.decimation,
             workers=self.sim_workers,
             simulate_action_latency=self.control_cfg.simulate_action_latency,
-            post_step_sensing=self.cfg_obj.post_step_sensing,
+            post_step_sensing=True,
         )
         backend_step_actions_ms = (self.perf_counter() - action_step_t0) * 1000.0
         native_step_total_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "physics")
         t0 = self.perf_counter()
         batch_state = self.backend.state
+        self._check_physics_state()
         if self.cfg_obj.curriculum_mode == "command_progress":
             delta = np.asarray(batch_state.base_position)[:, :2] - progress_start
             self._directed_progress += directed_increment(delta, world_command)
@@ -509,8 +516,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                     foot_velocity=np.asarray(batch_state.foot_velocity), contact=np.asarray(batch_state.foot_contact),
                     first_contact=np.asarray(batch_state.first_contact), peak_height=np.asarray(batch_state.foot_peak_height),
                     foot_force=np.asarray(batch_state.foot_contact_force),
-                    linear_velocity=np.asarray(batch_state.base_linear_velocity_body),
-                    angular_velocity=np.asarray(batch_state.base_angular_velocity_body), command=self.command_b),
+                    linear_velocity=_quat_rotate_inv_batch(np.asarray(batch_state.base_linear_velocity), np.asarray(batch_state.base_quaternion)),
+                    angular_velocity=_quat_rotate_inv_batch(np.asarray(batch_state.base_angular_velocity), np.asarray(batch_state.base_quaternion)), command=self.command_b),
             }
         self._mark_profile(profile_marks, "reward")
         log_values: dict[str, float] = {}
@@ -563,6 +570,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
         # Refresh after events and resets, before command-frame updates and observations.
         batch_state = self.backend.refresh()
+        self._check_physics_state()
         if self.cfg_obj.curriculum_mode == "command_displacement":
             self._commanded_displacement += command_displacement_step(
                 np.asarray(batch_state.command), np.asarray(batch_state.base_quaternion),
@@ -639,6 +647,25 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             timing[f"native_{key}"] = float(value)
         return self._state
 
+    def _check_physics_state(self):
+        state = self.backend.state
+        names = ("base_position", "base_quaternion", "base_linear_velocity", "base_angular_velocity",
+                 "joint_position", "joint_velocity")
+        arrays = {name: np.asarray(getattr(state, name)) for name in names}
+        invalid = np.zeros(self.num_envs, dtype=bool)
+        for name, values in arrays.items():
+            invalid |= ~np.isfinite(values).reshape(self.num_envs, -1).all(axis=1)
+            limit = 1000. if "velocity" in name else 1.e6
+            invalid |= (np.abs(values) > limit).reshape(self.num_envs, -1).any(axis=1)
+        ids = np.flatnonzero(invalid)
+        if ids.size:
+            selected = ids[:8]
+            self.numerical_failure = {"step": self.common_step_counter, "env_ids": selected.copy(),
+                "state": {name: value[selected].copy() for name, value in arrays.items()},
+                "action": self._submitted_actions[selected].copy(), "command": self.command_b[selected].copy()}
+            raise FloatingPointError(f"invalid locomotion physics at step {self.common_step_counter}, "
+                                     f"envs {selected.tolist()}; rollout aborted")
+
     @property
     def terrain_origins(self):
         return self._spawn_origins.copy()
@@ -681,6 +708,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         state = self.backend.state
         result = {name: getattr(state, name) for name in ("base_position", "base_quaternion", "base_linear_velocity_body",
                 "base_angular_velocity_body", "joint_position", "joint_velocity", "foot_contact", "foot_velocity", "angular_momentum", "foot_position")}
+        for key in ("linear", "angular"):
+            result[f"base_{key}_velocity_body"] = _quat_rotate_inv_batch(
+                np.asarray(getattr(state, f"base_{key}_velocity")), np.asarray(state.base_quaternion))
         result["base_clearance"] = state.height_scan[:, self._height_scan_dim // 2]
         result.update(command_mode=np.asarray(state.command_mode), joint_effort=np.asarray(state.torques), foot_force=np.asarray(state.foot_contact_force), command=self.command_b,
                       terrain_level=self._spawn_env_levels, terrain_type=self._spawn_type_cols)
@@ -714,7 +744,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
     def training_state_dict(self) -> dict[str, Any]:
         return {
-            "version": 2,
+            "version": 3,
             "backend": "mujoco-cpu",
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
@@ -732,10 +762,10 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         }
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        if state.get("curriculum_mode", "legacy") != self.cfg_obj.curriculum_mode:
+        if state.get("curriculum_mode") != self.cfg_obj.curriculum_mode:
             raise ValueError("checkpoint terrain curriculum mode does not match task configuration")
         version = int(state.get("version", 0))
-        if version not in (0, 1, 2):
+        if version != 3:
             raise RuntimeError(f"unsupported locomotion CPU training checkpoint version {version}")
         self.set_training_progress(int(state.get("common_step_counter", 0)))
         saved_profile = state.get("training_profile")
@@ -746,13 +776,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             else 0
         )
         self._apply_command_curriculum()
-        terrain_state = state.get("terrain_curriculum")
+        terrain_state = state["terrain_curriculum"]
         if not isinstance(terrain_state, Mapping):
-            return {
-                "common_step_counter": int(self.common_step_counter),
-                "profile_curriculum": "exact" if profile_restored else "restarted",
-                "terrain_curriculum": "legacy_initial_levels",
-            }
+            raise ValueError("checkpoint requires terrain curriculum state")
 
         rows, cols = self._spawn_grid_shape
         levels, terrain_types, exact = restore_terrain_curriculum_assignments(
@@ -1003,21 +1029,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         state.pose_std_walking[:] = 1.0
         state.pose_std_running[:] = 1.0
         reward_cfg = self.cfg_obj.rewards
-        standing = self._pose_std_array(
-            float(reward_cfg.pose_std_standing_hip_thigh),
-            float(reward_cfg.pose_std_standing_calf),
-            reward_cfg.pose_std_standing,
-        )
-        walking = self._pose_std_array(
-            float(reward_cfg.pose_std_walking_hip_thigh),
-            float(reward_cfg.pose_std_walking_calf),
-            reward_cfg.pose_std_walking,
-        )
-        running = self._pose_std_array(
-            float(reward_cfg.pose_std_running_hip_thigh),
-            float(reward_cfg.pose_std_running_calf),
-            reward_cfg.pose_std_running,
-        )
+        standing = self._pose_std_array(reward_cfg.pose_std_standing)
+        walking = self._pose_std_array(reward_cfg.pose_std_walking)
+        running = self._pose_std_array(reward_cfg.pose_std_running)
         np.copyto(state.pose_std_standing, standing)
         np.copyto(state.pose_std_walking, walking)
         np.copyto(state.pose_std_running, running)
@@ -1043,8 +1057,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         reward_cfg = self.cfg_obj.rewards
         return tuple(float(getattr(reward_cfg, name)) for name in self._reward_term_names)
 
-    def _pose_std_array(self, hip_thigh: float, calf: float, mapping=None) -> np.ndarray:
-        return posture_std(self.joint_names, mapping or {}, hip_thigh, calf)
+    def _pose_std_array(self, mapping: Mapping[str, float]) -> np.ndarray:
+        return posture_std(self.joint_names, mapping)
 
     def _configure_native_command(self) -> None:
         command_cfg = self.cfg_obj.command
@@ -1409,7 +1423,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             self._set_reward_term(terms, "bound_gait", weights[gait_index] * gait_score)
-        np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        if not np.isfinite(terms).all():
+            raise FloatingPointError("non-finite locomotion reward terms")
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
 
         terminated = locomotion_failure_mask(np.asarray(state.projected_gravity)[:, 2],
@@ -1580,8 +1595,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         joint_positions = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_velocities = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_targets = np.broadcast_to(self.default_joint_pos.reshape(1, -1), (reset_count, self.num_actions)).astype(np.float32, copy=True)
-        if self.cfg_obj.task_version == "mjlab_velocity":
-            joint_targets.fill(0.)
 
         for row, env_id_value in enumerate(env_ids):
             env_id = int(env_id_value)

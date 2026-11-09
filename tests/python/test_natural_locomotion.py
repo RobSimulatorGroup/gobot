@@ -10,13 +10,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import numpy as np
 import torch
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from examples.locomotion.assessment import rank_report, rollout
 from gobot.rl.locomotion.config import NaturalGaitCfg
 from gobot.rl.locomotion.curriculum import directed_increment, progress_masks
 from gobot.rl.locomotion.gait_metrics import QuadrupedGaitMetrics
-from gobot.rl.locomotion.natural_gait import PHASES, desired_contact, gait_weights
-from gobot.rl.locomotion.motion import MotionDataset, ReferenceStateInitializer
+from gobot.rl.locomotion.natural_gait import desired_contact, gait_weights
+from examples.go1.train.go1_velocity_cfg import go1_gait_cfg
+from gobot.rl.locomotion.motion import MotionFeatureSpec, MotionDataset, ReferenceStateInitializer
 from gobot.rl.locomotion.budget import TrainingBudget
 
 
@@ -31,13 +32,13 @@ def test_directional_curriculum():
 
 
 def test_clock_continuity_and_gait_classification():
-    cfg=NaturalGaitCfg(enabled=True)
+    cfg=go1_gait_cfg()
     speed=torch.tensor([.79999,.80001,1.99999,2.00001])
     weights=gait_weights(speed,cfg)
     torch.testing.assert_close(weights.sum(-1),torch.ones(4))
     assert float((weights[0]-weights[1]).abs().max())<.001
     assert float((weights[2]-weights[3]).abs().max())<.001
-    for kind,offset in enumerate(PHASES):
+    for kind,offset in enumerate(cfg.phase_offsets):
         metrics=QuadrupedGaitMetrics(1,dt=.01,warmup_s=0.)
         for step in range(1200):
             phase=step*.01*2.
@@ -58,13 +59,14 @@ def test_clock_continuity_and_gait_classification():
 def test_conditional_reference_sampling():
     with tempfile.TemporaryDirectory() as directory:
         arrays={};clips=[]
+        spec=MotionFeatureSpec(tuple(f"joint_{i}" for i in range(29)), tuple(f"link_{i}" for i in range(4)))
         for i,(name,gait,speed) in enumerate([('walk_subject1',0,.6),('run_subject2',1,2.),('walk_subject4',0,.6),('run_subject5',1,2.)]):
             features=np.zeros((10,79),np.float32);features[:,58]=speed;features[:,0]=i
             arrays[f'features_{i}']=features;arrays[f'valid_{i}']=np.ones(10,bool)
             roots=np.zeros((10,13),np.float32);roots[:,3]=1;roots[:,7]=speed
             arrays[f'root_{i}']=roots;arrays[f'joint_{i}']=np.zeros((10,58),np.float32)
-            clips.append({'name':name,'split':'holdout' if 'subject5' in name else 'train','gait':gait})
-        arrays['metadata']=np.array(json.dumps({'schema':'gobot_motion_v1','dt':.02,'clips':clips}))
+            clips.append({'name':name,'split':'holdout' if 'subject5' in name else 'validation' if 'subject4' in name else 'train','gait':gait})
+        arrays['metadata']=np.array(json.dumps({'schema':'gobot_motion_v2','dt':.02,'feature_spec':spec.metadata(),'clips':clips}))
         path=Path(directory)/'motions.npz';np.savez(path,**arrays)
         dataset=MotionDataset(path)
         pairs,supported=dataset.sample_matching(torch.tensor([0,1,0]),torch.tensor([.6,2.,3.]))

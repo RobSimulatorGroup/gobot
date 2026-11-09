@@ -7,8 +7,8 @@ ownership and policy/checkpoint contracts.
 
 SuperMimic now has a built-in task registry and headless training entry point:
 `python -m gobot.rl.train`. See [the training framework](gobot_training.md).
-The first registered task is scene-authored G1 motion tracking; synchronized
-multi-GPU training and a command-conditioned student remain follow-up work.
+Velocity PPO supports synchronized multi-GPU training. Motion tracking and AMP
+use their own task configurations and learner capabilities.
 
 ## Runtime
 
@@ -26,8 +26,11 @@ Newton are Python providers consuming a validated schema-v3 artifact from
 physics world. Providers validate content digests, producer metadata,
 dimensions, topology, and the explicit control map.
 
-Robot/task presets live under `examples/`; reusable velocity task implementations
-live in `gobot.rl.locomotion`. `LocomotionRobotCfg`, `VelocityTaskCfg`, and
+Robot/task presets, model selection and example evaluators live under `examples/`,
+with shipped velocity recipes in `examples/locomotion/presets.py`. Reusable task
+implementations live in `gobot.rl.locomotion`. The trainer accepts `RunConfig` and
+a typed `VelocityTaskCfg`, or an importable task configuration factory; it does
+not select a robot by name. `LocomotionRobotCfg`, `VelocityTaskCfg`, and
 `make_velocity_env` share CPU/Warp observations, reward configuration, termination,
 commands and curriculum. See [G1](../examples/g1/README.md) and the
 [shared tools](../examples/locomotion/README.md). C++ supplies generic controls,
@@ -44,7 +47,7 @@ been removed. Future task APIs should retain the typed batch boundary.
 | Reward, terminated, truncated | `(num_envs,)` |
 | Environment time step | `env_dt = physics_dt * decimation` |
 | Reward scaling | Use `env_dt` |
-| Reset | Explicit masks; each environment has independent RNG and episode state |
+| Reset | Explicit masks and per-environment episode state; task RNG is separate from policy sampling |
 | Topology | One scene topology per batch; also batched when `num_envs == 1` |
 
 The step order is:
@@ -52,14 +55,18 @@ The step order is:
 ```text
 process action
   -> apply controls, step physics, update state for each substep
-  -> termination and reward
-  -> reset done environments
-  -> observation
+  -> refresh kinematics and sensors from the integrated state
+  -> termination, reward and pre-reset final observation
+  -> interval events and reset done environments
+  -> refresh state, advance commands and return observations
 ```
 
-Go1 auto-resets without constructing terminal observations in its hot path.
-Generic environments that offer `final_observation` must capture it before
-reset. Timeouts set `truncated`; task failures set `terminated`.
+Velocity training always captures `final_observation` before reset.
+`TransitionPPO` uses that state for timeout value bootstrapping, while delegating
+GAE and optimization to RSL-RL. Timeouts set `truncated`; task failures set
+`terminated` and take precedence if both conditions occur together. Reset restores
+the configured default joint targets. Sensor timing is fixed for the shared task;
+there is no option to retain the old pre-integration reward/observation behavior.
 
 Task hot paths operate on contiguous NumPy arrays for CPU or device tensors
 for CUDA. Resolve Gobot joint/link/sensor names once. Keep scene traversal,
@@ -100,8 +107,14 @@ falls back to CPU.
 `WarpVelocityEnv` keeps physics, sensing, task state, observations, rewards,
 resets, and actions on CUDA. CPU remains the short-horizon parity oracle.
 Model randomization should use expanded per-world fields; data randomization
-and reset should reuse persistent buffers. Each environment retains its own
-random stream.
+and reset should reuse persistent buffers. Each process owns a task generator
+independent of the policy generator. Reset and training-state restoration must
+not seed or rewind policy sampling. Substep contact timers advance only with
+physics ticks, not with extra forward/sensing passes.
+
+Invalid physics stops the rollout before PPO receives a fabricated transition.
+The trainer saves the failing state and reports the error across workers; it
+does not reset the bad world, zero its reward, or hide non-finite reward terms.
 
 Provider cache keys include the artifact digest, provider version, and normalized
 configuration. Prepared assets use `$XDG_CACHE_HOME/gobot/physics` or
@@ -115,12 +128,20 @@ reject missing or mismatched observation/action specs, joint order, control
 settings, or simulation-scene digest. See the [policy contract](architecture.md#policy-contract).
 
 `RslRlVecEnvWrapper` passes task training state through without interpreting
-curriculum fields. Go1 saves scheduler progress, terrain assignments,
-profile-local progress, and RNG state. Equal batch sizes restore assignments;
-changed sizes preserve each terrain type's level histogram. Switching from
-`balanced` to `run` restarts only the profile-local curriculum. Legacy fallback
-must be explicit. Training resume starts fresh physics episodes; exact runtime
-checkpoints are a separate engine feature.
+curriculum fields. Velocity checkpoints save scheduler progress, terrain
+assignments, profile-local progress and RNG state. Trainer resume requires the
+same world size and environments per rank, restores those assignments, then
+starts fresh physics episodes. Explicit reset and checkpoint restoration do not
+promote or demote terrain. Exact runtime checkpoints are a separate engine
+feature.
+
+Old task semantics and training-state versions are rejected rather than
+migrated. Start a new run after the IMU/state-timing/timeout changes. AMP data
+also requires regeneration: `gobot_motion_v2` contains a `MotionFeatureSpec`
+with named joints and links; the loader derives feature widths and velocity
+indices from it. The trainer checks the dataset layout, control period and
+robot physics identity against the task. Dataset-specific file names and
+train/validation/holdout splits belong in the example converter.
 
 Go1 policy admission requires survival and commanded planar/yaw progress across
 all authored terrain cells. Run evaluation also records paired-foot gait
@@ -147,15 +168,16 @@ Required regression coverage:
 
 - Stable compiled names/control maps; effective effort/position control.
 - Action clipping, reward time scaling, finite shapes, and correct done flags.
-- Same-seed replay, env-0 parity between single/batched execution, and masked reset.
+- Same-seed replay, masked reset, and single/batched state parity with randomization disabled.
+- Independent task/policy RNG and curriculum-preserving checkpoint restoration.
 - CPU/Warp short-horizon parity for state, contacts, sensors, and task terms.
 - Graph replay with changing reset masks; recapture after storage changes.
 - Clear capacity/non-finite diagnostics and deterministic provider shutdown.
 - Play lifecycle callbacks, native/external exclusion, failure pausing, and
   preservation of authored scene data.
 
-G1 velocity tasks use post-step sensing: update kinematics/sensors after the
-last integration substep, preserving the completed substep contact history.
-Legacy Go1 presets retain their original timing. New manifests record sensor
-timing and held-joint targets. Native command RNG streams are included in CPU
-training checkpoints for same-size resume.
+All velocity tasks refresh kinematics and sensors after the last integration
+substep, preserving completed substep contact history. Manifests record
+`state_timing=post_step`; old timing settings are not accepted. Native command
+RNG streams are included in CPU training checkpoints. G1 and Go1 exercise the
+same trainer, and custom robot factories must not require edits to the runner.

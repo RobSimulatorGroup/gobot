@@ -36,8 +36,8 @@ def collect(backend):
             pointer = model.arrays['qpos'].data_ptr()
             env.reset([1], seed=19)
             assert model.arrays['qpos'].data_ptr() == pointer
-            ids = list(env._held_layout.actuator_ids)
-            np.testing.assert_array_equal(model.arrays['ctrl'][:, ids].cpu().numpy(), 0.)
+            ids = list(env._layout.actuator_ids)
+            np.testing.assert_allclose(model.arrays['ctrl'][1, ids].cpu().numpy(), env.default_joint_pos)
             model.assert_finite()
             model.assert_no_overflow()
         return initial, history
@@ -45,7 +45,7 @@ def collect(backend):
         env.close()
 
 def standard_velocity_backends(robots=('go1', 'g1')):
-    from gobot.rl.locomotion.experiment import Experiment, task_config
+    from examples.locomotion.presets import Experiment, task_config
 
     for robot in robots:
         traces=[]
@@ -96,8 +96,6 @@ def main():
     if args.robot=='go1':
         standard_velocity_backends(('go1',))
         return
-    if not torch.cuda.is_available() or not (Path(__file__).resolve().parents[2] / "examples/g1/assets/meshes/pelvis.STL").exists():
-        raise SystemExit(77)
     cpu_obs, cpu = collect('mujoco-cpu')
     gpu_obs, gpu = collect('mujoco-warp')
     np.testing.assert_allclose(cpu_obs, gpu_obs, atol=2e-4, rtol=2e-4)

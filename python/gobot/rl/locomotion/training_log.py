@@ -138,7 +138,6 @@ def format_training_log(metrics, *, target_iteration, remaining_iterations, aver
         add(key, value, 'd' if key.startswith('Episode_Termination/') else '.4f', suffix)
     add('Action clip fraction', metrics['action_clip_fraction'])
     add('Joint effort saturation fraction', metrics['joint_effort_saturation_fraction'])
-    add('Numerical resets', metrics['numerical_resets'], 'd')
     width = max(40, *(len(label) for label, _ in rows))
     line_width = max(80, width + 22)
     lines = ['#' * line_width,

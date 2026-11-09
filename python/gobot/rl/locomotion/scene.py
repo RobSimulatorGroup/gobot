@@ -23,21 +23,6 @@ def find_robot_node(context: gobot.AppContext, cfg: VelocityTaskCfg):
     return robot
 
 
-def find_terrain_node(context: gobot.AppContext):
-    root = context.root
-    terrain_world = root.find("terrain_world") if root is not None else None
-    if terrain_world is None:
-        raise RuntimeError("Gobot scene has no terrain_world node")
-    terrain = terrain_world.find("terrain")
-    if terrain is None:
-        raise RuntimeError("Gobot scene terrain_world has no authored terrain node")
-    if terrain.generation_error:
-        raise RuntimeError(f"Gobot scene terrain generation failed: {terrain.generation_error}")
-    if not terrain.generator_config:
-        raise RuntimeError("Gobot scene terrain has no generator_config resource")
-    return terrain
-
-
 def terrain_generator_config(terrain) -> dict[str, Any]:
     config = terrain.generator_config
     properties = config.get("properties", config)
@@ -125,7 +110,6 @@ def prepare_velocity_scene(
 __all__ = [
     "configure_robot_drives",
     "find_robot_node",
-    "find_terrain_node",
     "joint_gain_array",
     "prepare_velocity_scene",
     "terrain_generator_config",

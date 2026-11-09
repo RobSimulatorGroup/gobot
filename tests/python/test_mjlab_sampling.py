@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 
 import torch
 
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 
 ROOT=Path(__file__).resolve().parents[2]/'mjlab/src/mjlab'
@@ -85,7 +85,7 @@ def test_push_samples_next_timer_then_one_six_axis_kick_without_mutating_live_ve
     assert env._push_count.tolist()==[1,0,1,0]
 
 
-def test_baseline_cpu_reset_clears_targets_before_next_policy_action():
+def test_cpu_reset_holds_default_pose_before_next_policy_action():
     from gobot.rl.locomotion import make_velocity_env
     cfg=task_config(Experiment(robot='g1',stage='flat'),play=True)
     env=make_velocity_env(cfg,backend='mujoco-cpu',num_envs=2,collect_step_extras=False)
@@ -97,5 +97,6 @@ def test_baseline_cpu_reset_clears_targets_before_next_policy_action():
             return original(*args,**kwargs)
         env.backend.reset_robot_states=capture
         env.reset(seed=17)
-        assert len(calls)==1 and (calls[0]==0).all()
+        assert len(calls)==1
+        torch.testing.assert_close(torch.tensor(calls[0]), torch.tensor(env.default_joint_pos).expand(2,-1))
     finally:env.close()

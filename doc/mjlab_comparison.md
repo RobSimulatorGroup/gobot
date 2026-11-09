@@ -1,8 +1,19 @@
 # G1 与 mjlab 对照训练
 
 对照使用固定的 Gobot 场景地形、同一组初始地形分配和同一份统计代码。
-两边使用固定参考版本的奖励权重和 PPO 参数。两边独立运行物理、采样动作和更新策略，
-因此之后的地形升级、episode 时长和轨迹可以不同；不要求训练过程逐位相同。
+两边沿用固定参考版本的奖励权重和 PPO 优化参数。Gobot 的通用训练器与机器人预设分离，
+G1 只是 `examples/locomotion/presets.py` 提供的一项任务；机器人资产仍由场景编译。
+
+当前 Gobot 明确采用以下训练约定，与固定 mjlab 参考的部分行为不同：
+
+- 最后物理子步完成后先刷新状态，再计算奖励、终止和最终观测；没有旧时序开关。
+- `TransitionPPO` 用重置前的最终状态进行 timeout bootstrap，PPO 优化仍由 RSL-RL 执行。
+- reset 恢复配置的默认关节目标，环境随机数与策略采样分离。
+- 恢复训练保留地形等级并开启新 episode；不会在加载时再次升降地形等级。
+- 数值失败中止训练并保存诊断，不生成零奖励重置样本。
+
+因此这是相同地形和预算下的训练结果对照，不是逐步或逐位复现。奖励公式与 PPO 更新检查
+仍有意义，但不能据此宣称完整环境语义相同。报告必须记录这些差异。
 
 接触计时每个物理子步累计 `physics_dt`（当前 0.005 秒），reset 清空相应世界的计时。
 不再用 float32 仿真时钟相减，避免长时间回放误判首次触地。旧计时状态已删除。
@@ -13,7 +24,7 @@
 
 ```bash
 .venv/bin/python tests/support/export_training_terrain.py \
-  --robot g1 --output logs/g1_training_terrain.json
+  --robot g1 --output logs/g1_velocity_v2_terrain.json
 ```
 
 这个文件包含全部碰撞几何、高度场、出生点、地形名称/比例及 SHA256。文件来自普通 Gobot
@@ -32,11 +43,11 @@ Gobot（在 Gobot 根目录）：
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
   --backend mujoco-warp --terrain rough \
-  --terrain-reference logs/g1_training_terrain.json \
+  --terrain-reference logs/g1_velocity_v2_terrain.json \
   --num-envs 64 --iterations 10 --seed 42 --no-eval \
   --hours .1 --budget-hours 1 --save-interval 10 \
-  --output logs/g1_shared_gobot_smoke \
-  --budget-file logs/g1_shared_gobot_smoke/budget.json
+  --output logs/g1_velocity_v2_gobot_smoke \
+  --budget-file logs/g1_velocity_v2_gobot_smoke/budget.json
 ```
 
 完成后测试 mjlab：
@@ -46,9 +57,9 @@ cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
-  --terrain-reference ../logs/g1_training_terrain.json \
+  --terrain-reference ../logs/g1_velocity_v2_terrain.json \
   --num-envs 64 --iterations 10 --seed 42 --save-interval 10 \
-  --output logs/g1_shared_mjlab_smoke
+  --output logs/g1_velocity_v2_mjlab_smoke
 cd ..
 ```
 
@@ -62,11 +73,11 @@ cd ..
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
   --backend mujoco-warp --terrain rough \
-  --terrain-reference logs/g1_training_terrain.json \
+  --terrain-reference logs/g1_velocity_v2_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --no-eval \
   --hours 8 --budget-hours 64 --save-interval 500 \
-  --output logs/g1_shared_gobot_seed42 \
-  --budget-file logs/g1_shared_gobot_seed42/budget.json
+  --output logs/g1_velocity_v2_gobot_seed42 \
+  --budget-file logs/g1_velocity_v2_gobot_seed42/budget.json
 ```
 
 ```bash
@@ -74,16 +85,17 @@ cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
-  --terrain-reference ../logs/g1_training_terrain.json \
+  --terrain-reference ../logs/g1_velocity_v2_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
-  --output logs/g1_shared_mjlab_seed42
+  --output logs/g1_velocity_v2_mjlab_seed42
 cd ..
 ```
 
 每卡 1024 环境，共 8192；每次更新采样 24 控制步，预算相同。
 建立基线时从头训练，两边使用相同预算。
-Gobot 的恢复检查包含接触计时实现和地形哈希；mjlab 对照入口拒绝缺少共同地形信息的旧实验恢复。
-旧模型文件可以保留用于回放和迁移评测，但修正计时后不能承诺旧轨迹逐位复现。
+Gobot 的恢复检查包含任务语义、模型、接触计时实现和地形哈希；旧 checkpoint 不兼容当前任务，
+不应使用 `--resume` 或 `--initialize` 带入本次基线。旧结果仅保留为历史记录。mjlab 对照入口也拒绝
+缺少共同地形信息的旧实验恢复。新实验使用上面的新输出目录。
 
 上述命令关闭 Gobot 的训练内评测，结束后对两边的最终策略执行相同独立评测。训练时不能根据日志 reward
 选出对某一边更有利的模型。单个训练种子不足以比较稳定性；应对两边使用同一组多个种子。
@@ -101,6 +113,7 @@ Gobot 的恢复检查包含接触计时实现和地形哈希；mjlab 对照入�
 - 地形等级均值按真实环境数量加权；空类型显示 `—`。
 - 两边都写 `metrics.jsonl`；mjlab 同时写 TensorBoard。上游原始 `mjlab.scripts.train` 的日志统计未改。
 - mjlab 的 solver 超限仍为所有卡求解调用的比例，参数保持 10/20，容量/数值错误没有被隐藏。
-- mjlab 没有 Gobot 的逐世界数值恢复；若发生数值失败应单列分析，不能用日志统一掩盖恢复行为差异。
+- Gobot 数值失败会中止采样并写 `numerical_failure_rankN.pt`，保留上次成功 checkpoint。
+  失败的运行应单列报告，不能把中断前日志当作完成训练的结果。
 
 单卡与多卡日志都是同一口径；无法取得的诊断项不伪填数值，例如 mjlab 的关节力矩饱和度显示 `—`。

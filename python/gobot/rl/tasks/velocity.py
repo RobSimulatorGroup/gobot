@@ -4,8 +4,8 @@ from .registry import TaskSpec, register_task
 
 
 def _training(robot, recipe):
-    from gobot.rl.training.locomotion import training_spec
-    return training_spec(robot=robot, recipe=recipe)
+    from gobot.rl.training.projects import example_module
+    return example_module("locomotion.presets").training_spec(robot=robot, recipe=recipe)
 
 
 for _name, _robot, _recipe, _algorithm, _description in (

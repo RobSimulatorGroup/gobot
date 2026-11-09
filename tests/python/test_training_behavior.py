@@ -169,7 +169,7 @@ def test_cpu_reward_rate_and_timeout_survive_autoreset():
     ("logger", "wandb", "custom TrainingSpec"),
 ])
 def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch, name, value, target):
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion import training
 
     experiment = Experiment(robot="go1", iterations=1, num_envs=2)
@@ -180,7 +180,7 @@ def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch,
     monkeypatch.setattr(training, "make_velocity_env", forbidden)
     output = tmp_path / "not-created"
     with pytest.raises(ValueError, match=target):
-        training.run(experiment, output, backend="mujoco-cpu", no_eval=True, agent_cfg=agent)
+        training.run(experiment, output, backend="mujoco-cpu", no_eval=True, agent_cfg=agent, task_cfg=task_config(experiment))
     assert not output.exists()
 
 
@@ -190,7 +190,7 @@ def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch,
     ("gamma", 1.1), ("lam", -.1), ("max_grad_norm", float("inf")),
 ])
 def test_invalid_algorithm_values_fail_before_simulation(key, value):
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion.training import agent_config, validate_agent_config
 
     experiment = Experiment(robot="go1")
@@ -201,7 +201,7 @@ def test_invalid_algorithm_values_fail_before_simulation(key, value):
 
 
 def test_configurable_ppo_and_amp_details_remain_supported():
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion.training import agent_config, validate_agent_config
 
     for recipe in ("baseline", "amp"):

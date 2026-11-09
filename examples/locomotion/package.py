@@ -9,7 +9,7 @@ from pathlib import Path
 import platform
 import subprocess
 import tarfile
-from gobot.rl.locomotion.experiment import Experiment
+from .presets import Experiment
 
 
 SOURCE_SUFFIXES = {'.py', '.pyi', '.cpp', '.hpp', '.c', '.h', '.cmake', '.in', '.txt',

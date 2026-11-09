@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.terrain_reference import from_environment
 
 

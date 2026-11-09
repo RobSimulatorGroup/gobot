@@ -549,9 +549,12 @@ def test_go1_reward_and_observation_formulas():
     np.testing.assert_allclose(state.critic_obs[:, : state.actor_obs.shape[1]], state.actor_obs)
 
     state.base_linear_velocity[0, 0] = np.nan
-    env._run_velocity_task_numpy()
-    assert np.isfinite(state.reward_terms).all()
-    assert np.isfinite(state.reward).all()
+    try:
+        env._run_velocity_task_numpy()
+    except FloatingPointError:
+        pass
+    else:
+        raise AssertionError("non-finite rewards must stop the rollout")
 
 
 def test_go1_run_progress_reward_does_not_reward_standing():
@@ -593,7 +596,7 @@ def test_go1_training_configuration():
     assert train_cfg["actor"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["critic"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["algorithm"] == {
-        "class_name": "PPO",
+        "class_name": "gobot.rl.locomotion.transition_ppo:TransitionPPO",
         "optimizer": "adam",
         "share_cnn_encoders": False,
         "num_learning_epochs": 5,

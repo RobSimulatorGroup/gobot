@@ -611,7 +611,12 @@ if(GOB_BUILD_MUJOCO)
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/test_unified_training.py
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/test_training_tasks.py
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/test_training_behavior.py
-                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mjlab_training.py)
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mjlab_training.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_reliability.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_locomotion_numerics.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_generic_velocity_training.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_parameters.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_motion_schema.py)
     set_tests_properties(test_python_training PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV};CUDA_VISIBLE_DEVICES=;PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

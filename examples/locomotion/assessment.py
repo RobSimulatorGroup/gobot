@@ -13,7 +13,7 @@ from gobot.rl.locomotion.gait_metrics import BipedGaitMetrics, QuadrupedGaitMetr
 from gobot.rl.locomotion.manifest import validate_policy
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from .presets import Experiment, task_config
 from .budget import add_budget_arguments, evaluation_budget
 from gobot.rl.locomotion.capabilities import assess_capabilities
 

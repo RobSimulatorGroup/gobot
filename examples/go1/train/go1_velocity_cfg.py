@@ -66,17 +66,44 @@ GO1_ROUGH_REWARD_TERM_NAMES: tuple[str, ...] = (
 
 
 from gobot.rl.locomotion.config import (
-    FootCfg, LocomotionRobotCfg, VelocityTaskCfg, VelocityObservationCfg,
+    FootCfg, LocomotionRobotCfg, VelocityTaskCfg, VelocityObservationCfg, NaturalGaitCfg,
     VelocityRewardCfg, VelocityIllegalContactCfg, VelocityDomainRandomizationCfg,
     _default_push_force_ranges, _default_push_velocity_ranges,
 )
+
+def go1_gait_cfg():
+    """Walk, trot and gallop phases in this profile's FR, FL, RR, RL order."""
+    return NaturalGaitCfg(
+        enabled=True,
+        weight=0.5,
+        phase_offsets=((0., .5, .75, .25), (0., .5, .5, 0.), (.6, .5, .1, 0.)),
+    )
+
+
+def _go1_rewards():
+    return VelocityRewardCfg(
+        shank_collision=-0.1,
+        trunk_head_collision=-0.1,
+        pose_std_standing={r".*_(hip|thigh)_joint": 0.05, r".*_calf_joint": 0.1},
+        pose_std_walking={r".*_(hip|thigh)_joint": 0.3, r".*_calf_joint": 0.6},
+        pose_std_running={r".*_(hip|thigh)_joint": 0.3, r".*_calf_joint": 0.6},
+    )
+
+
+def _go1_illegal_contacts():
+    return VelocityIllegalContactCfg(
+        terminate_on_thigh=True,
+        thigh_shape_patterns=(r".*_thigh_collision[123]",),
+        shank_shape_patterns=(r".*_calf_collision[12]",),
+        trunk_head_shape_patterns=(r"trunk_collision", r"head_collision"),
+    )
+
 
 @dataclass
 class Go1VelocityCfg(VelocityTaskCfg):
     """Single source of truth for Go1 rough-terrain training and playback."""
 
     task_version: str = "go1_rough_velocity_numpy_v2"
-    post_step_sensing: bool = False
     name: str = GO1_TASK_NAME
     training_profile: Literal["balanced", "run"] = "balanced"
     project_path: str | Path = "examples/go1"
@@ -106,7 +133,7 @@ class Go1VelocityCfg(VelocityTaskCfg):
     max_init_terrain_level: int | None = 5
     terrain_out_of_bounds: bool = True
     terrain_distance_buffer: float = 0.3
-    illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
+    illegal_contact: VelocityIllegalContactCfg = field(default_factory=_go1_illegal_contacts)
     domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=VelocityDomainRandomizationCfg)
     push_enabled: bool = True
     push_interval_steps: int = 750
@@ -144,7 +171,7 @@ class Go1VelocityCfg(VelocityTaskCfg):
     run_command_curriculum: tuple[VelocityCommandStage, ...] = (
         VelocityCommandStage(step=0, run_velocity_x=(1.5, 2.5)),
     )
-    rewards: VelocityRewardCfg = field(default_factory=VelocityRewardCfg)
+    rewards: VelocityRewardCfg = field(default_factory=_go1_rewards)
 
 
     def __post_init__(self):

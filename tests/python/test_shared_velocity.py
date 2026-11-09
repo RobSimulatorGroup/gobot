@@ -50,7 +50,7 @@ def test_g1_profile():
     assert len(cfg.joint_names) == 29
     assert all("hand_" not in name for name in cfg.joint_names)
     assert [len(foot.collision_shapes) for foot in cfg.robot.feet] == [7, 7]
-    values = posture_std(cfg.joint_names, cfg.rewards.pose_std_walking, .3, .6)
+    values = posture_std(cfg.joint_names, cfg.rewards.pose_std_walking)
     assert values.shape == (29,) and np.all(values > 0)
     assert cfg.robot.torso_link == 'torso_link'
     assert cfg.rewards.angular_momentum < 0

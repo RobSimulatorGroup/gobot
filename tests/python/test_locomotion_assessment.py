@@ -10,7 +10,7 @@ import torch
 
 from examples.locomotion.assessment import evaluation_scene, fixed_commands, rollout
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 
 
 def test_route_outcomes_distinguish_falls_departures_and_numerical_failures():

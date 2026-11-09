@@ -37,12 +37,14 @@ AMP、Go1 步态扩展可另外使用 `--terrain mixed`。旧任务名称和实�
 ## 标准速度训练
 
 `go1-velocity` 和 `g1-velocity` 参照仓库内 mjlab
-`dcdf6ce519abfd2ea45e9503ae6fb650b75bb869` 的平地/粗糙地形配置，使用 RSL-RL 5.5.2 的标准 PPO。
+`dcdf6ce519abfd2ea45e9503ae6fb650b75bb869` 的平地/粗糙地形配置，使用 RSL-RL 5.5.2 的 PPO 更新。
+公共训练器接收 `RunConfig` 与 `VelocityTaskCfg`，型号选择只在 `examples/locomotion/presets.py`。
+`TransitionPPO` 对 timeout 使用重置前最终状态的价值，不使用上一步状态或重置状态的价值。
 默认设置为学习率 `1e-3`、自适应学习率、熵系数 `0.01`、初始动作标准差 `1.0`，
 每次更新采样 24 步，优化 5 轮、每轮 4 个 minibatch。没有更新回滚、归一化预热或额外跌倒扣分。
 
 奖励权重、速度误差公式、观测噪声、命令采样和课程按该参考设置。actor 的关节位置包含编码器偏置，
-critic 使用真实位置。奖励和终止在最后物理子步后计算，随后处理推力和重置、刷新观测；
+critic 使用真实位置。最后物理子步后刷新状态，再计算奖励、终止与最终观测，随后处理推力和重置；
 刚重置的环境保留完整命令持续时间。平地策略不接收地形高度扫描。
 
 `go1-gait` 显式增加步态相位；`g1-amp` 保留动作先验；`g1-tracking` 使用 SuperMimic。
@@ -51,7 +53,8 @@ critic 使用真实位置。奖励和终止在最后物理子步后计算，随�
 独立参考数据保存在 `tests/fixtures/mjlab_velocity.json`，由
 `tests/support/export_mjlab_velocity.py` 在 mjlab 环境中生成。它记录来源文件哈希、四份有效配置和
 16 个奖励项以及机器人关节增益、力矩限制和动作缩放。`tests/python/test_mjlab_training.py`
-比较配置、NumPy/Torch 奖励和完整 PPO 更新。
+比较参考参数、NumPy/Torch 奖励和相同非超时 transition 下的 PPO 更新。
+Gobot 采用更新后的状态、独立环境 RNG 和正确的终态 bootstrap，不宣称完整训练时序与参考逐位一致。
 这些检查不替代多 seed 的训练效果比较。
 
 物理仍从 Gobot 场景编译。G1 行走、AMP 与回放使用同一个 `g1.jscn`：29 个身体关节、固定手掌，
@@ -211,16 +214,10 @@ Gobot 的原生批处理依赖 MuJoCo 3.17。原始发布栈 3.16 复核和同 3
 
 ## 训练中的数值异常
 
-Warp 速度环境会检查物理状态中的 NaN/Inf，以及明显超出运动范围的有限数值
-（广义速度绝对值超过 1000，或广义位置绝对值超过 1e6）。异常环境会结束当前
-回合并重置；该步奖励置零，不做超时 bootstrap，也不提升地形等级。
-AMP 不把这次重置产生的动作对送入判别器回放。
-正常环境仍使用原来的奖励与 PPO 参数。
-
-`metrics.jsonl` 的 `numerical_resets` 是本次更新中所有 GPU 的异常重置数。
-每个进程首次发生异常时，会在训练目录保存 `numerical_failure_rankN.pt`，包含
-环境编号、物理状态、动作、速度指令和地形信息。若重置频繁，应检查这些状态中的
-关节和碰撞问题，不能把持续的仿真发散当成正常训练。
+CPU/Warp 速度环境检查非有限物理状态及明显超出运动范围的有限数值。
+数值失败直接中止 rollout，训练器在 `numerical_failure_rankN.pt` 保存异常世界状态。
+不会重置失败世界后继续训练，不会把 NaN/Inf 奖励改成零。环境随机数与策略采样分别保存；
+恢复课程只开启新 episode，不再次推进地形等级。旧 checkpoint 与 v1 AMP 数据不兼容本次任务。
 
 采样阶段的异常会在 PPO 更新前通知所有进程，共同退出并保留上次 checkpoint，
 避免其余进程等待 NCCL 超时。排除问题后可用同一配置和 `--resume .../latest.pt`
@@ -340,7 +337,7 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 - `Metrics/twist/error_vel_xy` / `error_vel_yaw` 是已结束 episode 的时间平均误差，单位分别为 m/s 和 rad/s。
   仓库内 mjlab 对照入口已使用相同口径；上游原入口采用指令时间上限归一化，不能混用其日志值。
 - `Episode_Termination/*` 是所有卡在本次更新中的 episode 结束次数，不是百分比，也不是 mjlab 的每步平均结束数。
-  数值恢复独立列出。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
+  数值异常会中止本轮并保存诊断。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
 
 日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。
 
@@ -356,3 +353,30 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 
 每个 `--save-interval` 保留 `model_000499.pt` 等编号检查点及 manifest，同时更新 `latest.pt`。
 关闭评测也会保存历史，便于排查策略何时开始退步；不再只保留最后的 latest。
+
+## 自定义机器人接入同一个训练器
+
+公共代码不选择 G1/Go1 资源、不依赖关节数量或足名称。机器人、控制增益、碰撞组、
+姿态奖励映射和传感器由 `VelocityTaskCfg`/`LocomotionRobotCfg` 显式提供。
+例如在用户自己的 Python 模块中定义配置工厂：
+
+```python
+from gobot.rl.locomotion.experiment import RunConfig
+from gobot.rl.training.locomotion import training_spec
+
+def training():
+    return training_spec(
+        task_factory="my_project.velocity:make_task",  # make_task(run) -> VelocityTaskCfg
+        experiment=RunConfig(num_envs=1024, iterations=18000),
+        name="my_velocity",
+    )
+```
+
+运行 `python -m gobot.rl.train my_project.velocity:training --backend mujoco-warp`。
+也可以直接传 `training_spec(env=task_cfg)` 再通过 `launch(spec, cfg)` 启动。
+默认关闭训练内评测；需要时显式提供与任务匹配的 `evaluation_command`。
+AMP 数据必须携带 `gobot_motion_v2` 的具名 joint/link 特征布局及控制周期，训练时检查与任务一致。
+
+118 八卡从头训练配置为 `examples/locomotion/configs/g1_velocity_8gpu.json`。
+每卡 1024 环境、总计 8192 环境、18000 次更新，每 500 次保存；单次上限 8 小时，
+总预算 64 GPU 小时。`g1-velocity` 只是任务预设名称，可用其他预设或用户工厂替换。

@@ -305,11 +305,7 @@ class WarpVelocityEnv:
             raise RuntimeError("MuJoCo Warp backend requested but Torch cannot access CUDA")
 
         self.seed = int(seed)
-        # The environment and PPO consume the same process-local device RNG.
-        # This matches the reference runner; seed once before construction.
-        torch.cuda.init()
-        self._generator = torch.cuda.default_generators[self._torch_device.index if self._torch_device.index is not None else torch.cuda.current_device()]
-        torch.manual_seed(self.seed)
+        self._generator = torch.Generator(device=self._torch_device).manual_seed(self.seed)
         self.profile_step = bool(profile_step)
         self.collect_step_extras = bool(collect_step_extras)
         self.collect_training_stats = bool(collect_training_stats)
@@ -620,9 +616,7 @@ class WarpVelocityEnv:
         self._reset_reasons = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
-        self._numerical_reset = torch.zeros(self.num_envs, dtype=torch.bool, device=self._torch_device)
-        self._numerical_failure = None
-        self._numerical_failure_captured = False
+        self.numerical_failure = None
         self.common_step_counter = 0
         self.profile_step_counter = 0
         self.step_counter = 0
@@ -710,29 +704,17 @@ class WarpVelocityEnv:
             dtype=torch.float32,
             device=self._torch_device,
         )
-        self._pose_std_standing = self._pose_std(
-            reward_cfg.pose_std_standing_hip_thigh,
-            reward_cfg.pose_std_standing_calf,
-            reward_cfg.pose_std_standing,
-        )
-        self._pose_std_walking = self._pose_std(
-            reward_cfg.pose_std_walking_hip_thigh,
-            reward_cfg.pose_std_walking_calf,
-            reward_cfg.pose_std_walking,
-        )
-        self._pose_std_running = self._pose_std(
-            reward_cfg.pose_std_running_hip_thigh,
-            reward_cfg.pose_std_running_calf,
-            reward_cfg.pose_std_running,
-        )
+        self._pose_std_standing = self._pose_std(reward_cfg.pose_std_standing)
+        self._pose_std_walking = self._pose_std(reward_cfg.pose_std_walking)
+        self._pose_std_running = self._pose_std(reward_cfg.pose_std_running)
         joint_range = self.provider.model_constant("jnt_range").to(dtype=torch.float32)
         joint_ids = torch.tensor(
             self._layout.joint_ids, dtype=torch.long, device=self._torch_device
         )
         self._joint_limits = joint_range.index_select(0, joint_ids)
 
-    def _pose_std(self, hip_thigh, calf, mapping=None):
-        return torch.as_tensor(posture_std(self.joint_names, mapping or {}, hip_thigh, calf), device=self._torch_device)
+    def _pose_std(self, mapping):
+        return torch.as_tensor(posture_std(self.joint_names, mapping), device=self._torch_device)
 
     def _infer_spawn_grid_shape(self) -> tuple[int, int]:
         unique_x = np.unique(np.round(self._spawn_origins_np[:, 0], 6))
@@ -951,7 +933,7 @@ class WarpVelocityEnv:
         if seed is None:
             return
         self.seed = int(seed)
-        torch.manual_seed(self.seed)
+        self._generator.manual_seed(self.seed)
 
     def init_state(self) -> BatchEnvState:
         return self._state
@@ -979,14 +961,21 @@ class WarpVelocityEnv:
                 "critic": self._critic_obs[:0],
             }, {}
 
+        previous = self._state.obs
         reasons = torch.zeros_like(ids)
-        self._update_terrain_curriculum(ids)
+        # Only completed episodes in step() advance the terrain curriculum.
         self._reset_idx(ids, reasons)
         self.provider.forward()
         self._compute_commands(dt=0.0)
         self.provider.sense()
         self._update_raycast_outputs()
-        self._compute_observations()
+        self._compute_observations(add_noise=False)
+        if self.cfg_obj.observations.actor_noise:
+            self._apply_actor_noise(ids)
+        retained = torch.ones(self.num_envs, dtype=torch.bool, device=self._torch_device)
+        retained[ids] = False
+        for name, value in self._state.obs.items():
+            value[retained] = previous[name][retained]
         self._terminated[ids] = False
         self._truncated[ids] = False
         self._state.info = {"steps": self.episode_length_buf}
@@ -1006,8 +995,6 @@ class WarpVelocityEnv:
     def step(self, actions: Any) -> BatchEnvState:
         profile_marks: list[tuple[str, torch.cuda.Event]] = []
         self._profile_mark(profile_marks, "start")
-        self._numerical_reset.zero_()
-        self._numerical_failure = None
         action = self._prepare_actions(actions)
         self.common_step_counter += 1
         self.profile_step_counter += 1
@@ -1039,15 +1026,13 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
-        self._recover_numerical_failures()
-        if self.cfg_obj.post_step_sensing:
-            self.provider.forward()
-            self.provider.sense()
-            self._update_raycast_outputs()
-            self._refresh_foot_contacts()
+        self._check_physics_state()
+        self.provider.forward()
+        self.provider.sense()
+        self._update_raycast_outputs()
+        self._refresh_foot_contacts()
+        self._check_physics_state()
         self._compute_terminations()
-        self._terminated.logical_or_(self._numerical_reset)
-        self._truncated.logical_and_(~self._numerical_reset)
         self._compute_rewards()
         self._profile_mark(profile_marks, "reward_termination")
         reward = self._reward.clone()
@@ -1066,7 +1051,6 @@ class WarpVelocityEnv:
                 ),
             ),
         )
-        reset_reason.masked_fill_(self._numerical_reset, 4)
         done = terminated | truncated
         transition_state = transition_obs = None
         if self.cfg_obj.capture_transitions:
@@ -1076,9 +1060,7 @@ class WarpVelocityEnv:
             self._compute_observations(add_noise=False)
             transition_obs = {key: value.clone() for key, value in self._state.obs.items()}
         self._apply_pushes()
-        # Numerically invalid worlds were reset before computing rewards. Do not
-        # advance their terrain curriculum or reset them a second time.
-        reset_ids = torch.nonzero(done & ~self._numerical_reset, as_tuple=False).flatten()
+        reset_ids = torch.nonzero(done, as_tuple=False).flatten()
         if reset_ids.numel() > 0:
             self._update_terrain_curriculum(reset_ids)
             self._reset_idx(reset_ids, reset_reason.index_select(0, reset_ids))
@@ -1093,24 +1075,12 @@ class WarpVelocityEnv:
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
-        self._recover_numerical_failures()
+        self._check_physics_state()
         self._compute_observations()
-        reward.masked_fill_(self._numerical_reset, 0.0)
-        self._reward_terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
-        terminated.logical_or_(self._numerical_reset)
-        truncated.logical_and_(~self._numerical_reset)
-        reset_reason.masked_fill_(self._numerical_reset, 4)
-        done = terminated | truncated
-        if transition_obs is not None and bool(self._numerical_reset.any()):
-            for key, value in transition_obs.items():
-                value[self._numerical_reset] = self._state.obs[key][self._numerical_reset]
-            for key, value in self.locomotion_state().items():
-                transition_state[key][self._numerical_reset] = value[self._numerical_reset]
         self._profile_mark(profile_marks, "observation")
 
         info = self._make_step_info(reset_reason, truncated)
         if self.collect_training_stats:
-            self._training_step_metrics.masked_fill_(self._numerical_reset.unsqueeze(1), 0.)
             info["training_stats"] = {"reward_terms": self._reward_terms,
                                       "metrics": self._training_step_metrics,
                                       "reset_reason": reset_reason}
@@ -1129,40 +1099,31 @@ class WarpVelocityEnv:
         return self._state
 
     def _physics_failure_mask(self) -> torch.Tensor:
-        invalid = torch.zeros_like(self._numerical_reset)
+        invalid = torch.zeros(self.num_envs, dtype=torch.bool, device=self._torch_device)
         for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "sensordata", "cvel"):
             invalid |= ~torch.isfinite(self._arrays[name]).flatten(1).all(dim=1)
         invalid |= (self._arrays["qvel"].abs() > _MAX_LOCOMOTION_VELOCITY).any(dim=1)
         invalid |= (self._arrays["qpos"].abs() > _MAX_LOCOMOTION_POSITION).any(dim=1)
         return invalid
 
-    def _recover_numerical_failures(self) -> None:
-        """Reset bad worlds before squared rewards or observations reach PPO."""
-        invalid = self._physics_failure_mask()
-        ids = torch.nonzero(invalid, as_tuple=False).flatten()
+    def _check_physics_state(self) -> None:
+        """Stop a failed rollout before it changes rewards, resets or PPO storage."""
+        ids = torch.nonzero(self._physics_failure_mask(), as_tuple=False).flatten()
         if ids.numel() == 0:
             return
-        self._numerical_reset.logical_or_(invalid)
-        if not self._numerical_failure_captured:
-            selected = ids[:8]
-            self._numerical_failure = {
-                "step": self.common_step_counter,
-                "env_ids": selected.detach().cpu(),
-                "state": {name: self._arrays[name][selected].detach().cpu().clone()
-                          for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata")},
-                "command": self._command[selected].detach().cpu().clone(),
-                "action": self._action[selected].detach().cpu().clone(),
-                "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
-                "terrain_type": self._terrain_types[selected].detach().cpu().clone(),
-            }
-            self._numerical_failure_captured = True
-        self._reset_idx(ids, torch.full_like(ids, 4))
-        self.provider.forward()
-        self.provider.sense()
-        self._update_raycast_outputs()
-        self._refresh_foot_contacts()
-        if bool(self._physics_failure_mask().any()):
-            raise FloatingPointError("physics state remains invalid after resetting numerical failures")
+        selected = ids[:8]
+        self.numerical_failure = {
+            "step": self.common_step_counter,
+            "env_ids": selected.detach().cpu(),
+            "state": {name: self._arrays[name][selected].detach().cpu().clone()
+                      for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata")},
+            "command": self._command[selected].detach().cpu().clone(),
+            "action": self._action[selected].detach().cpu().clone(),
+            "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
+            "terrain_type": self._terrain_types[selected].detach().cpu().clone(),
+        }
+        raise FloatingPointError(f"invalid locomotion physics at step {self.common_step_counter}, "
+                                 f"envs {selected.tolist()}; rollout aborted")
 
     def _profile_mark(
         self,
@@ -1217,7 +1178,7 @@ class WarpVelocityEnv:
 
     def training_state_dict(self) -> dict[str, Any]:
         return {
-            "version": 2,
+            "version": 3,
             "backend": "mujoco-warp",
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
@@ -1234,10 +1195,10 @@ class WarpVelocityEnv:
         }
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        if state.get("curriculum_mode", "legacy") != self.cfg_obj.curriculum_mode:
+        if state.get("curriculum_mode") != self.cfg_obj.curriculum_mode:
             raise ValueError("checkpoint terrain curriculum mode does not match task configuration")
         version = int(state.get("version", 0))
-        if version not in (0, 1, 2):
+        if version != 3:
             raise RuntimeError(f"unsupported locomotion Warp training checkpoint version {version}")
         self.set_training_progress(int(state.get("common_step_counter", 0)))
         saved_profile = state.get("training_profile")
@@ -1248,13 +1209,9 @@ class WarpVelocityEnv:
             else 0
         )
         self._apply_command_curriculum()
-        terrain_state = state.get("terrain_curriculum")
+        terrain_state = state["terrain_curriculum"]
         if not isinstance(terrain_state, Mapping):
-            return {
-                "common_step_counter": int(self.common_step_counter),
-                "profile_curriculum": "exact" if profile_restored else "restarted",
-                "terrain_curriculum": "legacy_initial_levels",
-            }
+            raise ValueError("checkpoint requires terrain curriculum state")
 
         levels, terrain_types, exact = restore_terrain_curriculum_assignments(
             terrain_state,
@@ -1399,9 +1356,7 @@ class WarpVelocityEnv:
         self._reset_qvel[env_ids, :6] = velocity
         self._reset_qvel[env_ids[:, None], self._joint_dof_ids] = joint_velocity
         self._reset_ctrl[env_ids] = 0.0
-        # Reference reset clears actuator targets before the first policy action.
-        if self.cfg_obj.task_version != "mjlab_velocity":
-            self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
+        self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
         self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
@@ -2011,8 +1966,6 @@ class WarpVelocityEnv:
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
-        torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
-        terms.masked_fill_(self._numerical_reset.unsqueeze(1), 0.0)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
 
@@ -2071,7 +2024,8 @@ class WarpVelocityEnv:
         if hasattr(self, "_state"):
             self._state.obs = self._observation_views[self._observation_buffer_index]
 
-    def _apply_actor_noise(self) -> None:
+    def _apply_actor_noise(self, env_ids=None) -> None:
+        rows = slice(None) if env_ids is None else env_ids
         ranges = self.cfg_obj.observations.actor_noise_ranges
         slices = {
             "base_lin_vel": slice(0, 3),
@@ -2082,16 +2036,15 @@ class WarpVelocityEnv:
         }
         for name, section in slices.items():
             low, high = ranges[name]
-            self._actor_obs[:, section].add_(
-                self._sample_uniform(self._actor_obs[:, section].shape, low, high)
-            )
+            values = self._actor_obs[rows, section]
+            self._actor_obs[rows, section] = values + self._sample_uniform(values.shape, low, high)
         height_start = 9 + 3 * self.num_actions + 3
         low, high = ranges["height_scan"]
         scale = max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
         if self.cfg_obj.observations.include_height_scan:
             # Noise is applied in metres before scaling, as in the sensor term.
-            noise = self._sample_uniform(self._actor_obs[:, height_start:].shape, low, high)
-            self._actor_obs[:, height_start:].copy_((self._terrain_scan_height + noise) / scale)
+            noise = self._sample_uniform(self._actor_obs[rows, height_start:].shape, low, high)
+            self._actor_obs[rows, height_start:] = (self._terrain_scan_height[rows] + noise) / scale
 
     def _make_step_info(
         self,
@@ -2102,10 +2055,7 @@ class WarpVelocityEnv:
             "steps": self.episode_length_buf,
             "time_outs": time_outs,
             "reset_reason": reset_reason,
-            "numerical_reset": self._numerical_reset.clone(),
         }
-        if self._numerical_failure is not None:
-            info["numerical_failure"] = self._numerical_failure
         if not self.collect_step_extras:
             return info
         linear_body, _ = self._root_velocity_body()

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.terrain_reference import (
     from_environment, load, add_to_spec, initial_assignments, assignment_digest, verify_environment,
 )

@@ -1,0 +1,48 @@
+{
+  "backend": "mujoco-warp",
+  "no_eval": true,
+  "output": "logs/g1_velocity_v2_seed42",
+  "budget_file": "logs/g1_velocity_v2_seed42/budget.json",
+  "experiment": {
+    "robot": "g1",
+    "recipe": "baseline",
+    "stage": "rough",
+    "seed": 42,
+    "num_envs": 1024,
+    "iterations": 18000,
+    "hours": 8.0,
+    "budget_hours": 64.0,
+    "save_interval": 500,
+    "learning_rate": 0.001,
+    "entropy_coef": 0.01,
+    "initial_action_std": 1.0
+  },
+  "agent": {
+    "num_steps_per_env": 24,
+    "actor": {
+      "hidden_dims": [
+        512,
+        256,
+        128
+      ],
+      "obs_normalization": true
+    },
+    "critic": {
+      "hidden_dims": [
+        512,
+        256,
+        128
+      ],
+      "obs_normalization": true
+    },
+    "algorithm": {
+      "num_learning_epochs": 5,
+      "num_mini_batches": 4,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip_param": 0.2,
+      "desired_kl": 0.01,
+      "max_grad_norm": 1.0
+    }
+  }
+}

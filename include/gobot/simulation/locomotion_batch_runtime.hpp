@@ -77,6 +77,8 @@ public:
 
     void UpdateState(const PhysicsRobotBatchStepResult& physics_state);
 
+    // Advance timers from completed substeps without replacing the instantaneous
+    // contacts/forces populated by UpdateState. Sample peak heights from that state.
     void UpdateFootHistory(const PhysicsRobotBatchStepResult& physics_state,
                            std::span<const float> foot_heights,
                            RealType step_dt,

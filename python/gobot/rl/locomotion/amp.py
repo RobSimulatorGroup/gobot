@@ -54,8 +54,6 @@ class MotionPriorPPO(TransitionPPO):
                 style = style * self.reference.supported_heads(command)
             style = style[:, 0] * (1 - blend) + style[:, 1] * blend
             active = (command[:, 0] >= .2) & (command[:, 1].abs() <= .15) & (command[:, 2].abs() <= .35)
-            if "numerical_reset" in extras:
-                active &= ~extras["numerical_reset"]
             level_weight = 1 - .75 * (state["terrain_level"].float() / 9).clamp(0, 1)
             ramp = min(1., getattr(self, 'update_count', 0) / max(cfg.warmup_updates, 1))
             addition = cfg.weight * .02 * ramp * style * active * level_weight

@@ -681,7 +681,6 @@ void LocomotionBatchRuntime::UpdateFootHistory(
                     }
                     contact = tick_contact;
                 }
-                foot_contacts_[foot] = contact ? 1.0f : 0.0f;
             } else if (contact) {
                 foot_contact_times_[foot] += control_dt;
                 foot_air_times_[foot] = 0.0f;
@@ -701,7 +700,9 @@ void LocomotionBatchRuntime::UpdateFootHistory(
             landing_forces_[foot] =
                     std::sqrt(force_x * force_x + force_y * force_y + force_z * force_z) *
                     first_contacts_[foot];
-            if (!contact) {
+            // Instantaneous contacts and heights were refreshed together by
+            // UpdateState. History only advances timers for simulated ticks.
+            if (foot_contacts_[foot] == 0.0f) {
                 foot_peak_heights_[foot] = std::max(foot_peak_heights_[foot], foot_heights[foot]);
             }
         }
