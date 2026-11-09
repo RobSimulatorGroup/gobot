@@ -1580,6 +1580,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         joint_positions = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_velocities = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_targets = np.broadcast_to(self.default_joint_pos.reshape(1, -1), (reset_count, self.num_actions)).astype(np.float32, copy=True)
+        if self.cfg_obj.task_version == "mjlab_velocity":
+            joint_targets.fill(0.)
 
         for row, env_id_value in enumerate(env_ids):
             env_id = int(env_id_value)

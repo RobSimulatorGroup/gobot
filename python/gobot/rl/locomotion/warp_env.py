@@ -288,6 +288,7 @@ class WarpVelocityEnv:
         context: gobot.AppContext | None = None,
         capture_graphs: bool = True,
         reuse_scene: bool = False,
+        reset_on_create: bool = True,
     ) -> None:
         self._owns_scene = not reuse_scene
         self._reference_initializer = None
@@ -304,8 +305,11 @@ class WarpVelocityEnv:
             raise RuntimeError("MuJoCo Warp backend requested but Torch cannot access CUDA")
 
         self.seed = int(seed)
-        self._generator = torch.Generator(device=self._torch_device)
-        self._generator.manual_seed(self.seed)
+        # The environment and PPO consume the same process-local device RNG.
+        # This matches the reference runner; seed once before construction.
+        torch.cuda.init()
+        self._generator = torch.cuda.default_generators[self._torch_device.index if self._torch_device.index is not None else torch.cuda.current_device()]
+        torch.manual_seed(self.seed)
         self.profile_step = bool(profile_step)
         self.collect_step_extras = bool(collect_step_extras)
         self.collect_training_stats = bool(collect_training_stats)
@@ -433,6 +437,7 @@ class WarpVelocityEnv:
         self._initialize_buffers()
         self._initialize_terrain_assignments()
         self._initialize_contacts()
+        self._reset_push_timers(self._all_env_ids)
         self._apply_startup_domain_randomization()
         self.task_runtime_metadata = self._make_task_runtime_metadata()
         self.task_runtime_info = {
@@ -454,7 +459,8 @@ class WarpVelocityEnv:
             truncated=self._truncated,
             info={"steps": self.episode_length_buf},
         )
-        self.reset(seed=self.seed)
+        if reset_on_create:
+            self.reset()
 
     @property
     def state(self) -> BatchEnvState:
@@ -621,10 +627,8 @@ class WarpVelocityEnv:
         self.profile_step_counter = 0
         self.step_counter = 0
 
-        self._push_step_left = torch.zeros(
-            self.num_envs, dtype=torch.long, device=self._torch_device
-        )
-        self._push_count = torch.zeros_like(self._push_step_left)
+        self._push_time_left = torch.zeros(self.num_envs, device=self._torch_device)
+        self._push_count = torch.zeros(self.num_envs, dtype=torch.long, device=self._torch_device)
 
         self._terrain_scan_height = torch.zeros(
             (self.num_envs, self._height_scan_dim),
@@ -882,17 +886,25 @@ class WarpVelocityEnv:
             self._encoder_bias.zero_()
             return
 
-        low, high = dr.encoder_bias_range
-        self._encoder_bias.copy_(self._uniform(self._encoder_bias.shape, low, high))
         fields: list[str] = []
         if dr.random_com:
             fields.append("body_ipos")
         if dr.randomize_foot_friction:
             fields.append("geom_friction")
-        if not fields:
-            return
-        self.provider.expand_model_fields(fields)
+        if fields:
+            self.provider.expand_model_fields(fields)
 
+        # Match startup event order: foot friction, encoder bias, body COM.
+        if dr.randomize_foot_friction:
+            friction = self.provider.model_array("geom_friction")
+            defaults = self.provider.model_constant("geom_friction").to(dtype=friction.dtype)
+            friction.copy_(defaults.unsqueeze(0).expand_as(friction))
+            slide = self._sample_uniform((self.num_envs, 1, 1), *dr.foot_friction_slide_range).flatten()
+            spin = self._log_uniform((self.num_envs,), *dr.foot_friction_spin_range)
+            roll = self._log_uniform((self.num_envs,), *dr.foot_friction_roll_range)
+            sampled = torch.stack((slide, spin, roll), dim=-1)
+            friction[:, self._foot_geom_ids, :] = sampled[:, None, :]
+        self._encoder_bias.copy_(self._sample_uniform(self._encoder_bias.shape, *dr.encoder_bias_range))
         if dr.random_com:
             body_ipos = self.provider.model_array("body_ipos")
             defaults = self.provider.model_constant("body_ipos").to(dtype=body_ipos.dtype)
@@ -900,23 +912,19 @@ class WarpVelocityEnv:
             offsets = torch.zeros(
                 (self.num_envs, 3), dtype=body_ipos.dtype, device=self._torch_device
             )
-            offsets[:, 0] = self._uniform((self.num_envs,), *dr.com_offset_x)
+            offsets[:, 0] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_x).flatten()
             if dr.com_offset_y is not None:
-                offsets[:, 1] = self._uniform((self.num_envs,), *dr.com_offset_y)
+                offsets[:, 1] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_y).flatten()
             if dr.com_offset_z is not None:
-                offsets[:, 2] = self._uniform((self.num_envs,), *dr.com_offset_z)
+                offsets[:, 2] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_z).flatten()
             body_ipos[:, self._torso_body_id] += offsets
             self.provider.recompute_constants("set_const")
 
-        if dr.randomize_foot_friction:
-            friction = self.provider.model_array("geom_friction")
-            defaults = self.provider.model_constant("geom_friction").to(dtype=friction.dtype)
-            friction.copy_(defaults.unsqueeze(0).expand_as(friction))
-            slide = self._uniform((self.num_envs,), *dr.foot_friction_slide_range)
-            spin = self._log_uniform((self.num_envs,), *dr.foot_friction_spin_range)
-            roll = self._log_uniform((self.num_envs,), *dr.foot_friction_roll_range)
-            sampled = torch.stack((slide, spin, roll), dim=-1)
-            friction[:, self._foot_geom_ids, :] = sampled[:, None, :]
+    def _sample_uniform(self, shape, low, high):
+        """Affine sampling used by reset events, perturbations and noise."""
+        low = torch.as_tensor(low, device=self._torch_device)
+        high = torch.as_tensor(high, device=self._torch_device)
+        return torch.rand(tuple(shape), device=self._torch_device, generator=self._generator) * (high - low) + low
 
     def _uniform(
         self,
@@ -943,7 +951,7 @@ class WarpVelocityEnv:
         if seed is None:
             return
         self.seed = int(seed)
-        self._generator.manual_seed(self.seed)
+        torch.manual_seed(self.seed)
 
     def init_state(self) -> BatchEnvState:
         return self._state
@@ -972,6 +980,7 @@ class WarpVelocityEnv:
             }, {}
 
         reasons = torch.zeros_like(ids)
+        self._update_terrain_curriculum(ids)
         self._reset_idx(ids, reasons)
         self.provider.forward()
         self._compute_commands(dt=0.0)
@@ -1361,30 +1370,38 @@ class WarpVelocityEnv:
             )
         origins = self._terrain_origin_for(env_ids)
         self._env_origins[env_ids] = origins
-        jitter = self._uniform((count, 2), -self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter)
-        z_offset = self._uniform((count,), *self.cfg_obj.reset_z_range)
-        positions = origins.clone()
-        positions[:, :2] += jitter
+        jitter = self.cfg_obj.spawn_jitter
+        yaw_range = (-3.14, 3.14) if self.cfg_obj.randomize_reset_yaw else (0., 0.)
+        ranges = torch.tensor([(-jitter, jitter), (-jitter, jitter), self.cfg_obj.reset_z_range,
+                               (0., 0.), (0., 0.), yaw_range], device=self._torch_device)
+        pose = self._sample_uniform((count, 6), ranges[:, 0], ranges[:, 1])
+        z_offset = pose[:, 2]
+        positions = pose[:, :3].clone()
+        positions[:, 2] += float(self.cfg_obj.base_clearance)
+        positions += origins
         positions[:, :2] += torch.tensor(self.cfg_obj.spawn_offset_xy, device=self._torch_device)
-        positions[:, 2] += float(self.cfg_obj.base_clearance) + z_offset
-        if self.cfg_obj.randomize_reset_yaw:
-            yaw = self._uniform((count,), -3.14, 3.14)
-            orientation = _quat_from_yaw(yaw)
-        else:
-            orientation = torch.zeros(
-                (count, 4), dtype=torch.float32, device=self._torch_device
-            )
-            orientation[:, 0] = 1.0
+        orientation = _quat_from_yaw(pose[:, 5])
+        # Zero-width reset distributions still consume samples in the reference.
+        velocity = self._sample_uniform((count, 6), 0., 0.)
+        joint_position = self._default_joint_pos + self._sample_uniform((count, self.num_actions), 0., 0.)
+        midpoint = self._joint_limits.mean(dim=1)
+        half_range = .5 * (self._joint_limits[:, 1] - self._joint_limits[:, 0]) * self.cfg_obj.rewards.soft_joint_pos_limit_factor
+        joint_position = joint_position.clamp(midpoint - half_range, midpoint + half_range)
+        joint_velocity = self._sample_uniform((count, self.num_actions), 0., 0.)
 
         align_surface = any(self.cfg_obj.spawn_offset_xy)
         if align_surface:
             positions[:, 2] += 1.5
         self._reset_qpos[env_ids, :3] = positions
         self._reset_qpos[env_ids, 3:7] = orientation
-        self._reset_qpos[env_ids[:, None], self._joint_qpos_ids] = self._default_joint_pos
+        self._reset_qpos[env_ids[:, None], self._joint_qpos_ids] = joint_position
         self._reset_qvel[env_ids] = 0.0
+        self._reset_qvel[env_ids, :6] = velocity
+        self._reset_qvel[env_ids[:, None], self._joint_dof_ids] = joint_velocity
         self._reset_ctrl[env_ids] = 0.0
-        self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
+        # Reference reset clears actuator targets before the first policy action.
+        if self.cfg_obj.task_version != "mjlab_velocity":
+            self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
         self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
@@ -1584,9 +1601,9 @@ class WarpVelocityEnv:
             self._command[forward_ids, 1:] = 0.0
             self._is_heading_env[forward_ids] = False
             self._is_world_env[forward_ids] = False
-        self._is_run_env[env_ids] = (
-            self._uniform((count,), 0.0, 1.0) <= float(cfg.rel_run_envs)
-        )
+        self._is_run_env[env_ids] = False
+        if cfg.rel_run_envs > 0:
+            self._is_run_env[env_ids] = self._uniform((count,), 0.0, 1.0) <= float(cfg.rel_run_envs)
         run_ids = env_ids[self._is_run_env[env_ids]]
         if run_ids.numel() > 0:
             run_low, run_high = sorted(float(value) for value in cfg.run_velocity_x)
@@ -1643,36 +1660,31 @@ class WarpVelocityEnv:
 
     def _reset_push_timers(self, env_ids: torch.Tensor) -> None:
         if not self.cfg_obj.push_enabled:
-            self._push_step_left[env_ids] = torch.iinfo(torch.long).max
+            self._push_time_left[env_ids] = float("inf")
             return
-        low, high = self.cfg_obj.push_interval_range_s
-        seconds = self._uniform((int(env_ids.numel()),), low, high)
-        steps = torch.ceil(seconds / max(self.step_dt, 1.0e-9)).long().clamp(min=1)
-        self._push_step_left[env_ids] = steps
+        self._push_time_left[env_ids] = self._sample_uniform(
+            (int(env_ids.numel()),), *self.cfg_obj.push_interval_range_s)
 
     def _apply_pushes(self) -> None:
         if not self.cfg_obj.push_enabled:
             return
-        self._push_step_left.sub_(1)
-        env_ids = torch.nonzero(self._push_step_left <= 0, as_tuple=False).flatten()
+        self._push_time_left.sub_(self.step_dt)
+        env_ids = torch.nonzero(self._push_time_left < 1.e-6, as_tuple=False).flatten()
         if env_ids.numel() == 0:
             return
         if self.cfg_obj.push_mode != "velocity":
-            raise NotImplementedError("MJLab-aligned locomotion Warp pushes use velocity mode")
-        linear, angular = self._root_link_velocity_world()
-        ranges = self.cfg_obj.push_velocity_ranges
-        count = int(env_ids.numel())
-        for column, name in enumerate(("x", "y", "z")):
-            linear[env_ids, column] += self._uniform((count,), *ranges.get(name, (0.0, 0.0)))
-        for column, name in enumerate(("roll", "pitch", "yaw")):
-            angular[env_ids, column] += self._uniform((count,), *ranges.get(name, (0.0, 0.0)))
-        quaternion = self._arrays["qpos"][env_ids, 3:7]
-        self._arrays["qvel"][env_ids, :3] = linear[env_ids]
-        self._arrays["qvel"][env_ids, 3:6] = _quat_apply_inverse(
-            quaternion, angular[env_ids]
-        )
-        self._push_count[env_ids] += 1
+            raise NotImplementedError("locomotion Warp pushes use velocity mode")
+        # Interval events sample their next deadline before their velocity kick.
         self._reset_push_timers(env_ids)
+        linear, angular = self._root_link_velocity_world()
+        velocity = torch.cat((linear[env_ids], angular[env_ids]), dim=-1)
+        ranges = torch.tensor([self.cfg_obj.push_velocity_ranges.get(name, (0., 0.))
+            for name in ("x", "y", "z", "roll", "pitch", "yaw")], device=self._torch_device)
+        velocity += self._sample_uniform(velocity.shape, ranges[:, 0], ranges[:, 1])
+        quaternion = self._arrays["qpos"][env_ids, 3:7]
+        self._arrays["qvel"][env_ids, :3] = velocity[:, :3]
+        self._arrays["qvel"][env_ids, 3:6] = _quat_apply_inverse(quaternion, velocity[:, 3:])
+        self._push_count[env_ids] += 1
 
     def _refresh_foot_contacts(self):
         if self._singleton_feet:
@@ -2060,14 +2072,15 @@ class WarpVelocityEnv:
         for name, section in slices.items():
             low, high = ranges[name]
             self._actor_obs[:, section].add_(
-                self._uniform(self._actor_obs[:, section].shape, low, high)
+                self._sample_uniform(self._actor_obs[:, section].shape, low, high)
             )
         height_start = 9 + 3 * self.num_actions + 3
         low, high = ranges["height_scan"]
         scale = max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
-        self._actor_obs[:, height_start:].add_(
-            self._uniform(self._actor_obs[:, height_start:].shape, low / scale, high / scale)
-        )
+        if self.cfg_obj.observations.include_height_scan:
+            # Noise is applied in metres before scaling, as in the sensor term.
+            noise = self._sample_uniform(self._actor_obs[:, height_start:].shape, low, high)
+            self._actor_obs[:, height_start:].copy_((self._terrain_scan_height + noise) / scale)
 
     def _make_step_info(
         self,

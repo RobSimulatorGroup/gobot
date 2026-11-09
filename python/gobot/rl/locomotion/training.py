@@ -367,7 +367,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             import warp as wp
             resources.enter_context(wp.ScopedDevice(device))
         env = make_velocity_env(cfg, backend=backend, num_envs=exp.num_envs, device=device,
-                                seed=seed, collect_step_extras=False, collect_training_stats=True)
+                                seed=seed, collect_step_extras=False, collect_training_stats=True,
+                                **({'reset_on_create': False} if backend == 'mujoco-warp' else {}))
         terrain_info = None
         if terrain_reference is not None:
             from .terrain_reference import load, verify_environment, initial_assignments, assignment_digest
@@ -380,12 +381,15 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             distributed.check_error(error, phase='training terrain')
             levels, types = initial_assignments(terrain_data, exp.num_envs, seed)
             env.set_terrain_assignments(levels, types, fixed=False)
-            env.reset(seed=seed)
             assignments = distributed.gather(assignment_digest(levels, types))
             terrain_info = {'sha256': terrain_data['sha256'], 'seed': terrain_data['seed'],
                             'initial_assignments': assignments}
             distributed.on_main(lambda: atomic_json(directory / 'terrain.json', terrain_info))
             distributed.on_main(lambda: atomic_json(directory / 'training_terrain.json', terrain_data))
+        if backend == 'mujoco-warp':
+            env.reset()
+        elif terrain_reference is not None:
+            env.reset(seed=seed)
         use_amp = 'motion_prior_cfg' in config['algorithm']
         wrapper = RslRlVecEnvWrapper(env, device=device)
         manifest = build_policy_manifest(wrapper, cfg, config, Path(cfg.project_path))
@@ -406,6 +410,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         signature_data = {'experiment': semantic, 'task': task_identity,
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
                           'transition_observation_noise': False,
+                          'sampling': 'shared_torch_rng' if backend == 'mujoco-warp' else 'numpy',
+                          'reset_actuator_targets': 'zero_for_baseline',
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
         distributed.on_main(lambda: atomic_json(directory / 'training_signature.json', {'signature': signature}))
