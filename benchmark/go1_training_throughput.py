@@ -19,7 +19,7 @@ if str(REPO_ROOT) not in sys.path:
 import torch
 
 from examples.go1.train.go1_velocity_cfg import go1_velocity_cfg
-from examples.go1.train.go1_velocity_env import Go1VelocityEnv
+from gobot.rl.locomotion.cpu_env import CpuVelocityEnv
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 
@@ -43,7 +43,7 @@ def main() -> None:
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
 
-    core_env = Go1VelocityEnv(
+    core_env = CpuVelocityEnv(
         cfg,
         num_envs=args.num_envs,
         device=args.device,
@@ -115,7 +115,7 @@ def _append_record(records: dict[str, list[float]], values: dict[str, float]) ->
         records.setdefault(str(key), []).append(float(value))
 
 
-def _metrics(*, args, env: RslRlVecEnvWrapper, core_env: Go1VelocityEnv, elapsed: float, timing_records: dict[str, list[float]]) -> dict:
+def _metrics(*, args, env: RslRlVecEnvWrapper, core_env: CpuVelocityEnv, elapsed: float, timing_records: dict[str, list[float]]) -> dict:
     env_steps = int(args.steps * env.num_envs)
     wrapper_total = np.asarray(timing_records.get("wrapper_total_ms", []), dtype=np.float64)
     total_s = float(wrapper_total.sum() / 1000.0)

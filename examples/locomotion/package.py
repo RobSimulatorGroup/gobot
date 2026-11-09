@@ -9,7 +9,7 @@ from pathlib import Path
 import platform
 import subprocess
 import tarfile
-from .experiment import Experiment
+from gobot.rl.locomotion.experiment import Experiment
 
 
 SOURCE_SUFFIXES = {'.py', '.pyi', '.cpp', '.hpp', '.c', '.h', '.cmake', '.in', '.txt',
@@ -36,9 +36,8 @@ def source_files(root):
                     or path.name.startswith('LICENSE-')):
                 files.add(path)
     for name in ('.gitignore','CMakeLists.txt','gobot_build_backend.py','pyproject.toml','uv.lock',
-                 'doc/g1_amp_training_status.md',
                  'doc/gobot_training.md',
-                 'doc/supermimic_reproduced_alignment_plan.md','doc/supermimic_reproduced_progress.md'):
+                 'doc/supermimic_reproduced_alignment_plan.md','doc/mjlab_comparison.md'):
         files.add(root/name)
     if (root/'LICENSE').exists():files.add(root/'LICENSE')
     for fixture in (root/'tests/fixtures').glob('supermimic_reproduced_*.pt'):
@@ -52,8 +51,8 @@ def build(output, configs, checkpoint=None, *, reports=()):
     robots=set()
     for config in configs:
         config=Path(config).resolve();files.add(config)
-        exp=Experiment.load(config);robots.add(exp.robot)
-        if exp.robot=='g1' and exp.recipe=='natural':
+        exp=Experiment(**json.loads(config.read_text())['experiment']);robots.add(exp.robot)
+        if exp.recipe=='amp':
             dataset=(root/exp.motion_dataset).resolve();files.add(dataset);files.add(dataset.parent/'source.json')
     if checkpoint:
         files.add(Path(checkpoint).resolve())
@@ -83,9 +82,9 @@ def build(output, configs, checkpoint=None, *, reports=()):
 3. Install/build Gobot using uv sync --frozen and the repository build guide.
 4. Verify files: python -m examples.locomotion.package --verify bundle.json
 5. Start one independent process per GPU. Example:
-   CUDA_VISIBLE_DEVICES=0 uv run --no-sync python -m examples.locomotion.train --config CONFIG --log-dir logs/RUN --budget-file logs/RUN-budget.json
-7. Use --resume CHECKPOINT for the same recipe, --initialize CHECKPOINT for an admitted next stage.
-8. A cluster budget must be explicit in the experiment config. For concurrent independent jobs use separate ledgers; sum their GPU-hours in the campaign report.
+   CUDA_VISIBLE_DEVICES=0 uv run --no-sync python -m gobot.rl.train TASK --config CONFIG --output logs/RUN --budget-file logs/RUN-budget.json
+6. Use --resume CHECKPOINT for the same recipe, --initialize CHECKPOINT to start a new experiment from an actor.
+7. A cluster budget must be explicit in the experiment config. For concurrent independent jobs use separate ledgers; sum their GPU-hours across all runs.
 
 Logs/status.json includes PID identity, heartbeat and exit reason. Inspect via:
    uv run --no-sync python -m examples.locomotion.status logs

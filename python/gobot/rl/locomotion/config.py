@@ -30,9 +30,6 @@ class LocomotionRobotCfg:
     feet: tuple[FootCfg, ...]
     imu_sensor: str = "imu"
     angular_momentum_sensor: str = "root_angmom"
-    held_joint_targets: Mapping[str, float] = field(default_factory=dict)
-    held_joint_kp: float = 10.0
-    held_joint_kd: float = 2.0
 
     def __post_init__(self):
         n = len(self.joint_names)
@@ -41,8 +38,6 @@ class LocomotionRobotCfg:
         for name in ("default_joint_pos", "kp", "kd", "armature", "effort_limit", "velocity_limit"):
             if len(getattr(self, name)) != n:
                 raise ValueError(f"{name} must have one value per policy joint")
-        if set(self.joint_names) & set(self.held_joint_targets):
-            raise ValueError("policy joints and held joints must be disjoint")
         shapes = [shape for foot in self.feet for shape in foot.collision_shapes]
         if not self.feet or any(not foot.collision_shapes for foot in self.feet) or len(shapes) != len(set(shapes)):
             raise ValueError("each foot requires a disjoint, nonempty collision group")
@@ -69,6 +64,7 @@ VELOCITY_REWARD_TERM_NAMES: tuple[str, ...] = (
 
 @dataclass
 class VelocityObservationCfg:
+    include_height_scan: bool = True
     history_length: int = 1
     height_scan_sensor: str = "terrain_scan"
     terrain_scan_max_distance: float = 5.0
@@ -87,13 +83,6 @@ class VelocityObservationCfg:
 
 @dataclass
 class VelocityRewardCfg:
-    adaptive_tracking: bool = False
-    tracking_std_floor: float = .1
-    tracking_std_scale: float = .5
-    tracking_std_ceiling: float = .5
-    moving_pose_scale: float = 1.
-    command_progress: float = 0.
-    body_lin_vel_z: float = 0.
     upright_reference: Literal["world", "terrain"] = "terrain"
     track_linear_velocity: float = 2.0
     track_angular_velocity: float = 2.0
@@ -223,7 +212,7 @@ class VelocityTaskCfg:
     running_terrain_types: tuple[int, ...] = ()
     max_running_terrain_level: int = 2
     terrain_node_path: str = "terrain_world/terrain"
-    curriculum_mode: Literal["legacy", "command_progress"] = "legacy"
+    curriculum_mode: Literal["legacy", "command_progress", "command_displacement"] = "legacy"
     fall_angle: float | None = None
     min_base_clearance: float | None = None
     nconmax: int = 35
@@ -315,5 +304,5 @@ class VelocityTaskCfg:
             raise ValueError("upright_reference must be world or terrain")
         if self.gait.enabled and (not self.capture_transitions or len(self.robot.feet) != 4):
             raise ValueError("natural gait requires four feet and transition capture")
-        if self.curriculum_mode not in {"legacy", "command_progress"}:
+        if self.curriculum_mode not in {"legacy", "command_progress", "command_displacement"}:
             raise ValueError("unknown terrain curriculum mode")

@@ -54,14 +54,20 @@ Later editor launches rebuild native changes incrementally.
 | --- | --- |
 | <img src="doc/video/cartpole.gif" alt="CartPole" width="420"> | <img src="doc/video/go1.gif" alt="Go1" width="420"> |
 
-Run a small Go1 CPU training job from the checkout:
+Use the shared training entry for Go1/G1 PPO, G1 AMP, and G1 SuperMimic:
 
 ```bash
-uv run python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
+uv run gobot-train --list
+uv run gobot-train go1-velocity \
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval \
+  --output logs/go1_cpu
 ```
 
-See the [example catalog](doc/examples.md) and [Go1 guide](examples/go1/README.md)
-for CUDA training, evaluation, and policy playback.
+Choose `--backend mujoco-warp --device cuda:0` for CUDA simulation. Task registration
+is optional: Python factories and ordinary Python scripts use the same launch API.
+See the [training guide](doc/gobot_training.md) for reward/algorithm overrides,
+backend limits and data preparation, and the [example catalog](doc/examples.md)
+for evaluation and policy playback.
 
 ## Documentation
 

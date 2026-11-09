@@ -37,8 +37,9 @@ def test_launch_matches_allocation_and_keeps_arguments(environment, script, defa
                              '--output', '/tmp/result with spaces'], env=environment,
                             check=True, capture_output=True, text=True)
     args = json.loads(result.stdout)
-    assert args[:6] == ['-m', 'torch.distributed.run', '--standalone',
-                       f'--nproc-per-node={expected}', '-m', 'gobot.rl.train']
+    assert args[:7] == ['-m', 'torch.distributed.run', '--standalone',
+                       f'--nproc-per-node={expected}', '-m', 'gobot.rl.train',
+                       'g1-tracking']
     assert args[args.index('--project') + 1] == environment['GOBOT_SCENE_PROJECT']
     assert args[-2:] == ['--output', '/tmp/result with spaces']
 
@@ -53,3 +54,27 @@ def test_invalid_launch_fails_before_python(environment, script, extra):
     result = subprocess.run(['bash', str(ROOT / 'examples/locomotion/cluster' / script)],
                             env={**environment, **extra}, capture_output=True, text=True)
     assert result.returncode == 2 and result.stderr and not result.stdout
+
+
+@pytest.mark.parametrize('processes,task,seed', [
+    (None, 'go1-velocity', '42'),
+    ('2', 'g1-velocity', '7'),
+])
+def test_velocity_launch_trains_one_shared_policy(environment, processes, task, seed):
+    environment.update(GOBOT_REPO=environment['GOBOT_PROJECT_ROOT'],
+                       GOBOT_OUTPUT='/tmp/velocity runs', GOBOT_TASK=task,
+                       GOBOT_SEED=seed)
+    if processes:
+        environment['GOBOT_NPROC_PER_NODE'] = processes
+    result = subprocess.run(
+        ['bash', str(ROOT / 'examples/locomotion/cluster/train_velocity.sbatch'),
+         '--terrain-reference', '/tmp/shared terrain.json'],
+        env=environment, capture_output=True, text=True, check=True,
+    )
+    args = json.loads(result.stdout)
+    assert args[:8] == ['-B', '-m', 'torch.distributed.run', '--standalone',
+                       f'--nproc-per-node={processes or "8"}', '-m', 'gobot.rl.train', task]
+    assert args[args.index('--seed') + 1] == seed
+    assert args[args.index('--output') + 1] == '/tmp/velocity runs'
+    assert args[args.index('--budget-file') + 1] == '/tmp/velocity runs/budget.json'
+    assert args[-2:] == ['--terrain-reference', '/tmp/shared terrain.json']

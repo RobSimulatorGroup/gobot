@@ -1,12 +1,11 @@
-"""Explicit stage evidence; absent measurements never mean a capability passed."""
+"""Measured locomotion abilities; missing measurements are reported as untested."""
 from __future__ import annotations
 
 CAPABILITIES = ('stand', 'forward_walk', 'forward_run', 'backward', 'lateral',
                 'yaw', 'stop_start', 'terrain_routes', 'stairs_up', 'stairs_down',
                 'low_obstacle', 'waypoints', 'skill_transition')
-STAGE_REQUIREMENTS = {
-    'flat_control': ('stand', 'forward_walk'),
-    'flat_gait': ('stand', 'forward_walk', 'forward_run'),
+TERRAIN_REQUIREMENTS = {
+    'flat': ('stand', 'forward_walk'),
     'rough': ('terrain_routes',),
     'mixed': ('stand', 'forward_walk', 'forward_run', 'backward', 'lateral', 'yaw', 'terrain_routes'),
 }
@@ -28,8 +27,8 @@ def scenario_capability(scenario, *, run_speed=1.6):
 
 
 def assess_capabilities(scenarios, stage, *, final=False, natural=False, run_speed=1.6):
-    if stage not in STAGE_REQUIREMENTS:
-        raise ValueError(f'unknown capability stage {stage!r}')
+    if stage not in TERRAIN_REQUIREMENTS:
+        raise ValueError(f'unknown evaluation terrain {stage!r}')
     threshold = .95 if final else .9
     evidence = {key: [] for key in CAPABILITIES}
     for index, scenario in enumerate(scenarios):
@@ -46,7 +45,9 @@ def assess_capabilities(scenarios, stage, *, final=False, natural=False, run_spe
             evidence[route_capability].append({'scenario': index, 'passed': passed})
     capabilities = {name: {'status': 'untested' if not rows else 'passed' if all(row['passed'] for row in rows) else 'failed',
                            'evidence': rows} for name, rows in evidence.items()}
-    required = STAGE_REQUIREMENTS[stage]
-    return {'capability_protocol': 'locomotion_capabilities_v1', 'capabilities': capabilities,
+    required = TERRAIN_REQUIREMENTS[stage]
+    if natural and stage == 'flat':
+        required = (*required, 'forward_run')
+    return {'capability_protocol': 'locomotion', 'capabilities': capabilities,
             'required_capabilities': list(required),
             'stage_passed': all(capabilities[key]['status'] == 'passed' for key in required)}

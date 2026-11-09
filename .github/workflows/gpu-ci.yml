@@ -135,6 +135,9 @@ jobs:
       - name: Test Go1 MuJoCo Warp task
         run: uv run --no-sync python tests/python/test_go1_mujoco_warp_env.py
 
+      - name: Check standard Go1 CPU and Warp observations
+        run: uv run --no-sync python tests/python/test_shared_velocity_gpu.py --robot go1
+
       - name: Install pinned Go1 reference dynamics stack
         run: |
           mkdir -p /tmp/gobot-gpu-ci/go1-reference-stack
@@ -179,18 +182,17 @@ jobs:
             --minimum-throughput 2048=25000 \
             --minimum-scale-factor 1.05
 
-      - name: Run PPO admission training
+      - name: Run PPO training smoke
         run: |
           mkdir -p /tmp/gobot-gpu-ci/training
-          uv run --no-sync python -m examples.go1.train.go1_velocity_train \
+          uv run --no-sync python -m gobot.rl.train go1-velocity \
             --backend mujoco-warp \
             --device cuda:0 \
             --num-envs 256 \
             --iterations 3 \
             --save-interval 3 \
-            --no-step-extras \
-            --log-dir /tmp/gobot-gpu-ci/training \
-            --policy-out /tmp/gobot-gpu-ci/training/policy.pt
+            --no-eval \
+            --output /tmp/gobot-gpu-ci/training
 
       - name: Upload GPU results
         if: always()

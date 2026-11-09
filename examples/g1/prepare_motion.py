@@ -13,7 +13,7 @@ from scipy.spatial.transform import Rotation, Slerp
 
 from .config import JOINT_NAMES, g1_amp_cfg
 from gobot.rl.locomotion.scene import prepare_velocity_scene
-from gobot.rl.locomotion.contract import robot_physics_digest
+from gobot.rl.locomotion.robot_model import robot_physics_digest
 from gobot.rl.locomotion.motion import motion_features
 from gobot.sim.providers import CompiledSceneArtifact
 import gobot

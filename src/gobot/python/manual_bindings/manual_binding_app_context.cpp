@@ -976,8 +976,17 @@ public:
         }
     }
 
-    void AdvanceCommands() {
-        batch_runtime_.CommandRuntime().Advance(batch_runtime_.BaseQuaternions());
+    void AdvanceCommands(const py::object& reset_mask) {
+        if (reset_mask.is_none()) {
+            batch_runtime_.CommandRuntime().Advance(batch_runtime_.BaseQuaternions());
+            return;
+        }
+        auto mask = py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>::ensure(reset_mask);
+        if (!mask || mask.ndim() != 1 || mask.shape(0) != EnvDim()) {
+            throw std::invalid_argument("reset_mask must have shape (num_envs,)");
+        }
+        batch_runtime_.CommandRuntime().Advance(batch_runtime_.BaseQuaternions(),
+                                               {mask.data(), environment_count_});
     }
 
     void UpdateCommandFrames() {
@@ -1546,7 +1555,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
             .def("set_command_step_resampling",
                  &PyLocomotionBatchView::SetCommandStepResampling,
                  py::arg("enabled"))
-            .def("advance_commands", &PyLocomotionBatchView::AdvanceCommands)
+            .def("advance_commands", &PyLocomotionBatchView::AdvanceCommands,
+                 py::arg("reset_mask") = py::none())
             .def("update_command_frames", &PyLocomotionBatchView::UpdateCommandFrames)
             .def("refresh",
                  &PyLocomotionBatchView::Refresh,

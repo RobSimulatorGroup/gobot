@@ -1,7 +1,6 @@
 # SuperMimic-Reproduced → Gobot：G1 训练与结果对齐计划
 
-计划制定于 2026-11-03。2026-11-06 已完成单 seed 八卡训练与全量评测，
-见 [100k 实验报告](g1_bones_100k_results.md)；同栈同预算多 seed 复现仍按本计划推进。
+这份计划定义同栈、同预算、多 seed 的复现方法与验收要求。
 
 目标是用 **Gobot 自己的场景、物理批处理和 Python 训练接口**，从头训练 G1，复现
 SuperMimic-Reproduced + mjlab 的指定实验。SuperMimic-Reproduced 是此次算法与任务语义的主基线。
@@ -13,8 +12,7 @@ MuJoCo CPU/Warp provider、任务注册、独立视频与运行记录。Gobot �
 
 这份计划不把已完成的入口整理、旧 Uni-SuperMimic 对照或短训练测试计为新基线对齐。
 以下是实验设计与验收门槛，不是所有项目均已完成的声明。
-已完成项和历史失败保留在 [实施记录](supermimic_reproduced_progress.md)，最新单 seed
-结果单独记录。发布成绩比较不能代替同配置、同训练量的多 seed 配对实验。
+发布成绩比较不能代替同配置、同训练量的多 seed 配对实验。
 
 **1. 固定基线与验收对象（P0）**
 

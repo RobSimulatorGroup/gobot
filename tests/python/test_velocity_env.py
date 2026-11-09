@@ -16,9 +16,9 @@ sys.path.insert(0, str(GO1_PROJECT))
 
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1 import go1_profile
-from examples.go1.go1_velocity_contract import GO1_TASK_VERSION
+from examples.go1.go1_policy_info import GO1_TASK_VERSION
 from examples.go1.train import go1_velocity_cfg as go1_cfg
-from examples.go1.train.go1_velocity_env import Go1VelocityEnv
+from gobot.rl.locomotion.cpu_env import CpuVelocityEnv
 from examples.go1.train.go1_training_state import (
     build_terrain_curriculum_state,
     restore_terrain_curriculum_assignments,
@@ -251,7 +251,7 @@ def test_go1_env_applies_mujoco_solver_settings():
     cfg.push_enabled = False
     cfg.observations.actor_noise = False
 
-    env = Go1VelocityEnv(num_envs=1, cfg=cfg, sim_workers=0, seed=3)
+    env = CpuVelocityEnv(num_envs=1, cfg=cfg, sim_workers=0, seed=3)
     try:
         solver_settings = env.context.get_mujoco_solver_settings()
         assert solver_settings["solver"] == gobot.PhysicsSolverType.Newton
@@ -274,7 +274,7 @@ def test_go1_rough_env_reset_step_shapes():
     cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
     cfg.push_enabled = False
-    env = Go1VelocityEnv(cfg, num_envs=2, device="cpu", seed=123, max_episode_length=4, sim_workers=1)
+    env = CpuVelocityEnv(cfg, num_envs=2, device="cpu", seed=123, max_episode_length=4, sim_workers=1)
     try:
         obs = env.get_observations()
         assert obs["actor"].shape == (2, 235)
@@ -334,12 +334,14 @@ def test_go1_rough_env_reset_step_shapes():
             np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1)
             - encoder_bias,
         )
-        actor_obs, _ = env._build_generic_velocity_observations(env.backend.state)
+        actor_obs, critic_obs = env._build_generic_velocity_observations(env.backend.state)
         np.testing.assert_allclose(
             actor_obs[:, 9 : 9 + env.num_actions],
             env.backend.state.joint_position
-            - np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1),
+            - np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1) + encoder_bias,
         )
+        np.testing.assert_allclose(critic_obs[:, 9 : 9 + env.num_actions],
+            env.backend.state.joint_position - np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS).reshape(1, -1), atol=1.e-7)
         np.copyto(env.backend.state.encoder_bias, original_encoder_bias)
 
         assert env.cfg_obj.command.ranges.lin_vel_x == (-1.0, 1.0)
@@ -425,6 +427,7 @@ def _synthetic_go1_task_env():
         base_angular_velocity_body=np.asarray([[0.1, -0.2, 0.25], [0.0, 0.0, 0.0]], dtype=np.float32),
         projected_gravity=np.asarray([[0.0, 0.0, -1.0]] * num_envs, dtype=np.float32),
         joint_position=joint_position,
+        encoder_bias=np.zeros_like(joint_position),
         joint_velocity=np.zeros((num_envs, num_actions), dtype=np.float32),
         previous_action=np.zeros((num_envs, num_actions), dtype=np.float32),
         submitted_action=action.copy(),
@@ -468,7 +471,7 @@ def _synthetic_go1_task_env():
         actor_obs=np.zeros((num_envs, actor_dim), dtype=np.float32),
         critic_obs=np.zeros((num_envs, critic_dim), dtype=np.float32),
     )
-    env = object.__new__(Go1VelocityEnv)
+    env = object.__new__(CpuVelocityEnv)
     env.cfg_obj = cfg
     env.num_envs = num_envs
     env.num_actions = num_actions
@@ -496,10 +499,10 @@ def _synthetic_go1_task_env():
     return env, state
 
 
-def test_go1_reward_and_observation_formulas_match_task_contract():
+def test_go1_reward_and_observation_formulas():
     env, state = _synthetic_go1_task_env()
     original_peak_height = state.foot_peak_height.copy()
-    env._run_go1_rough_task_numpy()
+    env._run_velocity_task_numpy()
 
     cfg = env.cfg_obj.rewards
     command = state.command
@@ -509,7 +512,7 @@ def test_go1_reward_and_observation_formulas_match_task_contract():
     active = (command_speed > cfg.command_threshold).astype(np.float32)
     lin_error = np.sum(np.square(command[:, :2] - lin_vel[:, :2]), axis=1) + np.square(lin_vel[:, 2])
     ang_error = np.square(command[:, 2] - ang_vel[:, 2]) + np.sum(np.square(ang_vel[:, :2]), axis=1)
-    pose_std = env._go1_pose_std(command_speed)
+    pose_std = env._posture_std(command_speed)
     pose_error = np.mean(
         np.square((state.joint_position - state.default_joint_position.reshape(1, -1)) / pose_std),
         axis=1,
@@ -546,7 +549,7 @@ def test_go1_reward_and_observation_formulas_match_task_contract():
     np.testing.assert_allclose(state.critic_obs[:, : state.actor_obs.shape[1]], state.actor_obs)
 
     state.base_linear_velocity[0, 0] = np.nan
-    env._run_go1_rough_task_numpy()
+    env._run_velocity_task_numpy()
     assert np.isfinite(state.reward_terms).all()
     assert np.isfinite(state.reward).all()
 
@@ -570,7 +573,7 @@ def test_go1_run_progress_reward_does_not_reward_standing():
     state.base_linear_velocity[:, :] = 0.0
     state.base_linear_velocity[0, 0] = 0.2
 
-    env._run_go1_rough_task_numpy()
+    env._run_velocity_task_numpy()
 
     progress_index = env._reward_term_names.index("run_progress")
     np.testing.assert_allclose(
@@ -581,7 +584,7 @@ def test_go1_run_progress_reward_does_not_reward_standing():
     assert np.isfinite(state.reward).all()
 
 
-def test_go1_training_configuration_matches_task_contract():
+def test_go1_training_configuration():
     cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
     train_cfg = go1_cfg.rsl_rl_train_cfg()
     assert train_cfg["num_steps_per_env"] == 24
@@ -591,6 +594,8 @@ def test_go1_training_configuration_matches_task_contract():
     assert train_cfg["critic"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["algorithm"] == {
         "class_name": "PPO",
+        "optimizer": "adam",
+        "share_cnn_encoders": False,
         "num_learning_epochs": 5,
         "num_mini_batches": 4,
         "clip_param": 0.2,
@@ -698,7 +703,7 @@ def test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command():
 def test_go1_bound_gait_score_matches_torch_backend():
     torch = _require_torch()
     from examples.go1.train.go1_gait import bound_gait_score_numpy
-    from examples.go1.train.go1_warp_velocity_env import _bound_gait_score_torch
+    from gobot.rl.locomotion.warp_env import _bound_gait_score_torch
 
     rng = np.random.default_rng(47)
     contact = rng.integers(0, 2, size=(16, 4), dtype=np.int64).astype(np.float32)
@@ -879,7 +884,7 @@ def test_go1_rough_first_contact_is_not_repeated_while_touching():
     cfg.push_enabled = False
     cfg.domain_randomization.enabled = False
     cfg.terrain_curriculum = False
-    env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=7, max_episode_length=20, sim_workers=1)
+    env = CpuVelocityEnv(cfg, num_envs=1, device="cpu", seed=7, max_episode_length=20, sim_workers=1)
     try:
         state = env.backend.state
         assert not state.foot_air_time.flags.writeable
@@ -922,7 +927,7 @@ def test_go1_velocity_push_adds_to_current_world_velocity():
         "pitch": (0.2, 0.2),
         "yaw": (0.3, 0.3),
     }
-    env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=11, max_episode_length=20, sim_workers=1)
+    env = CpuVelocityEnv(cfg, num_envs=1, device="cpu", seed=11, max_episode_length=20, sim_workers=1)
     try:
         initial_linear = np.asarray([[0.5, -0.25, 0.1]], dtype=np.float32)
         initial_angular = np.asarray([[0.15, 0.05, -0.2]], dtype=np.float32)
@@ -949,7 +954,7 @@ def test_go1_velocity_push_adds_to_current_world_velocity():
 def test_go1_rough_play_uses_rough_terrain_grid():
     cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1", play=True)
     cfg.domain_randomization.enabled = False
-    env = Go1VelocityEnv(cfg, num_envs=4, device="cpu", seed=5, max_episode_length=4)
+    env = CpuVelocityEnv(cfg, num_envs=4, device="cpu", seed=5, max_episode_length=4)
     try:
         assert env._runtime_terrain_node is not None
         assert env._runtime_terrain_node.box_count == 514
@@ -969,7 +974,7 @@ def test_go1_native_batch_arrays_track_actions_and_state():
     cfg.observations.actor_noise = False
     cfg.push_enabled = False
     cfg.domain_randomization.enabled = False
-    env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=8)
+    env = CpuVelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=8)
     try:
         env.reset(seed=123)
         first_action = np.linspace(-0.2, 0.2, env.num_actions, dtype=np.float32).reshape(1, -1)
@@ -1008,7 +1013,7 @@ def test_go1_parallel_batch_extraction_matches_serial_results():
         cfg.push_enabled = False
         cfg.domain_randomization.enabled = False
         cfg.terrain_curriculum = False
-        return Go1VelocityEnv(
+        return CpuVelocityEnv(
             cfg,
             num_envs=4,
             device="cpu",
@@ -1059,7 +1064,7 @@ def test_go1_native_base_mass_randomization_preserves_reset_state_distribution()
     cfg.domain_randomization.randomize_kp = False
     cfg.domain_randomization.randomize_kd = False
     cfg.domain_randomization.encoder_bias_range = (0.0, 0.0)
-    env = Go1VelocityEnv(cfg, num_envs=16, device="cpu", seed=42, max_episode_length=64, collect_step_extras=True)
+    env = CpuVelocityEnv(cfg, num_envs=16, device="cpu", seed=42, max_episode_length=64, collect_step_extras=True)
     try:
         mass_delta = env.backend.state.base_mass_delta.copy()
         assert float(np.std(mass_delta)) > 0.1
@@ -1207,7 +1212,8 @@ def test_rsl_rl_wrapper_preserves_device_native_torch_buffers():
     assert obs["actor"].data_ptr() == env.state.obs["actor"].data_ptr()
     assert obs["policy"].data_ptr() == env.state.obs["actor"].data_ptr()
     assert reward.data_ptr() == env.state.reward.data_ptr()
-    assert extras["time_outs"].data_ptr() == env.state.truncated.data_ptr()
+    torch.testing.assert_close(extras["time_outs"], env.state.truncated)
+    assert extras["time_outs"].data_ptr() != env.state.truncated.data_ptr()
     assert done.tolist() == [False, True]
     assert env.state.array_backend == "torch"
     assert env.state.device == "cpu"
@@ -1821,9 +1827,9 @@ def main():
         test_go1_env_applies_mujoco_solver_settings,
         test_go1_robot_scene_matches_mujoco_contract,
         test_go1_rough_env_reset_step_shapes,
-        test_go1_reward_and_observation_formulas_match_task_contract,
+        test_go1_reward_and_observation_formulas,
         test_go1_run_progress_reward_does_not_reward_standing,
-        test_go1_training_configuration_matches_task_contract,
+        test_go1_training_configuration,
         test_go1_run_training_profile_reserves_high_speed_forward_commands,
         test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command,
         test_go1_bound_gait_score_matches_torch_backend,

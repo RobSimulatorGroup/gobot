@@ -656,6 +656,59 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
     assert "3rdparty/openusd" in message
 
 
+def test_luisa_finds_system_compilers_without_gcc11() -> None:
+    cmake = backend._find_build_tool("cmake")
+    ninja = backend._find_build_tool("ninja")
+    cc = shutil.which("cc")
+    cxx = shutil.which("c++")
+    assert cmake and ninja and cc and cxx, "compiler discovery test requires CMake, Ninja, cc and c++"
+    with tempfile.TemporaryDirectory(prefix="gobot-compiler-discovery-") as directory:
+        root = Path(directory)
+        sources = root / "deps" / "luisa_compute"
+        sources.mkdir(parents=True)
+        (sources / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.16)\n"
+            "project(compiler_probe LANGUAGES C CXX)\n"
+            "add_library(compiler_probe STATIC probe.cpp)\n"
+            "install(TARGETS compiler_probe ARCHIVE DESTINATION lib)\n"
+        )
+        (sources / "probe.cpp").write_text("int compiler_probe() { return 0; }\n")
+        for name in ("reproc", "spdlog"):
+            marker = sources / "src" / "ext" / name / "CMakeLists.txt"
+            marker.parent.mkdir(parents=True)
+            marker.touch()
+        tools = root / "sysroot" / "usr" / "bin"
+        tools.mkdir(parents=True)
+        (tools / "cc").symlink_to(cc)
+        (tools / "c++").symlink_to(cxx)
+        project = root / "project"
+        project.mkdir()
+        module = backend.ROOT / "cmake" / "GobotDependencies.cmake"
+        (project / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.16)\n"
+            "project(compiler_discovery NONE)\n"
+            f'set(CMAKE_FIND_ROOT_PATH "{root / "sysroot"}")\n'
+            "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)\n"
+            f'set(GOBOT_DEPENDENCY_SOURCE_ROOT "{root / "deps"}" CACHE PATH "")\n'
+            f'set(GOBOT_DEPENDENCY_BUILD_ROOT "{root / "sdks"}" CACHE PATH "")\n'
+            'set(GOB_DEPENDENCY_BUILD_GSPLAT OFF CACHE BOOL "")\n'
+            'set(GOB_DEPENDENCY_BUILD_OPENUSD OFF CACHE BOOL "")\n'
+            f'include("{module}")\n'
+        )
+        build = root / "build"
+        result = subprocess.run([cmake, "-S", str(project), "-B", str(build), "-G", "Ninja",
+                                 f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja}"],
+                                capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        command = (build / "gobot_luisa_sdk-prefix/tmp/gobot_luisa_sdk-cfgcmd.txt").read_text()
+        assert f"-DCMAKE_C_COMPILER:FILEPATH={tools / 'cc'}" in command, command
+        assert f"-DCMAKE_CXX_COMPILER:FILEPATH={tools / 'c++'}" in command, command
+        result = subprocess.run([cmake, "--build", str(build), "--target", "gobot_dependencies"],
+                                capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (root / "sdks/luisa_compute/install/lib/libcompiler_probe.a").is_file()
+
+
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
     test_superdex_build_defaults_include_cpu_sdk_sources()
@@ -668,6 +721,7 @@ def main() -> None:
     test_metadata_and_sdist_do_not_prepare_dependencies()
     test_skip_environment_avoids_dependency_commands()
     test_build_tool_prefers_current_virtual_environment()
+    test_luisa_finds_system_compilers_without_gcc11()
     test_native_sdk_bootstrap_uses_dependency_only_cmake_project()
     test_checkout_submodules_are_revalidated_at_pinned_gitlinks()
     test_pinned_checkout_does_not_run_submodule_update()

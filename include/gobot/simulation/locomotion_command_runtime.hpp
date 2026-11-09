@@ -81,7 +81,9 @@ public:
 
     void SetStepResamplingEnabled(bool enabled);
 
-    void Advance(std::span<const float> base_quaternions);
+    // Newly reset environments retain their full command duration.
+    void Advance(std::span<const float> base_quaternions,
+                 std::span<const std::uint8_t> reset_mask = {});
 
     void UpdateFrames(std::span<const float> base_quaternions);
 
@@ -146,7 +148,7 @@ private:
 
     void Resample(std::size_t environment_index);
 
-    void AdvanceTimersAndResample();
+    void AdvanceTimersAndResample(std::span<const std::uint8_t> reset_mask);
 
     void AdvanceStepAndResample(std::size_t environment_index);
 

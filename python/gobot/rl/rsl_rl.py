@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, is_dataclass
+import math
 import time
 from typing import Any, Literal, Mapping, Tuple
 
@@ -113,13 +114,33 @@ class RslRlOnPolicyRunnerCfg(RslRlBaseRunnerCfg):
 
 
 class RslRlVecEnvWrapper:
-    """TensorDict adapter for NumPy and device-native Gobot batch envs."""
+    """TensorDict adapter for NumPy and device-native Gobot batch envs.
+
+    ``clip_actions`` is optional because built-in environments already apply
+    their authored action limits. Finite-horizon tasks opt out of timeout
+    bootstrap explicitly; other tasks distinguish physical termination from
+    truncation using ``BatchEnvState``. Typed final observations are preserved
+    for learners that bootstrap from the state before automatic reset.
+    """
 
     is_vector_env = True
 
-    def __init__(self, env: Any, *, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        env: Any,
+        *,
+        device: str = "cpu",
+        clip_actions: float | None = None,
+        is_finite_horizon: bool = False,
+    ) -> None:
+        if clip_actions is not None and (
+            not math.isfinite(clip_actions) or clip_actions <= 0.0
+        ):
+            raise ValueError("clip_actions must be finite and positive, or None")
         self.env = env
         self.device = str(device)
+        self.clip_actions = clip_actions
+        self.is_finite_horizon = bool(is_finite_horizon)
         try:
             import torch
             from tensordict import TensorDict
@@ -218,6 +239,13 @@ class RslRlVecEnvWrapper:
         self._sync_steps_to_core()
         sync_to_core_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
+        if self.clip_actions is not None:
+            # Do not modify the sampled action retained by the PPO rollout.
+            actions = (
+                actions.clamp(-self.clip_actions, self.clip_actions)
+                if _is_torch_tensor(actions)
+                else np.clip(actions, -self.clip_actions, self.clip_actions)
+            )
         core_actions = actions if self._accepts_device_actions else self._actions_to_numpy(actions)
         action_to_numpy_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
@@ -234,6 +262,34 @@ class RslRlVecEnvWrapper:
         )
         done = self._done_tensor(state)
         extras = self._tensor_extras(state.info)
+        # A finite horizon suppresses value bootstrap, but a time limit is still
+        # distinct from a physical terminal condition for event penalties.
+        terminated = self.torch.as_tensor(
+            state.terminated, dtype=self.torch.bool, device=self.device
+        )
+        extras["terminated"] = terminated
+        if self.is_finite_horizon:
+            extras.pop("time_outs", None)
+        else:
+            timeouts = extras.get("time_outs")
+            if timeouts is None:
+                timeouts = self._device_tensor_or_copy(
+                    state.truncated, self._timeouts_buf, self._timeouts_staging
+                )
+            # A physical terminal condition takes precedence when it coincides
+            # with a time limit. Mask on device without synchronizing the batch.
+            self.torch.logical_and(timeouts, ~terminated, out=self._timeouts_buf)
+            extras["time_outs"] = self._timeouts_buf
+        if state.final_observation is not None and "final_observation" not in extras:
+            extras["final_observation"] = {
+                key: self.torch.as_tensor(value, device=self.device)
+                for key, value in state.final_observation.items()
+            }
+            extras["_final_observation"] = self.torch.as_tensor(
+                state.info.get("_final_observation", done),
+                dtype=self.torch.bool,
+                device=self.device,
+            )
         extras_to_tensor_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
         obs = self._tensor_obs(state.obs)
@@ -367,6 +423,15 @@ class RslRlVecEnvWrapper:
                     value = info[key]
                     extras[key] = ({k: self.torch.as_tensor(v, device=self.device) for k, v in value.items()}
                                    if isinstance(value, Mapping) else self.torch.as_tensor(value, device=self.device))
+        if "numerical_reset" in info:
+            extras["numerical_reset"] = self.torch.as_tensor(info["numerical_reset"], device=self.device)
+        if "numerical_failure" in info:
+            extras["numerical_failure"] = info["numerical_failure"]
+        if "training_stats" in info:
+            extras["training_stats"] = {
+                key: self.torch.as_tensor(value, device=self.device)
+                for key, value in info["training_stats"].items()
+            }
         log = info.get("log", {})
         if isinstance(log, Mapping):
             extras["log"] = {

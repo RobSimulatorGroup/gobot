@@ -86,14 +86,6 @@ def configure_robot_drives(robot, cfg: VelocityTaskCfg) -> None:
         joint.damping = 0.0
         joint.friction_loss = 0.0
 
-    for name, target in cfg.robot.held_joint_targets.items():
-        joint = find_node_by_name(robot, name)
-        if joint is None:
-            raise ValueError(f"held joint not found: {name}")
-        joint.drive_mode = gobot.JointDriveMode.Position
-        joint.drive_stiffness = cfg.robot.held_joint_kp
-        joint.drive_damping = cfg.robot.held_joint_kd
-        joint.initial_position = target
 
 
 def prepare_velocity_scene(

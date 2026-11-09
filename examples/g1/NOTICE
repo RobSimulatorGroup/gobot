@@ -1,12 +1,12 @@
-The collision preset, G1 motor/posture configuration and command-progress
-curriculum are adapted from mjlab (https://github.com/mujocolab/mjlab),
-commit 8bb2bc9e187797689ec82c78c35019afd2fd0376, licensed under Apache-2.0.
+The G1 locomotion model, meshes, motor/posture configuration and velocity
+training recipe are adapted from mjlab (https://github.com/mujocolab/mjlab),
+commit dcdf6ce519abfd2ea45e9503ae6fb650b75bb869, licensed under Apache-2.0.
 See the repository LICENSE for the Apache License, Version 2.0.
 
-Adaptations include Gobot scene serialization, preserved articulated hands with
-fixed targets, explicit multi-shape foot groups, and CPU/Warp batch execution.
-The original Unitree meshes/MJCF are supplied separately by the user and are
-not included in this derived preset.
+Adaptations include Gobot scene serialization, portable PLY visual meshes,
+explicit multi-shape foot groups, authored sensors and CPU/Warp batch execution.
+The model has 29 actuated body joints and rigid palms. Its inertias and contact
+parameters are preserved; visual meshes are converted without changing physics.
 
 Motion preprocessing and validation design were cross-checked against:
 - supermimic_vibed, a1508d42c9d1699a52e8233ab16d08c488441ab9 (MIT).

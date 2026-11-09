@@ -34,79 +34,46 @@ observation/action specs; its scene digest also covers terrain resources.
 
 ## Train
 
-The shared `python -m examples.locomotion.train --robot go1` workflow also
-supports this preset. See [shared tools](../locomotion/README.md); Go1 and
-[G1](../g1/README.md) use the same typed velocity environment implementations.
-
-Small CPU smoke run (64 environments):
+Go1 uses the [shared training framework](../../doc/gobot_training.md). The PPO task
+learns commanded velocity; the gait task adds observable walk/trot/gallop phase
+rewards. Both use Gobot-authored scenes and can select MuJoCo CPU or MuJoCo Warp.
 
 ```bash
-uv run python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
+uv run python -m gobot.rl.train go1-velocity \
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/go1_cpu
+
+uv run python -m gobot.rl.train go1-gait \
+  --backend mujoco-warp --device cuda:0 --num-envs 1024 \
+  --config examples/locomotion/configs/go1_gait.json --output logs/go1_gait
 ```
 
-CUDA training:
+`--terrain flat|rough` selects the standard velocity task terrain. Training can start
+from scratch. Resume restores the optimizer, curriculum and RNG state and starts fresh
+physics episodes. Switching backend starts a new experiment.
+
+## Evaluate, export and play a trained policy
+
+The shared evaluator checks commanded progress, velocity/yaw error, contacts,
+terrain coverage and measured gait. Training reward alone does not establish
+successful walking or running.
 
 ```bash
-uv run python -m examples.go1.train.go1_velocity_train \
-  --backend mujoco-warp --device cuda:0 --num-envs 256 \
-  --iterations 10000 --no-step-extras \
-  --log-dir logs/go1_rough_velocity --policy-out policies/go1_velocity.pt
+uv run python -m examples.locomotion.assessment \
+  --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/validation.json
+uv run python -m examples.locomotion.record \
+  --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/walk.mp4 --continuous
+uv run python -m examples.locomotion.verify_export \
+  --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/candidate.onnx
 ```
 
-For explicit CPU selection, use `--backend mujoco-cpu --device cpu --num-envs 64`.
-`--sim-workers` controls CPU physics workers (`0` selects hardware concurrency,
-capped by environment count). On CPU, `--device` selects the PyTorch learner's
-device. Requested backends never silently fall back.
+For a shared-workflow candidate, open `go1_practical_scene.jscn` and set
+`GOBOT_GO1_POLICY` to its exported ONNX. Its playback script carries the same phase
+clock and observation layout. `T` cycles walk/trot/run commands. The bundled
+`go1_scene.jscn` baseline has its own policy contract; incompatible policies are
+rejected rather than guessed from their tensor dimensions.
 
-Add `--resume` with the same `--log-dir` to load its latest checkpoint, or use
-`--checkpoint <path>`. Resume restores curriculum, terrain distribution, and
-RNG state, then starts fresh physics episodes. Changing batch size preserves
-per-terrain level distributions. `--render-video-interval 100` records an
-evaluation video every 100 iterations.
-
-Fine-tune running from an admitted balanced checkpoint:
-
-```bash
-uv run python -m examples.go1.train.go1_velocity_train \
-  --backend mujoco-warp --device cuda:0 --num-envs 256 \
-  --training-profile run --checkpoint examples/go1/policies/go1_velocity.pt \
-  --iterations 1000 --save-interval 25 --no-step-extras \
-  --log-dir logs/go1_warp_run --policy-out policies/go1_velocity_run_candidate.pt
-```
-
-The legacy `run` profile increases forward-speed commands; its bound-only reward
-is disabled so it no longer penalizes diagonal trot. Use the shared natural recipe
-for observable phase-conditioned walk/trot/gallop training. Switching
-from `balanced` restarts only the profile-local curriculum; resuming `run`
-restores it. Checkpoints and logs are local outputs. Evaluate candidates before
-promoting an exported actor to the bundled ONNX path.
-
-## Evaluate and export
-
-Evaluate survival and commanded progress over all authored terrain cells:
-
-```bash
-uv run python -m examples.go1.tools.evaluate_velocity_policy \
-  examples/go1/policies/go1_velocity.pt --device cuda:0 \
-  --command-x 1.0 --command-y 0.0 --command-yaw 0.0 \
-  --episodes-per-cell 2 --max-steps 1000 --min-progress-ratio 0.5 \
-  --json-out /tmp/go1_velocity_evaluation.json
-```
-
-Admission requires survival and at least half of each requested planar/yaw
-command. Check forward, reverse, strafe, yaw, and run commands. Reports include
-terrain-specific results, illegal contacts, and gait metrics; survival or
-training reward alone is insufficient. Short smoke rollouts do not replace
-full terrain admission.
-
-```bash
-uv run python -m examples.go1.tools.export_policy_onnx \
-  --checkpoint examples/go1/policies/go1_velocity.pt \
-  --output examples/go1/policies/go1_velocity.onnx
-```
-
-Export validates and embeds `gobot.rl.PolicyManifest` and writes a
-`.manifest.json` sidecar. Playback rejects incompatible contracts.
+See [shared locomotion](../locomotion/README.md) for full admission, custom rewards,
+resume semantics and training on a cluster.
 
 ## Benchmark and parity
 
@@ -129,7 +96,7 @@ uv run python benchmark/go1_velocity_benchmark.py \
 
 CPU profiling reports action, physics, state, command, contact, reward, reset,
 observation, tensor-conversion, and logging costs. See the
-[mjbatch measurements](../../doc/mjbatch_cpu.md) for CPU memory and throughput.
+[CPU batch guide](../../doc/mujoco_cpu_batch.md) for CPU memory and throughput.
 
 Reference parity uses independent implementations with identical MuJoCo,
 MuJoCo Warp, Warp, and Torch versions. The pinned reference revision and
@@ -157,9 +124,9 @@ dynamics stack from the normal runtime dependencies.
 | Files | Responsibility |
 | --- | --- |
 | `go1.jscn`, `go1_scene.jscn`, `terrain/` | Authored robot and terrain |
-| `go1_profile.py`, `go1_velocity_contract.py` | Articulation/controller profile and policy identity |
+| `go1_profile.py`, `go1_policy_info.py` | Articulation/controller profile and policy identity |
 | `train/go1_scene_runtime.py`, `train/go1_velocity_cfg.py` | Shared scene/solver setup and task configuration |
-| `train/go1_velocity_env.py`, `train/go1_warp_velocity_env.py` | CPU and CUDA task implementations |
+| `gobot.rl.locomotion.cpu_env`, `warp_env` | Shared CPU and CUDA task implementations |
 | `train/go1_training_state.py`, `train/go1_gait.py` | Curriculum checkpoints and run gait scoring |
 | `scripts/go1.py`, `tools/` | Editor playback, evaluation, export, and parity tools |
 | `assets/xml/go1.xml` | Import/equivalence source asset |
@@ -184,11 +151,3 @@ episode per cell.
 | Reverse 1 m/s | 0.857 | 0.943 | 0.890 m/s |
 | Yaw 0.5 rad/s | 0.914 | 1.000 | 0.257 rad/s |
 | Forward run 2 m/s | 0.829 | 0.829 | 1.637 m/s |
-
-The experimental `model_6575` run actor reached 2.686 m/s with 0.529 admission
-under a 3 m/s command, using two 1000-step episodes per cell. Its diagonal trot
-support was 0.162 versus 0.351 for the speed-only `model_5900`. It improved
-paired motion but did not establish a strict bound: exact front/rear-pair
-support occupied less than 1% of samples. Run actors remain local experiments;
-normal editor playback uses the balanced actor. Out-of-bounds termination is
-reported separately from illegal contacts on the finite terrain.

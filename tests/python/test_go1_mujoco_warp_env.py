@@ -40,9 +40,9 @@ def _deterministic_cfg():
 
 
 def _assert_cpu_warp_short_horizon_parity(torch, warp_env) -> None:
-    from examples.go1.train.go1_velocity_env import Go1VelocityEnv
+    from gobot.rl.locomotion.cpu_env import CpuVelocityEnv
 
-    cpu_env = Go1VelocityEnv(
+    cpu_env = CpuVelocityEnv(
         _deterministic_cfg(),
         num_envs=1,
         device="cpu",
@@ -175,9 +175,9 @@ def main() -> int:
     if not torch.cuda.is_available():
         return _skip("Torch cannot access CUDA")
 
-    from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+    from gobot.rl.locomotion.warp_env import WarpVelocityEnv
 
-    warp_env = Go1WarpVelocityEnv(
+    warp_env = WarpVelocityEnv(
         _deterministic_cfg(),
         num_envs=1,
         device="cuda:0",
