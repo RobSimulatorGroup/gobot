@@ -37,6 +37,8 @@ uv.lock
 *.out
 *.app
 
+# CMake build and test-discovery output.
+CMakeFiles/
 build/
 /build_*/
 cmake-build-debug/
