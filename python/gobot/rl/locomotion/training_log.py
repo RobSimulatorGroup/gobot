@@ -136,6 +136,8 @@ def format_training_log(metrics, *, target_iteration, remaining_iterations, aver
         if key.startswith('Episode_Termination/'):
             suffix = ' episodes/update'
         add(key, value, 'd' if key.startswith('Episode_Termination/') else '.4f', suffix)
+    if 'action_abs_max' in metrics:
+        add('Maximum sampled action', metrics['action_abs_max'])
     add('Action clip fraction', metrics['action_clip_fraction'])
     add('Joint effort saturation fraction', metrics['joint_effort_saturation_fraction'])
     width = max(40, *(len(label) for label, _ in rows))

@@ -23,6 +23,27 @@ def test_physics_failures_include_finite_velocity_explosions():
     assert env._physics_failure_mask().tolist() == [True, True, True, True, False]
 
 
+def test_step_input_snapshot_preserves_observation_state_and_storage():
+    env = WarpVelocityEnv.__new__(WarpVelocityEnv)
+    env.num_envs = 2
+    env._arrays = {name: torch.arange(8, dtype=torch.float32).reshape(2, 4)
+                   for name in ('qpos', 'qvel', 'qacc_warmstart', 'ctrl')}
+    env._state = SimpleNamespace(obs={'actor': torch.ones(2, 3), 'critic': torch.ones(2, 4)})
+    env._physics_input = env._policy_input = None
+    rng = torch.get_rng_state().clone()
+    env._remember_step_input()
+    pointer = env._physics_input['qpos'].data_ptr()
+    env._arrays['qpos'].fill_(100.)
+    env._state.obs['actor'].fill_(2.)
+    torch.testing.assert_close(env._physics_input['qpos'], torch.arange(8).reshape(2, 4).float())
+    torch.testing.assert_close(env._policy_input['actor'], torch.ones(2, 3))
+    env._remember_step_input()
+    assert env._physics_input['qpos'].data_ptr() == pointer
+    assert torch.equal(rng, torch.get_rng_state())
+    torch.testing.assert_close(env._physics_input['qpos'], torch.full((2, 4), 100.))
+    torch.testing.assert_close(env._policy_input['actor'], torch.full((2, 3), 2.))
+
+
 def test_failed_rollout_never_calls_optimizer():
     from gobot.rl.locomotion.training import update_policy
     from gobot.rl.locomotion.distributed import DistributedTraining
@@ -55,6 +76,8 @@ def test_bad_world_aborts_rollout_and_preserves_diagnostic(monkeypatch, field, v
     try:
         original_step = env.provider.step
         substeps = 0
+        before_qpos = env._arrays['qpos'][1].detach().cpu().clone()
+        before_observation = env.get_observations()['actor'][1].detach().cpu().clone()
         levels = env.terrain_assignments[0].clone()
 
         def inject_failure(*args, **kwargs):
@@ -76,6 +99,13 @@ def test_bad_world_aborts_rollout_and_preserves_diagnostic(monkeypatch, field, v
         assert torch.equal(env.terrain_assignments[0], levels)
         diagnostic = env.numerical_failure
         assert diagnostic['env_ids'].tolist() == [1]
+        assert diagnostic['version'] == 2 and diagnostic['phase'] == 'physics'
+        torch.testing.assert_close(diagnostic['pre_step_state']['qpos'][0], before_qpos)
+        torch.testing.assert_close(diagnostic['policy_observation']['actor'][0], before_observation)
+        assert diagnostic['joint_names'] == env.joint_names
+        assert diagnostic['artifact']['content_digest'] == env.compiled_artifact.content_digest
+        assert set(diagnostic['model_fields']) == {'body_ipos', 'geom_friction'}
+        assert 'overflow' in diagnostic['state']
         captured = diagnostic['state'][field][0, -1]
         assert captured == value if torch.isfinite(torch.tensor(value)) else not torch.isfinite(captured)
         assert env.episode_length_buf.tolist() == [1, 1]

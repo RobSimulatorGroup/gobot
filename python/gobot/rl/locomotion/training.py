@@ -494,10 +494,11 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                 iteration -= 1
                 reason = stopped
                 break
-            clip_rates, saturation = [], []
+            clip_rates, saturation, action_peaks = [], [], []
             statistics.begin_update()
 
             def record(action, reward, done, extras):
+                action_peaks.append(action.detach().abs().max())
                 if cfg.action_clip:
                     clip_rates.append((action.abs() >= cfg.action_clip).float().mean())
                 if 'transition_state' in extras:
@@ -516,16 +517,16 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                         **losses}
             sums = distributed.reduce(list(averaged.values()))
             summary = statistics.summarize(distributed, env)
-            duration, std_max, collection_s, learning_s = distributed.reduce(
+            duration, std_max, collection_s, learning_s, action_max = distributed.reduce(
                 [timings['collection_s'] + timings['learning_s'], float(effective_std.max()),
-                 timings['collection_s'], timings['learning_s']], maximum=True)
+                 timings['collection_s'], timings['learning_s'], float(torch.stack(action_peaks).max())], maximum=True)
             iteration_seconds += duration
             steps_per_update = exp.num_envs * distributed.world_size * config['num_steps_per_env']
             metrics = {'iteration': iteration, 'total_steps': (iteration + 1) * steps_per_update,
                        'steps_per_second': steps_per_update / duration, 'iteration_s': duration,
                        'collection_s': collection_s, 'learning_s': learning_s,
                        **summary,
-                       'action_std_max': std_max, 'learning_rate': alg.learning_rate,
+                       'action_std_max': std_max, 'action_abs_max': action_max, 'learning_rate': alg.learning_rate,
                        'world_size': distributed.world_size, 'total_num_envs': exp.num_envs * distributed.world_size,
                        **{key: value / distributed.world_size for key, value in zip(averaged, sums, strict=True)}}
 

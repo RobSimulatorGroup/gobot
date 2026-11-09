@@ -617,6 +617,8 @@ class WarpVelocityEnv:
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
         self.numerical_failure = None
+        self._physics_input = None
+        self._policy_input = None
         self.common_step_counter = 0
         self.profile_step_counter = 0
         self.step_counter = 0
@@ -996,6 +998,7 @@ class WarpVelocityEnv:
         profile_marks: list[tuple[str, torch.cuda.Event]] = []
         self._profile_mark(profile_marks, "start")
         action = self._prepare_actions(actions)
+        self._remember_step_input()
         self.common_step_counter += 1
         self.profile_step_counter += 1
         self._previous_previous_action.copy_(self._previous_action)
@@ -1026,12 +1029,12 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
-        self._check_physics_state()
+        self._check_physics_state(phase="physics")
         self.provider.forward()
         self.provider.sense()
         self._update_raycast_outputs()
         self._refresh_foot_contacts()
-        self._check_physics_state()
+        self._check_physics_state(phase="post_step_forward")
         self._compute_terminations()
         self._compute_rewards()
         self._profile_mark(profile_marks, "reward_termination")
@@ -1075,7 +1078,7 @@ class WarpVelocityEnv:
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
-        self._check_physics_state()
+        self._check_physics_state(phase="post_reset_forward")
         self._compute_observations()
         self._profile_mark(profile_marks, "observation")
 
@@ -1106,17 +1109,54 @@ class WarpVelocityEnv:
         invalid |= (self._arrays["qpos"].abs() > _MAX_LOCOMOTION_POSITION).any(dim=1)
         return invalid
 
-    def _check_physics_state(self) -> None:
+    def _remember_step_input(self) -> None:
+        """Keep the actual policy input and pre-step physics state on device.
+
+        A post-failure snapshot alone cannot distinguish unstable controls from
+        controls reacting to an already unstable state. Reuse these buffers;
+        only transfer selected worlds to the host when a failure occurs.
+        """
+        names = ("time", "qpos", "qvel", "act", "qacc_warmstart", "ctrl",
+                 "qfrc_applied", "xfrc_applied", "mocap_pos", "mocap_quat", "eq_active")
+        if self._physics_input is None:
+            self._physics_input = {name: torch.empty_like(self._arrays[name]) for name in names
+                                   if name in self._arrays and self._arrays[name].shape[0] == self.num_envs}
+            self._policy_input = {name: torch.empty_like(value) for name, value in self._state.obs.items()}
+        for name, value in self._physics_input.items():
+            value.copy_(self._arrays[name])
+        for name, value in self._policy_input.items():
+            value.copy_(self._state.obs[name])
+
+    def _check_physics_state(self, *, phase="physics") -> None:
         """Stop a failed rollout before it changes rewards, resets or PPO storage."""
         ids = torch.nonzero(self._physics_failure_mask(), as_tuple=False).flatten()
         if ids.numel() == 0:
             return
         selected = ids[:8]
+        model_fields = {}
+        for name in ("body_ipos", "geom_friction"):
+            values = self.provider.model_array(name)
+            rows = selected if values.shape[0] == self.num_envs else torch.zeros_like(selected)
+            model_fields[name] = values[rows].detach().cpu().clone()
         self.numerical_failure = {
+            "version": 2,
+            "phase": phase,
+            "physics_dt": self.physics_dt,
+            "decimation": self.decimation,
+            "joint_names": self.joint_names,
+            "joint_velocity_addresses": self._layout.joint_dof_addresses,
+            "artifact": dict(self.compiled_artifact.to_mapping()),
+            "model_fields": model_fields,
+            "pre_step_state": {name: value[selected].detach().cpu().clone()
+                               for name, value in self._physics_input.items()},
+            "policy_observation": {name: value[selected].detach().cpu().clone()
+                                   for name, value in self._policy_input.items()},
+            "joint_targets": self._joint_targets[selected].detach().cpu().clone(),
+            "encoder_bias": self._encoder_bias[selected].detach().cpu().clone(),
             "step": self.common_step_counter,
             "env_ids": selected.detach().cpu(),
             "state": {name: self._arrays[name][selected].detach().cpu().clone()
-                      for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata")},
+                      for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata", "overflow")},
             "command": self._command[selected].detach().cpu().clone(),
             "action": self._action[selected].detach().cpu().clone(),
             "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
