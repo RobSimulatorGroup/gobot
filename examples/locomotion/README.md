@@ -108,8 +108,9 @@ manifest. See the [Go1](../go1/README.md) and [G1](../g1/README.md) guides for p
 
 `python -m examples.locomotion.package --config CONFIG --output BUNDLE.tar.gz`
 packages selected recipes, source and assets with hashes. Install/build Gobot on
-the destination host and use the same training entry. PPO/AMP uses independent
-runs per GPU; synchronized SuperMimic uses [the Slurm launcher](cluster/train_tracking.sbatch).
+the destination host and use the same training entry. Velocity PPO supports
+synchronized training through `torchrun`; AMP uses one training process. SuperMimic also supports synchronized training through
+[the Slurm launcher](cluster/train_tracking.sbatch).
 
 ```bash
 python tests/python/test_natural_locomotion.py
@@ -119,5 +120,3 @@ python tests/python/test_shared_velocity_gpu.py
 ```
 
 Short optimization tests validate the training pipeline, not learned-policy quality.
-Formal G1 SuperMimic results are recorded in the
-[100k BONES report](../../doc/g1_bones_100k_results.md).

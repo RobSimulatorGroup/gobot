@@ -193,7 +193,6 @@ Gobot 的 Warp 后端在预热和 CUDA graph 捕获前将该缓冲至少扩为 6
 ## SuperMimic 训练与复现
 
 G1 tracking 使用固定版本 SuperMimic-Reproduced，启动时显式选择对应任务。
-2026-11-06 已完成一次八卡 BONES 100k 从头训练与完整评测，见[结果报告](g1_bones_100k_results.md)。
 完整操作入口：[数据准备/评测/视频](../examples/g1/reproduction/README.md)。
 mjlab 仅用于独立参考对照，以下配方与恢复协议保持不变。
 
@@ -208,7 +207,7 @@ mjlab 仅用于独立参考对照，以下配方与恢复协议保持不变。
 - 320000 控制步调度、250000 衰减结束、100000 停止分开表达。
 
 Gobot 的原生批处理依赖 MuJoCo 3.17。原始发布栈 3.16 复核和同 3.17 栈配对实验分开记录，
-不能把 3.17 上的诊断当作原始发布栈复现。[结果报告](g1_bones_100k_results.md)记录训练、评测与比较条件。
+不能把 3.17 上的诊断当作原始发布栈复现。
 
 ## 训练中的数值异常
 
@@ -345,7 +344,7 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 
 日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。
 
-下一轮 G1 共同地形、初始分配和统一统计的命令见 [g1_shared_training.md](g1_shared_training.md)。
+共同地形、初始分配和统一统计的对照命令见 [mjlab 对照训练](mjlab_comparison.md)。
 
 ## 直行偏航与检查点
 
@@ -357,5 +356,3 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 
 每个 `--save-interval` 保留 `model_000499.pt` 等编号检查点及 manifest，同时更新 `latest.pt`。
 关闭评测也会保存历史，便于排查策略何时开始退步；不再只保留最后的 latest。
-
-本次 G1 偏航诊断见 [g1_flat_diagnosis.md](g1_flat_diagnosis.md)。

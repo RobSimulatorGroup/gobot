@@ -1,7 +1,7 @@
-# G1：共同地形与统一训练统计
+# G1 与 mjlab 对照训练
 
-2026-11-08。下一轮对照使用固定的 Gobot 场景地形、同一组初始地形分配和同一份统计代码。
-Gobot 与 mjlab 的奖励权重、PPO 参数不在这次修改中调整。两边独立运行物理、采样动作和更新策略，
+对照使用固定的 Gobot 场景地形、同一组初始地形分配和同一份统计代码。
+两边使用固定参考版本的奖励权重和 PPO 参数。两边独立运行物理、采样动作和更新策略，
 因此之后的地形升级、episode 时长和轨迹可以不同；不要求训练过程逐位相同。
 
 接触计时每个物理子步累计 `physics_dt`（当前 0.005 秒），reset 清空相应世界的计时。
@@ -9,10 +9,9 @@ Gobot 与 mjlab 的奖励权重、PPO 参数不在这次修改中调整。两边
 
 ## 生成一次训练地形
 
-在 118 的 Gobot 目录执行一次：
+从 Gobot 仓库根目录执行一次；mjlab 使用仓库下独立的 `mjlab/.venv` 环境：
 
 ```bash
-cd /home/h3c-r5300-g6/wqq/gobot
 .venv/bin/python tests/support/export_training_terrain.py \
   --robot g1 --output logs/g1_training_terrain.json
 ```
@@ -43,13 +42,14 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 完成后测试 mjlab：
 
 ```bash
-cd /home/h3c-r5300-g6/wqq/gobot/mjlab
+cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
   --terrain-reference ../logs/g1_training_terrain.json \
   --num-envs 64 --iterations 10 --seed 42 --save-interval 10 \
   --output logs/g1_shared_mjlab_smoke
+cd ..
 ```
 
 两边 `terrain.json` 应完全相同。短测试输出目录要与正式实验分开。
@@ -59,7 +59,6 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 在 tmux 中分别启动，两项使用相同的八张卡，所以依次运行：
 
 ```bash
-cd /home/h3c-r5300-g6/wqq/gobot
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
   --backend mujoco-warp --terrain rough \
@@ -71,22 +70,23 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 ```
 
 ```bash
-cd /home/h3c-r5300-g6/wqq/gobot/mjlab
+cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
   --terrain-reference ../logs/g1_training_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
   --output logs/g1_shared_mjlab_seed42
+cd ..
 ```
 
 每卡 1024 环境，共 8192；每次更新采样 24 控制步，预算相同。
-先从头训练建立新基线，不从上一轮 checkpoint 恢复或初始化。
+建立基线时从头训练，两边使用相同预算。
 Gobot 的恢复检查包含接触计时实现和地形哈希；mjlab 对照入口拒绝缺少共同地形信息的旧实验恢复。
 旧模型文件可以保留用于回放和迁移评测，但修正计时后不能承诺旧轨迹逐位复现。
 
-这轮关闭 Gobot 的训练内评测，结束后对两边的最终策略执行相同独立评测。训练时不能根据日志 reward
-选出对某一边更有利的模型。第一对只有一个训练种子；要比较稳定性，应对两边一起补种子。
+上述命令关闭 Gobot 的训练内评测，结束后对两边的最终策略执行相同独立评测。训练时不能根据日志 reward
+选出对某一边更有利的模型。单个训练种子不足以比较稳定性；应对两边使用同一组多个种子。
 
 ## 日志含义
 

@@ -5,9 +5,8 @@ G1 supports velocity PPO, motion-prior AMP, and SuperMimic motion tracking throu
 `.jscn` / `.jres` resources. MuJoCo CPU is the control/state reference; MuJoCo Warp
 runs batched CUDA training.
 
-The [100k BONES result](../../doc/g1_bones_100k_results.md) records the completed
-SuperMimic eight-GPU run and complete-clip evaluation. See the
-[reference/data tools](reproduction/README.md) for preparing and evaluating that task.
+See the [reference/data tools](reproduction/README.md) for preparing and evaluating
+SuperMimic motion tracking.
 
 ## Locomotion model and AMP data
 

@@ -37,7 +37,7 @@ def source_files(root):
                 files.add(path)
     for name in ('.gitignore','CMakeLists.txt','gobot_build_backend.py','pyproject.toml','uv.lock',
                  'doc/gobot_training.md',
-                 'doc/supermimic_reproduced_alignment_plan.md','doc/g1_bones_100k_results.md'):
+                 'doc/supermimic_reproduced_alignment_plan.md','doc/mjlab_comparison.md'):
         files.add(root/name)
     if (root/'LICENSE').exists():files.add(root/'LICENSE')
     for fixture in (root/'tests/fixtures').glob('supermimic_reproduced_*.pt'):

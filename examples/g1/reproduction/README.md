@@ -5,11 +5,9 @@ These tools prepare data and inspect the single training implementation at
 training uses Gobot scenes and services.
 
 - [Training/install guide](../../../doc/gobot_training.md)
-- [Measured 100k BONES results](../../../doc/g1_bones_100k_results.md)
 
 Run commands from the repository root with the installed Gobot environment.
-Large data, checkpoints and logs are ignored by Git. The compact measured-result
-record in `results/` contains summary values, provenance and report hashes.
+Large data, checkpoints and logs are ignored by Git.
 
 ## Tool map
 
@@ -183,20 +181,17 @@ The selected clip currently must be in its shard's first queue wave (the 1024-la
 plan above covers every shard this way). JSON, pose NPZ and contact-sheet PNG sidecars
 retain both original and replay outcomes. GPU replay can shift failure time slightly.
 
-## Integrity and historical results
+## Reproducibility checks
 
 Preparation and evaluation plans bind their own script hashes. Keep the exact
 `prepare_bones.py` / `evaluate_bones.py` that produced a run if you need to resume
-or record it later. Cleanup does not bypass those identity checks. Neither the
-training math nor the frozen preparer/evaluator source was changed in the 2026-11-06
-workflow cleanup.
+or record it later. Cleanup does not bypass those identity checks.
 
 The optional diagnostic modules `check_kinematics`, `check_controls`, `math_fixture`,
 `training_fixture`, `check_release_policy`, `check_task`, `check_context`, `check_update`
 and `reference_benchmark` remain available (`--help`). They isolate model, algorithm,
 randomization and fixed-policy parity; their results do not replace from-scratch
-training and complete-clip evaluation. The [results report](../../../doc/g1_bones_100k_results.md)
-records the complete measured run and its comparison limits.
+training and complete-clip evaluation.
 
 Run local data/report/recording boundary tests without GPU training:
 
