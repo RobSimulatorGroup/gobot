@@ -58,7 +58,7 @@ def test_reward_and_agent_overrides_are_applied_to_actual_runner(monkeypatch, tm
           "--set", "agent.algorithm.learning_rate=0.0002"])
     assert captured["task_cfg"].rewards.foot_slip == -0.1
     assert captured["agent_cfg"]["algorithm"]["learning_rate"] == 0.0002
-    assert captured["agent_cfg"]["algorithm"]["class_name"] == "gobot.rl.locomotion.transition_ppo:TransitionPPO"
+    assert captured["agent_cfg"]["algorithm"]["class_name"] == "rsl_rl.algorithms.PPO"
     assert captured["exp"].iterations == 2
     assert captured["backend"] == "mujoco-cpu"
     assert captured["device"] == "cpu"
@@ -70,7 +70,7 @@ def test_builtin_defaults_use_existing_training_and_evaluator(monkeypatch, tmp_p
     monkeypatch.setattr(training, "run", lambda exp, directory, **kw: captured.update(kw))
     main([GO1, "--backend", "mujoco-cpu", "--output", str(tmp_path)])
     assert captured["task_cfg"].robot_name == "go1"
-    assert captured["agent_cfg"]["algorithm"]["class_name"].endswith(":TransitionPPO")
+    assert captured["agent_cfg"]["algorithm"]["class_name"] == "rsl_rl.algorithms.PPO"
     assert not captured["no_eval"]
 
 
@@ -210,7 +210,7 @@ def test_python_factory_works_outside_the_checkout(tmp_path):
 from gobot.rl.training.projects import example_module
 cfg = example_module('locomotion.presets').training_spec(robot='go1').config_factory()
 assert cfg.resolve_env().robot_name == 'go1'
-assert cfg.resolve_agent()['algorithm']['class_name'] == 'gobot.rl.locomotion.transition_ppo:TransitionPPO'
+assert cfg.resolve_agent()['algorithm']['class_name'] == 'rsl_rl.algorithms.PPO'
 """
     # Keep only explicit dependencies/package paths; the checkout cwd is absent.
     env = dict(os.environ)

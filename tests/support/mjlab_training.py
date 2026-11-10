@@ -60,13 +60,12 @@ def training_terrain(cfg, data):
         yield
 
 
-def set_initial_terrain(env, data, seed):
+def initial_terrain_digest(env):
+    """Record the reference's native seeded assignments without replacing them."""
     module = helper('terrain_reference')
-    levels, types = module.initial_assignments(data, env.num_envs, seed)
     terrain = env.scene.terrain
-    terrain.terrain_levels.copy_(torch.as_tensor(levels, device=env.device))
-    terrain.terrain_types.copy_(torch.as_tensor(types, device=env.device))
-    terrain.env_origins.copy_(terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types])
+    levels = terrain.terrain_levels.cpu().numpy()
+    types = terrain.terrain_types.cpu().numpy()
     return module.assignment_digest(levels, types)
 
 

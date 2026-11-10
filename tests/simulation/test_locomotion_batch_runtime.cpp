@@ -213,6 +213,25 @@ TEST(TestLocomotionBatchRuntime, HistoryPreservesRefreshedLandingAndTakeoffConta
     EXPECT_FLOAT_EQ(runtime.FootPeakHeights()[0], 0.08f);
 }
 
+TEST(TestLocomotionBatchRuntime, PhysicsExtractionRetainsRaysUntilSensing) {
+    LocomotionBatchRuntime runtime(1, StateLayout());
+    auto state = PhysicsState();
+    runtime.UpdateState(state);
+    state.sensor_values[10] = 0.6;
+    state.sensor_values[30] = 0.9;
+    state.sensor_hit_point[6 * 3 + 2] = 8.0;
+    state.joint_position[0] = 0.75;
+    runtime.UpdateState(state, false);
+    EXPECT_FLOAT_EQ(runtime.JointPositions()[0], 0.75f);
+    EXPECT_FLOAT_EQ(runtime.FootHeights()[0], 0.08f);
+    EXPECT_FLOAT_EQ(runtime.HeightScan()[0], 0.2f);
+    EXPECT_FLOAT_EQ(runtime.HeightScanPoints()[2], 3.0f);
+    runtime.UpdateState(state);
+    EXPECT_FLOAT_EQ(runtime.FootHeights()[0], 0.6f);
+    EXPECT_FLOAT_EQ(runtime.HeightScan()[0], 0.9f);
+    EXPECT_FLOAT_EQ(runtime.HeightScanPoints()[2], 8.0f);
+}
+
 TEST(TestLocomotionBatchRuntime, EnforcesFixedBatchDimensions) {
     LocomotionBatchRuntime runtime(2, 4);
 

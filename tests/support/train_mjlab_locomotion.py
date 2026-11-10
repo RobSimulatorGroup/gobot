@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--resume', type=Path, help='Continue this comparison checkpoint to --iterations total updates')
     parser.add_argument('--check', action='store_true', help='check dependencies and configuration without training')
     args = parser.parse_args()
-    from mjlab_training import helper, training_terrain, set_initial_terrain, TrainingLog
+    from mjlab_training import helper, training_terrain, initial_terrain_digest, TrainingLog
     terrain_module = helper('terrain_reference')
     terrain_data = terrain_module.load(args.terrain_reference)
     source = args.source.resolve()
@@ -179,7 +179,7 @@ def main():
         env = ManagerBasedRlEnv(cfg, device=f'cuda:{local_rank}')
     try:
         solver_statistics = SolverStatistics(env.sim)
-        initial_digest = set_initial_terrain(env, terrain_data, args.seed + rank)
+        initial_digest = initial_terrain_digest(env)
         wrapped = RslRlVecEnvWrapper(env, clip_actions=agent.clip_actions)
         runner = VelocityOnPolicyRunner(wrapped, asdict(agent), str(output), f'cuda:{local_rank}')
         initial_digests = [initial_digest]

@@ -37,7 +37,7 @@ def collect(backend):
             env.reset([1], seed=19)
             assert model.arrays['qpos'].data_ptr() == pointer
             ids = list(env._layout.actuator_ids)
-            np.testing.assert_allclose(model.arrays['ctrl'][1, ids].cpu().numpy(), env.default_joint_pos)
+            np.testing.assert_allclose(model.arrays['ctrl'][1, ids].cpu().numpy(), 0.)
             model.assert_finite()
             model.assert_no_overflow()
         return initial, history

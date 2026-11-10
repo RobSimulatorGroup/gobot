@@ -135,6 +135,7 @@ class VelocityIllegalContactCfg:
 @dataclass
 class VelocityDomainRandomizationCfg:
     enabled: bool = True
+    startup_order: tuple[str, ...] = ("foot_friction", "encoder_bias", "body_com")
     randomize_base_mass: bool = False
     added_mass_range: tuple[float, float] = (-1.5, 1.5)
     random_com: bool = True
@@ -150,6 +151,10 @@ class VelocityDomainRandomizationCfg:
     foot_friction_slide_range: tuple[float, float] = (0.3, 1.5)
     foot_friction_spin_range: tuple[float, float] = (1.0e-4, 2.0e-2)
     foot_friction_roll_range: tuple[float, float] = (1.0e-5, 5.0e-3)
+
+    def __post_init__(self):
+        if len(self.startup_order) != 3 or set(self.startup_order) != {"foot_friction", "encoder_bias", "body_com"}:
+            raise ValueError("startup_order must contain foot_friction, encoder_bias and body_com exactly once")
 
 
 def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:

@@ -595,7 +595,7 @@ def test_go1_training_configuration():
     assert train_cfg["actor"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["critic"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["algorithm"] == {
-        "class_name": "gobot.rl.locomotion.transition_ppo:TransitionPPO",
+        "class_name": "rsl_rl.algorithms.PPO",
         "optimizer": "adam",
         "share_cnn_encoders": False,
         "num_learning_epochs": 5,

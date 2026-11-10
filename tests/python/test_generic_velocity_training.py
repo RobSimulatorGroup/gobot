@@ -175,7 +175,7 @@ config = training_spec(experiment=run).config_factory()
 assert config.task_factory is None and config.env == {}
 assert config.evaluation_command == () and config.no_eval
 agent = agent_config(run)
-assert agent['algorithm']['class_name'] == 'gobot.rl.locomotion.transition_ppo:TransitionPPO'
+assert agent['algorithm']['class_name'] == 'rsl_rl.algorithms.PPO'
 assert not any(name == 'examples' or name.startswith('examples.') for name in sys.modules)
 '''
     environ = dict(os.environ)

@@ -328,7 +328,7 @@ void LocomotionBatchRuntime::ValidatePhysicsState(
 }
 
 void LocomotionBatchRuntime::UpdateState(
-        const PhysicsRobotBatchStepResult& physics_state) {
+        const PhysicsRobotBatchStepResult& physics_state, bool update_rays) {
     ValidatePhysicsState(physics_state);
 
     std::transform(
@@ -476,7 +476,9 @@ void LocomotionBatchRuntime::UpdateState(
             for (std::size_t axis = 0; axis < 4; ++axis) {
                 foot_quaternions_[foot4 + axis] = link_quaternions_[link4 + axis];
             }
-            foot_heights_[foot] = 0.0f;
+            if (update_rays) {
+                foot_heights_[foot] = 0.0f;
+            }
 
             if (foot_index < state_layout_.foot_contact_sensor_indices.size()) {
                 const std::size_t sensor_index =
@@ -490,7 +492,7 @@ void LocomotionBatchRuntime::UpdateState(
                             static_cast<float>(physics_state.sensor_linear_velocity[sensor3 + axis]);
                 }
             }
-            if (foot_index < state_layout_.foot_height_sensor_indices.size()) {
+            if (update_rays && foot_index < state_layout_.foot_height_sensor_indices.size()) {
                 const std::size_t sensor_index =
                         state_layout_.foot_height_sensor_indices[foot_index];
                 const std::size_t value_offset =
@@ -501,7 +503,7 @@ void LocomotionBatchRuntime::UpdateState(
             }
         }
 
-        if (height_scan_count_ > 0) {
+        if (update_rays && height_scan_count_ > 0) {
             const std::size_t sensor_index = state_layout_.height_scan_sensor_index;
             const std::size_t value_offset =
                     (environment_index * sensor_count + sensor_index) *

@@ -44,7 +44,7 @@ def test_standard_velocity_configuration_matches_reference(robot,terrain):
     assert cfg.observations.history_length==1
     assert cfg.observations.include_height_scan==('height_scan' in ref['actor_terms'])
     assert not cfg.gait.enabled
-    assert cfg.capture_transitions and cfg.action_clip is None
+    assert not cfg.capture_transitions and cfg.action_clip is None
     assert not hasattr(cfg, "post_step_sensing")
     for key in VELOCITY_REWARD_TERM_NAMES:
         assert getattr(cfg.rewards,key)==ref['weights'].get(key,0),key
@@ -57,9 +57,9 @@ def test_standard_velocity_configuration_matches_reference(robot,terrain):
         actual=getattr(cfg.command.ranges,key)
         assert (list(actual) if isinstance(actual,tuple) else actual)==value,key
     assert [stage.step for stage in cfg.command_curriculum]==[0,120000,240000]
-    assert agent['algorithm']['class_name']=='gobot.rl.locomotion.transition_ppo:TransitionPPO'
+    assert agent['algorithm']['class_name']=='rsl_rl.algorithms.PPO'
     for key,value in ref['agent']['algorithm'].items():
-        if key == 'class_name': continue  # Gobot bootstraps from the final state.
+        if key == 'class_name': continue  # The fixture stores the resolved class object separately.
         assert agent['algorithm'].get(key)==value,key
     for role in ('actor','critic'):
         expected=ref['agent'][role]
@@ -166,7 +166,7 @@ def test_actor_encoder_bias_does_not_change_critic():
 
 
 def test_full_ppo_updates_match_reference_runner():
-    """Same non-timeout transitions: optimizer, normalization and Adam match mjlab."""
+    """Failures, timeouts and overlapping masks: optimizer, normalization and Adam match mjlab."""
     from rsl_rl.runners import OnPolicyRunner
     torch.set_num_threads(2)
     from rsl_rl.algorithms import PPO
@@ -177,7 +177,7 @@ def test_full_ppo_updates_match_reference_runner():
     class Environment:
         num_envs=4
         num_actions=12
-        max_episode_length=1000
+        max_episode_length=11
         device='cpu'
         cfg={}
         def __init__(self):
@@ -197,7 +197,7 @@ def test_full_ppo_updates_match_reference_runner():
             self.values=torch.sin(self.values+.1+action.mean(-1,keepdim=True)*.01)
             self.values[done]=0
             self.episode_length_buf[done]=0
-            return self.get_observations(),reward,done,{'time_outs':timeout&~failure}
+            return self.get_observations(),reward,done,{'time_outs':timeout}
 
     def run(reference):
         torch.manual_seed(617)

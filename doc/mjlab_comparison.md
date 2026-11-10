@@ -4,22 +4,46 @@
 两边沿用固定参考版本的奖励权重和 PPO 优化参数。Gobot 的通用训练器与机器人预设分离，
 G1 只是 `examples/locomotion/presets.py` 提供的一项任务；机器人资产仍由场景编译。
 
-当前 Gobot 明确采用以下训练约定，与固定 mjlab 参考的部分行为不同：
+标准速度基线使用未修改的 `rsl_rl.algorithms.PPO`。固定参考版本为
+`dcdf6ce519abfd2ea45e9503ae6fb650b75bb869`，训练任务版本为 `velocity_v3`。
 
-- 最后物理子步完成后先刷新状态，再计算奖励、终止和最终观测；没有旧时序开关。
-- `TransitionPPO` 用重置前的最终状态进行 timeout bootstrap，PPO 优化仍由 RSL-RL 执行。
-- reset 恢复配置的默认关节目标，环境随机数与策略采样分离。
-- 恢复训练保留地形等级并开启新 episode；不会在加载时再次升降地形等级。
+- 每个物理子步更新接触计时；奖励/终止读取最后子步留下的派生状态，射线读取上次 sense 的结果。
+- 推力和重置后只 forward 一次，随后更新指令、sense 和观测。
+- 接触观测沿用奖励读取的缓存；任意 scene reset 会使整批接触缓存失效，与参考相同。
+- 超时回填由 RSL PPO 使用采样动作时保存的价值；失败和 timeout 掩码独立，允许同时为真。
+- reset 清零 actuator targets；Warp 环境事件与策略共用 Torch 设备随机数流。
+- 启动事件顺序由任务配置表达，框架没有机器人名称判断。G1 与 Go1 的原版事件顺序不同。
+- 初次 reset 也执行参考课程调用；恢复 checkpoint 保留已保存的等级，不评判恢复前的临时状态。
+- 标准基线关闭 transition diagnostics；AMP 的终态价值扩展只留在显式 AMP 算法中。
 
-积分器和异常处理与标准参考一致：`ImplicitFast`、0.005 秒物理步长；非有限奖励项在
-权重和时间缩放后置零；观测不清洗，由 RSL-RL 检查非有限输出。没有有限速度阈值中止或
-额外数值终止/重置。Warp 容量问题保留运行时警告。
+Newton + ImplicitFast、奖励非有限值处理和 RSL 输出检查保持参考行为。
+CPU 采用相同奖励/传感器时序，但仍使用 NumPy 随机数；固定种子的参考采样对齐对象是 Warp 训练路径。
 
-因此这是相同地形和预算下的训练结果对照，不是逐步或逐位复现。奖励公式与 PPO 更新检查
-仍有意义，但不能据此宣称完整环境语义相同。报告必须记录这些差异。
+配置相同、优化器相同和短测通过，均不能证明最终策略质量一致。独立编译的模型存在 float32/XML
+精度差异；CUDA 接触求解也并非逐位确定。对照必须同时记录数值误差、原版自身重复运行的误差和
+相同预算下的独立评测。先完成本基线的训练和评测，再在新目录中一次只改变一项改进。
 
-接触计时每个物理子步累计 `physics_dt`（当前 0.005 秒），reset 清空相应世界的计时。
-不再用 float32 仿真时钟相减，避免长时间回放误判首次触地。旧计时状态已删除。
+## 行为验证
+
+`tests/support/record_velocity_baseline.py` 在两个独立进程中各自初始化，不复制对方的状态或 RNG。
+默认 16 环境、64 步，包含部分/整批重置、推力、指令重采样、失败与超时重叠、课程切换。
+整批重置发生在第 16/32/48 步，限制探针中的接触轨迹分岔；这不是长 episode 收敛测试。
+`--updates 2` 改为真实 PPO 采样/优化，不添加上述探针干预。输出保留模型、全部观测/动作、
+奖励、结束掩码、课程和 RNG。`compare_velocity_baseline.py` 逐项报告误差，严格检查随机与离散状态，
+不会把连续误差隐藏成一个“全部对齐”的结论。
+
+```bash
+.venv/bin/python tests/support/record_velocity_baseline.py --runtime gobot \
+  --terrain logs/g1_velocity_v3_terrain.json --output logs/baseline_check/gobot.pt
+mjlab/.venv/bin/python tests/support/record_velocity_baseline.py --runtime mjlab \
+  --terrain logs/g1_velocity_v3_terrain.json --output logs/baseline_check/mjlab.pt
+.venv/bin/python tests/support/compare_velocity_baseline.py \
+  logs/baseline_check/gobot.pt logs/baseline_check/mjlab.pt \
+  --output logs/baseline_check/comparison.json
+```
+
+`--robot go1` 使用相同流程及 Go1 地形导出文件。PPO 回归测试还覆盖真实超时和失败重叠，
+在相同 transitions 上逐项比较参数、归一化和 Adam 状态。
 
 ## 生成一次训练地形
 
@@ -27,7 +51,7 @@ G1 只是 `examples/locomotion/presets.py` 提供的一项任务；机器人资�
 
 ```bash
 .venv/bin/python tests/support/export_training_terrain.py \
-  --robot g1 --output logs/g1_velocity_v2_terrain.json
+  --robot g1 --output logs/g1_velocity_v3_terrain.json
 ```
 
 这个文件包含全部碰撞几何、高度场、出生点、地形名称/比例及 SHA256。文件来自普通 Gobot
@@ -35,7 +59,7 @@ G1 只是 `examples/locomotion/presets.py` 提供的一项任务；机器人资�
 
 Gobot 启动时核对自己场景的实际几何是否与文件一致；mjlab 从同一文件构造原 terrain entity，
 保留 terrain curriculum 与边界检查。不能只复制 seed，因为不同生成器未必生成相同几何。
-两边按 `seed + rank` 调用同一个初始分配函数，地形类型数量和初始难度逐卡相同，
+两边按 `seed + rank` 使用参考的 Torch 初始地形分配及相同事件顺序，不额外覆盖分配，
 每个输出目录的 `terrain.json` 保存共同文件哈希和每卡分配哈希，`training_terrain.json` 保存完整输入。
 
 ## 先做八卡短测试
@@ -46,11 +70,11 @@ Gobot（在 Gobot 根目录）：
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
   --backend mujoco-warp --terrain rough \
-  --terrain-reference logs/g1_velocity_v2_terrain.json \
+  --terrain-reference logs/g1_velocity_v3_terrain.json \
   --num-envs 64 --iterations 10 --seed 42 --no-eval \
   --hours .1 --budget-hours 1 --save-interval 10 \
-  --output logs/g1_velocity_v2_gobot_smoke \
-  --budget-file logs/g1_velocity_v2_gobot_smoke/budget.json
+  --output logs/g1_velocity_v3_gobot_smoke \
+  --budget-file logs/g1_velocity_v3_gobot_smoke/budget.json
 ```
 
 完成后测试 mjlab：
@@ -60,9 +84,9 @@ cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
-  --terrain-reference ../logs/g1_velocity_v2_terrain.json \
+  --terrain-reference ../logs/g1_velocity_v3_terrain.json \
   --num-envs 64 --iterations 10 --seed 42 --save-interval 10 \
-  --output logs/g1_velocity_v2_mjlab_smoke
+  --output logs/g1_velocity_v3_mjlab_smoke
 cd ..
 ```
 
@@ -76,11 +100,11 @@ cd ..
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
   --backend mujoco-warp --terrain rough \
-  --terrain-reference logs/g1_velocity_v2_terrain.json \
+  --terrain-reference logs/g1_velocity_v3_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --no-eval \
   --hours 8 --budget-hours 64 --save-interval 500 \
-  --output logs/g1_velocity_v2_gobot_seed42 \
-  --budget-file logs/g1_velocity_v2_gobot_seed42/budget.json
+  --output logs/g1_velocity_v3_gobot_seed42 \
+  --budget-file logs/g1_velocity_v3_gobot_seed42/budget.json
 ```
 
 ```bash
@@ -88,9 +112,9 @@ cd mjlab
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   ../tests/support/train_mjlab_locomotion.py \
-  --terrain-reference ../logs/g1_velocity_v2_terrain.json \
+  --terrain-reference ../logs/g1_velocity_v3_terrain.json \
   --num-envs 1024 --iterations 18000 --seed 42 --save-interval 500 \
-  --output logs/g1_velocity_v2_mjlab_seed42
+  --output logs/g1_velocity_v3_mjlab_seed42
 cd ..
 ```
 

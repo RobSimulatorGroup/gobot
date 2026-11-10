@@ -473,7 +473,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             self.decimation,
             workers=self.sim_workers,
             simulate_action_latency=self.control_cfg.simulate_action_latency,
-            post_step_sensing=True,
+            post_step_sensing=False,
         )
         backend_step_actions_ms = (self.perf_counter() - action_step_t0) * 1000.0
         native_step_total_ms = (self.perf_counter() - t0) * 1000.0
@@ -540,7 +540,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         terminated = np.asarray(batch_state.terminated, dtype=bool).copy()
         self._episode_length_np += 1
         terrain_out = self._terrain_out_of_bounds(batch_state)
-        time_outs = ((self._episode_length_np >= self.max_episode_length) | terrain_out) & ~terminated
+        time_outs = (self._episode_length_np >= self.max_episode_length) | terrain_out
         done_envs = terminated | time_outs
         reset_reason = np.where(terminated, 1, np.where(terrain_out, 3, np.where(time_outs, 2, 0))).astype(np.int64)
         self._episode_returns += rewards
@@ -565,6 +565,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         active_envs = ~done_envs
         self._previous_actions[active_envs] = batch_state.previous_action[active_envs]
         self._last_actions[active_envs] = batch_state.last_action[active_envs]
+        cached_contacts = None if reset_env_ids.size else (
+            batch_state.foot_contact.copy(), batch_state.foot_contact_force.copy())
 
         # Refresh after events and resets, before command-frame updates and observations.
         batch_state = self.backend.refresh()
@@ -578,7 +580,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         reset_done_ms = (self.perf_counter() - t0) * 1000.0
 
         t0 = self.perf_counter()
-        actor_obs, critic_obs = self._build_generic_velocity_observations(batch_state)
+        actor_obs, critic_obs = self._build_generic_velocity_observations(batch_state, contacts=cached_contacts)
         self._copy_obs(batch_state, actor_obs, critic_obs)
         obs_np = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
         critic_np = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
@@ -1233,7 +1235,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
     def _run_batch_task_numpy(self) -> None:
         self._run_velocity_task_numpy()
 
-    def _build_generic_velocity_observations(self, state: Any) -> tuple[np.ndarray, np.ndarray]:
+    def _build_generic_velocity_observations(self, state: Any, *, contacts=None) -> tuple[np.ndarray, np.ndarray]:
         params = np.asarray(state.task_params, dtype=np.float32)
         height_scan_scale = 1.0 / max(float(params[_TASK_PARAM["height_scan_max_distance"]]), 1.0e-6)
         lin_vel = np.asarray(state.base_linear_velocity_body, dtype=np.float32)
@@ -1257,13 +1259,14 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         if height_scan.shape[1] > 0 and self.cfg_obj.observations.include_height_scan:
             actor_parts.append(height_scan * height_scan_scale)
         actor_obs = np.concatenate(actor_parts, axis=1).astype(np.float32, copy=False)
-        contact_force_log = np.sign(state.foot_contact_force) * np.log1p(np.abs(state.foot_contact_force))
+        contact, force = (state.foot_contact, state.foot_contact_force) if contacts is None else contacts
+        contact_force_log = np.sign(force) * np.log1p(np.abs(force))
         critic_obs = np.concatenate(
             [
                 actor_obs,
                 np.asarray(state.foot_height, dtype=np.float32),
                 np.asarray(state.foot_air_time, dtype=np.float32),
-                np.asarray(state.foot_contact, dtype=np.float32),
+                np.asarray(contact, dtype=np.float32),
                 np.asarray(contact_force_log, dtype=np.float32).reshape(self.num_envs, -1),
             ],
             axis=1,
@@ -1575,7 +1578,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         base_angular_velocities = np.zeros((reset_count, 3), dtype=np.float32)
         joint_positions = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_velocities = np.zeros((reset_count, self.num_actions), dtype=np.float32)
-        joint_targets = np.broadcast_to(self.default_joint_pos.reshape(1, -1), (reset_count, self.num_actions)).astype(np.float32, copy=True)
+        joint_targets = np.zeros((reset_count, self.num_actions), dtype=np.float32)
 
         for row, env_id_value in enumerate(env_ids):
             env_id = int(env_id_value)
@@ -1660,32 +1663,36 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         joint_kd = np.broadcast_to(base_joint_kd.reshape(1, -1), (count, self.num_actions)).astype(np.float32, copy=True)
         foot_friction = None
         if dr.enabled:
-            lo, hi = dr.encoder_bias_range
-            self._encoder_bias[:] = self._rng.uniform(lo, hi, (count, self.num_actions)).astype(np.float32)
+            for event in dr.startup_order:
+                if event == "foot_friction":
+                    if dr.randomize_foot_friction:
+                        foot_friction = np.zeros((count, 3), dtype=np.float32)
+                        lo, hi = dr.foot_friction_slide_range
+                        foot_friction[:, 0] = self._rng.uniform(lo, hi, count).astype(np.float32)
+                        foot_friction[:, 1] = self._sample_log_uniform(dr.foot_friction_spin_range, count)
+                        foot_friction[:, 2] = self._sample_log_uniform(dr.foot_friction_roll_range, count)
+                elif event == "encoder_bias":
+                    lo, hi = dr.encoder_bias_range
+                    self._encoder_bias[:] = self._rng.uniform(lo, hi, (count, self.num_actions)).astype(np.float32)
+                elif event == "body_com":
+                    if dr.random_com:
+                        lo, hi = dr.com_offset_x
+                        base_com_offset[:, 0] = self._rng.uniform(lo, hi, count).astype(np.float32)
+                        if dr.com_offset_y is not None:
+                            lo, hi = dr.com_offset_y
+                            base_com_offset[:, 1] = self._rng.uniform(lo, hi, count).astype(np.float32)
+                        if dr.com_offset_z is not None:
+                            lo, hi = dr.com_offset_z
+                            base_com_offset[:, 2] = self._rng.uniform(lo, hi, count).astype(np.float32)
             if dr.randomize_base_mass:
                 lo, hi = dr.added_mass_range
                 base_mass_delta[:] = self._rng.uniform(lo, hi, count).astype(np.float32)
-            if dr.random_com:
-                lo, hi = dr.com_offset_x
-                base_com_offset[:, 0] = self._rng.uniform(lo, hi, count).astype(np.float32)
-                if dr.com_offset_y is not None:
-                    lo, hi = dr.com_offset_y
-                    base_com_offset[:, 1] = self._rng.uniform(lo, hi, count).astype(np.float32)
-                if dr.com_offset_z is not None:
-                    lo, hi = dr.com_offset_z
-                    base_com_offset[:, 2] = self._rng.uniform(lo, hi, count).astype(np.float32)
             if dr.randomize_kp:
                 lo, hi = dr.kp_multiplier_range
                 joint_kp[:] = base_joint_kp.reshape(1, -1) * self._rng.uniform(lo, hi, (count, 1)).astype(np.float32)
             if dr.randomize_kd:
                 lo, hi = dr.kd_multiplier_range
                 joint_kd[:] = base_joint_kd.reshape(1, -1) * self._rng.uniform(lo, hi, (count, 1)).astype(np.float32)
-            if dr.randomize_foot_friction:
-                foot_friction = np.zeros((count, 3), dtype=np.float32)
-                lo, hi = dr.foot_friction_slide_range
-                foot_friction[:, 0] = self._rng.uniform(lo, hi, count).astype(np.float32)
-                foot_friction[:, 1] = self._sample_log_uniform(dr.foot_friction_spin_range, count)
-                foot_friction[:, 2] = self._sample_log_uniform(dr.foot_friction_roll_range, count)
         else:
             self._encoder_bias.fill(0.0)
         if not hasattr(self.backend, "reset_domain_randomization"):

@@ -38,8 +38,8 @@ def task_config(experiment: Experiment, *, play=False):
     if experiment.recipe == "baseline":
         cfg.name = f"{experiment.robot}_{experiment.stage}_velocity"
         cfg.robot_resource_path = f"res://{experiment.robot}.jscn"
-        cfg.task_version = "velocity_v2"
-        cfg.capture_transitions = True  # Timeouts bootstrap from the pre-reset final state.
+        cfg.task_version = "velocity_v3"
+        cfg.capture_transitions = False
         cfg.action_clip = None
         cfg.curriculum_mode = "command_displacement"
         cfg.max_init_terrain_level = 5

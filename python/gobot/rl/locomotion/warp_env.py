@@ -301,7 +301,14 @@ class WarpVelocityEnv:
             raise RuntimeError("MuJoCo Warp backend requested but Torch cannot access CUDA")
 
         self.seed = int(seed)
-        self._generator = torch.Generator(device=self._torch_device).manual_seed(self.seed)
+        # mjlab shares the device RNG between environment events and PPO.
+        # Keep a reference to Torch's generator, rather than a second stream.
+        torch.cuda.init()
+        device_index = self._torch_device.index
+        self._generator = torch.cuda.default_generators[
+            torch.cuda.current_device() if device_index is None else device_index
+        ]
+        self.reset_seed(self.seed)
         self.profile_step = bool(profile_step)
         self.collect_step_extras = bool(collect_step_extras)
         self.collect_training_stats = bool(collect_training_stats)
@@ -811,8 +818,6 @@ class WarpVelocityEnv:
             "force": torch.zeros((self.num_envs, self._foot_count, 3), device=self._torch_device),
         }
         self._singleton_feet = all(len(foot.collision_shapes) == 1 for foot in self.cfg_obj.robot.feet)
-        if self._singleton_feet:
-            self._feet_contact = self._raw_feet_contact
         self._collision_contacts = {
             name: self.provider.contact_sensor(name)
             for name in (
@@ -871,31 +876,34 @@ class WarpVelocityEnv:
         if fields:
             self.provider.expand_model_fields(fields)
 
-        # Match startup event order: foot friction, encoder bias, body COM.
-        if dr.randomize_foot_friction:
-            friction = self.provider.model_array("geom_friction")
-            defaults = self.provider.model_constant("geom_friction").to(dtype=friction.dtype)
-            friction.copy_(defaults.unsqueeze(0).expand_as(friction))
-            slide = self._sample_uniform((self.num_envs, 1, 1), *dr.foot_friction_slide_range).flatten()
-            spin = self._log_uniform((self.num_envs,), *dr.foot_friction_spin_range)
-            roll = self._log_uniform((self.num_envs,), *dr.foot_friction_roll_range)
-            sampled = torch.stack((slide, spin, roll), dim=-1)
-            friction[:, self._foot_geom_ids, :] = sampled[:, None, :]
-        self._encoder_bias.copy_(self._sample_uniform(self._encoder_bias.shape, *dr.encoder_bias_range))
-        if dr.random_com:
-            body_ipos = self.provider.model_array("body_ipos")
-            defaults = self.provider.model_constant("body_ipos").to(dtype=body_ipos.dtype)
-            body_ipos.copy_(defaults.unsqueeze(0).expand_as(body_ipos))
-            offsets = torch.zeros(
-                (self.num_envs, 3), dtype=body_ipos.dtype, device=self._torch_device
-            )
-            offsets[:, 0] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_x).flatten()
-            if dr.com_offset_y is not None:
-                offsets[:, 1] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_y).flatten()
-            if dr.com_offset_z is not None:
-                offsets[:, 2] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_z).flatten()
-            body_ipos[:, self._torso_body_id] += offsets
-            self.provider.recompute_constants("set_const")
+        for event in dr.startup_order:
+            if event == "foot_friction":
+                if dr.randomize_foot_friction:
+                    friction = self.provider.model_array("geom_friction")
+                    defaults = self.provider.model_constant("geom_friction").to(dtype=friction.dtype)
+                    friction.copy_(defaults.unsqueeze(0).expand_as(friction))
+                    slide = self._sample_uniform((self.num_envs, 1, 1), *dr.foot_friction_slide_range).flatten()
+                    spin = self._log_uniform((self.num_envs,), *dr.foot_friction_spin_range)
+                    roll = self._log_uniform((self.num_envs,), *dr.foot_friction_roll_range)
+                    sampled = torch.stack((slide, spin, roll), dim=-1)
+                    friction[:, self._foot_geom_ids, :] = sampled[:, None, :]
+            elif event == "encoder_bias":
+                self._encoder_bias.copy_(self._sample_uniform(self._encoder_bias.shape, *dr.encoder_bias_range))
+            elif event == "body_com":
+                if dr.random_com:
+                    body_ipos = self.provider.model_array("body_ipos")
+                    defaults = self.provider.model_constant("body_ipos").to(dtype=body_ipos.dtype)
+                    body_ipos.copy_(defaults.unsqueeze(0).expand_as(body_ipos))
+                    offsets = torch.zeros(
+                        (self.num_envs, 3), dtype=body_ipos.dtype, device=self._torch_device
+                    )
+                    offsets[:, 0] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_x).flatten()
+                    if dr.com_offset_y is not None:
+                        offsets[:, 1] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_y).flatten()
+                    if dr.com_offset_z is not None:
+                        offsets[:, 2] = self._sample_uniform((self.num_envs, 1, 1), *dr.com_offset_z).flatten()
+                    body_ipos[:, self._torso_body_id] += offsets
+                    self.provider.recompute_constants("set_const")
 
     def _sample_uniform(self, shape, low, high):
         """Affine sampling used by reset events, perturbations and noise."""
@@ -928,7 +936,10 @@ class WarpVelocityEnv:
         if seed is None:
             return
         self.seed = int(seed)
-        self._generator.manual_seed(self.seed)
+        import random
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
 
     def init_state(self) -> BatchEnvState:
         return self._state
@@ -956,12 +967,15 @@ class WarpVelocityEnv:
                 "critic": self._critic_obs[:0],
             }, {}
 
+        self._update_terrain_curriculum(ids)
+        return self._reset_and_observe(ids)
+
+    def _reset_and_observe(self, ids):
         previous = self._state.obs
-        reasons = torch.zeros_like(ids)
-        # Only completed episodes in step() advance the terrain curriculum.
-        self._reset_idx(ids, reasons)
+        self._reset_idx(ids, torch.zeros_like(ids))
         self.provider.forward()
-        self._compute_commands(dt=0.0)
+        self._refresh_foot_contacts()
+        self._compute_commands(dt=0.0, env_ids=ids)
         self.provider.sense()
         self._update_raycast_outputs()
         self._compute_observations(add_noise=False)
@@ -1021,9 +1035,8 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
-        self.provider.forward()
-        self.provider.sense()
-        self._update_raycast_outputs()
+        # Match mjlab: rewards, terminations and events observe the derived
+        # state left by the last physics substep. Forward runs once, after reset.
         self._refresh_foot_contacts()
         self._compute_terminations()
         self._compute_rewards()
@@ -1060,6 +1073,10 @@ class WarpVelocityEnv:
         self._profile_mark(profile_marks, "reset")
 
         self.provider.forward()
+        # mjlab caches contact data read by rewards until the next substep.
+        # Any scene reset invalidates this cache for the whole batch.
+        if reset_ids.numel() > 0:
+            self._refresh_foot_contacts()
         command_dt = (~done).float() * self.step_dt
         if self.cfg_obj.curriculum_mode == "command_displacement":
             self._commanded_displacement.add_(command_displacement_step(
@@ -1191,7 +1208,9 @@ class WarpVelocityEnv:
         if rng_state is not None:
             self._generator.set_state(torch.as_tensor(rng_state, dtype=torch.uint8, device="cpu"))
         self._env_origins.copy_(self._terrain_origin_for(self._all_env_ids))
-        self.reset()
+        # Restoring saved assignments starts fresh episodes; it must not grade
+        # whatever transient simulation state happened to precede the restore.
+        self._reset_and_observe(self._all_env_ids)
         return {
             "common_step_counter": int(self.common_step_counter),
             "profile_curriculum": "exact" if profile_restored else "restarted",
@@ -1321,7 +1340,6 @@ class WarpVelocityEnv:
         self._reset_qvel[env_ids, :6] = velocity
         self._reset_qvel[env_ids[:, None], self._joint_dof_ids] = joint_velocity
         self._reset_ctrl[env_ids] = 0.0
-        self._reset_ctrl[env_ids[:, None], self._actuator_ids] = self._default_joint_pos
         self._reset_commands(env_ids)
         reference_ids = None
         if self._reference_initializer is not None:
@@ -1377,7 +1395,7 @@ class WarpVelocityEnv:
         self._previous_previous_action[env_ids] = 0.0
         self._previous_action[env_ids] = 0.0
         self._action[env_ids] = 0.0
-        self._joint_targets[env_ids] = self._default_joint_pos
+        self._joint_targets[env_ids] = 0.0
         if reference_ids is not None:
             target = self._reset_qpos[reference_ids[:, None], self._joint_qpos_ids]
             self._joint_targets[reference_ids] = target
@@ -1555,21 +1573,24 @@ class WarpVelocityEnv:
             self._is_run_env[walking_ids] = False
         self._command_counter[env_ids] += 1
 
-    def _compute_commands(self, *, dt: float) -> None:
+    def _compute_commands(self, *, dt: float, env_ids=None) -> None:
         if self.cfg_obj.command.source == "external": return
-        self._command_time_left.sub_(dt)
-        resample_ids = torch.nonzero(self._command_time_left <= 0.0, as_tuple=False).flatten()
+        selected = torch.ones_like(self._is_standing_env) if env_ids is None else torch.zeros_like(self._is_standing_env)
+        if env_ids is not None:
+            selected[env_ids] = True
+        self._command_time_left.sub_(torch.as_tensor(dt, device=self._torch_device) * selected)
+        resample_ids = torch.nonzero((self._command_time_left <= 0.0) & selected, as_tuple=False).flatten()
         self._resample_commands(resample_ids)
         cfg = self.cfg_obj.command
         if cfg.heading_command:
             heading = self._heading()
             error = _wrap_to_pi(self._heading_target - heading)
-            heading_ids = torch.nonzero(self._is_heading_env, as_tuple=False).flatten()
+            heading_ids = torch.nonzero(self._is_heading_env & selected, as_tuple=False).flatten()
             if heading_ids.numel() > 0:
                 self._command[heading_ids, 2] = (
                     float(cfg.heading_control_stiffness) * error[heading_ids]
                 ).clamp(*cfg.ranges.ang_vel_z)
-        world_ids = torch.nonzero(self._is_world_env, as_tuple=False).flatten()
+        world_ids = torch.nonzero(self._is_world_env & selected, as_tuple=False).flatten()
         if world_ids.numel() > 0:
             heading = self._heading()[world_ids]
             cosine = torch.cos(heading)
@@ -1578,7 +1599,7 @@ class WarpVelocityEnv:
             vy = self._command_world[world_ids, 1]
             self._command[world_ids, 0] = cosine * vx + sine * vy
             self._command[world_ids, 1] = -sine * vx + cosine * vy
-        standing_ids = torch.nonzero(self._is_standing_env, as_tuple=False).flatten()
+        standing_ids = torch.nonzero(self._is_standing_env & selected, as_tuple=False).flatten()
         if standing_ids.numel() > 0:
             self._command[standing_ids] = 0.0
             self._command_world[standing_ids] = 0.0
@@ -1619,6 +1640,8 @@ class WarpVelocityEnv:
 
     def _refresh_foot_contacts(self):
         if self._singleton_feet:
+            for name in ("found", "force"):
+                self._feet_contact[name].copy_(self._raw_feet_contact[name])
             return
         self._feet_contact["found"].zero_().scatter_add_(1, self._foot_shape_index.expand(self.num_envs, -1), self._raw_feet_contact["found"].float())
         self._feet_contact["force"].zero_().scatter_add_(1, self._foot_shape_index[None, :, None].expand(self.num_envs, -1, 3), self._raw_feet_contact["force"])
@@ -1783,7 +1806,7 @@ class WarpVelocityEnv:
         else:
             self._terrain_out.zero_()
         self._truncated.copy_(
-            ((self.episode_length_buf >= self.max_episode_length) | self._terrain_out) & ~self._terminated
+            (self.episode_length_buf >= self.max_episode_length) | self._terrain_out
         )
 
     def _compute_rewards(self) -> None:
@@ -1939,7 +1962,6 @@ class WarpVelocityEnv:
         self._episode_returns.add_(self._reward)
 
     def _compute_observations(self, *, add_noise: bool = True) -> None:
-        self._refresh_foot_contacts()
         self._observation_buffer_index = (self._observation_buffer_index + 1) % len(self._actor_obs_buffers)
         self._actor_obs = self._actor_obs_buffers[self._observation_buffer_index]
         self._critic_obs = self._critic_obs_buffers[self._observation_buffer_index]

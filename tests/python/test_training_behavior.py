@@ -50,9 +50,8 @@ def test_custom_environment_timeout_and_final_observation(framework, legacy_time
     wrapper = RslRlVecEnvWrapper(env)
     obs, reward, done, extras = wrapper.step(torch.zeros(3, 2))
     assert done.tolist() == [True, True, True]
-    # Physical failure dominates a simultaneous time limit, without changing
-    # the environment's masks or depending on optional info dictionary keys.
-    assert extras["time_outs"].tolist() == [True, False, False]
+    # Failure and timeout masks are independent, including simultaneous events.
+    assert extras["time_outs"].tolist() == [True, False, True]
     assert env.state.truncated.tolist() == [True, False, True]
     assert extras["_final_observation"].tolist() == [True, True, True]
     torch.testing.assert_close(extras["final_observation"]["critic"].float(), torch.tensor([[5.], [7.], [11.]]))
@@ -60,14 +59,14 @@ def test_custom_environment_timeout_and_final_observation(framework, legacy_time
     pointer = extras["time_outs"].data_ptr()
     assert wrapper.step(torch.zeros(3, 2))[3]["time_outs"].data_ptr() == pointer
 
-    # The timeout uses V(s_final), not the reset or previous rollout state.
+    # Standard RSL PPO uses the value saved when sampling the action.
     torch.testing.assert_close(_stored_transition_rewards(obs, reward, done, extras),
-                               torch.tensor([5.95, .5, .5]))
+                               torch.tensor([100., 1., 100.]))
 
 
 def _stored_transition_rewards(obs, reward, done, extras):
     """Exercise the real PPO collector with an inspectable critic and storage."""
-    from gobot.rl.locomotion.transition_ppo import TransitionPPO
+    from rsl_rl.algorithms import PPO
     from rsl_rl.storage import RolloutStorage
 
     class Model:
@@ -80,11 +79,10 @@ def _stored_transition_rewards(obs, reward, done, extras):
         def reset(self, dones):
             pass
 
-    alg = TransitionPPO.__new__(TransitionPPO)
+    alg = PPO.__new__(PPO)
     alg.actor = alg.critic = Model()
     alg.device = "cpu"
     alg.gamma = .99
-    alg.fall_penalty = .5
     alg.rnd = None
     alg.transition = RolloutStorage.Transition()
     alg.transition.values = torch.full((3, 1), 100.)
@@ -104,10 +102,9 @@ def test_finite_horizon_explicitly_disables_bootstrap(legacy_timeout, framework)
     assert "time_outs" not in extras
     assert "final_observation" not in extras
     assert extras["terminated"].tolist() == [False, True, True]
-    # A time-limit episode ending earns no value bootstrap and no fall penalty;
-    # an actual fall still receives the penalty, even at the same time limit.
+    # Finite-horizon transitions preserve the environment reward unchanged.
     torch.testing.assert_close(_stored_transition_rewards(obs, reward, done, extras),
-                               torch.tensor([1., .5, .5]))
+                               torch.tensor([1., 1., 1.]))
 
 
 @pytest.mark.parametrize("framework", ["numpy", "torch"])

@@ -152,12 +152,12 @@ def validate_agent_config(exp, config):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
             raise ValueError(f'agent.algorithm.{name} must be between zero and one')
     if int(os.environ.get('WORLD_SIZE', '1')) > 1 and algorithm.get('class_name') not in {
-            'gobot.rl.locomotion.transition_ppo:TransitionPPO'}:
+            'rsl_rl.algorithms.PPO'}:
         raise ValueError('synchronized locomotion training supports PPO; AMP discriminator synchronization is not enabled')
     if algorithm.get('class_name') not in {
-            'gobot.rl.locomotion.transition_ppo:TransitionPPO',
+            'rsl_rl.algorithms.PPO',
             'gobot.rl.locomotion.amp:MotionPriorPPO'}:
-        raise ValueError('locomotion training requires terminal-state PPO; use a custom TrainingSpec for another algorithm')
+        raise ValueError('locomotion training requires RSL-RL PPO or the explicit AMP extension')
     if 'motion_prior_cfg' in algorithm:
         MotionPriorCfg(**algorithm['motion_prior_cfg'])
 
@@ -169,8 +169,8 @@ def validate_task_config(exp, cfg, agent=None):
         raise ValueError('env.physics_dt must be finite and positive')
     if isinstance(cfg.decimation, bool) or not isinstance(cfg.decimation, int) or cfg.decimation < 1:
         raise ValueError('env.decimation must be a positive integer')
-    if not cfg.capture_transitions:
-        raise ValueError('PPO/AMP training requires env.capture_transitions=true for terminal bootstrap and diagnostics')
+    if exp.recipe == 'amp' and not cfg.capture_transitions:
+        raise ValueError('AMP requires env.capture_transitions=true for motion transitions')
 
 
 def restore_rng(rng, device):
@@ -369,7 +369,7 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                                 **({'reset_on_create': False} if backend == 'mujoco-warp' else {}))
         terrain_info = None
         if terrain_reference is not None:
-            from .terrain_reference import load, verify_environment, initial_assignments, assignment_digest
+            from .terrain_reference import load, verify_environment, assignment_digest
             terrain_data = distributed.on_main(lambda: load(terrain_reference))
             error = None
             try:
@@ -377,8 +377,9 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
             except Exception as caught:
                 error = caught
             distributed.check_error(error, phase='training terrain')
-            levels, types = initial_assignments(terrain_data, exp.num_envs, seed)
-            env.set_terrain_assignments(levels, types, fixed=False)
+            levels, types = env.terrain_assignments
+            if isinstance(levels, torch.Tensor):
+                levels, types = levels.cpu().numpy(), types.cpu().numpy()
             assignments = distributed.gather(assignment_digest(levels, types))
             terrain_info = {'sha256': terrain_data['sha256'], 'seed': terrain_data['seed'],
                             'initial_assignments': assignments}
@@ -414,9 +415,10 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
         signature_data = {'experiment': semantic, 'task': task_identity,
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
                           'transition_observation_noise': False,
-                          'sampling': 'environment_torch_generator' if backend == 'mujoco-warp' else 'numpy',
-                          'state_timing': 'post_step', 'numerics': 'mjlab_velocity_v1',
-                          'reset_actuator_targets': 'default_pose',
+                          'sampling': 'shared_torch_generator' if backend == 'mujoco-warp' else 'numpy',
+                          'state_timing': 'mjlab_pre_forward_rewards', 'numerics': 'mjlab_velocity_v1',
+                          'training_behavior': 'mjlab_velocity_v3',
+                          'reset_actuator_targets': 'zero',
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
         distributed.on_main(lambda: atomic_json(directory / 'training_signature.json', {'signature': signature}))
@@ -506,8 +508,9 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
             effective_std = alg.actor.output_std.detach()
             averaged = {'action_std': float(effective_std.mean()),
                         'action_clip_fraction': float(torch.stack(clip_rates).mean()) if clip_rates else 0.,
-                        'joint_effort_saturation_fraction': float(torch.stack(saturation).mean()) if saturation else 0.,
                         **losses}
+            if saturation:
+                averaged['joint_effort_saturation_fraction'] = float(torch.stack(saturation).mean())
             sums = distributed.reduce(list(averaged.values()))
             summary = statistics.summarize(distributed, env)
             duration, std_max, collection_s, learning_s, action_max = distributed.reduce(
@@ -522,6 +525,7 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                        'action_std_max': std_max, 'action_abs_max': action_max, 'learning_rate': alg.learning_rate,
                        'world_size': distributed.world_size, 'total_num_envs': exp.num_envs * distributed.world_size,
                        **{key: value / distributed.world_size for key, value in zip(averaged, sums, strict=True)}}
+            metrics.setdefault('joint_effort_saturation_fraction', None)
 
             def log():
                 metrics['elapsed_s'] = budget.elapsed

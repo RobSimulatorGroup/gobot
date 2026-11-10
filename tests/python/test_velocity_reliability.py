@@ -52,8 +52,9 @@ def test_resume_preserves_curriculum_and_replays_fresh_episodes(backend):
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
-def test_timeout_keeps_post_step_state_and_reset_holds_pose(backend):
+def test_timeout_diagnostics_keep_transition_and_reset_clears_targets(backend):
     cfg = config('flat')
+    cfg.capture_transitions = True
     cfg.observations.actor_noise = False
     env = make_velocity_env(cfg, backend=backend, num_envs=2, seed=11,
                             max_episode_length=2, collect_step_extras=False)
@@ -73,23 +74,23 @@ def test_timeout_keeps_post_step_state_and_reset_holds_pose(backend):
         assert not np.allclose(array(final['critic']), array(result.obs['critic']))
         if backend == 'mujoco-warp':
             targets = array(env.provider.arrays['ctrl'])[:, env._layout.actuator_ids]
-            np.testing.assert_allclose(targets, np.broadcast_to(env.default_joint_pos, targets.shape))
+            np.testing.assert_allclose(targets, np.zeros_like(targets))
     finally:
         env.close()
 
 
 @pytest.mark.skipif(os.environ.get('GOBOT_RUN_LOCOMOTION_NUMERICS_GPU_TEST') != '1', reason='requires CUDA')
-def test_environment_reset_does_not_reseed_or_consume_policy_rng():
+def test_environment_reset_shares_policy_rng_like_mjlab():
     env = make_velocity_env(config('flat'), backend='mujoco-warp', num_envs=2,
                             seed=11, collect_step_extras=False)
     try:
         torch.cuda.manual_seed(791)
         before = torch.cuda.get_rng_state().clone()
         env.reset(seed=53)
-        assert torch.equal(torch.cuda.get_rng_state(), before)
-        state = env.training_state_dict()
-        env.load_training_state_dict(state)
-        assert torch.equal(torch.cuda.get_rng_state(), before)
+        assert not torch.equal(torch.cuda.get_rng_state(), before)
+        after = torch.cuda.get_rng_state().clone()
+        env.reset(seed=53)
+        assert torch.equal(torch.cuda.get_rng_state(), after)
     finally:
         env.close()
 
@@ -97,6 +98,7 @@ def test_environment_reset_does_not_reseed_or_consume_policy_rng():
 @pytest.mark.parametrize('backend', BACKENDS)
 def test_partial_reset_preserves_unselected_world_observations_and_state(backend):
     cfg = config('flat')
+    cfg.capture_transitions = True
     assert cfg.observations.actor_noise
     env = make_velocity_env(cfg, backend=backend, num_envs=2, seed=41, collect_step_extras=False)
     try:
@@ -117,7 +119,7 @@ def test_partial_reset_preserves_unselected_world_observations_and_state(backend
 
 
 @pytest.mark.parametrize('robot', ['go1', 'g1'])
-def test_real_timeout_bootstraps_collector_from_final_critic_state(robot):
+def test_real_timeout_uses_unmodified_rsl_ppo_bootstrap(robot):
     from gobot.rl import RslRlVecEnvWrapper
     from gobot.rl.locomotion.distributed import DistributedTraining
     from gobot.rl.locomotion.training import agent_config, build_algorithm
@@ -143,13 +145,11 @@ def test_real_timeout_bootstraps_collector_from_final_critic_state(robot):
             previous_value = algorithm.transition.values.squeeze(-1).clone()
             observation, reward, done, extras = wrapper.step(action)
             assert done.all() and extras['time_outs'].all()
-            final_value = algorithm.critic(extras['final_observation']).squeeze(-1)
             reset_value = algorithm.critic(observation).squeeze(-1)
-            expected = reward + algorithm.gamma * final_value
+            expected = reward + algorithm.gamma * previous_value
             algorithm.process_env_step(observation, reward, done, extras)
         torch.testing.assert_close(algorithm.storage.rewards[0, :, 0], expected)
-        assert not torch.allclose(final_value, previous_value)
-        assert not torch.allclose(final_value, reset_value)
+        assert not torch.allclose(previous_value, reset_value)
     finally:
         wrapper.close()
 
@@ -159,6 +159,7 @@ def test_cpu_warp_agree_through_landing_with_current_contact_observations():
     traces = []
     for backend in ('mujoco-cpu', 'mujoco-warp'):
         cfg = config('flat')
+        cfg.capture_transitions = True
         cfg.observations.actor_noise = False
         cfg.reset_z_range = (.03, .03)
         env = make_velocity_env(cfg, backend=backend, num_envs=2, seed=19, collect_step_extras=False)

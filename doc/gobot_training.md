@@ -39,18 +39,18 @@ AMP、Go1 步态扩展可另外使用 `--terrain mixed`。旧任务名称和实�
 `go1-velocity` 和 `g1-velocity` 参照仓库内 mjlab
 `dcdf6ce519abfd2ea45e9503ae6fb650b75bb869` 的平地/粗糙地形配置，使用 RSL-RL 5.5.2 的 PPO 更新。
 公共训练器接收 `RunConfig` 与 `VelocityTaskCfg`，型号选择只在 `examples/locomotion/presets.py`。
-`TransitionPPO` 对 timeout 使用重置前最终状态的价值，不使用上一步状态或重置状态的价值。
+标准基线直接使用 `rsl_rl.algorithms.PPO`；timeout 采用参考的采样时价值回填，失败与超时掩码独立。
 默认设置为学习率 `1e-3`、自适应学习率、熵系数 `0.01`、初始动作标准差 `1.0`，
 每次更新采样 24 步，优化 5 轮、每轮 4 个 minibatch。没有更新回滚、归一化预热或额外跌倒扣分。
 
 奖励权重、速度误差公式、观测噪声、命令采样和课程按该参考设置。actor 的关节位置包含编码器偏置，
-critic 使用真实位置。最后物理子步后刷新状态，再计算奖励、终止与最终观测，随后处理推力和重置；
+critic 使用真实位置。最后物理子步后计算奖励/终止，再处理推力与重置，最后统一 forward、指令更新和 sense；
 刚重置的环境保留完整命令持续时间。平地策略不接收地形高度扫描。
 
 速度任务保留 mjlab 的 `ImplicitFast` 积分，物理步长 0.005 秒、控制周期 0.02 秒。
 异常处理同样对齐标准 mjlab：非有限的加权、按时间缩放后的奖励项置零；
 观测不清零 NaN/Inf，由 RSL-RL 的输出检查报错。没有额外速度阈值中止或数值异常自动重置。
-默认八卡配置输出到 `logs/g1_velocity_mjlab_seed42`，详细规则见 `doc/velocity_stability.md`。
+默认八卡配置输出到 `logs/g1_velocity_v3_gobot_seed42`，详细规则见 `doc/velocity_stability.md`。
 
 `go1-gait` 显式增加步态相位；`g1-amp` 保留动作先验；`g1-tracking` 使用 SuperMimic。
 它们的附加奖励和观测不进入标准速度任务。
@@ -58,9 +58,9 @@ critic 使用真实位置。最后物理子步后刷新状态，再计算奖励�
 独立参考数据保存在 `tests/fixtures/mjlab_velocity.json`，由
 `tests/support/export_mjlab_velocity.py` 在 mjlab 环境中生成。它记录来源文件哈希、四份有效配置和
 16 个奖励项以及机器人关节增益、力矩限制和动作缩放。`tests/python/test_mjlab_training.py`
-比较参考参数、NumPy/Torch 奖励和相同非超时 transition 下的 PPO 更新。
-Gobot 采用更新后的状态、独立环境 RNG 和正确的终态 bootstrap，不宣称完整训练时序与参考逐位一致。
-这些检查不替代多 seed 的训练效果比较。
+比较参考参数、NumPy/Torch 奖励和包含失败、超时及重叠掩码的 PPO 更新。
+Warp 环境与策略共用 Torch RNG，reset 清零目标。真实轨迹探针和短训练流程见 `doc/mjlab_comparison.md`。
+短测不替代多 seed 的训练效果比较，也不意味着 CUDA 接触轨迹逐位相同。
 
 物理仍从 Gobot 场景编译。G1 行走、AMP 与回放使用同一个 `g1.jscn`：29 个身体关节、固定手掌，
 删除了 14 个手指驱动。质量、惯量、关节、碰撞和驱动参数通过 `tests/fixtures/mjlab_g1.xml`

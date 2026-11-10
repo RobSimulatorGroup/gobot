@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 
 import torch
+import numpy as np
+import pytest
 
 from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv
@@ -65,6 +67,31 @@ def test_uniform_events_use_reference_shapes_and_consume_zero_width_draws():
     assert torch.equal(torch.get_rng_state(),rng)
 
 
+@pytest.mark.parametrize('count', [3, 7, 64, 1024])
+def test_initial_terrain_assignments_and_rng_match_native_reference(count):
+    env = probe(count)
+    env._spawn_rows, env._spawn_cols = 10, 7
+    origins = torch.arange(210, dtype=torch.float32).reshape(10, 7, 3)
+    env._spawn_origins = origins.reshape(-1, 3)
+    env._all_env_ids = torch.arange(count)
+    proportions = np.array([.1, .2, .1, .15, .2, .15, .1])
+    env._terrain_config = {'sub_terrains': [{'proportion': p} for p in proportions]}
+    ref = NS(cfg=NS(max_init_terrain_level=env.cfg_obj.max_init_terrain_level), _device='cpu')
+    file = Path('terrains/terrain_entity.py')
+    allocation = reference_method(file, None, '_proportional_counts', {'np': np})
+    initialize = reference_method(file, 'TerrainEntity', '_compute_env_origins_curriculum',
+                                  {'np': np, '_proportional_counts': allocation})
+    torch.manual_seed(42)
+    expected = initialize(ref, count, origins, proportions)
+    rng = torch.get_rng_state()
+    torch.manual_seed(42)
+    env._initialize_terrain_assignments()
+    assert torch.equal(torch.get_rng_state(), rng)
+    for actual, target in ((env._terrain_levels, ref.terrain_levels),
+                           (env._terrain_types, ref.terrain_types), (env._env_origins, expected)):
+        torch.testing.assert_close(actual, target, atol=0, rtol=0)
+
+
 def test_push_samples_next_timer_then_one_six_axis_kick_without_mutating_live_velocity():
     env=probe(4);env._push_time_left=torch.tensor([0.,1.,.01,2.]);env._push_count=torch.zeros(4,dtype=torch.long)
     env._arrays={'qpos':torch.tensor([[0.,0.,1.,1.,0.,0.,0.]]).repeat(4,1),'qvel':torch.zeros(4,6)}
@@ -85,7 +112,7 @@ def test_push_samples_next_timer_then_one_six_axis_kick_without_mutating_live_ve
     assert env._push_count.tolist()==[1,0,1,0]
 
 
-def test_cpu_reset_holds_default_pose_before_next_policy_action():
+def test_cpu_reset_clears_targets_like_reference_entity_reset():
     from gobot.rl.locomotion import make_velocity_env
     cfg=task_config(Experiment(robot='g1',stage='flat'),play=True)
     env=make_velocity_env(cfg,backend='mujoco-cpu',num_envs=2,collect_step_extras=False)
@@ -98,5 +125,5 @@ def test_cpu_reset_holds_default_pose_before_next_policy_action():
         env.backend.reset_robot_states=capture
         env.reset(seed=17)
         assert len(calls)==1
-        torch.testing.assert_close(torch.tensor(calls[0]), torch.tensor(env.default_joint_pos).expand(2,-1))
+        torch.testing.assert_close(torch.tensor(calls[0]), torch.zeros(2,env.num_actions))
     finally:env.close()

@@ -134,7 +134,8 @@ class Go1VelocityCfg(VelocityTaskCfg):
     terrain_out_of_bounds: bool = True
     terrain_distance_buffer: float = 0.3
     illegal_contact: VelocityIllegalContactCfg = field(default_factory=_go1_illegal_contacts)
-    domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=VelocityDomainRandomizationCfg)
+    domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=lambda: VelocityDomainRandomizationCfg(
+        startup_order=("encoder_bias", "body_com", "foot_friction")))
     push_enabled: bool = True
     push_interval_steps: int = 750
     push_interval_mode: Literal["per_env_random", "global"] = "per_env_random"

@@ -47,7 +47,7 @@ been removed. Future task APIs should retain the typed batch boundary.
 | Reward, terminated, truncated | `(num_envs,)` |
 | Environment time step | `env_dt = physics_dt * decimation` |
 | Reward scaling | Use `env_dt` |
-| Reset | Explicit masks and per-environment episode state; task RNG is separate from policy sampling |
+| Reset | Explicit masks and per-environment episode state; Warp velocity events share Torch RNG with policy sampling |
 | Topology | One scene topology per batch; also batched when `num_envs == 1` |
 
 The step order is:
@@ -55,18 +55,18 @@ The step order is:
 ```text
 process action
   -> apply controls, step physics, update state for each substep
-  -> refresh kinematics and sensors from the integrated state
-  -> termination, reward and pre-reset final observation
+  -> termination and reward (last substep state, previous ray sample)
   -> interval events and reset done environments
-  -> refresh state, advance commands and return observations
+  -> forward once, advance commands, sense and return observations
 ```
 
-Velocity training always captures `final_observation` before reset.
-`TransitionPPO` uses that state for timeout value bootstrapping, while delegating
-GAE and optimization to RSL-RL. Timeouts set `truncated`; task failures set
-`terminated` and take precedence if both conditions occur together. Reset restores
-the configured default joint targets. Sensor timing is fixed for the shared task;
-there is no option to retain the old pre-integration reward/observation behavior.
+Standard velocity training uses unmodified RSL-RL PPO, including its timeout
+bootstrap from the value saved when the action was sampled. Failure and timeout
+masks are independent. Reset clears actuator targets; the next policy action
+sets the usual default-pose offsets. Transition diagnostics are optional and
+must not consume RNG or add forward/sense calls. AMP remains an explicit
+extension with its own final-state value handling. The reference behavior and
+executable comparison protocol are documented in `doc/mjlab_comparison.md`.
 
 Task hot paths operate on contiguous NumPy arrays for CPU or device tensors
 for CUDA. Resolve Gobot joint/link/sensor names once. Keep scene traversal,
