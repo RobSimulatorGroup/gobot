@@ -192,10 +192,11 @@ Slurm 模板 `examples/locomotion/cluster/train_velocity.sbatch` 默认申请 8 
 不是 PPO rollout 长度，也不是显存耗尽。仅关闭 `warn_overflow` 会隐藏输出，不能恢复
 失败的碰撞计算；`nconmax` 和 `njmax` 也不控制这块缓冲。
 
-Gobot 的 Warp 后端在预热和 CUDA graph 捕获前将该缓冲至少扩为 64，保留溢出警告和检查。
+Gobot 的 Warp 后端在预热和 CUDA graph 捕获前将该缓冲至少扩为 64，保留 MuJoCo Warp 的溢出警告。
 这是对当前固定依赖 MuJoCo Warp 3.17 的内部缓冲分配调整，不修改安装包文件。
-更新 Python 代码后重启训练进程即可生效，不需要重编译 Gobot。现有 PPO 检查点可以用
-原来的参数和 `--resume` 继续；无需重新初始化策略。若扩容后仍报 EPA 溢出，应记录触发
+更新 Python 代码后重启训练进程即可生效，不需要重编译 Gobot。仅调整缓冲容量且训练签名
+不变时，现有 PPO 检查点可以用原来的参数和 `--resume` 继续。采用 mjlab 数值处理的训练
+签名与旧版不同，旧运行须使用新的输出目录重新训练。若扩容后仍报 EPA 溢出，应记录触发
 姿态和碰撞网格进一步排查。
 
 ## SuperMimic 训练与复现
@@ -342,7 +343,7 @@ teacher 评估结果与 Gobot 从头训练结果分别标记。
 - `Metrics/twist/error_vel_xy` / `error_vel_yaw` 是已结束 episode 的时间平均误差，单位分别为 m/s 和 rad/s。
   仓库内 mjlab 对照入口已使用相同口径；上游原入口采用指令时间上限归一化，不能混用其日志值。
 - `Episode_Termination/*` 是所有卡在本次更新中的 episode 结束次数，不是百分比，也不是 mjlab 的每步平均结束数。
-  数值异常会中止本轮并保存诊断。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
+  返回数据含 NaN/Inf 时，由 RSL-RL 检查报错并结束采样。地形等级按实际环境数量汇总；没有分配该地形的环境时显示 `—`。
 
 日志仅收集数据，不更改奖励、PPO、物理求解器、评测规则或 checkpoint 配置签名。
 
