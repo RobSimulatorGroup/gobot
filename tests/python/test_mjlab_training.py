@@ -321,3 +321,25 @@ def test_g1_locomotion_model_matches_reference_physics():
             assert (Path(cfg.project_path)/resource['__PATH__'].removeprefix('res://')).is_file()
     finally:
         context.clear_scene()
+
+
+@pytest.mark.parametrize('robot', ['g1', 'go1'])
+def test_authored_collision_materials_match_reference(robot):
+    import gobot
+    import mujoco
+    from gobot.rl.locomotion.scene import configure_robot_drives
+    cfg = task_config(Experiment(robot=robot))
+    context = gobot.app.create_context()
+    try:
+        context.set_project_path(str(cfg.project_path))
+        context.load_scene(cfg.robot_resource_path)
+        configure_robot_drives(context.root, cfg)
+        artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        model = mujoco.MjModel.from_xml_string(artifact['content'])
+        for name, expected in REFERENCE['collision_materials'][robot].items():
+            geom = model.geom(f'{robot}_{name}').id
+            assert model.geom_condim[geom] == expected['condim'], name
+            assert model.geom_priority[geom] == expected['priority'], name
+            np.testing.assert_allclose(model.geom_friction[geom], expected['friction'], atol=1e-7, rtol=1e-6, err_msg=name)
+    finally:
+        context.clear_scene()

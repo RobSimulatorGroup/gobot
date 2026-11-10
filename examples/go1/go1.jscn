@@ -5467,11 +5467,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "SphereShape3D_Rslvj",
@@ -5484,11 +5485,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_5Wpx7",
@@ -5532,11 +5534,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_69Vqf",
@@ -5580,11 +5583,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_4xBMr",
@@ -5598,11 +5602,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_1BpbA",
@@ -5616,11 +5621,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_SkadP",
@@ -5664,11 +5670,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_OkxnP",
@@ -5682,11 +5689,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "SphereShape3D_WoZUA",
@@ -5699,6 +5707,7 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_priority": 1,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 0.0005000000237487257,
@@ -5747,11 +5756,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_R5Wf0",
@@ -5795,11 +5805,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_dTprJ",
@@ -5813,11 +5824,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_KvlkI",
@@ -5831,11 +5843,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_uiwQy",
@@ -5879,11 +5892,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_sAVfS",
@@ -5897,11 +5911,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "SphereShape3D_qVGQQ",
@@ -5914,6 +5929,7 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_priority": 1,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 0.0005000000237487257,
@@ -5962,11 +5978,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_k79Ob",
@@ -6010,11 +6027,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_bIy0O",
@@ -6028,11 +6046,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_Y3Wb0",
@@ -6046,11 +6065,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_KDiBz",
@@ -6094,11 +6114,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_xAYoW",
@@ -6112,11 +6133,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "SphereShape3D_PKiBg",
@@ -6129,6 +6151,7 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_priority": 1,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 0.0005000000237487257,
@@ -6177,11 +6200,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_Fnzlu",
@@ -6225,11 +6249,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_TmEed",
@@ -6243,11 +6268,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_Rjlo6",
@@ -6261,11 +6287,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "PBRMaterial3D_XxA8q",
@@ -6309,11 +6336,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "CapsuleShape3D_dADGE",
@@ -6327,11 +6355,12 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_friction_mode": "frictionless",
             "resource_name": "",
             "restitution": 0.0,
-            "rolling_friction": 0.0,
-            "sliding_friction": 0.800000011920929,
-            "torsional_friction": 0.0
+            "rolling_friction": 0.0001,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.005
         },
         {
             "__ID__": "SphereShape3D_CjtF4",
@@ -6344,6 +6373,7 @@
             "__TYPE__": "PhysicsMaterial3D",
             "contact_compliance": 9.999999747378752e-05,
             "contact_damping": 1.0,
+            "contact_priority": 1,
             "resource_name": "",
             "restitution": 0.0,
             "rolling_friction": 0.0005000000237487257,

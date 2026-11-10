@@ -42,6 +42,14 @@ for robot,factory in [('go1',unitree_go1_flat_env_cfg),('g1',unitree_g1_flat_env
     cfg=factory()
     scene=Scene(cfg.scene,device='cpu')
     model=scene.compile()
+    out.setdefault('collision_materials', {})[robot] = {
+        model.geom(i).name.removeprefix('robot/'): {
+            'condim': int(model.geom_condim[i]), 'priority': int(model.geom_priority[i]),
+            'friction': model.geom_friction[i].tolist(),
+        }
+        for i in range(model.ngeom)
+        if model.geom(i).name.startswith('robot/') and (model.geom_contype[i] or model.geom_conaffinity[i])
+    }
     profile={}
     for actuator in range(model.nu):
         joint=int(model.actuator_trnid[actuator,0])
