@@ -40,11 +40,6 @@ def test_standard_velocity_configuration_matches_reference(robot,terrain):
     solver_names={'impratio':'impedance_ratio','ls_iterations':'line_search_iterations','ccd_iterations':'convex_collision_iterations'}
     for name,value in ref['solver'].items():
         actual=cfg.mujoco_solver_settings[solver_names.get(name,name)]
-        if name == 'integrator':
-            # Deliberate stability improvement over the pinned mjlab baseline:
-            # include Coriolis derivatives in full implicit integration.
-            assert value == 'implicitfast' and actual == 'Implicit'
-            continue
         assert (actual.lower() if isinstance(actual,str) else actual)==value,name
     assert cfg.observations.history_length==1
     assert cfg.observations.include_height_scan==('height_scan' in ref['actor_terms'])

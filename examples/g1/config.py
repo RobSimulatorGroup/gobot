@@ -67,7 +67,7 @@ def g1_velocity_cfg(*, project_path=None, play=False):
         base_clearance=.76, max_init_terrain_level=5, curriculum_mode="command_displacement",
         fall_angle=math.radians(70), nconmax=70,
         action_scale={name: .25 * m[1] / gain for name, m, gain in zip(JOINT_NAMES, motors, kp, strict=True)})
-    cfg.mujoco_solver_settings = {"solver": "Newton", "integrator": "Implicit", "cone": "Pyramidal", "iterations": 10,
+    cfg.mujoco_solver_settings = {"solver": "Newton", "integrator": "ImplicitFast", "cone": "Pyramidal", "iterations": 10,
         "line_search_iterations": 20, "convex_collision_iterations": 500, "impedance_ratio": 1.}
     cfg.domain_randomization.foot_friction_slide_range = (.3, 1.2)
     cfg.domain_randomization.foot_friction_spin_range = (.005, .005)

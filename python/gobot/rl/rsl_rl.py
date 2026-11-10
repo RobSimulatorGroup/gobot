@@ -423,10 +423,6 @@ class RslRlVecEnvWrapper:
                     value = info[key]
                     extras[key] = ({k: self.torch.as_tensor(v, device=self.device) for k, v in value.items()}
                                    if isinstance(value, Mapping) else self.torch.as_tensor(value, device=self.device))
-        if "numerical_reset" in info:
-            extras["numerical_reset"] = self.torch.as_tensor(info["numerical_reset"], device=self.device)
-        if "numerical_failure" in info:
-            extras["numerical_failure"] = info["numerical_failure"]
         if "training_stats" in info:
             extras["training_stats"] = {
                 key: self.torch.as_tensor(value, device=self.device)

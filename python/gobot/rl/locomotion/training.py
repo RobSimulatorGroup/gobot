@@ -211,13 +211,6 @@ def update_policy(algorithm, environment, observation, steps, record=None, distr
     elif error is not None:
         raise error
     losses = algorithm.update()
-    error = None
-    if not all(np.isfinite(float(value)) for value in losses.values()):
-        error = FloatingPointError('non-finite optimizer metric')
-    if distributed is not None:
-        distributed.check_error(error, phase='optimizer')
-    elif error is not None:
-        raise error
     if timings is not None:
         timings.update(collection_s=collected - started, learning_s=clock() - collected)
     return observation, losses
@@ -422,7 +415,7 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
                           'transition_observation_noise': False,
                           'sampling': 'environment_torch_generator' if backend == 'mujoco-warp' else 'numpy',
-                          'state_timing': 'post_step', 'numerical_failure': 'raise',
+                          'state_timing': 'post_step', 'numerics': 'mjlab_velocity_v1',
                           'reset_actuator_targets': 'default_pose',
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
@@ -577,8 +570,6 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
             return summary
         return distributed.on_main(finish)
     except BaseException as error:
-        if env is not None and getattr(env, 'numerical_failure', None) is not None:
-            torch.save(env.numerical_failure, directory / f'numerical_failure_rank{distributed.rank}.pt')
         report('failed', error=str(error), traceback=traceback.format_exc())
         raise
     finally:

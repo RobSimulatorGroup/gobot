@@ -1,60 +1,40 @@
-# 速度训练积分稳定性
+# 速度任务的数值异常处理
 
-2026-11-10，118 上 `g1_velocity_v2_seed42_retry1` 在完成 16487 次 PPO 更新后中止。
-rank 1、环境 392、控制步 395704 的 `numerical_failure_rank1.pt` 保存了积分前后的状态。
-关节速度最大值从 462.39 rad/s 增至 3760.49 rad/s，超过数值检查的 1000 阈值；
-状态仍是有限数。环境分配在 9 级楼梯，快照已有自碰撞穿透，不能据此确定最初失稳的触发点。
+标准速度任务对齐固定 mjlab 参考 `dcdf6ce519abfd2ea45e9503ae6fb650b75bb869` 的默认行为，
+使用 `ImplicitFast`、0.005 秒物理步长、4 个子步、Newton 10 次迭代和 20 次线搜索。
+自定义 `VelocityTaskCfg` 的部分求解器配置也默认使用 `ImplicitFast`，不会继承引擎的 Euler。
 
-## 已验证的改动
+## 与参考一致的处理
 
-通用 `VelocityTaskCfg` 及随附 G1、Go1 速度任务使用完整 `Implicit`。它将速度相关的
-惯性力导数纳入隐式积分；`ImplicitFast` 省略关节链的这部分导数。MuJoCo CPU 和
-MuJoCo Warp 3.17 均原生支持完整隐式，Gobot 无需添加机器人特例或修改物理引擎。
-完整隐式会引入数值耗散，并需要更多计算；它不是精确能量守恒算法。
+- 不因有限关节速度超过 1000 rad/s 或位置超过自定义阈值而中止训练，也不裁剪物理状态。
+- 标准终止条件仍为跌倒、超时和离开地形边界；不增加“数值异常自动重置”。
+- 每个奖励项先计算权重和时间缩放，再把该项的 NaN、正无穷和负无穷置零，最后汇总。
+  正常的其他奖励项保留，日志中的逐项 rate 等于处理后的奖励除以 `step_dt`。
+- 标准 actor/critic 观测不清零 NaN/Inf，与 mjlab 的 `nan_policy="disabled"` 一致。
+- 返回观测、奖励或 done 含 NaN/Inf 时，由相同版本 RSL-RL 5.5.2 的 `check_nan` 报错，
+  在进入 PPO storage 前结束采样；多卡传播该错误并退出。
+- Gobot 的终态 timeout bootstrap 仅检查和计算超时环境；其他环境的终态不参与价值计算。
+- MuJoCo Warp 的容量超限由运行时警告报告，不在速度任务中额外定期调用容量断言。
+  底层 provider 的显式容量检查 API 仍可用于诊断。
 
-原有动作缩放、力矩上限、奖励、步长、控制周期和数值失败中止规则不变。
-旧 Gobot 曾重置数值异常世界、将该步奖励清零后继续；该处理不代表仿真没有失稳。
-固定 mjlab 的 NaN guard 默认关闭，即使开启也只检查 NaN/Inf，没有当前的有限速度爆炸检查。
+mjlab 的 `nan_detection` 是可选终止函数，标准速度任务没有启用；`NanGuard` 也是默认关闭的
+调试记录器，即使打开也只记录、不抛异常或重置。当前标准 Gobot 路径不启用物理快照守卫。
+过去加入的每步快照拷贝、有限速度阈值和相应全局中止已删除。
 
-## 同一故障状态回放
+这些约定对齐异常处理，不代表物理过程不会失稳。有限但很大的数仍可能影响学习；
+它们如何影响完整训练，应通过训练和评测衡量。
 
-使用保存的模型、随机化参数、积分前状态和实际控制目标，运行 4 个 5 ms 物理步。
-以下为最后一步的最大速度，回放数值与原多世界运行会有小量差异：
+## 验证与运行
 
-| 积分方式 | CPU | Warp |
-| --- | ---: | ---: |
-| ImplicitFast | 3787 rad/s | 3791 rad/s |
-| Implicit | 320 rad/s | 320 rad/s |
+`tests/python/test_locomotion_numerics.py` 检查有限大速度不被额外终止、观测中的 NaN/Inf
+不被清洗，以及 RSL-RL 在存储样本前拒绝非有限输出。
+`tests/python/test_mjlab_numerics.py` 使用固定参考的实际奖励与观测处理代码验证数值语义。
+CPU 与 Warp 共享同一规则，没有机器人名称分支。
 
-将求解迭代数从 10 增到 100 没有改善原积分器的结果。从这个已失稳状态关闭电机或
-将最后一步动作限幅到 5 也不能阻止发散；这不能用于断言更早的动作限制没有作用。
+默认八卡配置为 `examples/locomotion/configs/g1_velocity_8gpu.json`，输出到
+`logs/g1_velocity_mjlab_seed42`。异常处理已改变，训练签名会拒绝旧运行的直接 `--resume`；
+新实验使用新目录，不会覆盖已有 checkpoint。
 
-把快照注入完整 `WarpVelocityEnv` 后，完整隐式能完成该控制步，由普通跌倒条件结束 episode，
-奖励有限，没有触发数值恢复或跳过物理步骤。
-
-可以在原始运行目录保留快照，用通用诊断工具独立回放：
-
-```bash
-.venv/bin/python tests/support/replay_locomotion_failure.py \
-  logs/g1_velocity_v2_seed42_retry1/numerical_failure_rank1.pt \
-  --backend warp --integrator implicit
-```
-
-换成 `--integrator implicitfast` 对照；`--backend cpu` 使用 CPU MuJoCo。
-回放工具不加载策略、不更新 checkpoint，也不重启训练。
-
-## 回归与性能
-
-`tests/python/test_implicit_stability.py` 使用无重力、无接触、无执行器的两节正交关节机构，
-独立于 G1/Go1。0.5 秒回放中，ImplicitFast 的能量超过初始值 6 倍，而完整隐式没有能量增长。
-CUDA graph 下的 Warp provider 与 CPU 完整隐式轨迹一致。
-
-在 118 上，旧 checkpoint 仅用于固定策略诊断：1024 个环境、最高难度楼梯、随机动作采样，
-完整隐式跑 5000 个控制步（512 万个环境步），最大速度 52.45 rad/s，无数值失败。
-相同脚本的 ImplicitFast 对照跑 3000 步也未失败，因此不能把短回放成功当作长期训练稳定的证明。
-完整隐式耗时约 27.1 ms/控制步，原积分器约 18.4 ms/控制步，采样耗时约增加 47%；
-该测量包含诊断同步，不是完整 PPO 的吞吐基准。
-
-新配置必须使用新实验目录。默认八卡配置输出到 `logs/g1_velocity_implicit_seed42`。
-旧 checkpoint 的求解器契约不同，不能直接 `--resume` 或 `--initialize`。
-故障回放、通用回归和短训练能验证本次修复，但还需由完整训练确认长期表现。
+本次保存的故障状态已在完整 Warp 环境重放：ImplicitFast 下最大速度约 3791 rad/s，
+随后由普通跌倒条件结束该 episode 并重置，返回观测和奖励均通过 RSL-RL 输出检查。
+这验证的是当前异常处理流程，物理轨迹本身仍存在发散。

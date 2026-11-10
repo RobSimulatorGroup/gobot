@@ -133,7 +133,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._directed_progress = np.zeros(self.num_envs, dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.common_step_counter = 0
-        self.numerical_failure = None
         self.profile_step_counter = 0
         self._reward_term_names = VELOCITY_REWARD_TERM_NAMES + (
             ("run_progress", "bound_gait")
@@ -481,7 +480,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._mark_profile(profile_marks, "physics")
         t0 = self.perf_counter()
         batch_state = self.backend.state
-        self._check_physics_state()
         if self.cfg_obj.curriculum_mode == "command_progress":
             delta = np.asarray(batch_state.base_position)[:, :2] - progress_start
             self._directed_progress += directed_increment(delta, world_command)
@@ -570,7 +568,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
         # Refresh after events and resets, before command-frame updates and observations.
         batch_state = self.backend.refresh()
-        self._check_physics_state()
         if self.cfg_obj.curriculum_mode == "command_displacement":
             self._commanded_displacement += command_displacement_step(
                 np.asarray(batch_state.command), np.asarray(batch_state.base_quaternion),
@@ -646,25 +643,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         for key, value in native_profile.items():
             timing[f"native_{key}"] = float(value)
         return self._state
-
-    def _check_physics_state(self):
-        state = self.backend.state
-        names = ("base_position", "base_quaternion", "base_linear_velocity", "base_angular_velocity",
-                 "joint_position", "joint_velocity")
-        arrays = {name: np.asarray(getattr(state, name)) for name in names}
-        invalid = np.zeros(self.num_envs, dtype=bool)
-        for name, values in arrays.items():
-            invalid |= ~np.isfinite(values).reshape(self.num_envs, -1).all(axis=1)
-            limit = 1000. if "velocity" in name else 1.e6
-            invalid |= (np.abs(values) > limit).reshape(self.num_envs, -1).any(axis=1)
-        ids = np.flatnonzero(invalid)
-        if ids.size:
-            selected = ids[:8]
-            self.numerical_failure = {"step": self.common_step_counter, "env_ids": selected.copy(),
-                "state": {name: value[selected].copy() for name, value in arrays.items()},
-                "action": self._submitted_actions[selected].copy(), "command": self.command_b[selected].copy()}
-            raise FloatingPointError(f"invalid locomotion physics at step {self.common_step_counter}, "
-                                     f"envs {selected.tolist()}; rollout aborted")
 
     @property
     def terrain_origins(self):
@@ -1423,9 +1401,12 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             self._set_reward_term(terms, "bound_gait", weights[gait_index] * gait_score)
-        if not np.isfinite(terms).all():
-            raise FloatingPointError("non-finite locomotion reward terms")
-        np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
+        # Match mjlab's reward manager: sanitize each weighted, dt-scaled term
+        # before summation, while keeping the exposed term buffer as a rate.
+        terms *= step_dt
+        np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        np.copyto(state.reward, np.sum(terms, axis=1))
+        terms /= step_dt
 
         terminated = locomotion_failure_mask(np.asarray(state.projected_gravity)[:, 2],
             np.asarray(state.height_scan)[:, self._height_scan_dim // 2],

@@ -40,7 +40,7 @@ class TrainingStatistics:
         self.previous_previous_action = torch.zeros_like(self.previous_action)
         self.completed = torch.zeros(self.episodes.shape[1], device=device)
         self.step_sums = torch.zeros(9, device=device)
-        self.terminations = torch.zeros(5, device=device)
+        self.terminations = torch.zeros(4, device=device)
         self.begin_update()
 
     def begin_update(self):
@@ -66,7 +66,7 @@ class TrainingStatistics:
         self.completed.add_(finished.sum(0))
         reasons = stats['reset_reason']
         # First entry is the total; the remaining entries are mutually exclusive reasons.
-        self.terminations.add_(torch.stack((done.sum(), *((done & (reasons == code)).sum() for code in range(1, 5)))))
+        self.terminations.add_(torch.stack((done.sum(), *((done & (reasons == code)).sum() for code in range(1, 4)))))
         self.episodes[done] = 0
         self.previous_action[done] = 0
         self.previous_previous_action[done] = 0
@@ -80,8 +80,8 @@ class TrainingStatistics:
         packed = torch.cat((self.completed, self.step_sums, self.terminations, terrain_sums, terrain_counts))
         values = distributed.reduce(packed)
         end = len(self.completed)
-        completed, steps, terminations = values[:end], values[end:end+9], values[end+9:end+14]
-        sums, counts = values[end+14:end+14+len(names)], values[end+14+len(names):]
+        completed, steps, terminations = values[:end], values[end:end+9], values[end+9:end+13]
+        sums, counts = values[end+13:end+13+len(names)], values[end+13+len(names):]
         episodes = int(terminations[0])
         mean = lambda value, count: value / count if count else None
         log = {
@@ -105,7 +105,7 @@ class TrainingStatistics:
             log[f'Curriculum/command_vel/{name}_max'] = high
         log['Metrics/twist/error_vel_xy'] = mean(completed[-2], episodes)
         log['Metrics/twist/error_vel_yaw'] = mean(completed[-1], episodes)
-        for code, name in ((2, 'time_out'), (1, 'fell_over'), (3, 'out_of_terrain_bounds'), (4, 'numerical_failure')):
+        for code, name in ((2, 'time_out'), (1, 'fell_over'), (3, 'out_of_terrain_bounds')):
             log[f'Episode_Termination/{name}'] = int(terminations[code])
         return {'episode_reward': mean(completed[0], episodes),
                 'episode_steps': mean(completed[1], episodes), 'episodes_completed': episodes,

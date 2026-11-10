@@ -182,7 +182,7 @@ class TrainingLog:
                    'total_num_envs': self.env.num_envs * self.distributed.world_size,
                    'action_std': losses[-1] / self.distributed.world_size, 'learning_rate': learning_rate,
                    'action_clip_fraction': None, 'joint_effort_saturation_fraction': None,
-                   'numerical_resets': 0, **summary,
+                   **summary,
                    **{k: v / self.distributed.world_size for k, v in zip(loss_dict, losses[:-1], strict=True)}}
         logger = self.runner.logger
         if self.distributed.main:

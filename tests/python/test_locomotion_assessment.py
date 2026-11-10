@@ -13,7 +13,7 @@ from gobot.rl.locomotion import make_velocity_env
 from examples.locomotion.presets import Experiment, task_config
 
 
-def test_route_outcomes_distinguish_falls_departures_and_numerical_failures():
+def test_route_outcomes_distinguish_falls_departures_and_boundaries():
     class Env:
         num_envs = 5
         step_dt = .02
@@ -43,14 +43,14 @@ def test_route_outcomes_distinguish_falls_departures_and_numerical_failures():
                      'base_angular_velocity_body': np.zeros((5, 3)), 'foot_force': np.zeros((5, 2, 3)),
                      'foot_position': np.zeros((5, 2, 3)), 'foot_velocity': np.zeros((5, 2, 3)),
                      'base_clearance': np.full(5, .76)}
-            return NS(terminated=np.array([False, True, False, True, False]), truncated=np.zeros(5, bool),
-                      info={'transition_state': state, 'reset_reason': np.array([0, 1, 0, 4, 0])})
+            return NS(terminated=np.array([False, True, False, False, False]), truncated=np.array([False, False, False, True, False]),
+                      info={'transition_state': state, 'reset_reason': np.array([0, 1, 0, 3, 0])})
 
     result = rollout(Env(), lambda obs: np.zeros((5, 1)), command=(.8, 0, 0), steps=4, route=True)
     assert result['terrain_pass_rate'] == .2
     assert result['fall_rate'] == .2
     assert result['off_route_rate'] == .2
-    assert result['numerical_failure_rate'] == .2
+    assert result['failure_reasons'] == {'0': 3, '1': 1, '3': 1}
     assert result['tracking_episodes'] == 0
     assert result['velocity_error_after_warmup'] is None
     assert result['episode_metrics']['reached'] == [True, False, False, False, False]

@@ -45,10 +45,6 @@ from .curriculum import progress_masks, directed_increment, command_displacement
 
 
 _CONTACT_HISTORY_LENGTH = 4
-# These are numerical-failure limits, far outside locomotion operating speeds.
-# Checking finite values alone lets a diverging world poison PPO before NaNs appear.
-_MAX_LOCOMOTION_VELOCITY = 1000.0
-_MAX_LOCOMOTION_POSITION = 1.0e6
 
 
 def _quat_apply(quaternion: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
@@ -370,7 +366,7 @@ class WarpVelocityEnv:
             contact_sensor_maxmatch=500,
             ls_parallel=True,
             capture_graphs=bool(capture_graphs),
-            overflow_check_interval=256,
+            overflow_check_interval=0,  # Match mjlab: Warp reports capacity warnings.
             contact_sensors=_profile_contact_specs(prefix, self.cfg_obj.robot, self.cfg_obj.illegal_contact, _collision_names(self.robot)),
             raycast_sensors=raycast_specs,
         )
@@ -616,9 +612,6 @@ class WarpVelocityEnv:
         self._reset_reasons = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
-        self.numerical_failure = None
-        self._physics_input = None
-        self._policy_input = None
         self.common_step_counter = 0
         self.profile_step_counter = 0
         self.step_counter = 0
@@ -998,7 +991,6 @@ class WarpVelocityEnv:
         profile_marks: list[tuple[str, torch.cuda.Event]] = []
         self._profile_mark(profile_marks, "start")
         action = self._prepare_actions(actions)
-        self._remember_step_input()
         self.common_step_counter += 1
         self.profile_step_counter += 1
         self._previous_previous_action.copy_(self._previous_action)
@@ -1029,12 +1021,10 @@ class WarpVelocityEnv:
             self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
-        self._check_physics_state(phase="physics")
         self.provider.forward()
         self.provider.sense()
         self._update_raycast_outputs()
         self._refresh_foot_contacts()
-        self._check_physics_state(phase="post_step_forward")
         self._compute_terminations()
         self._compute_rewards()
         self._profile_mark(profile_marks, "reward_termination")
@@ -1078,7 +1068,6 @@ class WarpVelocityEnv:
         self.provider.sense()
         self._update_raycast_outputs()
         self._profile_mark(profile_marks, "forward_sense")
-        self._check_physics_state(phase="post_reset_forward")
         self._compute_observations()
         self._profile_mark(profile_marks, "observation")
 
@@ -1100,70 +1089,6 @@ class WarpVelocityEnv:
         self.extras = info
         self._finish_step_profile(profile_marks)
         return self._state
-
-    def _physics_failure_mask(self) -> torch.Tensor:
-        invalid = torch.zeros(self.num_envs, dtype=torch.bool, device=self._torch_device)
-        for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "sensordata", "cvel"):
-            invalid |= ~torch.isfinite(self._arrays[name]).flatten(1).all(dim=1)
-        invalid |= (self._arrays["qvel"].abs() > _MAX_LOCOMOTION_VELOCITY).any(dim=1)
-        invalid |= (self._arrays["qpos"].abs() > _MAX_LOCOMOTION_POSITION).any(dim=1)
-        return invalid
-
-    def _remember_step_input(self) -> None:
-        """Keep the actual policy input and pre-step physics state on device.
-
-        A post-failure snapshot alone cannot distinguish unstable controls from
-        controls reacting to an already unstable state. Reuse these buffers;
-        only transfer selected worlds to the host when a failure occurs.
-        """
-        names = ("time", "qpos", "qvel", "act", "qacc_warmstart", "ctrl",
-                 "qfrc_applied", "xfrc_applied", "mocap_pos", "mocap_quat", "eq_active")
-        if self._physics_input is None:
-            self._physics_input = {name: torch.empty_like(self._arrays[name]) for name in names
-                                   if name in self._arrays and self._arrays[name].shape[0] == self.num_envs}
-            self._policy_input = {name: torch.empty_like(value) for name, value in self._state.obs.items()}
-        for name, value in self._physics_input.items():
-            value.copy_(self._arrays[name])
-        for name, value in self._policy_input.items():
-            value.copy_(self._state.obs[name])
-
-    def _check_physics_state(self, *, phase="physics") -> None:
-        """Stop a failed rollout before it changes rewards, resets or PPO storage."""
-        ids = torch.nonzero(self._physics_failure_mask(), as_tuple=False).flatten()
-        if ids.numel() == 0:
-            return
-        selected = ids[:8]
-        model_fields = {}
-        for name in ("body_ipos", "geom_friction"):
-            values = self.provider.model_array(name)
-            rows = selected if values.shape[0] == self.num_envs else torch.zeros_like(selected)
-            model_fields[name] = values[rows].detach().cpu().clone()
-        self.numerical_failure = {
-            "version": 2,
-            "phase": phase,
-            "physics_dt": self.physics_dt,
-            "decimation": self.decimation,
-            "joint_names": self.joint_names,
-            "joint_velocity_addresses": self._layout.joint_dof_addresses,
-            "artifact": dict(self.compiled_artifact.to_mapping()),
-            "model_fields": model_fields,
-            "pre_step_state": {name: value[selected].detach().cpu().clone()
-                               for name, value in self._physics_input.items()},
-            "policy_observation": {name: value[selected].detach().cpu().clone()
-                                   for name, value in self._policy_input.items()},
-            "joint_targets": self._joint_targets[selected].detach().cpu().clone(),
-            "encoder_bias": self._encoder_bias[selected].detach().cpu().clone(),
-            "step": self.common_step_counter,
-            "env_ids": selected.detach().cpu(),
-            "state": {name: self._arrays[name][selected].detach().cpu().clone()
-                      for name in ("qpos", "qvel", "qacc", "qacc_warmstart", "ctrl", "sensordata", "overflow")},
-            "command": self._command[selected].detach().cpu().clone(),
-            "action": self._action[selected].detach().cpu().clone(),
-            "terrain_level": self._terrain_levels[selected].detach().cpu().clone(),
-            "terrain_type": self._terrain_types[selected].detach().cpu().clone(),
-        }
-        raise FloatingPointError(f"invalid locomotion physics at step {self.common_step_counter}, "
-                                 f"envs {selected.tolist()}; rollout aborted")
 
     def _profile_mark(
         self,
@@ -2006,7 +1931,11 @@ class WarpVelocityEnv:
                 trot_penalty=reward_cfg.bound_gait_trot_penalty,
             )
             terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
-        self._reward.copy_(terms.sum(dim=1) * self.step_dt)
+        # Match mjlab RewardManager: sanitize each weighted, dt-scaled term.
+        terms.mul_(self.step_dt)
+        torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
+        self._reward.copy_(terms.sum(dim=1))
+        terms.div_(self.step_dt)
         self._episode_returns.add_(self._reward)
 
     def _compute_observations(self, *, add_noise: bool = True) -> None:

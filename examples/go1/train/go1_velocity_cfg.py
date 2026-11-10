@@ -27,7 +27,7 @@ GO1_DECIMATION = 4
 GO1_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = MappingProxyType(
     {
         "solver": "Newton",
-        "integrator": "Implicit",
+        "integrator": "ImplicitFast",
         "cone": "Elliptic",
         "jacobian": "Auto",
         "iterations": 10,

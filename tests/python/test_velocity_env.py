@@ -255,7 +255,7 @@ def test_go1_env_applies_mujoco_solver_settings():
     try:
         solver_settings = env.context.get_mujoco_solver_settings()
         assert solver_settings["solver"] == gobot.PhysicsSolverType.Newton
-        assert solver_settings["integrator"] == gobot.PhysicsIntegratorType.Implicit
+        assert solver_settings["integrator"] == gobot.PhysicsIntegratorType.ImplicitFast
         assert solver_settings["cone"] == gobot.PhysicsFrictionConeType.Elliptic
         assert solver_settings["jacobian"] == gobot.PhysicsJacobianType.Auto
         assert solver_settings["iterations"] == 10
@@ -549,12 +549,11 @@ def test_go1_reward_and_observation_formulas():
     np.testing.assert_allclose(state.critic_obs[:, : state.actor_obs.shape[1]], state.actor_obs)
 
     state.base_linear_velocity[0, 0] = np.nan
-    try:
-        env._run_velocity_task_numpy()
-    except FloatingPointError:
-        pass
-    else:
-        raise AssertionError("non-finite rewards must stop the rollout")
+    env._run_velocity_task_numpy()
+    assert np.isfinite(state.reward_terms).all()
+    assert np.isfinite(state.reward).all()
+    assert state.reward_terms[0, 0] == 0.0
+    assert state.reward_terms[0, 2] == cfg.upright
 
 
 def test_go1_run_progress_reward_does_not_reward_standing():
