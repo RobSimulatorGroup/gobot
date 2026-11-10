@@ -297,6 +297,9 @@ class VelocityTaskCfg:
 
 
     def __post_init__(self):
+        # Include velocity-dependent inertial forces in articulated integration.
+        # Partial solver overrides must not fall back to the engine's Euler default.
+        self.mujoco_solver_settings = {"integrator": "Implicit", **self.mujoco_solver_settings}
         if self.robot is not None:
             profile = self.robot
             self.robot_name = profile.name

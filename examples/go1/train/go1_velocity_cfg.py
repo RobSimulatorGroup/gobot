@@ -27,7 +27,7 @@ GO1_DECIMATION = 4
 GO1_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = MappingProxyType(
     {
         "solver": "Newton",
-        "integrator": "ImplicitFast",
+        "integrator": "Implicit",
         "cone": "Elliptic",
         "jacobian": "Auto",
         "iterations": 10,
@@ -192,6 +192,7 @@ class Go1VelocityCfg(VelocityTaskCfg):
         if self.training_profile == "run":
             self.gait_foot_indices = (0, 1, 2, 3)
             self.gait_joint_indices = tuple(tuple(range(i, i + 3)) for i in range(0, 12, 3))
+        super().__post_init__()
 
 def go1_velocity_cfg(
     *,

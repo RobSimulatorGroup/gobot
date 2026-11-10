@@ -255,7 +255,7 @@ def test_go1_env_applies_mujoco_solver_settings():
     try:
         solver_settings = env.context.get_mujoco_solver_settings()
         assert solver_settings["solver"] == gobot.PhysicsSolverType.Newton
-        assert solver_settings["integrator"] == gobot.PhysicsIntegratorType.ImplicitFast
+        assert solver_settings["integrator"] == gobot.PhysicsIntegratorType.Implicit
         assert solver_settings["cone"] == gobot.PhysicsFrictionConeType.Elliptic
         assert solver_settings["jacobian"] == gobot.PhysicsJacobianType.Auto
         assert solver_settings["iterations"] == 10
