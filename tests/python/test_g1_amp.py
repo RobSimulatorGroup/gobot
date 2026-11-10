@@ -145,7 +145,7 @@ def test_checkpoint_normalization():
                      distribution_cfg={'class_name': 'GaussianDistribution', 'init_std': 1., 'std_type': 'scalar'})
     actor.obs_normalizer._mean.copy_(torch.arange(5).float()[None])
     actor.obs_normalizer._std.copy_(torch.tensor([[0., .1, 1., 2., 0.]]))
-    manifest = PolicyManifest(task_name='normalizer_test', task_version='v1',
+    manifest = PolicyManifest(task_name='normalizer_test',
         observation_spec=ObservationSpec('test', (SpecField('state', 5),)).metadata(),
         action_spec=ActionSpec('test', (SpecField('left', 1), SpecField('right', 1))).metadata(),
         joint_names=('left', 'right'), physics_dt=.005, decimation=4, control={},
@@ -189,7 +189,6 @@ def test_biped_gait_rejects_hopping_and_standing():
     assert chatter.arrays()['landings'][0] == 0
 
 
-
 def main():
     p = argparse.ArgumentParser(); p.add_argument('--checkpoint-check', action='store_true'); p.add_argument('--backend', choices=('mujoco-cpu','mujoco-warp'))
     args=p.parse_args()
@@ -203,7 +202,6 @@ def main():
                      test_seated_and_nonfoot_support_fail, test_biped_gait_rejects_hopping_and_standing,
                      test_standing_is_not_locomotion_admission):
             test(); print(test.__name__, 'passed')
-
 
 
 def test_standing_is_not_locomotion_admission():

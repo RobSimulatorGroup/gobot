@@ -12,6 +12,7 @@ import subprocess
 import sys
 from types import ModuleType
 
+import mujoco
 import pytest
 import torch
 
@@ -70,7 +71,7 @@ def custom_task(project):
     source_cfg = go1_velocity_cfg(project_path=project)
     values = {field.name: deepcopy(getattr(source_cfg, field.name)) for field in fields(VelocityTaskCfg)}
     values.update(robot=replace(source_cfg.robot, name='walker'), name='custom_velocity',
-                  task_version='custom_velocity_v1', scene_path='res://world.jscn',
+                  scene_path='res://world.jscn',
                   robot_resource_path='res://robot.jscn', capture_transitions=True,
                   terrain_curriculum=False, terrain_out_of_bounds=False,
                   episode_length_s=.04, command_curriculum=(), run_command_curriculum=())
@@ -184,3 +185,31 @@ assert not any(name == 'examples' or name.startswith('examples.') for name in sy
     result = subprocess.run([sys.executable, *flags, '-c', script], cwd=tmp_path,
                             env=environ, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("settings,expected", [
+    ({}, "ImplicitFast"), ({"iterations": 17}, "ImplicitFast"),
+    ({"iterations": 17, "integrator": "Implicit"}, "Implicit"),
+])
+def test_generic_velocity_defaults_preserve_explicit_solver_choice(settings, expected):
+    original = dict(settings)
+    cfg = VelocityTaskCfg(mujoco_solver_settings=settings)
+    assert cfg.mujoco_solver_settings == {"integrator": expected, **original}
+    assert settings == original
+
+
+@pytest.mark.parametrize("settings,expected", [
+    ({"iterations": 17}, mujoco.mjtIntegrator.mjINT_IMPLICITFAST),
+    ({"iterations": 17, "integrator": "Implicit"}, mujoco.mjtIntegrator.mjINT_IMPLICIT),
+])
+def test_custom_robot_compiles_selected_integrator(tmp_path, settings, expected):
+    import gobot
+    from gobot.rl.locomotion.scene import prepare_velocity_scene
+
+    task = replace(custom_task(tmp_path / "project"), mujoco_solver_settings=settings)
+    assert task.robot_name == "walker"
+    context, _, _ = prepare_velocity_scene(task, context=gobot.app.create_context())
+    artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+    model = mujoco.MjModel.from_xml_string(artifact["content"])
+    assert model.opt.integrator == expected
+    assert model.opt.iterations == 17

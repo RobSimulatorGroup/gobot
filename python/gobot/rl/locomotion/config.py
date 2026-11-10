@@ -214,7 +214,6 @@ class VelocityTaskCfg:
     """Single source of truth for robot rough-terrain training and playback."""
 
     robot: LocomotionRobotCfg | None = None
-    task_version: str = "velocity_v1"
     capture_transitions: bool = True
     gait: NaturalGaitCfg = field(default_factory=NaturalGaitCfg)
     state_link_names: tuple[str, ...] = ()
@@ -223,7 +222,6 @@ class VelocityTaskCfg:
     running_terrain_types: tuple[int, ...] = ()
     max_running_terrain_level: int = 2
     terrain_node_path: str = "terrain_world/terrain"
-    curriculum_mode: Literal["legacy", "command_progress", "command_displacement"] = "legacy"
     fall_angle: float | None = None
     min_base_clearance: float | None = None
     nconmax: int = 35
@@ -321,5 +319,3 @@ class VelocityTaskCfg:
             if (not self.capture_transitions or self.robot is None
                     or len(self.gait.phase_offsets[0]) != len(self.robot.feet)):
                 raise ValueError("natural gait requires transition capture and one configured phase per foot")
-        if self.curriculum_mode not in {"legacy", "command_progress", "command_displacement"}:
-            raise ValueError("unknown terrain curriculum mode")

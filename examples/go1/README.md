@@ -1,9 +1,8 @@
 # Go1: training and playback
 
-The new natural walk/trot/gallop workflow is documented in
-[shared locomotion training](../locomotion/README.md). It uses separate versioned
-policies and practical terrain resources. The bundled policy below is the existing
-baseline; no new candidate has been promoted by smoke tests alone.
+Velocity PPO and the walk/trot/gallop task use the
+[shared locomotion training framework](../locomotion/README.md).
+The gait task adds phase observations and uses practical terrain resources.
 
 The editable `go1_scene.jscn` and `terrain/rough_terrain.jres` are shared by
 training and playback. MuJoCo CPU is the reference backend; MuJoCo Warp keeps
@@ -20,8 +19,8 @@ Press Play and focus the 3D view. Use `W/S` for forward/backward, `Q/E` for
 strafe, `A/D` for yaw, `Space` to stop, and `R` to reset. Planar speed is limited
 to 1 m/s and yaw to 0.5 rad/s.
 
-Playback uses the bundled balanced policy, `policies/go1_velocity.onnx`.
-Override it with a manifest-backed `.onnx` or `.pt` policy:
+Playback reads `policies/go1_velocity.onnx` by default. Export a policy for the
+current scene and set its manifest-backed `.onnx` or `.pt` path:
 
 ```bash
 GOBOT_GO1_POLICY=res://policies/go1_velocity.pt \
@@ -125,9 +124,9 @@ dynamics stack from the normal runtime dependencies.
 | --- | --- |
 | `go1.jscn`, `go1_scene.jscn`, `terrain/` | Authored robot and terrain |
 | `go1_profile.py`, `go1_policy_info.py` | Articulation/controller profile and policy identity |
-| `train/go1_scene_runtime.py`, `train/go1_velocity_cfg.py` | Shared scene/solver setup and task configuration |
+| `train/go1_velocity_cfg.py` | Robot preset using the shared scene and solver APIs |
 | `gobot.rl.locomotion.cpu_env`, `warp_env` | Shared CPU and CUDA task implementations |
-| `train/go1_training_state.py`, `train/go1_gait.py` | Curriculum checkpoints and run gait scoring |
+| `train/go1_gait.py` | Robot foot and joint mapping for gait evaluation |
 | `scripts/go1.py`, `tools/` | Editor playback, evaluation, export, and parity tools |
 | `assets/xml/go1.xml` | Import/equivalence source asset |
 
@@ -136,18 +135,3 @@ After changing the source MJCF, regenerate the editable robot and runtime sensor
 ```bash
 uv run python -m examples.go1.tools.refresh_go1_robot_scene
 ```
-
-## Recorded policy results (2026-07-17)
-
-The bundled balanced actor was selected from `model_5100`–`model_6000` by
-fixed-seed terrain admission. Results for `model_5600` used all 70 cells and
-seed 123; forward used two 1000-step episodes per cell, yaw/run one 500-step
-episode per cell.
-
-| Command | Admission | Survival | Command-direction rate |
-| --- | ---: | ---: | ---: |
-| Forward 1 m/s | 0.836 | 0.936 | 0.837 m/s |
-| Left strafe 1 m/s | 0.857 | 0.929 | 0.821 m/s |
-| Reverse 1 m/s | 0.857 | 0.943 | 0.890 m/s |
-| Yaw 0.5 rad/s | 0.914 | 1.000 | 0.257 rad/s |
-| Forward run 2 m/s | 0.829 | 0.829 | 1.637 m/s |

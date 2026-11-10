@@ -62,9 +62,9 @@ def g1_velocity_cfg(*, project_path=None, play=False):
             f"{side}_foot_contact", f"{side}_foot_height_scan", offsets)
             for side in ("left", "right")),
     )
-    cfg = VelocityTaskCfg(robot=profile, name="g1_rough_velocity", task_version="g1_rough_velocity_v1",
+    cfg = VelocityTaskCfg(robot=profile, name="g1_rough_velocity",
         project_path=project_path or Path(__file__).parent, scene_path="res://g1_scene.jscn",
-        base_clearance=.76, max_init_terrain_level=5, curriculum_mode="command_displacement",
+        base_clearance=.76, max_init_terrain_level=5,
         fall_angle=math.radians(70), nconmax=70,
         action_scale={name: .25 * m[1] / gain for name, m, gain in zip(JOINT_NAMES, motors, kp, strict=True)})
     cfg.mujoco_solver_settings = {"solver": "Newton", "integrator": "ImplicitFast", "cone": "Pyramidal", "iterations": 10,
@@ -107,7 +107,6 @@ def g1_amp_cfg(*, project_path=None, stage="rough", play=False):
     cfg.domain_randomization.foot_friction_spin_range = (1.e-4, 2.e-2)
     cfg.domain_randomization.foot_friction_roll_range = (1.e-5, 5.e-3)
     cfg.name = "g1_amp_velocity"
-    cfg.task_version = "g1_amp_velocity_v3"
     cfg.scene_path = "res://g1_flat_scene.jscn" if stage == "flat" else "res://g1_scene.jscn"
     cfg.robot_resource_path = "res://g1.jscn"
     cfg.capture_transitions = True

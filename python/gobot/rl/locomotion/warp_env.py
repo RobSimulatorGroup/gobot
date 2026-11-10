@@ -40,8 +40,7 @@ from .training_state import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .terms import posture_std, locomotion_failure_mask
 from .math import find_node_by_name
-from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
-
+from .curriculum import command_displacement_step, displacement_masks
 
 
 _CONTACT_HISTORY_LENGTH = 4
@@ -503,7 +502,7 @@ class WarpVelocityEnv:
     def _make_task_runtime_metadata(self) -> TaskRuntimeMetadata:
         return TaskRuntimeMetadata(
             name=self.cfg_obj.name,
-            version=self.cfg_obj.task_version,
+            version=self.cfg_obj.name,
             obs_groups_spec=self.obs_groups_spec,
             reward_names=self._reward_term_names,
             backend="mujoco_warp_cuda_graph",
@@ -547,7 +546,6 @@ class WarpVelocityEnv:
             "push_enabled": self.cfg_obj.push_enabled,
             "terrain_curriculum": self.cfg_obj.terrain_curriculum,
             "training_profile": self.cfg_obj.training_profile,
-            "curriculum_mode": self.cfg_obj.curriculum_mode,
             "run_environment_ratio": self.cfg_obj.command.rel_run_envs,
             "run_velocity_x": tuple(self.cfg_obj.command.run_velocity_x),
             "run_velocity_curriculum": tuple(
@@ -611,8 +609,6 @@ class WarpVelocityEnv:
             self.num_envs, dtype=torch.float32, device=self._torch_device
         )
         self._commanded_displacement = torch.zeros((self.num_envs, 2), device=self._torch_device)
-        self._commanded_path = torch.zeros(self.num_envs, device=self._torch_device)
-        self._directed_progress = torch.zeros_like(self._commanded_path)
         self._episode_start_xy = torch.zeros(
             (self.num_envs, 2), dtype=torch.float32, device=self._torch_device
         )
@@ -1018,21 +1014,11 @@ class WarpVelocityEnv:
         self.provider.set_joint_position_targets(self._layout, self._joint_targets)
         self._profile_mark(profile_marks, "action")
 
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            command = torch.zeros_like(self._command)
-            command[:, :2] = self._command[:, :2]
-            world_command = _quat_apply(self._arrays["xquat"][:, self._base_body_id], command)[:, :2]
-            progress_start = self._arrays["qpos"][:, :2].clone()
-            command_speed = world_command.norm(dim=1)
-            self._commanded_path.add_(command_speed * self.step_dt)
         for _ in range(self.decimation):
             self.provider.step(nsteps=1)
             self._update_contact_state_substep()
         self._profile_mark(profile_marks, "physics")
 
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            delta = self._arrays["qpos"][:, :2] - progress_start
-            self._directed_progress.add_(directed_increment(delta, world_command))
         self.episode_length_buf.add_(1)
         self.step_counter += 1
         # Match mjlab: rewards, terminations and events observe the derived
@@ -1078,9 +1064,8 @@ class WarpVelocityEnv:
         if reset_ids.numel() > 0:
             self._refresh_foot_contacts()
         command_dt = (~done).float() * self.step_dt
-        if self.cfg_obj.curriculum_mode == "command_displacement":
-            self._commanded_displacement.add_(command_displacement_step(
-                self._command, self._arrays["xquat"][:, self._base_body_id], command_dt, torch))
+        self._commanded_displacement.add_(command_displacement_step(
+            self._command, self._arrays["xquat"][:, self._base_body_id], command_dt, torch))
         self._compute_commands(dt=command_dt)
         self.provider.sense()
         self._update_raycast_outputs()
@@ -1165,7 +1150,6 @@ class WarpVelocityEnv:
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
             "training_profile": self.cfg_obj.training_profile,
-            "curriculum_mode": self.cfg_obj.curriculum_mode,
             "profile_step_counter": int(self.profile_step_counter),
             "terrain_curriculum": build_terrain_curriculum_state(
                 self._terrain_levels.detach().cpu().numpy(),
@@ -1177,25 +1161,17 @@ class WarpVelocityEnv:
         }
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        if state.get("curriculum_mode") != self.cfg_obj.curriculum_mode:
-            raise ValueError("checkpoint terrain curriculum mode does not match task configuration")
-        version = int(state.get("version", 0))
-        if version != 3:
-            raise RuntimeError(f"unsupported locomotion Warp training checkpoint version {version}")
-        self.set_training_progress(int(state.get("common_step_counter", 0)))
-        saved_profile = state.get("training_profile")
-        profile_restored = saved_profile == self.cfg_obj.training_profile
-        self.profile_step_counter = (
-            max(0, int(state.get("profile_step_counter", 0)))
-            if profile_restored
-            else 0
-        )
-        self._apply_command_curriculum()
+        for key, expected in (("version", 3), ("backend", "mujoco-warp"),
+                              ("num_envs", self.num_envs), ("training_profile", self.cfg_obj.training_profile)):
+            if state.get(key) != expected:
+                raise RuntimeError(f"checkpoint {key} does not match the environment")
+        self.profile_step_counter = int(state["profile_step_counter"])
+        self.set_training_progress(int(state["common_step_counter"]))
         terrain_state = state["terrain_curriculum"]
         if not isinstance(terrain_state, Mapping):
             raise ValueError("checkpoint requires terrain curriculum state")
 
-        levels, terrain_types, exact = restore_terrain_curriculum_assignments(
+        levels, terrain_types = restore_terrain_curriculum_assignments(
             terrain_state,
             self._terrain_levels.detach().cpu().numpy(),
             self._terrain_types.detach().cpu().numpy(),
@@ -1204,17 +1180,15 @@ class WarpVelocityEnv:
         )
         self._terrain_levels.copy_(torch.as_tensor(levels, device=self._torch_device))
         self._terrain_types.copy_(torch.as_tensor(terrain_types, device=self._torch_device))
-        rng_state = state.get("rng_state")
-        if rng_state is not None:
-            self._generator.set_state(torch.as_tensor(rng_state, dtype=torch.uint8, device="cpu"))
+        self._generator.set_state(torch.as_tensor(state["rng_state"], dtype=torch.uint8, device="cpu"))
         self._env_origins.copy_(self._terrain_origin_for(self._all_env_ids))
         # Restoring saved assignments starts fresh episodes; it must not grade
         # whatever transient simulation state happened to precede the restore.
         self._reset_and_observe(self._all_env_ids)
         return {
             "common_step_counter": int(self.common_step_counter),
-            "profile_curriculum": "exact" if profile_restored else "restarted",
-            "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
+            "profile_curriculum": "exact",
+            "terrain_curriculum": "exact",
             "mean_terrain_level": float(self._terrain_levels.float().mean()),
         }
 
@@ -1386,9 +1360,8 @@ class WarpVelocityEnv:
             self.provider.reset(self._reset_mask, qpos=self._reset_qpos, qvel=self._reset_qvel,
                                 ctrl=self._reset_ctrl, forward=False)
 
-        self._episode_start_xy[env_ids] = positions[:, :2] if self.cfg_obj.curriculum_mode in {"command_progress", "command_displacement"} else origins[:, :2]
+        self._episode_start_xy[env_ids] = positions[:, :2]
         self._commanded_displacement[env_ids] = 0.
-        self._commanded_path[env_ids] = self._directed_progress[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
         self._episode_returns[env_ids] = 0.0
         self._reset_reasons[env_ids] = reasons
@@ -1417,29 +1390,13 @@ class WarpVelocityEnv:
         if self._fixed_terrain_assignments or not self.cfg_obj.terrain_curriculum or env_ids.numel() == 0:
             return
         position = self._arrays["xpos"][env_ids, self._base_body_id, :2]
-        distance = torch.linalg.vector_norm(position - self._env_origins[env_ids, :2], dim=1)
         patch_size = self._terrain_patch_size()
-        move_up = distance > patch_size[0] * 0.5
-        command_distance = (
-            torch.linalg.vector_norm(self._command[env_ids, :2], dim=1)
-            * float(self.cfg_obj.episode_length_s)
-            * 0.5
-        )
-        move_down = (distance < command_distance) & ~move_up
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            move_up, move_down = progress_masks(self._directed_progress[env_ids], self._commanded_path[env_ids], patch_size[0])
-            if self.common_step_counter == 0:
-                move_up.zero_()
-                move_down.zero_()
-        if self.cfg_obj.curriculum_mode == "command_displacement":
-            distance = (position - self._episode_start_xy[env_ids]).square().sum(-1).sqrt()
-            remaining = self.cfg_obj.episode_length_s - self.episode_length_buf[env_ids] * self.step_dt
-            move_up, move_down = displacement_masks(distance, self._commanded_displacement[env_ids],
-                self._command[env_ids], remaining, patch_size[0])
-            if self.common_step_counter == 0:
-                move_up.zero_(); move_down.zero_()
-        else:
-            move_up &= ~self._terminated[env_ids]
+        distance = (position - self._episode_start_xy[env_ids]).square().sum(-1).sqrt()
+        remaining = self.cfg_obj.episode_length_s - self.episode_length_buf[env_ids] * self.step_dt
+        move_up, move_down = displacement_masks(distance, self._commanded_displacement[env_ids],
+            self._command[env_ids], remaining, patch_size[0])
+        if self.common_step_counter == 0:
+            move_up.zero_(); move_down.zero_()
         levels = self._terrain_levels[env_ids] + move_up.long() - move_down.long()
         random_levels = torch.randint(
             0,

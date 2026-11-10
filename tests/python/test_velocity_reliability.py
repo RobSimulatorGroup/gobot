@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from gobot.rl.locomotion import make_velocity_env
+from gobot.rl.locomotion.command import VelocityCommandStage
 from examples.locomotion.presets import Experiment, task_config
 
 BACKENDS = ['mujoco-cpu', pytest.param('mujoco-warp', marks=pytest.mark.skipif(
@@ -28,13 +29,24 @@ def config(stage='rough'):
 
 @pytest.mark.parametrize('backend', BACKENDS)
 def test_resume_preserves_curriculum_and_replays_fresh_episodes(backend):
-    env = make_velocity_env(config(), backend=backend, num_envs=2, seed=11, collect_step_extras=False)
+    cfg = config()
+    cfg.run_command_curriculum = (
+        VelocityCommandStage(step=0, run_velocity_x=(1., 2.)),
+        VelocityCommandStage(step=100, run_velocity_x=(2., 3.)),
+    )
+    env = make_velocity_env(cfg, backend=backend, num_envs=2, seed=11, collect_step_extras=False)
     try:
         env.set_command((.5, 0., 0.))
+        env.profile_step_counter = 123
         env.set_training_progress(150000)
         env.set_terrain_assignments([3, 4], [0, 0], fixed=False)
         saved = deepcopy(env.training_state_dict())
+        env.profile_step_counter = 0
+        env.set_training_progress(0)
+        assert cfg.command.run_velocity_x == (1., 2.)
         result = env.load_training_state_dict(saved)
+        assert env.profile_step_counter == 123
+        assert cfg.command.run_velocity_x == (2., 3.)
         np.testing.assert_array_equal(array(env.terrain_assignments[0]), [3, 4])
         assert result['terrain_curriculum'] == 'exact'
         assert env.common_step_counter == 150000

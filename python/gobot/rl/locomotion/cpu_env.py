@@ -35,7 +35,7 @@ from gobot.rl.locomotion.math import (
 from .config import VELOCITY_REWARD_TERM_NAMES, VelocityTaskCfg
 from .gait import bound_gait_score_numpy
 from .terms import posture_std, locomotion_failure_mask
-from .curriculum import progress_masks, directed_increment, command_displacement_step, displacement_masks
+from .curriculum import command_displacement_step, displacement_masks
 from .scene import prepare_velocity_scene
 from .training_state import (
     build_terrain_curriculum_state,
@@ -129,8 +129,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self.episode_length_buf = self._episode_length_np
         self._episode_start_xy = np.zeros((self.num_envs, 2), dtype=np.float32)
         self._commanded_displacement = np.zeros((self.num_envs, 2), dtype=np.float32)
-        self._commanded_path = np.zeros(self.num_envs, dtype=np.float32)
-        self._directed_progress = np.zeros(self.num_envs, dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.common_step_counter = 0
         self.profile_step_counter = 0
@@ -268,7 +266,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             "terrain_out_of_bounds": self.cfg_obj.terrain_out_of_bounds,
             "terrain_distance_buffer": self.cfg_obj.terrain_distance_buffer,
             "training_profile": self.cfg_obj.training_profile,
-            "curriculum_mode": self.cfg_obj.curriculum_mode,
             "run_environment_ratio": self.cfg_obj.command.rel_run_envs,
             "run_velocity_x": tuple(self.cfg_obj.command.run_velocity_x),
             "run_velocity_curriculum": tuple(
@@ -460,14 +457,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         task_runtime_ms = 0.0
         numpy_task_ms = 0.0
         action_step_t0 = self.perf_counter()
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            world_command = np.zeros((self.num_envs, 3), dtype=np.float32)
-            world_command[:, :2] = self.command_b[:, :2]
-            inverse = np.asarray(self.backend.state.base_quaternion) * np.asarray([1, -1, -1, -1])
-            world_command = _quat_rotate_inv_batch(world_command, inverse)[:, :2]
-            progress_start = np.asarray(self.backend.state.base_position)[:, :2].copy()
-            command_speed = np.linalg.norm(world_command, axis=1)
-            self._commanded_path += command_speed * self.step_dt
         self.backend.step_task_inputs(
             action_np,
             self.decimation,
@@ -480,9 +469,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self._mark_profile(profile_marks, "physics")
         t0 = self.perf_counter()
         batch_state = self.backend.state
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            delta = np.asarray(batch_state.base_position)[:, :2] - progress_start
-            self._directed_progress += directed_increment(delta, world_command)
         backend_refresh_cache_ms = (self.perf_counter() - t0) * 1000.0
         task_t0 = self.perf_counter()
         self._run_task_runtime(advance_time=True)
@@ -556,7 +542,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
                 self._update_terrain_curriculum_limit_from_position(
                     int(env_id),
                     batch_state.base_position[int(env_id)],
-                    int(reset_reason[int(env_id)]),
                 )
             self._reset_envs(reset_env_ids, reset_reason[reset_env_ids])
         if self.collect_step_extras:
@@ -570,10 +555,9 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
         # Refresh after events and resets, before command-frame updates and observations.
         batch_state = self.backend.refresh()
-        if self.cfg_obj.curriculum_mode == "command_displacement":
-            self._commanded_displacement += command_displacement_step(
-                np.asarray(batch_state.command), np.asarray(batch_state.base_quaternion),
-                (~done_envs).astype(np.float32) * self.step_dt, np)
+        self._commanded_displacement += command_displacement_step(
+            np.asarray(batch_state.command), np.asarray(batch_state.base_quaternion),
+            (~done_envs).astype(np.float32) * self.step_dt, np)
         self.backend.advance_commands(done_envs)
         self._limit_running_commands()
         self._mark_profile(profile_marks, "termination_reset")
@@ -729,7 +713,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
             "training_profile": self.cfg_obj.training_profile,
-            "curriculum_mode": self.cfg_obj.curriculum_mode,
             "profile_step_counter": int(self.profile_step_counter),
             "terrain_curriculum": build_terrain_curriculum_state(
                 self._spawn_env_levels,
@@ -742,26 +725,18 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         }
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        if state.get("curriculum_mode") != self.cfg_obj.curriculum_mode:
-            raise ValueError("checkpoint terrain curriculum mode does not match task configuration")
-        version = int(state.get("version", 0))
-        if version != 3:
-            raise RuntimeError(f"unsupported locomotion CPU training checkpoint version {version}")
-        self.set_training_progress(int(state.get("common_step_counter", 0)))
-        saved_profile = state.get("training_profile")
-        profile_restored = saved_profile == self.cfg_obj.training_profile
-        self.profile_step_counter = (
-            max(0, int(state.get("profile_step_counter", 0)))
-            if profile_restored
-            else 0
-        )
-        self._apply_command_curriculum()
+        for key, expected in (("version", 3), ("backend", "mujoco-cpu"),
+                              ("num_envs", self.num_envs), ("training_profile", self.cfg_obj.training_profile)):
+            if state.get(key) != expected:
+                raise RuntimeError(f"checkpoint {key} does not match the environment")
+        self.profile_step_counter = int(state["profile_step_counter"])
+        self.set_training_progress(int(state["common_step_counter"]))
         terrain_state = state["terrain_curriculum"]
         if not isinstance(terrain_state, Mapping):
             raise ValueError("checkpoint requires terrain curriculum state")
 
         rows, cols = self._spawn_grid_shape
-        levels, terrain_types, exact = restore_terrain_curriculum_assignments(
+        levels, terrain_types = restore_terrain_curriculum_assignments(
             terrain_state,
             self._spawn_env_levels,
             self._spawn_type_cols,
@@ -770,16 +745,13 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         )
         np.copyto(self._spawn_env_levels, levels)
         np.copyto(self._spawn_type_cols, terrain_types)
-        rng_state = state.get("rng_state")
-        if isinstance(rng_state, Mapping):
-            self._rng.bit_generator.state = dict(rng_state)
-        if exact and "command_rng_state" in state:
-            self.backend.restore_command_random_state(state["command_rng_state"])
+        self._rng.bit_generator.state = dict(state["rng_state"])
+        self.backend.restore_command_random_state(state["command_rng_state"])
         self.reset()
         return {
             "common_step_counter": int(self.common_step_counter),
-            "profile_curriculum": "exact" if profile_restored else "restarted",
-            "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
+            "profile_curriculum": "exact",
+            "terrain_curriculum": "exact",
             "mean_terrain_level": float(np.mean(self._spawn_env_levels)),
         }
 
@@ -867,7 +839,7 @@ class CpuVelocityEnv(LocomotionBatchEnv):
     def _make_task_runtime_metadata(self) -> TaskRuntimeMetadata:
         return TaskRuntimeMetadata(
             name=self.cfg_obj.name,
-            version=self.cfg_obj.task_version,
+            version=self.cfg_obj.name,
             obs_groups_spec={"actor": self.actor_obs_schema.dim, "critic": self.critic_obs_schema.dim},
             reward_names=self._reward_term_names,
             backend="gobot_native_cpu_batch_numpy",
@@ -1608,9 +1580,8 @@ class CpuVelocityEnv(LocomotionBatchEnv):
 
             self._spawn_indices[env_id] = spawn_index
             self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
-            self._episode_start_xy[env_id] = spawn[:2] if self.cfg_obj.curriculum_mode in {"command_progress", "command_displacement"} else terrain_origin[:2]
+            self._episode_start_xy[env_id] = spawn[:2]
             self._commanded_displacement[env_id] = 0.
-            self._commanded_path[env_id] = self._directed_progress[env_id] = 0.
             self._episode_length_np[env_id] = 0
             self._episode_returns[env_id] = 0.0
             self._previous_actions[env_id] = 0.0
@@ -1761,7 +1732,6 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         self,
         env_id: int,
         base_position: np.ndarray,
-        reset_reason: int,
     ) -> None:
         if self._fixed_terrain_assignments:
             return
@@ -1771,26 +1741,11 @@ class CpuVelocityEnv(LocomotionBatchEnv):
         base_pos = np.asarray(base_position, dtype=np.float32).reshape(3)
         distance = float(np.linalg.norm(base_pos[:2] - self._episode_start_xy[env_id]))
         rows, _ = self._spawn_grid_shape
-        commanded_distance = (
-            float(np.linalg.norm(self.command_b[env_id, :2]))
-            * float(self.cfg_obj.episode_length_s)
-            * 0.5
-        )
-        move_up = distance > (float(self._terrain_patch_size()[0]) * 0.5)
-        move_down = (distance < commanded_distance) and not move_up
-        if self.cfg_obj.curriculum_mode == "command_progress":
-            move_up, move_down = progress_masks(np.asarray(self._directed_progress[env_id]),
-                np.asarray(self._commanded_path[env_id]), self._terrain_patch_size()[0])
-            if self.common_step_counter == 0:
-                move_up = move_down = False
-        if self.cfg_obj.curriculum_mode == "command_displacement":
-            remaining = np.asarray(self.cfg_obj.episode_length_s - self._episode_length_np[env_id] * self.step_dt)
-            move_up, move_down = displacement_masks(np.asarray(distance), self._commanded_displacement[env_id],
-                self.command_b[env_id], remaining, self._terrain_patch_size()[0])
-            if self.common_step_counter == 0:
-                move_up = move_down = False
-        elif reset_reason == 1:
-            move_up = False
+        remaining = np.asarray(self.cfg_obj.episode_length_s - self._episode_length_np[env_id] * self.step_dt)
+        move_up, move_down = displacement_masks(np.asarray(distance), self._commanded_displacement[env_id],
+            self.command_b[env_id], remaining, self._terrain_patch_size()[0])
+        if self.common_step_counter == 0:
+            move_up = move_down = False
         level = int(self._spawn_env_levels[env_id]) + (1 if move_up else 0) - (1 if move_down else 0)
         if level >= rows:
             level = int(self._rng.integers(0, rows))

@@ -6,29 +6,16 @@ from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import tempfile
-from types import SimpleNamespace
 from unittest.mock import patch
 import numpy as np
 import torch
 from examples.locomotion.presets import Experiment, task_config
 from examples.locomotion.assessment import rank_report, rollout
-from gobot.rl.locomotion.config import NaturalGaitCfg
-from gobot.rl.locomotion.curriculum import directed_increment, progress_masks
 from gobot.rl.locomotion.gait_metrics import QuadrupedGaitMetrics
 from gobot.rl.locomotion.natural_gait import desired_contact, gait_weights
 from examples.go1.train.go1_velocity_cfg import go1_gait_cfg
 from gobot.rl.locomotion.motion import MotionFeatureSpec, MotionDataset, ReferenceStateInitializer
 from gobot.rl.locomotion.budget import TrainingBudget
-
-
-def test_directional_curriculum():
-    commands=np.array([[1.,0.],[-1.,0.],[1.,0.],[0.,0.]])
-    delta=np.array([[1.,0.],[-1.,0.],[0.,3.],[3.,0.]])
-    expected=np.array([1.,1.,0.,0.])
-    np.testing.assert_allclose(directed_increment(delta,commands),expected)
-    torch.testing.assert_close(directed_increment(torch.tensor(delta),torch.tensor(commands)),torch.tensor(expected))
-    up,down=progress_masks(np.array([4.,0.,2.,0.]),np.array([4.,4.,0.,.1]),8.)
-    np.testing.assert_array_equal(up,[True,False,False,False]);np.testing.assert_array_equal(down,[False,True,False,False])
 
 
 def test_clock_continuity_and_gait_classification():
@@ -173,7 +160,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--backend',choices=('mujoco-cpu','mujoco-warp'));a=p.parse_args()
     if a.backend:integration(a.backend)
     else:
-        for test in (test_directional_curriculum,test_clock_continuity_and_gait_classification,
+        for test in (test_clock_continuity_and_gait_classification,
                      test_conditional_reference_sampling,test_categorical_commands,
                      test_yaw_participates_in_ranking,test_gpu_hour_accounting,
                      test_status_respects_pid_namespace):

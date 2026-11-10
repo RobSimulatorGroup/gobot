@@ -23,47 +23,39 @@ To deliberately regenerate the robot from that reference checkout:
 uv run python -m examples.g1.prepare --source mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml
 ```
 
-AMP motion data must be regenerated for the current robot model and named feature
-layout. The loader requires `gobot_motion_v2`; old v1 files are rejected. Standard
-velocity PPO does not need a motion dataset:
+AMP motion data records named joints and tracked links. The trainer validates
+their layout, control period and robot physics identity. Standard velocity PPO
+does not need a motion dataset:
 
 ```bash
 uv run python -m examples.g1.prepare_motion
 uv run python -m examples.g1.reference_gaits
 ```
 
-Old articulated-hand checkpoints and checkpoints from the previous velocity
-semantics are rejected. Start current velocity training in a new output directory
-without `--resume` or `--initialize`. Current AMP datasets record the named joints
-and tracked links, and the trainer checks their layout, control period and robot
-physics identity.
-
 Standard velocity PPO uses one observation frame; its flat task omits the terrain scan.
 AMP adds ten proprioceptive frames and the terrain scan. The critic has privileged
-state. Physics runs at 200 Hz and control at 50 Hz. Both tasks compute rewards and
-terminations after refreshing the integrated state. `TransitionPPO` bootstraps
-timeouts from the final observation before reset. Environment and policy random
-streams are separate; numerical physics failures stop training and save a
-diagnostic rather than silently resetting a world.
+state. Physics runs at 200 Hz and control at 50 Hz. The standard velocity task uses
+the mjlab event order and RSL-RL PPO; AMP uses terminal observations for timeout
+bootstrapping. See the [training guide](../../doc/gobot_training.md) for state timing,
+randomness, numerical handling and checkpoint contracts.
 
 ## Train
 
 ```bash
 uv run python -m gobot.rl.train g1-velocity \
-  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/g1_velocity_v2_cpu
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/g1_velocity_cpu
 
 uv run python -m gobot.rl.train g1-amp \
   --backend mujoco-warp --num-envs 1024 --dataset /data/g1/locomotion.npz \
-  --iterations 2000 --hours 1 --output logs/g1_amp_v2
+  --iterations 2000 --hours 1 --output logs/g1_amp
 
 uv run python -m gobot.rl.train g1-amp \
   --backend mujoco-warp --num-envs 1024 --dataset /data/g1/locomotion.npz \
-  --resume logs/g1_amp_v2/latest.pt --iterations 1000 --output logs/g1_amp_v2_resume
+  --resume logs/g1_amp/latest.pt --iterations 1000 --output logs/g1_amp_resume
 ```
 
 Use `--terrain flat|rough` for standard velocity PPO. AMP also supports `mixed`.
-Use a new run for the current task semantics. Subsequent resume within that run
-restores optimizer, discriminator, normalization, curriculum and RNG state, then
+Resume restores optimizer, discriminator, normalization, curriculum and RNG state, then
 starts new physics episodes without changing saved terrain assignments. Resume
 requires the same world size and environments per rank.
 
@@ -78,12 +70,12 @@ the training loop does not need a new robot branch.
 
 ```bash
 uv run python -m examples.locomotion.assessment \
-  --checkpoint logs/g1_amp_v2/best.pt --output logs/g1_amp_v2/validation.json
+  --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/validation.json
 uv run python -m examples.locomotion.record \
-  --checkpoint logs/g1_amp_v2/best.pt --continuous --seconds 20 \
-  --output logs/g1_amp_v2/walk.mp4
+  --checkpoint logs/g1_amp/best.pt --continuous --seconds 20 \
+  --output logs/g1_amp/walk.mp4
 uv run python -m examples.locomotion.verify_export \
-  --checkpoint logs/g1_amp_v2/best.pt --output logs/g1_amp_v2/candidate.onnx
+  --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/candidate.onnx
 uv run gobot_editor --path examples/g1
 ```
 

@@ -416,8 +416,8 @@ def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
                           'transition_observation_noise': False,
                           'sampling': 'shared_torch_generator' if backend == 'mujoco-warp' else 'numpy',
-                          'state_timing': 'mjlab_pre_forward_rewards', 'numerics': 'mjlab_velocity_v1',
-                          'training_behavior': 'mjlab_velocity_v3',
+                          'state_timing': 'mjlab_pre_forward_rewards', 'reward_numerics': 'weighted_nonfinite_to_zero',
+                          'timeout_bootstrap': 'terminal_value' if use_amp else 'rollout_value',
                           'reset_actuator_targets': 'zero',
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()

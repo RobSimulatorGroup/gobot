@@ -9,23 +9,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from examples.g1.config import g1_velocity_cfg
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.curriculum import progress_masks
 from gobot.rl.locomotion.terms import posture_std
 from gobot.sim.providers.mujoco_warp import MuJoCoWarpProvider
 from gobot.sim.providers.base import SimulationCapacityError
-
-
-def test_progress_curriculum():
-    # Standing drift cannot promote; completed commanded progress can; a short
-    # failed episode still owes the uncompleted command distance.
-    distance = np.array([4.5, 1.7, .4, 0.])
-    required = np.array([0., 2., 8., 0.])
-    up, down = progress_masks(distance, required, 8.)
-    np.testing.assert_array_equal(up, [False, True, False, False])
-    np.testing.assert_array_equal(down, [False, False, True, False])
-    tup, tdown = progress_masks(torch.tensor(distance), torch.tensor(required), 8.)
-    np.testing.assert_array_equal(tup.numpy(), up)
-    np.testing.assert_array_equal(tdown.numpy(), down)
 
 
 def test_solver_limits_are_not_capacity_loss():
@@ -100,14 +86,7 @@ def test_g1_cpu_reset_and_terms():
         assert len(specs[0].local_offsets) == 25
         scanner.grid_size = (1.6, 1.)
         saved = env.training_state_dict()
-        assert saved['curriculum_mode'] == 'command_displacement'
         env.load_training_state_dict(saved)
-        try:
-            env.load_training_state_dict({**saved, 'curriculum_mode': 'legacy'})
-        except ValueError:
-            pass
-        else:
-            raise AssertionError('incompatible curriculum checkpoint must fail')
     finally:
         env.close()
 
@@ -122,7 +101,7 @@ def main():
             raise SystemExit(77)
         tests = (test_g1_cpu_reset_and_terms,)
     else:
-        tests = (test_progress_curriculum, test_solver_limits_are_not_capacity_loss, test_g1_profile)
+        tests = (test_solver_limits_are_not_capacity_loss, test_g1_profile)
     for test in tests:
         test()
         print(test.__name__, 'passed')

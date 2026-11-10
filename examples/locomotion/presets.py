@@ -38,10 +38,8 @@ def task_config(experiment: Experiment, *, play=False):
     if experiment.recipe == "baseline":
         cfg.name = f"{experiment.robot}_{experiment.stage}_velocity"
         cfg.robot_resource_path = f"res://{experiment.robot}.jscn"
-        cfg.task_version = "velocity_v3"
         cfg.capture_transitions = False
         cfg.action_clip = None
-        cfg.curriculum_mode = "command_displacement"
         cfg.max_init_terrain_level = 5
         cfg.command_curriculum = (
             VelocityCommandStage(step=0),
@@ -74,7 +72,6 @@ def task_config(experiment: Experiment, *, play=False):
     cfg.action_clip = 5.
     if experiment.recipe == "gait":
         cfg.name = "go1_gait_velocity"
-        cfg.task_version = "go1_gait"
         cfg.scene_path = "res://go1_flat_scene.jscn" if experiment.stage == "flat" else "res://go1_practical_scene.jscn"
         cfg.gait = example_module("go1.train.go1_velocity_cfg").go1_gait_cfg()
         cfg.command_curriculum = cfg.run_command_curriculum = ()

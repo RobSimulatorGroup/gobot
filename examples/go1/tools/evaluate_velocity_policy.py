@@ -14,8 +14,8 @@ import gobot
 from gobot.rl.policy import policy_manifest_from_checkpoint
 
 from examples.go1.train.go1_gait import GO1_GAIT_FOOT_ORDER, gait_joint_indices
-from examples.go1.train.go1_scene_runtime import (
-    prepare_go1_scene,
+from gobot.rl.locomotion.scene import (
+    prepare_velocity_scene,
     terrain_spawn_origins,
 )
 from examples.go1.train.go1_velocity_cfg import go1_velocity_cfg
@@ -498,7 +498,7 @@ def evaluate(
     )
     authoring_context = gobot.app.create_context()
     try:
-        _, _, terrain = prepare_go1_scene(cfg, context=authoring_context)
+        _, _, terrain = prepare_velocity_scene(cfg, context=authoring_context)
         num_cells = int(terrain_spawn_origins(terrain).shape[0])
     finally:
         authoring_context.clear_world()
