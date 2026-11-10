@@ -23,6 +23,8 @@ def array(value):
 
 
 def fixed_commands(cfg):
+    # Metrics must read the first episode's terminal state before auto-reset.
+    cfg.capture_transitions = True
     cfg.command.source = "external"
     cfg.command_curriculum = cfg.run_command_curriculum = ()
     for key in ('rel_standing_envs','rel_heading_envs','rel_world_envs','rel_forward_envs','rel_run_envs'):

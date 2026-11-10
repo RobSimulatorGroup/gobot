@@ -13,6 +13,23 @@ from gobot.rl.locomotion import make_velocity_env
 from examples.locomotion.presets import Experiment, task_config
 
 
+@pytest.mark.parametrize('robot', ['g1', 'go1'])
+def test_baseline_assessment_keeps_terminal_metrics_before_reset(robot):
+    cfg = task_config(Experiment(robot=robot, stage='flat'), play=True)
+    fixed_commands(cfg)
+    cfg.episode_length_s = .02
+    env = make_velocity_env(cfg, num_envs=2, backend='mujoco-cpu', device='cpu')
+    try:
+        result = rollout(env, lambda obs: torch.zeros((env.num_envs, env.num_actions)),
+                         command=(0., 0., 0.), steps=3)
+        assert result['failure_reasons'] == {'2': 2}
+        np.testing.assert_allclose(result['episode_metrics']['duration_s'], [.02, .02])
+        assert result['tracking_episodes'] == 0
+        assert result['fall_rate'] == 0.
+    finally:
+        env.close()
+
+
 def test_route_outcomes_distinguish_falls_departures_and_boundaries():
     class Env:
         num_envs = 5
