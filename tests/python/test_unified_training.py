@@ -10,7 +10,7 @@ import pytest
 from gobot.rl import tasks
 from gobot.rl.train import main, resolve_spec
 from gobot.rl.training import TrainingSpec, launch
-from gobot.rl.training.locomotion import training_spec
+from examples.locomotion.presets import training_spec
 
 GO1 = "go1-velocity"
 G1 = "g1-velocity"
@@ -58,7 +58,7 @@ def test_reward_and_agent_overrides_are_applied_to_actual_runner(monkeypatch, tm
           "--set", "agent.algorithm.learning_rate=0.0002"])
     assert captured["task_cfg"].rewards.foot_slip == -0.1
     assert captured["agent_cfg"]["algorithm"]["learning_rate"] == 0.0002
-    assert captured["agent_cfg"]["algorithm"]["class_name"] == "PPO"
+    assert captured["agent_cfg"]["algorithm"]["class_name"] == "rsl_rl.algorithms.PPO"
     assert captured["exp"].iterations == 2
     assert captured["backend"] == "mujoco-cpu"
     assert captured["device"] == "cpu"
@@ -69,8 +69,8 @@ def test_builtin_defaults_use_existing_training_and_evaluator(monkeypatch, tmp_p
     captured = {}
     monkeypatch.setattr(training, "run", lambda exp, directory, **kw: captured.update(kw))
     main([GO1, "--backend", "mujoco-cpu", "--output", str(tmp_path)])
-    assert captured["task_cfg"] is None
-    assert captured["agent_cfg"] is None
+    assert captured["task_cfg"].robot_name == "go1"
+    assert captured["agent_cfg"]["algorithm"]["class_name"] == "rsl_rl.algorithms.PPO"
     assert not captured["no_eval"]
 
 
@@ -197,7 +197,7 @@ def test_backend_override_infers_device_after_dotted_settings(task):
 
 def test_standard_ppo_has_no_stage_gate_or_forced_action_clipping():
     result = main([GO1, "--terrain", "rough", "--set", "env.action_clip=null",
-                   "--set", "env.capture_transitions=false", "--no-eval", "--dry-run"])
+                   "--no-eval", "--dry-run"])
     assert result["config"]["env"]["action_clip"] is None
     assert result["config"]["experiment"]["stage"] == "rough"
 
@@ -207,10 +207,10 @@ def test_python_factory_works_outside_the_checkout(tmp_path):
     import subprocess
     import sys
     source = """
-from gobot.rl.training.locomotion import training_spec
-cfg = training_spec(robot='go1').config_factory()
+from gobot.rl.training.projects import example_module
+cfg = example_module('locomotion.presets').training_spec(robot='go1').config_factory()
 assert cfg.resolve_env().robot_name == 'go1'
-assert cfg.resolve_agent()['algorithm']['class_name'] == 'PPO'
+assert cfg.resolve_agent()['algorithm']['class_name'] == 'rsl_rl.algorithms.PPO'
 """
     # Keep only explicit dependencies/package paths; the checkout cwd is absent.
     env = dict(os.environ)

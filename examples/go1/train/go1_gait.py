@@ -33,6 +33,3 @@ def gait_joint_indices(
         raise ValueError(
             f"Go1 gait shaping cannot map joints from {tuple(joint_names)}"
         ) from error
-
-
-from gobot.rl.locomotion.gait import bound_gait_score_numpy

@@ -13,7 +13,7 @@ from gobot.rl.locomotion.gait_metrics import BipedGaitMetrics, QuadrupedGaitMetr
 from gobot.rl.locomotion.manifest import validate_policy
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from .presets import Experiment, task_config
 from .budget import add_budget_arguments, evaluation_budget
 from gobot.rl.locomotion.capabilities import assess_capabilities
 
@@ -23,6 +23,8 @@ def array(value):
 
 
 def fixed_commands(cfg):
+    # Metrics must read the first episode's terminal state before auto-reset.
+    cfg.capture_transitions = True
     cfg.command.source = "external"
     cfg.command_curriculum = cfg.run_command_curriculum = ()
     for key in ('rel_standing_envs','rel_heading_envs','rel_world_envs','rel_forward_envs','rel_run_envs'):
@@ -91,7 +93,7 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
     samples=np.zeros(count); errors=np.zeros(count); yaw=np.zeros(count); slip=np.zeros(count); progress=np.zeros(count)
     deviation=np.zeros(count); clearance=np.full(count,np.inf); reasons=np.zeros(count,int)
     command_speed_sum=np.zeros(count); stop_speed=np.zeros(count); stop_samples=np.zeros(count)
-    falls=np.zeros(count,bool); numerical=np.zeros(count,bool); off_route=np.zeros(count,bool)
+    falls=np.zeros(count,bool); off_route=np.zeros(count,bool)
     tracking_errors=np.zeros(count); tracking_samples=np.zeros(count)
     start_positions=start.copy()
     with torch.inference_mode():
@@ -138,7 +140,6 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
             term=array(state.terminated).astype(bool); timeout=array(state.truncated).astype(bool)
             reasons[alive & (term|timeout)] = array(state.info['reset_reason'])[alive & (term|timeout)]
             falls |= alive & term & (reasons==1)
-            numerical |= alive & (reasons==4)
             failed |= alive & (term | (timeout & (reasons!=2)))
             alive &= ~(term|timeout)
             if route:
@@ -197,7 +198,7 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
     straight=not sequence and abs(command[2])<1.e-6 and np.linalg.norm(command[:2])>.05
     return {'command':command.tolist(),'sequence':sequence,'seed':seed,'steps':steps,'route':route,'admission':float(mobility.mean()),
             'natural_admission':float((mobility&natural).mean()),'survival':float((~failed).mean()),
-            'episodes':count,'fall_rate':float(falls.mean()),'numerical_failure_rate':float(numerical.mean()),
+            'episodes':count,'fall_rate':float(falls.mean()),
             'off_route_rate':float(off_route.mean()),
             'terrain_pass_rate':float((reached & ~failed).mean()) if route else None,
             'route_length_m':2*route_half_length if route else None,
@@ -217,7 +218,7 @@ def rollout(env, policy, *, command, steps, route=False, seed=71, sequence=None,
                                'yaw_rate_bias_rad_s':(signed_yaw_error/divisor).tolist(),
                                'heading_change_deg':np.rad2deg(heading_change).tolist(),
                                'heading_change_max_deg':np.rad2deg(heading_peak).tolist(),
-                               'fell':falls.tolist(),'numerical_failure':numerical.tolist(),
+                               'fell':falls.tolist(),
                                'off_route':off_route.tolist(),'reached':reached.tolist(),
                                'duration_s':(samples*env.step_dt).tolist(),
                                'start_position_xy':start_positions.tolist(),

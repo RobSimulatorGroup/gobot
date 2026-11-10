@@ -24,8 +24,7 @@ from gobot.rl.locomotion.manifest import build_policy_manifest, validate_policy
 from gobot.rl.locomotion.ppo import rsl_rl_train_cfg
 from gobot.rl.locomotion.motion import MotionPriorCfg, ReferenceStateInitializer
 from gobot.rl.policy import POLICY_MANIFEST_KEY, policy_manifest_from_checkpoint, write_policy_manifest_sidecar
-from .experiment import Experiment, task_config
-from gobot.rl.training.projects import example_module, examples_root
+from .experiment import RunConfig
 
 
 def atomic_json(path,value):
@@ -33,27 +32,40 @@ def atomic_json(path,value):
     temp.write_text(json.dumps(value,indent=2,default=str)+'\n');temp.replace(path)
 
 
-def snapshot_sources(directory):
+def snapshot_sources(directory, project_path, source_files=()):
     """Archive the installed task sources, including optional checkout build inputs."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     package_root = Path(__file__).resolve().parents[2]
-    example_root = examples_root()
-    source_roots = [(package_root / 'rl', Path('python/gobot/rl'))]
-    source_roots.extend((example_root / name, Path('examples') / name)
-                        for name in ('g1', 'go1', 'locomotion'))
+    project_root = Path(project_path).resolve()
+    source_roots = [(package_root / 'rl', Path('python/gobot/rl')),
+                    (package_root / 'sim', Path('python/gobot/sim')),
+                    (project_root, Path('project'))]
     files = {}
+    excluded = {'.git', '.venv', '__pycache__', 'logs', 'build', '3rdparty',
+                'node_modules', '.cache', 'dist', 'out'}
+    output = directory.resolve()
     for source_root, archive_root in source_roots:
-        for path in source_root.rglob('*'):
-            relative = path.relative_to(source_root)
-            if (path.is_file() and path.suffix in {'.py', '.jscn', '.jres', '.json'}
-                    and not any(part in {'logs', 'assets', 'policies', '__pycache__'}
-                                for part in relative.parts)):
-                files[str(archive_root / relative)] = path
-    checkout_root = example_root.parent
+        for current, dirs, names in os.walk(source_root):
+            current = Path(current)
+            dirs[:] = [name for name in dirs if name not in excluded
+                       and not name.startswith(('build_', 'cmake-build-'))
+                       and (current / name).resolve() != output]
+            for name in names:
+                path = current / name
+                if path.suffix in {'.py', '.jscn', '.jres', '.json'}:
+                    files[str(archive_root / path.relative_to(source_root))] = path
+    for index, path in enumerate(source_files):
+        path = Path(path).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        files[f'task_sources/{index}/{path.name}'] = path
+    checkout_root = next((p for p in package_root.parents if (p / "pyproject.toml").is_file()), package_root)
     for name in ('pyproject.toml', 'uv.lock',
                  'include/gobot/simulation/locomotion_command_runtime.hpp',
                  'src/gobot/simulation/locomotion_command_runtime.cpp',
+                 'src/gobot/simulation/locomotion_batch_runtime.cpp',
+                 'include/gobot/simulation/locomotion_batch_runtime.hpp',
                  'src/gobot/python/manual_bindings/manual_binding_app_context.cpp'):
         path = checkout_root / name
         if path.is_file():
@@ -75,12 +87,10 @@ def agent_config(exp, *, experiment_name='velocity'):
         config.pop(name)
     config['actor']['distribution_cfg']['init_std'] = exp.initial_action_std
     config['algorithm'].update(
-        class_name='PPO', learning_rate=exp.learning_rate,
+        learning_rate=exp.learning_rate,
         schedule='adaptive', entropy_coef=exp.entropy_coef)
     if exp.recipe == 'amp':
         dataset = Path(exp.motion_dataset)
-        if not dataset.is_absolute() and dataset.parts[:1] == ('examples',):
-            dataset = examples_root().joinpath(*dataset.parts[1:])
         config['algorithm'].update(
             class_name='gobot.rl.locomotion.amp:MotionPriorPPO',
             motion_prior_cfg=asdict(MotionPriorCfg(
@@ -142,8 +152,12 @@ def validate_agent_config(exp, config):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
             raise ValueError(f'agent.algorithm.{name} must be between zero and one')
     if int(os.environ.get('WORLD_SIZE', '1')) > 1 and algorithm.get('class_name') not in {
-            'PPO', 'rsl_rl.algorithms.PPO', 'rsl_rl.algorithms:PPO'}:
+            'rsl_rl.algorithms.PPO'}:
         raise ValueError('synchronized locomotion training supports PPO; AMP discriminator synchronization is not enabled')
+    if algorithm.get('class_name') not in {
+            'rsl_rl.algorithms.PPO',
+            'gobot.rl.locomotion.amp:MotionPriorPPO'}:
+        raise ValueError('locomotion training requires RSL-RL PPO or the explicit AMP extension')
     if 'motion_prior_cfg' in algorithm:
         MotionPriorCfg(**algorithm['motion_prior_cfg'])
 
@@ -155,17 +169,8 @@ def validate_task_config(exp, cfg, agent=None):
         raise ValueError('env.physics_dt must be finite and positive')
     if isinstance(cfg.decimation, bool) or not isinstance(cfg.decimation, int) or cfg.decimation < 1:
         raise ValueError('env.decimation must be a positive integer')
-    if agent is not None and 'motion_prior_cfg' in agent['algorithm'] and not math.isclose(cfg.physics_dt * cfg.decimation, .02):
-        raise ValueError('AMP motion transitions require a 50 Hz control period (physics_dt * decimation = 0.02)')
-    if exp.recipe in {"amp", "gait"} and not cfg.capture_transitions:
-        raise ValueError('PPO/AMP training requires env.capture_transitions=true for terminal bootstrap and diagnostics')
-
-
-def _default_budget_file(directory, backend):
-    if backend == 'mujoco-warp' and (examples_root().parent / 'pyproject.toml').is_file():
-        return example_module('locomotion.budget').DEFAULT_LEDGER
-    # Installed examples may be read-only. Keep a wheel user's ledger with the run.
-    return Path(directory) / 'gpu_budget.json'
+    if exp.recipe == 'amp' and not cfg.capture_transitions:
+        raise ValueError('AMP requires env.capture_transitions=true for motion transitions')
 
 
 def restore_rng(rng, device):
@@ -206,13 +211,6 @@ def update_policy(algorithm, environment, observation, steps, record=None, distr
     elif error is not None:
         raise error
     losses = algorithm.update()
-    error = None
-    if not all(np.isfinite(float(value)) for value in losses.values()):
-        error = FloatingPointError('non-finite optimizer metric')
-    if distributed is not None:
-        distributed.check_error(error, phase='optimizer')
-    elif error is not None:
-        raise error
     if timings is not None:
         timings.update(collection_s=collected - started, learning_s=clock() - collected)
     return observation, losses
@@ -229,14 +227,13 @@ def build_algorithm(environment, config, device, distributed):
 
 
 def _evaluate_checkpoint(exp, candidate, output, *, distributed, backend, budget,
-                         budget_file, stop_requested, report, completed, iteration):
+                         budget_file, stop_requested, report, completed, iteration, evaluation_command):
     """Evaluate on rank 0 while every worker participates in stop checks."""
     process = stream = None
 
     def start():
         nonlocal process, stream
-        command = [sys.executable, '-B', '-c',
-                   "from gobot.rl.training.projects import example_module; example_module('locomotion.assessment').main()",
+        command = [*evaluation_command,
                    '--checkpoint', str(candidate), '--output', str(output),
                    '--seed', str(exp.eval_seed), '--steps', str(exp.eval_steps),
                    '--num-envs', str(exp.eval_envs), '--device', distributed.device,
@@ -280,8 +277,9 @@ def _evaluate_checkpoint(exp, candidate, output, *, distributed, backend, budget
             stream.close()
 
 
-def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
-        resume=None, initialize=None, no_eval=False, task_cfg=None, agent_cfg=None, terrain_reference=None):
+def run(exp: RunConfig, directory, *, backend='mujoco-warp', device=None, budget_file=None,
+        task_cfg, resume=None, initialize=None, no_eval=True, agent_cfg=None, terrain_reference=None,
+        evaluation_command=(), source_files=()):
     """Train velocity PPO, one environment batch per process under torchrun.
 
     RSL-RL synchronizes PPO gradients, adaptive learning rates and observation
@@ -294,13 +292,13 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
 
     if backend not in {'mujoco-cpu', 'mujoco-warp'}:
         raise ValueError(f'unsupported locomotion training backend {backend!r}')
-    if task_cfg is not None and not no_eval:
-        raise ValueError('custom task_cfg requires no_eval=True; the built-in independent evaluator only supports built-in presets')
+    if not no_eval and not evaluation_command:
+        raise ValueError('evaluation requires an explicit evaluation_command')
     if terrain_reference is not None and (exp.stage != 'rough' or exp.recipe != 'baseline'):
         raise ValueError('--terrain-reference requires rough baseline training')
     if resume and initialize:
         raise ValueError('choose resume or initialize, not both')
-    cfg = deepcopy(task_cfg) if task_cfg is not None else task_config(exp)
+    cfg = deepcopy(task_cfg)
     config = deepcopy(agent_cfg) if agent_cfg is not None else agent_config(exp, experiment_name=cfg.name)
     validate_agent_config(exp, config)
     validate_task_config(exp, cfg, config)
@@ -309,7 +307,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
     device = distributed.device
     seed = exp.seed + distributed.rank
     directory = Path(directory)
-    budget_file = Path(budget_file or _default_budget_file(directory, backend))
+    budget_file = Path(budget_file or directory / 'gpu_budget.json')
     status = {'state': 'starting', 'pid': os.getpid(), 'host': socket.gethostname(),
               'started_unix': time.time(), 'pid_namespace': os.readlink('/proc/self/ns/pid'),
               'process_start_ticks': Path('/proc/self/stat').read_text().split()[21],
@@ -347,8 +345,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         budget = TrainingBudget(
             budget_file, total_hours=exp.budget_hours, run_hours=exp.hours * distributed.world_size,
             allocated_gpus=distributed.world_size,
-            metadata={'robot': exp.robot, 'stage': exp.stage, 'log_dir': str(directory)})
-        source_digest = snapshot_sources(directory)
+            metadata={'task': cfg.name, 'stage': exp.stage, 'log_dir': str(directory)})
+        source_digest = snapshot_sources(directory, cfg.project_path, source_files)
         atomic_json(directory / 'experiment.json', exp.metadata())
         atomic_json(directory / 'config.json', {
             'experiment': exp.metadata(), 'task': asdict(cfg), 'ppo': effective_agent_config,
@@ -371,7 +369,7 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                                 **({'reset_on_create': False} if backend == 'mujoco-warp' else {}))
         terrain_info = None
         if terrain_reference is not None:
-            from .terrain_reference import load, verify_environment, initial_assignments, assignment_digest
+            from .terrain_reference import load, verify_environment, assignment_digest
             terrain_data = distributed.on_main(lambda: load(terrain_reference))
             error = None
             try:
@@ -379,8 +377,9 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             except Exception as caught:
                 error = caught
             distributed.check_error(error, phase='training terrain')
-            levels, types = initial_assignments(terrain_data, exp.num_envs, seed)
-            env.set_terrain_assignments(levels, types, fixed=False)
+            levels, types = env.terrain_assignments
+            if isinstance(levels, torch.Tensor):
+                levels, types = levels.cpu().numpy(), types.cpu().numpy()
             assignments = distributed.gather(assignment_digest(levels, types))
             terrain_info = {'sha256': terrain_data['sha256'], 'seed': terrain_data['seed'],
                             'initial_assignments': assignments}
@@ -394,9 +393,15 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         wrapper = RslRlVecEnvWrapper(env, device=device)
         manifest = build_policy_manifest(wrapper, cfg, config, Path(cfg.project_path))
         alg = build_algorithm(wrapper, config, device, distributed)
+        if use_amp:
+            from .motion import MotionFeatureSpec
+            if alg.reference.feature_spec != MotionFeatureSpec(cfg.joint_names, cfg.state_link_names):
+                raise ValueError('motion feature layout does not match the task joint/link order')
+            if not math.isclose(alg.reference.dt, env.step_dt, rel_tol=0., abs_tol=1.e-8):
+                raise ValueError('motion dataset timestep does not match the control timestep')
         if exp.reference_reset_probability:
-            if backend != 'mujoco-warp' or not exp.stage.startswith('flat') or exp.robot != 'g1':
-                raise ValueError('reference reset is supported only for G1 flat Warp training')
+            if backend != 'mujoco-warp' or not exp.stage.startswith('flat'):
+                raise ValueError('reference reset requires flat Warp training and a matching motion dataset')
             library = alg.reference if use_amp else exp.motion_dataset
             env.set_reference_initializer(ReferenceStateInitializer(
                 library, device=device, probability=exp.reference_reset_probability))
@@ -410,8 +415,10 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
         signature_data = {'experiment': semantic, 'task': task_identity,
                           'backend': backend, 'agent': effective_agent_config, 'contact_timing': 'physics_dt',
                           'transition_observation_noise': False,
-                          'sampling': 'shared_torch_rng' if backend == 'mujoco-warp' else 'numpy',
-                          'reset_actuator_targets': 'zero_for_baseline',
+                          'sampling': 'shared_torch_generator' if backend == 'mujoco-warp' else 'numpy',
+                          'state_timing': 'mjlab_pre_forward_rewards', 'reward_numerics': 'weighted_nonfinite_to_zero',
+                          'timeout_bootstrap': 'terminal_value' if use_amp else 'rollout_value',
+                          'reset_actuator_targets': 'zero',
                           'terrain_sha256': terrain_info['sha256'] if terrain_info else None}
         signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, default=str).encode()).hexdigest()
         distributed.on_main(lambda: atomic_json(directory / 'training_signature.json', {'signature': signature}))
@@ -482,22 +489,17 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 iteration -= 1
                 reason = stopped
                 break
-            clip_rates, saturation, numerical_resets = [], [], []
+            clip_rates, saturation, action_peaks = [], [], []
             statistics.begin_update()
 
             def record(action, reward, done, extras):
+                action_peaks.append(action.detach().abs().max())
                 if cfg.action_clip:
                     clip_rates.append((action.abs() >= cfg.action_clip).float().mean())
                 if 'transition_state' in extras:
                     effort = extras['transition_state']['joint_effort']
                     limits = effort.new_tensor(cfg.robot.effort_limit)
                     saturation.append((effort.abs() >= .95 * limits).float().mean())
-                if 'numerical_reset' in extras:
-                    numerical_resets.append(extras['numerical_reset'].sum())
-                if 'numerical_failure' in extras:
-                    diagnostic = directory / f'numerical_failure_rank{distributed.rank}.pt'
-                    torch.save(extras['numerical_failure'], diagnostic)
-                    print(f'Numerical physics failure on rank {distributed.rank}; reset affected worlds; state: {diagnostic}', flush=True)
                 statistics.record(action, reward, done, extras['training_stats'])
 
             timings = {}
@@ -506,23 +508,24 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
             effective_std = alg.actor.output_std.detach()
             averaged = {'action_std': float(effective_std.mean()),
                         'action_clip_fraction': float(torch.stack(clip_rates).mean()) if clip_rates else 0.,
-                        'joint_effort_saturation_fraction': float(torch.stack(saturation).mean()) if saturation else 0.,
                         **losses}
-            reset_count = int(torch.stack(numerical_resets).sum()) if numerical_resets else 0
-            sums = distributed.reduce([reset_count, *averaged.values()])
+            if saturation:
+                averaged['joint_effort_saturation_fraction'] = float(torch.stack(saturation).mean())
+            sums = distributed.reduce(list(averaged.values()))
             summary = statistics.summarize(distributed, env)
-            duration, std_max, collection_s, learning_s = distributed.reduce(
+            duration, std_max, collection_s, learning_s, action_max = distributed.reduce(
                 [timings['collection_s'] + timings['learning_s'], float(effective_std.max()),
-                 timings['collection_s'], timings['learning_s']], maximum=True)
+                 timings['collection_s'], timings['learning_s'], float(torch.stack(action_peaks).max())], maximum=True)
             iteration_seconds += duration
             steps_per_update = exp.num_envs * distributed.world_size * config['num_steps_per_env']
             metrics = {'iteration': iteration, 'total_steps': (iteration + 1) * steps_per_update,
                        'steps_per_second': steps_per_update / duration, 'iteration_s': duration,
                        'collection_s': collection_s, 'learning_s': learning_s,
-                       'numerical_resets': int(sums[0]), **summary,
-                       'action_std_max': std_max, 'learning_rate': alg.learning_rate,
+                       **summary,
+                       'action_std_max': std_max, 'action_abs_max': action_max, 'learning_rate': alg.learning_rate,
                        'world_size': distributed.world_size, 'total_num_envs': exp.num_envs * distributed.world_size,
-                       **{key: value / distributed.world_size for key, value in zip(averaged, sums[1:], strict=True)}}
+                       **{key: value / distributed.world_size for key, value in zip(averaged, sums, strict=True)}}
+            metrics.setdefault('joint_effort_saturation_fraction', None)
 
             def log():
                 metrics['elapsed_s'] = budget.elapsed
@@ -541,7 +544,8 @@ def run(exp, directory, *, backend='mujoco-warp', device=None, budget_file=None,
                 validation, stopped = _evaluate_checkpoint(
                     exp, candidate, directory / f'eval_{iteration:06d}.json', distributed=distributed,
                     backend=backend, budget=budget, budget_file=budget_file,
-                    stop_requested=lambda: stop_requested, report=report, completed=completed, iteration=iteration)
+                    stop_requested=lambda: stop_requested, report=report, completed=completed, iteration=iteration,
+                    evaluation_command=evaluation_command)
                 if stopped:
                     reason = stopped
                     break

@@ -16,7 +16,7 @@ import torch
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.experiment import Experiment, task_config, MJLAB_REFERENCE_REVISION
+from examples.locomotion.presets import Experiment, task_config, MJLAB_REFERENCE_REVISION
 from gobot.rl.locomotion.manifest import validate_policy
 from examples.locomotion.assessment import fixed_commands, evaluation_scene
 

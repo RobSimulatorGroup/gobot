@@ -328,7 +328,7 @@ void LocomotionBatchRuntime::ValidatePhysicsState(
 }
 
 void LocomotionBatchRuntime::UpdateState(
-        const PhysicsRobotBatchStepResult& physics_state) {
+        const PhysicsRobotBatchStepResult& physics_state, bool update_rays) {
     ValidatePhysicsState(physics_state);
 
     std::transform(
@@ -476,7 +476,9 @@ void LocomotionBatchRuntime::UpdateState(
             for (std::size_t axis = 0; axis < 4; ++axis) {
                 foot_quaternions_[foot4 + axis] = link_quaternions_[link4 + axis];
             }
-            foot_heights_[foot] = 0.0f;
+            if (update_rays) {
+                foot_heights_[foot] = 0.0f;
+            }
 
             if (foot_index < state_layout_.foot_contact_sensor_indices.size()) {
                 const std::size_t sensor_index =
@@ -490,7 +492,7 @@ void LocomotionBatchRuntime::UpdateState(
                             static_cast<float>(physics_state.sensor_linear_velocity[sensor3 + axis]);
                 }
             }
-            if (foot_index < state_layout_.foot_height_sensor_indices.size()) {
+            if (update_rays && foot_index < state_layout_.foot_height_sensor_indices.size()) {
                 const std::size_t sensor_index =
                         state_layout_.foot_height_sensor_indices[foot_index];
                 const std::size_t value_offset =
@@ -501,7 +503,7 @@ void LocomotionBatchRuntime::UpdateState(
             }
         }
 
-        if (height_scan_count_ > 0) {
+        if (update_rays && height_scan_count_ > 0) {
             const std::size_t sensor_index = state_layout_.height_scan_sensor_index;
             const std::size_t value_offset =
                     (environment_index * sensor_count + sensor_index) *
@@ -681,7 +683,6 @@ void LocomotionBatchRuntime::UpdateFootHistory(
                     }
                     contact = tick_contact;
                 }
-                foot_contacts_[foot] = contact ? 1.0f : 0.0f;
             } else if (contact) {
                 foot_contact_times_[foot] += control_dt;
                 foot_air_times_[foot] = 0.0f;
@@ -701,7 +702,9 @@ void LocomotionBatchRuntime::UpdateFootHistory(
             landing_forces_[foot] =
                     std::sqrt(force_x * force_x + force_y * force_y + force_z * force_z) *
                     first_contacts_[foot];
-            if (!contact) {
+            // Instantaneous contacts and heights were refreshed together by
+            // UpdateState. History only advances timers for simulated ticks.
+            if (foot_contacts_[foot] == 0.0f) {
                 foot_peak_heights_[foot] = std::max(foot_peak_heights_[foot], foot_heights[foot]);
             }
         }

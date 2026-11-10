@@ -16,7 +16,7 @@ class UniformVelocityCommandRanges:
 
 @dataclass
 class UniformVelocityCommandCfg:
-    # Forward, turn, stand, reverse, strafe, run. None selects legacy sampling.
+    # Forward, turn, stand, reverse, strafe, run. None uses mjlab's uniform sampling.
     mode_probabilities: tuple[float, ...] | None = None
     source: str = "sampled"
     minimum_forward_velocity: float = .3

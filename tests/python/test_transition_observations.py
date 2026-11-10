@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from gobot.rl.locomotion import make_velocity_env
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.training_log import TrainingStatistics
 
 

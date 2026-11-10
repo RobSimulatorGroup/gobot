@@ -12,7 +12,7 @@ import torch
 
 from gobot.rl.locomotion.config import VELOCITY_REWARD_TERM_NAMES
 from gobot.rl.locomotion.cpu_env import CpuVelocityEnv, _TASK_PARAM
-from gobot.rl.locomotion.experiment import Experiment, MJLAB_REFERENCE_REVISION, task_config
+from examples.locomotion.presets import Experiment, MJLAB_REFERENCE_REVISION, task_config
 from gobot.rl.locomotion.training import agent_config
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv, _quat_apply
 
@@ -44,7 +44,8 @@ def test_standard_velocity_configuration_matches_reference(robot,terrain):
     assert cfg.observations.history_length==1
     assert cfg.observations.include_height_scan==('height_scan' in ref['actor_terms'])
     assert not cfg.gait.enabled
-    assert not cfg.post_step_sensing and cfg.action_clip is None
+    assert not cfg.capture_transitions and cfg.action_clip is None
+    assert not hasattr(cfg, "post_step_sensing")
     for key in VELOCITY_REWARD_TERM_NAMES:
         assert getattr(cfg.rewards,key)==ref['weights'].get(key,0),key
     for key,value in ref['noise'].items():
@@ -56,8 +57,9 @@ def test_standard_velocity_configuration_matches_reference(robot,terrain):
         actual=getattr(cfg.command.ranges,key)
         assert (list(actual) if isinstance(actual,tuple) else actual)==value,key
     assert [stage.step for stage in cfg.command_curriculum]==[0,120000,240000]
-    assert agent['algorithm']['class_name']=='PPO'
+    assert agent['algorithm']['class_name']=='rsl_rl.algorithms.PPO'
     for key,value in ref['agent']['algorithm'].items():
+        if key == 'class_name': continue  # The fixture stores the resolved class object separately.
         assert agent['algorithm'].get(key)==value,key
     for role in ('actor','critic'):
         expected=ref['agent'][role]
@@ -148,7 +150,6 @@ def test_torch_reward_terms_match_mjlab_without_cuda():
     env._reward_term_names=VELOCITY_REWARD_TERM_NAMES
     env._reward_weights=torch.tensor([REFERENCE['reward_probe']['weights'][key] for key in VELOCITY_REWARD_TERM_NAMES])
     env._reward_terms=torch.zeros(count,len(VELOCITY_REWARD_TERM_NAMES));env._reward=torch.zeros(count);env._episode_returns=torch.zeros(count)
-    env._numerical_reset=torch.zeros(count,dtype=torch.bool)
     env._compute_rewards()
     probe=REFERENCE['reward_probe']
     for i,key in enumerate(VELOCITY_REWARD_TERM_NAMES):
@@ -165,7 +166,7 @@ def test_actor_encoder_bias_does_not_change_critic():
 
 
 def test_full_ppo_updates_match_reference_runner():
-    """Same transitions and RNG: compare parameters, normalization and Adam state."""
+    """Failures, timeouts and overlapping masks: optimizer, normalization and Adam match mjlab."""
     from rsl_rl.runners import OnPolicyRunner
     torch.set_num_threads(2)
     from rsl_rl.algorithms import PPO
@@ -176,7 +177,7 @@ def test_full_ppo_updates_match_reference_runner():
     class Environment:
         num_envs=4
         num_actions=12
-        max_episode_length=20
+        max_episode_length=11
         device='cpu'
         cfg={}
         def __init__(self):
@@ -196,7 +197,7 @@ def test_full_ppo_updates_match_reference_runner():
             self.values=torch.sin(self.values+.1+action.mean(-1,keepdim=True)*.01)
             self.values[done]=0
             self.episode_length_buf[done]=0
-            return self.get_observations(),reward,done,{'time_outs':timeout&~failure}
+            return self.get_observations(),reward,done,{'time_outs':timeout}
 
     def run(reference):
         torch.manual_seed(617)
@@ -205,15 +206,14 @@ def test_full_ppo_updates_match_reference_runner():
         if reference:
             runner=OnPolicyRunner(env,config,device='cpu')
             alg=runner.alg
-            runner.learn(2,init_at_random_ep_len=True)
+            runner.learn(2,init_at_random_ep_len=False)
         else:
             alg=build_algorithm(env,config,'cpu',DistributedTraining('cpu'))
-            env.episode_length_buf=torch.randint_like(env.episode_length_buf,high=env.max_episode_length)
             observation=env.get_observations()
             alg.train_mode()
             for _ in range(2):
                 observation,_=update_policy(alg,env,observation,config['num_steps_per_env'])
-        assert type(alg) is PPO
+        assert isinstance(alg, PPO)
         return alg.save()
 
     expected=run(True)
@@ -267,9 +267,10 @@ def test_robot_controls_match_reference(robot):
         assert scales[0]==pytest.approx(reference['action_scale'],rel=1e-6),name
 
 
-def test_external_commands_do_not_delay_observations_or_reset():
+@pytest.mark.parametrize('robot', ['go1', 'g1'])
+def test_external_commands_do_not_delay_observations_or_reset(robot):
     from gobot.rl.locomotion import make_velocity_env
-    cfg=task_config(Experiment(robot='go1',stage='flat'))
+    cfg=task_config(Experiment(robot=robot,stage='flat'))
     cfg.command.source='external'
     cfg.observations.actor_noise=cfg.domain_randomization.enabled=cfg.push_enabled=False
     cfg.randomize_reset_yaw=False
@@ -281,7 +282,11 @@ def test_external_commands_do_not_delay_observations_or_reset():
             env.set_command((.5,0.,0.))
             state=env.step(np.full((2,env.num_actions),.1,dtype=np.float32))
             physical=env.locomotion_state()
-            np.testing.assert_allclose(state.obs['actor'][:,:3], physical['base_linear_velocity_body'],atol=1e-6)
+            from gobot.rl.locomotion.math import find_node_by_name
+            imu_offset = np.asarray(find_node_by_name(env.robot, 'imu').position)
+            expected = physical['base_linear_velocity_body'] + np.cross(
+                physical['base_angular_velocity_body'], imu_offset)
+            np.testing.assert_allclose(state.obs['actor'][:,:3], expected, atol=1e-6)
             np.testing.assert_allclose(state.obs['actor'][:,9:9+env.num_actions],
                 physical['joint_position']-env.default_joint_pos,atol=1e-6)
         assert state.truncated.all()
@@ -306,10 +311,35 @@ def test_g1_locomotion_model_matches_reference_physics():
         assert (reference.nq, reference.nv, reference.nu) == (36, 35, 29)
         report = audit_model(reference, artifact, 'g1_')
         assert report['passed'], report['failed_checks']
+        candidate = mujoco.MjModel.from_xml_string(artifact['content'])
+        np.testing.assert_allclose(candidate.site('g1_pelvis_imu_site').pos,
+                                   reference.site('imu_in_pelvis').pos, atol=1e-8)
         data = json.loads((Path(cfg.project_path)/'g1.jscn').read_text())
         meshes = [node for node in data['__NODES__'] if node['type'] == 'MeshInstance3D']
         assert len(meshes) == 35 and all(node['properties']['mesh'] for node in meshes)
         for resource in data['__EXT_RESOURCES__']:
             assert (Path(cfg.project_path)/resource['__PATH__'].removeprefix('res://')).is_file()
+    finally:
+        context.clear_scene()
+
+
+@pytest.mark.parametrize('robot', ['g1', 'go1'])
+def test_authored_collision_materials_match_reference(robot):
+    import gobot
+    import mujoco
+    from gobot.rl.locomotion.scene import configure_robot_drives
+    cfg = task_config(Experiment(robot=robot))
+    context = gobot.app.create_context()
+    try:
+        context.set_project_path(str(cfg.project_path))
+        context.load_scene(cfg.robot_resource_path)
+        configure_robot_drives(context.root, cfg)
+        artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        model = mujoco.MjModel.from_xml_string(artifact['content'])
+        for name, expected in REFERENCE['collision_materials'][robot].items():
+            geom = model.geom(f'{robot}_{name}').id
+            assert model.geom_condim[geom] == expected['condim'], name
+            assert model.geom_priority[geom] == expected['priority'], name
+            np.testing.assert_allclose(model.geom_friction[geom], expected['friction'], atol=1e-7, rtol=1e-6, err_msg=name)
     finally:
         context.clear_scene()

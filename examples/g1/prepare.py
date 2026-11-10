@@ -88,7 +88,8 @@ def prepare(source=None, project_path=None):
         parent.add_child(sensor)
         return sensor
     base = find_node_by_name(robot, cfg.base_link)
-    add(base, 'IMUSensor3D', 'imu')
+    imu = add(base, 'IMUSensor3D', 'imu')
+    imu.position = tuple(model.site('imu_in_pelvis').pos)
     add(base, 'AngularMomentumSensor3D', 'root_angmom')
     scan = add(base, 'HeightScanner3D', 'terrain_scan')
     scan.pattern_mode = gobot.RayPatternMode.Grid

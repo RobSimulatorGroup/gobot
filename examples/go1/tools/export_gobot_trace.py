@@ -1,6 +1,7 @@
 """Export Gobot's deterministic Go1 trace for parity comparison."""
 
 from __future__ import annotations
+from gobot.rl.locomotion.config import VELOCITY_REWARD_TERM_NAMES
 
 import argparse
 from importlib.metadata import PackageNotFoundError, version
@@ -11,9 +12,7 @@ import torch
 
 import gobot
 
-from examples.go1.go1_policy_info import GO1_TASK_VERSION
 from examples.go1.train.go1_velocity_cfg import (
-    GO1_ROUGH_REWARD_TERM_NAMES,
     go1_velocity_cfg,
 )
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv
@@ -172,7 +171,6 @@ def export_trace(*, output: str | Path, device: str) -> Path:
             "metadata": {
                 "source": "gobot",
                 "task_id": REFERENCE_TASK_ID,
-                "task_version": GO1_TASK_VERSION,
                 "source_revision": _repository_revision(),
                 "seed": PARITY_SEED,
                 "terrain_seed": PARITY_TERRAIN_SEED,
@@ -188,7 +186,7 @@ def export_trace(*, output: str | Path, device: str) -> Path:
                 "decimation": int(env.decimation),
                 "step_dt": float(env.step_dt),
                 "joint_names": list(env.joint_names),
-                "reward_names": list(GO1_ROUGH_REWARD_TERM_NAMES),
+                "reward_names": list(VELOCITY_REWARD_TERM_NAMES),
                 "actor_dim": int(env.num_obs),
                 "critic_dim": int(env.num_privileged_obs),
             },

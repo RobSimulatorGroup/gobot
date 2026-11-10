@@ -8,14 +8,15 @@ from dataclasses import asdict
 import torch
 from torch import nn
 from tensordict import TensorDict
-from .transition_ppo import TransitionPPO
+from rsl_rl.algorithms import PPO
+from rsl_rl.utils import check_nan
 from .motion import MotionDataset, MotionPriorCfg
 
 
-class MotionPriorPPO(TransitionPPO):
+class MotionPriorPPO(PPO):
     def __init__(self, *args, motion_prior_cfg=None, **kwargs):
         self.prior_cfg = MotionPriorCfg(**motion_prior_cfg)
-        super().__init__(*args, fall_penalty=self.prior_cfg.fall_penalty, **kwargs)
+        super().__init__(*args, **kwargs)
         self.reference = MotionDataset(self.prior_cfg.dataset,device=self.device,seed=self.prior_cfg.seed,
             tolerances=(self.prior_cfg.speed_tolerance,self.prior_cfg.lateral_tolerance,self.prior_cfg.yaw_tolerance))
         self.discriminator = nn.Sequential(nn.Linear(self.reference.pairs.shape[1], 512), nn.ELU(),
@@ -54,8 +55,6 @@ class MotionPriorPPO(TransitionPPO):
                 style = style * self.reference.supported_heads(command)
             style = style[:, 0] * (1 - blend) + style[:, 1] * blend
             active = (command[:, 0] >= .2) & (command[:, 1].abs() <= .15) & (command[:, 2].abs() <= .35)
-            if "numerical_reset" in extras:
-                active &= ~extras["numerical_reset"]
             level_weight = 1 - .75 * (state["terrain_level"].float() / 9).clamp(0, 1)
             ramp = min(1., getattr(self, 'update_count', 0) / max(cfg.warmup_updates, 1))
             addition = cfg.weight * .02 * ramp * style * active * level_weight
@@ -64,7 +63,17 @@ class MotionPriorPPO(TransitionPPO):
             gait = (torch.rand(blend.shape, device=self.device, generator=self.reference.generator) < blend).long()
             if bool(active.any()):
                 self._remember(pair[active], gait[active], command[active])
-        super().process_env_step(obs, rewards + addition, dones, extras)
+        # Terminal-state bootstrapping belongs to this explicit motion-prior
+        # extension. The standard velocity baseline uses unmodified RSL-RL PPO.
+        timeouts = extras.get('time_outs', torch.zeros_like(dones)).bool()
+        terminated = extras.get('terminated', dones & ~timeouts)
+        combined = rewards + addition - cfg.fall_penalty * terminated.bool()
+        with torch.no_grad():
+            if bool(timeouts.any()):
+                final = TensorDict(extras['final_observation'], batch_size=[len(rewards)], device=self.device)[timeouts]
+                check_nan(final, combined[timeouts], dones[timeouts])
+                combined[timeouts] += self.gamma * self.critic(final).squeeze(-1)
+        super().process_env_step(obs, combined, dones, {k: v for k, v in extras.items() if k != 'time_outs'})
 
     def update(self):
         result = super().update()

@@ -5,20 +5,22 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from gobot.rl.locomotion.experiment import RunConfig
 from .workflow import TrainingSpec, update_config
 
 
 @dataclass
 class LocomotionTrainConfig:
-    experiment: Experiment = field(default_factory=Experiment)
+    experiment: RunConfig = field(default_factory=RunConfig)
+    task_factory: str | None = None
+    evaluation_command: tuple[str, ...] = ()
     backend: str = "mujoco-warp"
     device: str | None = None
     output: Path = Path("logs/locomotion")
     resume: Path | None = None
     initialize: Path | None = None
     budget_file: Path | None = None
-    no_eval: bool = False
+    no_eval: bool = True
     terrain_reference: Path | None = None
     # Partial overrides of the selected task/agent defaults. Python callers may
     # also supply a complete VelocityTaskCfg as env.
@@ -30,7 +32,13 @@ class LocomotionTrainConfig:
         if isinstance(self.env, VelocityTaskCfg):
             from copy import deepcopy
             return deepcopy(self.env)
-        defaults = task_config(self.experiment)
+        if not self.task_factory:
+            raise ValueError("provide env=VelocityTaskCfg(...) or task_factory='module:function'")
+        import importlib
+        module, name = self.task_factory.split(":", 1)
+        defaults = getattr(importlib.import_module(module), name)(self.experiment)
+        if not isinstance(defaults, VelocityTaskCfg):
+            raise TypeError("task_factory must return VelocityTaskCfg")
         profile_fields = {"robot_name", "base_link", "joint_names", "default_joint_pos", "kp", "kd", "foot_names", "foot_link_names"}
         if defaults.robot is not None and isinstance(self.env, dict) and profile_fields.intersection(self.env):
             raise ValueError("configure actuator/joint fields through env.robot; derived env fields are owned by the robot profile")
@@ -57,13 +65,14 @@ class LocomotionTrainConfig:
             load(self.terrain_reference)
         if self.resume and self.initialize:
             raise ValueError("choose --resume or --initialize, not both")
-        if self.env and not self.no_eval:
+        if not self.no_eval and not self.evaluation_command:
+            raise ValueError("training requires --no-eval or an explicit evaluation_command")
+        if isinstance(self.env, dict) and self.env and not self.no_eval:
             raise ValueError("custom env/reward settings require --no-eval and an independent evaluator matching that task")
         if self.experiment.reference_reset_probability and (
-            self.backend != "mujoco-warp" or self.experiment.robot != "g1"
-            or not self.experiment.stage.startswith("flat")
+            self.backend != "mujoco-warp" or not self.experiment.stage.startswith("flat")
         ):
-            raise ValueError("reference-state reset is supported only for G1 flat MuJoCo Warp training")
+            raise ValueError("reference-state reset requires flat MuJoCo Warp training and a matching motion dataset")
         from gobot.rl.locomotion.training import validate_task_config
         env = self.resolve_env()
         agent = self.resolve_agent(env)
@@ -107,31 +116,42 @@ def _configure(cfg, args):
 
 def _run(cfg):
     from gobot.rl.locomotion.training import run
+    source_files = ()
+    if cfg.task_factory:
+        import importlib
+        module = importlib.import_module(cfg.task_factory.split(":", 1)[0])
+        if getattr(module, "__file__", None):
+            source_files = (module.__file__,)
     return run(
         cfg.experiment, cfg.output, backend=cfg.backend, device=cfg.device,
         budget_file=cfg.budget_file, resume=cfg.resume, initialize=cfg.initialize,
         no_eval=cfg.no_eval, terrain_reference=cfg.terrain_reference,
-        task_cfg=cfg.resolve_env() if cfg.env else None,
-        agent_cfg=cfg.resolve_agent() if cfg.agent else None,
+        task_cfg=cfg.resolve_env(),
+        agent_cfg=cfg.resolve_agent(), evaluation_command=cfg.evaluation_command, source_files=source_files,
     )
 
 
-def training_spec(*, robot="go1", recipe="baseline") -> TrainingSpec:
-    """Build a workflow directly; task registration is optional.
+def training_spec(*, task_factory: str | None = None, experiment: RunConfig | None = None,
+                  env=None, name="velocity", evaluation_command=()) -> TrainingSpec:
+    """Build a trainer from a typed task or an importable task configuration factory.
 
-    Use ``spec.config_factory()`` and change ``cfg.env['rewards']`` or
-    ``cfg.agent['algorithm']``, then ``launch(spec, cfg)``. An env override is
-    validated against the typed task configuration before simulation starts.
+    The task supplies robot assets, controls, rewards and sensors. The trainer
+    owns rollout collection, PPO, checkpointing and distributed execution.
     """
+    from copy import deepcopy
+    settings = experiment if experiment is not None else RunConfig()
+
     def factory():
         return LocomotionTrainConfig(
-            experiment=Experiment(robot=robot, recipe=recipe),
-            output=Path("logs") / f"{robot}_{recipe}",
+            experiment=deepcopy(settings), task_factory=task_factory,
+            env=deepcopy(env) if env is not None else {},
+            output=Path("logs") / name, evaluation_command=tuple(evaluation_command),
+            no_eval=not bool(evaluation_command),
         )
 
     return TrainingSpec(
-        config_factory=factory, run=_run, description=f"{robot} velocity {'AMP' if recipe == 'amp' else 'PPO'}",
-        step_unit="ppo_updates", supports_distributed=recipe != "amp", common_paths={
+        config_factory=factory, run=_run, description=f"{name} velocity training",
+        step_unit="ppo_updates", supports_distributed=settings.recipe != "amp", common_paths={
             "backend": "backend", "device": "device", "num_envs": "experiment.num_envs",
             "seed": "experiment.seed", "output": "output", "resume": "resume",
         }, add_arguments=_arguments, configure=_configure,

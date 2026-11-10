@@ -50,9 +50,8 @@ def test_custom_environment_timeout_and_final_observation(framework, legacy_time
     wrapper = RslRlVecEnvWrapper(env)
     obs, reward, done, extras = wrapper.step(torch.zeros(3, 2))
     assert done.tolist() == [True, True, True]
-    # Physical failure dominates a simultaneous time limit, without changing
-    # the environment's masks or depending on optional info dictionary keys.
-    assert extras["time_outs"].tolist() == [True, False, False]
+    # Failure and timeout masks are independent, including simultaneous events.
+    assert extras["time_outs"].tolist() == [True, False, True]
     assert env.state.truncated.tolist() == [True, False, True]
     assert extras["_final_observation"].tolist() == [True, True, True]
     torch.testing.assert_close(extras["final_observation"]["critic"].float(), torch.tensor([[5.], [7.], [11.]]))
@@ -60,14 +59,14 @@ def test_custom_environment_timeout_and_final_observation(framework, legacy_time
     pointer = extras["time_outs"].data_ptr()
     assert wrapper.step(torch.zeros(3, 2))[3]["time_outs"].data_ptr() == pointer
 
-    # The timeout uses V(s_final), not the reset or previous rollout state.
+    # Standard RSL PPO uses the value saved when sampling the action.
     torch.testing.assert_close(_stored_transition_rewards(obs, reward, done, extras),
-                               torch.tensor([5.95, .5, .5]))
+                               torch.tensor([100., 1., 100.]))
 
 
 def _stored_transition_rewards(obs, reward, done, extras):
     """Exercise the real PPO collector with an inspectable critic and storage."""
-    from gobot.rl.locomotion.transition_ppo import TransitionPPO
+    from rsl_rl.algorithms import PPO
     from rsl_rl.storage import RolloutStorage
 
     class Model:
@@ -80,11 +79,10 @@ def _stored_transition_rewards(obs, reward, done, extras):
         def reset(self, dones):
             pass
 
-    alg = TransitionPPO.__new__(TransitionPPO)
+    alg = PPO.__new__(PPO)
     alg.actor = alg.critic = Model()
     alg.device = "cpu"
     alg.gamma = .99
-    alg.fall_penalty = .5
     alg.rnd = None
     alg.transition = RolloutStorage.Transition()
     alg.transition.values = torch.full((3, 1), 100.)
@@ -104,10 +102,9 @@ def test_finite_horizon_explicitly_disables_bootstrap(legacy_timeout, framework)
     assert "time_outs" not in extras
     assert "final_observation" not in extras
     assert extras["terminated"].tolist() == [False, True, True]
-    # A time-limit episode ending earns no value bootstrap and no fall penalty;
-    # an actual fall still receives the penalty, even at the same time limit.
+    # Finite-horizon transitions preserve the environment reward unchanged.
     torch.testing.assert_close(_stored_transition_rewards(obs, reward, done, extras),
-                               torch.tensor([1., .5, .5]))
+                               torch.tensor([1., 1., 1.]))
 
 
 @pytest.mark.parametrize("framework", ["numpy", "torch"])
@@ -169,7 +166,7 @@ def test_cpu_reward_rate_and_timeout_survive_autoreset():
     ("logger", "wandb", "custom TrainingSpec"),
 ])
 def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch, name, value, target):
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion import training
 
     experiment = Experiment(robot="go1", iterations=1, num_envs=2)
@@ -180,7 +177,7 @@ def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch,
     monkeypatch.setattr(training, "make_velocity_env", forbidden)
     output = tmp_path / "not-created"
     with pytest.raises(ValueError, match=target):
-        training.run(experiment, output, backend="mujoco-cpu", no_eval=True, agent_cfg=agent)
+        training.run(experiment, output, backend="mujoco-cpu", no_eval=True, agent_cfg=agent, task_cfg=task_config(experiment))
     assert not output.exists()
 
 
@@ -190,7 +187,7 @@ def test_unused_agent_settings_rejected_before_simulation(tmp_path, monkeypatch,
     ("gamma", 1.1), ("lam", -.1), ("max_grad_norm", float("inf")),
 ])
 def test_invalid_algorithm_values_fail_before_simulation(key, value):
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion.training import agent_config, validate_agent_config
 
     experiment = Experiment(robot="go1")
@@ -201,7 +198,7 @@ def test_invalid_algorithm_values_fail_before_simulation(key, value):
 
 
 def test_configurable_ppo_and_amp_details_remain_supported():
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config
     from gobot.rl.locomotion.training import agent_config, validate_agent_config
 
     for recipe in ("baseline", "amp"):

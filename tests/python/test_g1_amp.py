@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
-from gobot.rl.locomotion.motion import motion_features, MotionDataset, MotionPriorCfg
+from gobot.rl.locomotion.motion import MotionFeatureSpec, motion_features, MotionDataset, MotionPriorCfg
 from examples.g1.prepare_motion import resample
 from examples.g1.config import g1_amp_cfg
 from gobot.rl.locomotion import make_velocity_env
@@ -35,12 +35,13 @@ def test_motion_features_heading_invariance():
     state = dict(base_position=pos, base_quaternion=quat, link_position=links,
                  joint_position=rng.normal(size=(4, 29)), joint_velocity=rng.normal(size=(4, 29)),
                  base_linear_velocity_body=rng.normal(size=(4, 3)), base_angular_velocity_body=rng.normal(size=(4, 3)))
-    expected = motion_features(state)
+    spec = MotionFeatureSpec(tuple(f"joint_{i}" for i in range(29)), tuple(f"link_{i}" for i in range(4)))
+    expected = motion_features(state, spec=spec)
     rotation = Rotation.from_euler('z', 1.4)
     state['base_position'] = rotation.apply(pos) + [10., -7., 2.]
     state['link_position'] = rotation.apply(links.reshape(-1, 3)).reshape(4, 4, 3) + [10., -7., 2.]
     state['base_quaternion'] = np.tile(rotation.as_quat()[[3, 0, 1, 2]], (4, 1))
-    torch.testing.assert_close(motion_features(state), expected, atol=2e-6, rtol=2e-6)
+    torch.testing.assert_close(motion_features(state, spec=spec), expected, atol=2e-6, rtol=2e-6)
 
 
 def test_dataset_split_and_rng():
@@ -48,11 +49,12 @@ def test_dataset_split_and_rng():
     with tempfile.TemporaryDirectory(prefix='gobot-motion-test-') as directory:
         path = Path(directory) / 'motion.npz'
         clips, arrays = [], {}
+        spec = MotionFeatureSpec(tuple(f"joint_{i}" for i in range(29)), tuple(f"link_{i}" for i in range(4)))
         for i in range(4):
             clips.append({'name': f'clip{i}', 'split': 'train' if i < 2 else 'holdout', 'gait': i % 2})
             arrays[f'features_{i}'] = np.broadcast_to(np.arange(4)[:, None] + i * 10., (4, 79)).astype(np.float32)
             arrays[f'valid_{i}'] = np.array([True, True, False, True])
-        arrays['metadata'] = np.array(json.dumps({'schema': 'gobot_motion_v1', 'dt': .02, 'clips': clips}))
+        arrays['metadata'] = np.array(json.dumps({'schema': 'gobot_motion_v2', 'dt': .02, 'feature_spec': spec.metadata(), 'clips': clips}))
         np.savez(path, **arrays)
         a = MotionDataset(path, seed=12)
         b = MotionDataset(path, seed=12)
@@ -143,7 +145,7 @@ def test_checkpoint_normalization():
                      distribution_cfg={'class_name': 'GaussianDistribution', 'init_std': 1., 'std_type': 'scalar'})
     actor.obs_normalizer._mean.copy_(torch.arange(5).float()[None])
     actor.obs_normalizer._std.copy_(torch.tensor([[0., .1, 1., 2., 0.]]))
-    manifest = PolicyManifest(task_name='normalizer_test', task_version='v1',
+    manifest = PolicyManifest(task_name='normalizer_test',
         observation_spec=ObservationSpec('test', (SpecField('state', 5),)).metadata(),
         action_spec=ActionSpec('test', (SpecField('left', 1), SpecField('right', 1))).metadata(),
         joint_names=('left', 'right'), physics_dt=.005, decimation=4, control={},
@@ -187,7 +189,6 @@ def test_biped_gait_rejects_hopping_and_standing():
     assert chatter.arrays()['landings'][0] == 0
 
 
-
 def main():
     p = argparse.ArgumentParser(); p.add_argument('--checkpoint-check', action='store_true'); p.add_argument('--backend', choices=('mujoco-cpu','mujoco-warp'))
     args=p.parse_args()
@@ -201,7 +202,6 @@ def main():
                      test_seated_and_nonfoot_support_fail, test_biped_gait_rejects_hopping_and_standing,
                      test_standing_is_not_locomotion_admission):
             test(); print(test.__name__, 'passed')
-
 
 
 def test_standing_is_not_locomotion_admission():
@@ -218,7 +218,8 @@ def test_standing_is_not_locomotion_admission():
         def reset(self, seed=None): pass
         def set_command(self, command): pass
         def get_observations(self): return {'actor': np.zeros((2, 1))}
-        def locomotion_state(self): return {'base_position': np.tile([0, 0, .76], (2, 1))}
+        def locomotion_state(self): return {'base_position': np.tile([0, 0, .76], (2, 1)),
+                                            'base_quaternion': np.tile([1., 0., 0., 0.], (2, 1))}
         def step(self, action):
             data = {**self.locomotion_state(), 'base_linear_velocity_body': np.zeros((2, 3)),
                     'base_angular_velocity_body': np.zeros((2, 3)), 'foot_force': np.tile([[[0,0,100],[0,0,100]]], (2,1,1)),

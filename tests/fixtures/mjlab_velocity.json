@@ -2499,5 +2499,578 @@
       2.275423765182495,
       2.086250066757202
     ]
+  },
+  "collision_materials": {
+    "g1": {
+      "head_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_elbow_yaw_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_foot1_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot2_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot3_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot4_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot5_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot6_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_foot7_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "left_hand_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_linkage_brace_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_shin_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_shoulder_yaw_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_thigh_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "left_wrist_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "pelvis_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_elbow_yaw_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_foot1_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot2_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot3_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot4_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot5_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot6_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_foot7_collision": {
+        "condim": 3,
+        "friction": [
+          0.6,
+          0.005,
+          0.0001
+        ],
+        "priority": 1
+      },
+      "right_hand_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_linkage_brace_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_shin_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_shoulder_yaw_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_thigh_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "right_wrist_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "torso_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      }
+    },
+    "go1": {
+      "FL_calf_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FL_calf_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FL_foot_collision": {
+        "condim": 6,
+        "friction": [
+          1.0,
+          0.005,
+          0.0005
+        ],
+        "priority": 1
+      },
+      "FL_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FL_thigh_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FL_thigh_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FL_thigh_collision3": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_calf_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_calf_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_foot_collision": {
+        "condim": 6,
+        "friction": [
+          1.0,
+          0.005,
+          0.0005
+        ],
+        "priority": 1
+      },
+      "FR_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_thigh_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_thigh_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "FR_thigh_collision3": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_calf_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_calf_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_foot_collision": {
+        "condim": 6,
+        "friction": [
+          1.0,
+          0.005,
+          0.0005
+        ],
+        "priority": 1
+      },
+      "RL_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_thigh_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_thigh_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RL_thigh_collision3": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_calf_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_calf_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_foot_collision": {
+        "condim": 6,
+        "friction": [
+          1.0,
+          0.005,
+          0.0005
+        ],
+        "priority": 1
+      },
+      "RR_hip_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_thigh_collision1": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_thigh_collision2": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "RR_thigh_collision3": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "head_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      },
+      "trunk_collision": {
+        "condim": 1,
+        "friction": [
+          1.0,
+          0.005,
+          0.0001
+        ],
+        "priority": 0
+      }
+    }
   }
 }

@@ -3,7 +3,9 @@
 G1 supports velocity PPO, motion-prior AMP, and SuperMimic motion tracking through
 [one training entry](../../doc/gobot_training.md). The robot and terrain are Gobot
 `.jscn` / `.jres` resources. MuJoCo CPU is the control/state reference; MuJoCo Warp
-runs batched CUDA training.
+runs batched CUDA training. G1 assets, sensor placement and presets live in this
+example and `examples/locomotion/presets.py`. The shared trainer consumes a typed
+task configuration and does not select robot models.
 
 See the [reference/data tools](reproduction/README.md) for preparing and evaluating
 SuperMimic motion tracking.
@@ -12,7 +14,7 @@ SuperMimic motion tracking.
 
 The checked-in `g1.jscn` and `g1.meshes/` contain the 29-joint G1 with rigid palms
 from mjlab `dcdf6ce5`. Training, evaluation and playback use this same asset.
-Masses, inertias, collision shapes and drives are checked against the reference;
+Masses, inertias, collision shapes, drives and the pelvis IMU placement are checked against the reference;
 there are no finger actuators. No separate mesh download is needed.
 
 To deliberately regenerate the robot from that reference checkout:
@@ -21,25 +23,27 @@ To deliberately regenerate the robot from that reference checkout:
 uv run python -m examples.g1.prepare --source mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml
 ```
 
-AMP motion data must be prepared for the current robot model:
+AMP motion data records named joints and tracked links. The trainer validates
+their layout, control period and robot physics identity. Standard velocity PPO
+does not need a motion dataset:
 
 ```bash
 uv run python -m examples.g1.prepare_motion
 uv run python -m examples.g1.reference_gaits
 ```
 
-Old articulated-hand checkpoints describe different dynamics. Normal resume and
-playback reject them. Use the evaluator's explicit `--allow-model-change` option
-for a measured policy-transfer experiment; this does not migrate optimizer state.
-
 Standard velocity PPO uses one observation frame; its flat task omits the terrain scan.
-AMP adds ten proprioceptive frames and the terrain scan. The critic has privileged state. Physics runs at 200 Hz and control at 50 Hz.
+AMP adds ten proprioceptive frames and the terrain scan. The critic has privileged
+state. Physics runs at 200 Hz and control at 50 Hz. The standard velocity task uses
+the mjlab event order and RSL-RL PPO; AMP uses terminal observations for timeout
+bootstrapping. See the [training guide](../../doc/gobot_training.md) for state timing,
+randomness, numerical handling and checkpoint contracts.
 
 ## Train
 
 ```bash
 uv run python -m gobot.rl.train g1-velocity \
-  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/g1_cpu
+  --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/g1_velocity_cpu
 
 uv run python -m gobot.rl.train g1-amp \
   --backend mujoco-warp --num-envs 1024 --dataset /data/g1/locomotion.npz \
@@ -51,13 +55,16 @@ uv run python -m gobot.rl.train g1-amp \
 ```
 
 Use `--terrain flat|rough` for standard velocity PPO. AMP also supports `mixed`.
-Training can start from scratch. Resume restores compatible optimizer, discriminator,
-normalization, curriculum and RNG state, then starts new physics episodes.
+Resume restores optimizer, discriminator, normalization, curriculum and RNG state, then
+starts new physics episodes without changing saved terrain assignments. Resume
+requires the same world size and environments per rank.
 
 Use `--set env.rewards.NAME=VALUE` and `--set agent.algorithm.NAME=VALUE` for task and
 learner settings; `--dry-run` validates configuration before simulation. A custom
 environment requires `--no-eval` and a matching independent evaluator. Details,
-including Python factory configuration, are in the training guide.
+including custom robot factories returning `VelocityTaskCfg`, are in the training
+guide. A new robot supplies its own scene, joint/control profile and named sensors;
+the training loop does not need a new robot branch.
 
 ## Evaluate, export and play
 
@@ -88,6 +95,7 @@ terrain. See [shared locomotion](../locomotion/README.md) for full admission cri
 uv run python tests/python/test_g1_amp.py
 uv run python tests/python/test_g1_amp.py --backend mujoco-cpu
 uv run python tests/python/test_shared_velocity_gpu.py
+uv run python -m pytest -q tests/python/test_motion_schema.py tests/python/test_velocity_reliability.py
 uv run python tests/python/test_locomotion_training.py --backend mujoco-cpu
 ```
 

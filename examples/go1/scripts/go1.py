@@ -19,11 +19,10 @@ from go1_profile import (
     GO1_DEFAULT_BASE_POSITION,
     GO1_JOINT_NAMES,
 )
-from go1_policy_info import GO1_TASK_NAME, GO1_TASK_VERSION
+from go1_policy_info import GO1_TASK_NAME
 
 
 TASK_NAME = GO1_TASK_NAME
-TASK_VERSION = GO1_TASK_VERSION
 ROBOT = "go1"
 BASE_LINK = "trunk"
 POLICY_ENV = "GOBOT_GO1_POLICY"
@@ -391,7 +390,6 @@ class Script(gobot.NodeScript):
             physics_dt=manifest.physics_dt,
             decimation=manifest.decimation,
             task_name=TASK_NAME,
-            task_version=TASK_VERSION,
             scene_digest=digest,
         )
         if policy.action_dim != len(JOINT_NAMES):

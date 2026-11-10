@@ -14,7 +14,7 @@ from scipy.spatial.transform import Rotation, Slerp
 from .config import JOINT_NAMES, g1_amp_cfg
 from gobot.rl.locomotion.scene import prepare_velocity_scene
 from gobot.rl.locomotion.robot_model import robot_physics_digest
-from gobot.rl.locomotion.motion import motion_features
+from gobot.rl.locomotion.motion import MotionFeatureSpec, motion_features
 from gobot.sim.providers import CompiledSceneArtifact
 import gobot
 
@@ -79,6 +79,7 @@ def prepare(output, *, offline=False):
         qpos_ids = model.jnt_qposadr[joint_ids]
         links = [model.body(prefix + name).id for name in cfg.state_link_names]
         root_id = model.body(prefix + cfg.base_link).id
+        feature_spec = MotionFeatureSpec(cfg.joint_names, cfg.state_link_names)
         arrays, clips = {}, []
         for i, item in enumerate(source["files"]):
             path = raw_dir / item["name"]
@@ -100,7 +101,7 @@ def prepare(output, *, offline=False):
             state = dict(base_position=base_positions, base_quaternion=quat, joint_position=joints,
                          joint_velocity=qd, base_linear_velocity_body=rotations.inv().apply(v),
                          base_angular_velocity_body=rotations.inv().apply(omega), link_position=link_positions)
-            features = motion_features(state).numpy()
+            features = motion_features(state, spec=feature_spec).numpy()
             lo, hi = model.jnt_range[joint_ids].T
             valid = np.isfinite(features).all(1)
             valid &= ((joints >= lo - .1) & (joints <= hi + .1)).all(1)
@@ -115,10 +116,10 @@ def prepare(output, *, offline=False):
             arrays[f"joint_{i}"] = np.concatenate((joints, qd), 1).astype(np.float32)
             clips.append({"name": path.stem, "frames": len(features), "valid_frames": int(valid.sum()),
                           "gait": int(not path.name.startswith("walk")),
-                          "split": "holdout" if "subject5" in path.stem else "train"})
+                          "split": "holdout" if "subject5" in path.stem else "validation" if "subject4" in path.stem else "train"})
             print(path.name, len(features), "frames,", int(valid.sum()), "valid", flush=True)
-        metadata = {"schema": "gobot_motion_v1", "dt": .02, "source_fps": 30., "joint_names": JOINT_NAMES,
-                    "link_names": cfg.state_link_names, "robot_digest": robot_physics_digest(artifact, "g1"),
+        metadata = {"schema": "gobot_motion_v2", "dt": .02, "source_fps": 30.,
+                    "feature_spec": feature_spec.metadata(), "robot_digest": robot_physics_digest(artifact, "g1"),
                     "source": source, "clips": clips}
         arrays["metadata"] = np.array(json.dumps(metadata))
         np.savez_compressed(output, **arrays)

@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import tempfile
 import torch
-from gobot.rl.locomotion.experiment import Experiment
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.training import run
 from examples.locomotion.assessment import evaluate
 
@@ -21,9 +21,9 @@ def main():
                            iterations=2,num_envs=4,hours=.1,eval_steps=20,eval_envs=2)
             if recipe=='amp' and a.backend=='mujoco-warp':exp=replace(exp,reference_reset_probability=.5)
             out=root/f'{robot}_{recipe}'
-            run(exp,out,backend=a.backend,device=device,no_eval=True)
+            run(exp,out,task_cfg=task_config(exp),backend=a.backend,device=device,no_eval=True)
             original=torch.load(out/'model_final.pt',map_location='cpu',weights_only=False)
-            run(replace(exp,iterations=1),out/'resumed',backend=a.backend,device=device,resume=out/'model_final.pt',no_eval=True)
+            run(replace(exp,iterations=1),out/'resumed',task_cfg=task_config(exp),backend=a.backend,device=device,resume=out/'model_final.pt',no_eval=True)
             restored=torch.load(out/'resumed/model_final.pt',map_location='cpu',weights_only=False)
             assert restored['iter']==original['iter']+1
             if recipe=='amp':

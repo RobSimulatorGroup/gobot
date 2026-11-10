@@ -19,7 +19,7 @@ def examples_root() -> Path:
                       if (parent / "pyproject.toml").is_file()
                       and (parent / "python/gobot/__init__.py").is_file())
     for root in candidates:
-        if (root / "go1" / "gobot.project").is_file() or (root / "go1" / "go1.jscn").is_file():
+        if (root / "locomotion" / "presets.py").is_file():
             return root
     raise FileNotFoundError("Gobot example projects were not found; install a complete Gobot package or use a source checkout")
 

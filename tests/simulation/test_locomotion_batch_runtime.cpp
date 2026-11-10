@@ -18,6 +18,7 @@ PhysicsRobotBatchStepResult ContactHistory(std::size_t environment_count,
     PhysicsRobotBatchStepResult state;
     state.environment_count = environment_count;
     state.contact_shape_group_names = {"foot_0"};
+    state.contact_shape_group_tick_count = {0};
     state.contact_history_tick_count = 4;
     state.contact_shape_group_history = std::move(history);
     return state;
@@ -127,6 +128,7 @@ TEST(TestLocomotionBatchRuntime, ReportsAirTimePeakHeightAndFirstLandingOnce) {
     EXPECT_FLOAT_EQ(runtime.LandingForces()[0], 0.0f);
 
     runtime.ClearStepContacts(0);
+    runtime.FootContacts()[0] = 1.0f;
     runtime.FootContactForces()[0] = 3.0f;
     runtime.FootContactForces()[1] = 4.0f;
     PhysicsRobotBatchStepResult landing = ContactHistory(1, {0, 0, 1, 1});
@@ -139,6 +141,7 @@ TEST(TestLocomotionBatchRuntime, ReportsAirTimePeakHeightAndFirstLandingOnce) {
     EXPECT_FLOAT_EQ(runtime.LandingForces()[0], 5.0f);
 
     runtime.ClearStepContacts(0);
+    runtime.FootContacts()[0] = 1.0f;
     PhysicsRobotBatchStepResult persistent_contact = ContactHistory(1, {1, 1, 1, 1});
     runtime.UpdateFootHistory(persistent_contact, foot_heights, 0.02, 0.005);
 
@@ -165,6 +168,7 @@ TEST(TestLocomotionBatchRuntime, ResetClearsOnlySelectedEnvironmentHistory) {
 
     runtime.ClearStepContacts(0);
     runtime.ClearStepContacts(1);
+    runtime.FootContacts()[0] = 1.0f;
     runtime.FootContactForces()[0] = 2.0f;
     PhysicsRobotBatchStepResult landing = ContactHistory(2, {
             0, 0, 1, 1,
@@ -176,6 +180,56 @@ TEST(TestLocomotionBatchRuntime, ResetClearsOnlySelectedEnvironmentHistory) {
     EXPECT_FLOAT_EQ(runtime.LandingForces()[0], 2.0f);
     EXPECT_NEAR(runtime.FootAirTimes()[1], 0.04f, 1.0e-6f);
     EXPECT_FLOAT_EQ(runtime.FootPeakHeights()[1], 0.25f);
+}
+
+TEST(TestLocomotionBatchRuntime, HistoryPreservesRefreshedLandingAndTakeoffContacts) {
+    LocomotionBatchRuntime runtime(1, StateLayout());
+    auto state = PhysicsState();
+    // The final integration reaches the ground: the refreshed pose has a
+    // contact, but none of the completed solver substeps had one yet.
+    state.contact_shape_group_names = {"foot_0"};
+    state.contact_shape_group_tick_count = {0};
+    state.contact_history_tick_count = 4;
+    state.contact_shape_group_history = {0, 0, 0, 0};
+    runtime.UpdateState(state);
+    runtime.UpdateFootHistory(state, runtime.FootHeights(), 0.02, 0.005);
+    EXPECT_FLOAT_EQ(runtime.FootContacts()[0], 1.0f);
+    EXPECT_FLOAT_EQ(runtime.FootContactForces()[2], 5.0f);
+    EXPECT_NEAR(runtime.FootAirTimes()[0], 0.02f, 1.0e-6f);
+    EXPECT_FLOAT_EQ(runtime.FirstContacts()[0], 0.0f);
+    EXPECT_FLOAT_EQ(runtime.FootPeakHeights()[0], 0.0f);
+
+    // The refreshed pose can also leave the ground after the last solver tick.
+    // It must remain contact-free while retaining the actual substep timing.
+    state.contact_count = {0};
+    state.contact_shape_group_history = {0, 0, 1, 1};
+    state.contact_shape_group_tick_count = {2};
+    runtime.UpdateState(state);
+    runtime.UpdateFootHistory(state, runtime.FootHeights(), 0.02, 0.005);
+    EXPECT_FLOAT_EQ(runtime.FootContacts()[0], 0.0f);
+    EXPECT_FLOAT_EQ(runtime.FootContactForces()[2], 0.0f);
+    EXPECT_FLOAT_EQ(runtime.FootAirTimes()[0], 0.0f);
+    EXPECT_FLOAT_EQ(runtime.FirstContacts()[0], 1.0f);
+    EXPECT_FLOAT_EQ(runtime.FootPeakHeights()[0], 0.08f);
+}
+
+TEST(TestLocomotionBatchRuntime, PhysicsExtractionRetainsRaysUntilSensing) {
+    LocomotionBatchRuntime runtime(1, StateLayout());
+    auto state = PhysicsState();
+    runtime.UpdateState(state);
+    state.sensor_values[10] = 0.6;
+    state.sensor_values[30] = 0.9;
+    state.sensor_hit_point[6 * 3 + 2] = 8.0;
+    state.joint_position[0] = 0.75;
+    runtime.UpdateState(state, false);
+    EXPECT_FLOAT_EQ(runtime.JointPositions()[0], 0.75f);
+    EXPECT_FLOAT_EQ(runtime.FootHeights()[0], 0.08f);
+    EXPECT_FLOAT_EQ(runtime.HeightScan()[0], 0.2f);
+    EXPECT_FLOAT_EQ(runtime.HeightScanPoints()[2], 3.0f);
+    runtime.UpdateState(state);
+    EXPECT_FLOAT_EQ(runtime.FootHeights()[0], 0.6f);
+    EXPECT_FLOAT_EQ(runtime.HeightScan()[0], 0.9f);
+    EXPECT_FLOAT_EQ(runtime.HeightScanPoints()[2], 8.0f);
 }
 
 TEST(TestLocomotionBatchRuntime, EnforcesFixedBatchDimensions) {

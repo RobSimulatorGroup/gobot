@@ -276,9 +276,9 @@ class RslRlVecEnvWrapper:
                 timeouts = self._device_tensor_or_copy(
                     state.truncated, self._timeouts_buf, self._timeouts_staging
                 )
-            # A physical terminal condition takes precedence when it coincides
-            # with a time limit. Mask on device without synchronizing the batch.
-            self.torch.logical_and(timeouts, ~terminated, out=self._timeouts_buf)
+            # mjlab preserves independent failure and timeout masks, including
+            # a failure on the final step of a time-limited episode.
+            self._timeouts_buf.copy_(timeouts)
             extras["time_outs"] = self._timeouts_buf
         if state.final_observation is not None and "final_observation" not in extras:
             extras["final_observation"] = {
@@ -423,10 +423,6 @@ class RslRlVecEnvWrapper:
                     value = info[key]
                     extras[key] = ({k: self.torch.as_tensor(v, device=self.device) for k, v in value.items()}
                                    if isinstance(value, Mapping) else self.torch.as_tensor(value, device=self.device))
-        if "numerical_reset" in info:
-            extras["numerical_reset"] = self.torch.as_tensor(info["numerical_reset"], device=self.device)
-        if "numerical_failure" in info:
-            extras["numerical_failure"] = info["numerical_failure"]
         if "training_stats" in info:
             extras["training_stats"] = {
                 key: self.torch.as_tensor(value, device=self.device)

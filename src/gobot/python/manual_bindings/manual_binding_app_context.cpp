@@ -847,7 +847,7 @@ public:
         }
         SetProfileMs(kStepProfileMjStep, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
-        batch_runtime_.UpdateState(physics_state_);
+        batch_runtime_.UpdateState(physics_state_, post_step_sensing);
         SetProfileMs(kStepProfileExtractState, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
         const RealType control_dt = batch_runtime_.CommandRuntime().GetStepDt();

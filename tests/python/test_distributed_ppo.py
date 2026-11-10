@@ -19,7 +19,7 @@ def _worker(rank, directory, ports, mode):
                       MASTER_ADDR='127.0.0.1', MASTER_PORT=str(ports[0]), GLOO_SOCKET_IFNAME='lo',
                       OMP_NUM_THREADS='1')
     from gobot.rl.locomotion import training
-    from gobot.rl.locomotion.experiment import Experiment
+    from examples.locomotion.presets import Experiment, task_config, training_spec
     root = Path(directory)
     algorithms = []
     seeds = []
@@ -68,10 +68,12 @@ def _worker(rank, directory, ports, mode):
     config['num_steps_per_env'] = 4
     config['algorithm'].update(num_learning_epochs=2, num_mini_batches=2)
     run_dir = root / 'run'
+    task = task_config(exp)
+    evaluation_command = training_spec(robot='go1').config_factory().evaluation_command
 
     if mode in {'error', 'rollout_error'}:
         try:
-            training.run(exp, run_dir, backend='mujoco-cpu', no_eval=True, agent_cfg=config)
+            training.run(exp, run_dir, backend='mujoco-cpu', no_eval=True, agent_cfg=config, task_cfg=task, evaluation_command=evaluation_command)
         except (ValueError, RuntimeError) as error:
             expected = 'output directory is not empty' if mode == 'error' else "rollout failed: rank 1: ValueError: The observation group 'actor'"
             assert expected in str(error)
@@ -80,7 +82,7 @@ def _worker(rank, directory, ports, mode):
         assert not torch.distributed.is_initialized()
         return
 
-    summary = training.run(exp, run_dir, backend='mujoco-cpu', no_eval=mode != 'eval', agent_cfg=config)
+    summary = training.run(exp, run_dir, backend='mujoco-cpu', no_eval=mode != 'eval', agent_cfg=config, task_cfg=task, evaluation_command=evaluation_command)
     assert summary['world_size'] == 2
     assert summary['total_num_envs'] == 8
     assert not torch.distributed.is_initialized()
@@ -91,7 +93,7 @@ def _worker(rank, directory, ports, mode):
         initial_lr = algorithms[-1].learning_rate
         os.environ['MASTER_PORT'] = str(ports[1])
         resumed = training.run(replace(exp, iterations=1), root / 'resumed', backend='mujoco-cpu',
-                               no_eval=True, resume=run_dir / 'model_final.pt', agent_cfg=config)
+                               no_eval=True, resume=run_dir / 'model_final.pt', agent_cfg=config, task_cfg=task, evaluation_command=evaluation_command)
         assert before_update[-1] == (8, initial_lr)
         assert resumed['last_iteration'] == 2
         torch.save(algorithms[-1].save(), root / f'resumed_algorithm_{rank}.pt')
@@ -99,7 +101,7 @@ def _worker(rank, directory, ports, mode):
         os.environ['MASTER_PORT'] = str(ports[2])
         try:
             training.run(replace(exp, num_envs=2), root / 'wrong_shape', backend='mujoco-cpu',
-                         no_eval=True, resume=run_dir / 'model_final.pt', agent_cfg=config)
+                         no_eval=True, resume=run_dir / 'model_final.pt', agent_cfg=config, task_cfg=task, evaluation_command=evaluation_command)
         except ValueError as error:
             assert 'same world size and num_envs' in str(error)
         else:

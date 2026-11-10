@@ -1,4 +1,4 @@
-"""Versioned policy manifests shared by training, export, and playback."""
+"""Policy runtime contracts shared by training, export, and playback."""
 
 from __future__ import annotations
 
@@ -35,7 +35,6 @@ class PolicyManifest:
     """The complete runtime contract required to execute a trained policy."""
 
     task_name: str
-    task_version: str
     observation_spec: Mapping[str, Any]
     action_spec: Mapping[str, Any]
     joint_names: Sequence[str]
@@ -56,8 +55,6 @@ class PolicyManifest:
             )
         if not self.task_name:
             raise ValueError("policy manifest task_name must be non-empty")
-        if not self.task_version:
-            raise ValueError("policy manifest task_version must be non-empty")
         if float(self.physics_dt) <= 0.0:
             raise ValueError("policy manifest physics_dt must be greater than zero")
         if int(self.decimation) <= 0:
@@ -97,7 +94,7 @@ class PolicyManifest:
         return {
             "kind": POLICY_MANIFEST_KIND,
             "format_version": self.format_version,
-            "task": {"name": self.task_name, "version": self.task_version},
+            "task": {"name": self.task_name},
             "observation_spec": _jsonable(self.observation_spec),
             "action_spec": _jsonable(self.action_spec),
             "joint_names": list(self.joint_names),
@@ -134,7 +131,6 @@ class PolicyManifest:
         return cls(
             format_version=int(metadata.get("format_version", 0)),
             task_name=str(task.get("name", "")),
-            task_version=str(task.get("version", "")),
             observation_spec=_normalize_mapping(metadata.get("observation_spec", {}), "observation_spec"),
             action_spec=_normalize_mapping(metadata.get("action_spec", {}), "action_spec"),
             joint_names=tuple(str(name) for name in metadata.get("joint_names", ())),
@@ -163,7 +159,6 @@ class PolicyManifest:
         physics_dt: float,
         decimation: int,
         task_name: str | None = None,
-        task_version: str | None = None,
         scene_digest: str | None = None,
     ) -> None:
         validate_spec_metadata(self.observation_spec, observation_spec, kind="observation")
@@ -185,10 +180,6 @@ class PolicyManifest:
         if task_name is not None and str(task_name) != self.task_name:
             raise RuntimeError(
                 f"policy task mismatch: policy={self.task_name!r}, runtime={str(task_name)!r}"
-            )
-        if task_version is not None and str(task_version) != self.task_version:
-            raise RuntimeError(
-                f"policy task version mismatch: policy={self.task_version!r}, runtime={str(task_version)!r}"
             )
         if scene_digest is not None and self.scene_digest and str(scene_digest) != self.scene_digest:
             raise RuntimeError(

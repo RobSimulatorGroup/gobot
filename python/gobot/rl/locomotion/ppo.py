@@ -37,7 +37,7 @@ def rsl_rl_train_cfg(
             "obs_normalization": obs_normalization,
         },
         "algorithm": {
-            "class_name": "PPO",
+            "class_name": "rsl_rl.algorithms.PPO",
             "optimizer": "adam",
             "share_cnn_encoders": False,
             "num_learning_epochs": 5,

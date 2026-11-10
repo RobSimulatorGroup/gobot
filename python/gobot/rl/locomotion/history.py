@@ -6,7 +6,7 @@ import torch
 
 from gobot.rl.batch import BatchEnvState
 from gobot.rl.spec import ObservationSpec, SpecField
-from .motion import motion_features
+from .motion import MotionFeatureSpec, motion_features
 
 
 class HistoryVelocityEnv:
@@ -14,6 +14,7 @@ class HistoryVelocityEnv:
         if length < 1 or not env.cfg_obj.capture_transitions:
             raise ValueError("history requires positive length and pre-reset transition capture")
         self.env = env
+        self._motion_spec = MotionFeatureSpec(env.cfg_obj.joint_names, env.cfg_obj.state_link_names)
         self.length = int(length)
         self.proprio_dim = 9 + 3 * env.num_actions
         self.device = env.device
@@ -91,7 +92,7 @@ class HistoryVelocityEnv:
         self._render(self.env.state)
 
     def step(self, actions):
-        before = motion_features(self.env.locomotion_state(), device=self._device) if self.cfg_obj.state_link_names else None
+        before = motion_features(self.env.locomotion_state(), spec=self._motion_spec, device=self._device) if self.cfg_obj.state_link_names else None
         core = self.env.step(actions)
         terminal = core.info["transition_observation"]
         tail = self._tensor(terminal["actor"])
@@ -107,7 +108,7 @@ class HistoryVelocityEnv:
         self._state.final_observation = final_obs
         self._state.info.update(final_observation=final_obs, transition_observation=final_obs, _final_observation=done)
         if before is not None:
-            after = motion_features(core.info["transition_state"], device=self._device)
+            after = motion_features(core.info["transition_state"], spec=self._motion_spec, device=self._device)
             self._state.info["motion_pair"] = torch.cat((before, after), dim=1)
         return self._state
 

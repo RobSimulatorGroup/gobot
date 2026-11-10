@@ -56,24 +56,6 @@ def load(path):
     return data
 
 
-def initial_assignments(data, count, seed):
-    """Same initial levels/type populations in both frameworks, independently per rank."""
-    rows, cols = data['grid_shape']
-    limit = rows - 1 if data['max_init_level'] is None else min(rows - 1, data['max_init_level'])
-    if count < 1 or limit < 0:
-        raise ValueError('environment count must be positive and initial level nonnegative')
-    proportions = np.asarray(data['proportions'], dtype=np.float64)
-    counts = np.ones(cols, dtype=np.int64) if count >= cols else np.zeros(cols, dtype=np.int64)
-    ideal = proportions / proportions.sum() * (count - counts.sum())
-    floor = np.floor(ideal).astype(np.int64)
-    counts += floor
-    leftover = int(count - counts.sum())
-    counts[np.argsort(-(ideal - floor), kind='stable')[:leftover]] += 1
-    levels = np.random.default_rng(seed).integers(0, limit + 1, count, dtype=np.int64)
-    types = np.repeat(np.arange(cols, dtype=np.int64), counts)
-    return levels, types
-
-
 def assignment_digest(levels, types):
     return hashlib.sha256(np.stack((levels, types), 1).astype('<i8').tobytes()).hexdigest()
 

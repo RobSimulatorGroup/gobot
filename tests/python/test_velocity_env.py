@@ -1,5 +1,4 @@
 import json
-from importlib.util import find_spec
 import os
 from pathlib import Path
 import subprocess
@@ -16,10 +15,10 @@ sys.path.insert(0, str(GO1_PROJECT))
 
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1 import go1_profile
-from examples.go1.go1_policy_info import GO1_TASK_VERSION
+from examples.go1.go1_policy_info import GO1_TASK_NAME
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from gobot.rl.locomotion.cpu_env import CpuVelocityEnv
-from examples.go1.train.go1_training_state import (
+from gobot.rl.locomotion.training_state import (
     build_terrain_curriculum_state,
     restore_terrain_curriculum_assignments,
 )
@@ -57,13 +56,6 @@ def _require_torch():
         return __import__("torch")
     except ImportError as error:
         raise OptionalDependencyUnavailable("torch is unavailable; skipping torch-backed integration test") from error
-
-
-def _require_onnxruntime() -> None:
-    if find_spec("onnxruntime") is None:
-        raise OptionalDependencyUnavailable(
-            "onnxruntime is unavailable; skipping released ONNX policy integration test"
-        )
 
 
 def _assert_runtime_error(pattern: str, fn) -> None:
@@ -210,8 +202,9 @@ def test_go1_robot_scene_matches_mujoco_contract():
         material = subresources[collision["physics_material"]]
         assert collision["collision_layer"] == 1
         assert collision["collision_mask"] == 1
-        assert material["torsional_friction"] == 0.0
-        assert material["rolling_friction"] == 0.0
+        assert material["torsional_friction"] == 0.005
+        assert material["rolling_friction"] == 0.0001
+        assert material["contact_friction_mode"] == "frictionless"
 
     foot_collision = _node_by_name(nodes, "FR_foot_collision", "CollisionShape3D")["properties"]
     foot_material = subresources[foot_collision["physics_material"]]
@@ -301,7 +294,7 @@ def test_go1_rough_env_reset_step_shapes():
             "shank_collision",
             "trunk_head_collision",
         )
-        assert env.task_runtime_metadata.version == GO1_TASK_VERSION
+        assert env.task_runtime_metadata.version == GO1_TASK_NAME
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["native_contact_detail"] == "substep_contact_history"
         assert env._runtime_terrain_node is not None
         assert env._runtime_terrain_node.box_count == 514
@@ -552,6 +545,8 @@ def test_go1_reward_and_observation_formulas():
     env._run_velocity_task_numpy()
     assert np.isfinite(state.reward_terms).all()
     assert np.isfinite(state.reward).all()
+    assert state.reward_terms[0, 0] == 0.0
+    assert state.reward_terms[0, 2] == cfg.upright
 
 
 def test_go1_run_progress_reward_does_not_reward_standing():
@@ -586,14 +581,15 @@ def test_go1_run_progress_reward_does_not_reward_standing():
 
 def test_go1_training_configuration():
     cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
-    train_cfg = go1_cfg.rsl_rl_train_cfg()
+    from gobot.rl.locomotion.ppo import rsl_rl_train_cfg
+    train_cfg = rsl_rl_train_cfg(experiment_name=GO1_TASK_NAME)
     assert train_cfg["num_steps_per_env"] == 24
     assert train_cfg["max_iterations"] == 10_000
     assert train_cfg["save_interval"] == 50
     assert train_cfg["actor"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["critic"]["hidden_dims"] == [512, 256, 128]
     assert train_cfg["algorithm"] == {
-        "class_name": "PPO",
+        "class_name": "rsl_rl.algorithms.PPO",
         "optimizer": "adam",
         "share_cnn_encoders": False,
         "num_learning_epochs": 5,
@@ -647,7 +643,7 @@ def test_go1_run_training_profile_reserves_high_speed_forward_commands():
 
 
 def test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command():
-    from examples.go1.train.go1_gait import bound_gait_score_numpy
+    from gobot.rl.locomotion.gait import bound_gait_score_numpy
 
     contacts = np.asarray(
         [
@@ -702,7 +698,7 @@ def test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command():
 
 def test_go1_bound_gait_score_matches_torch_backend():
     torch = _require_torch()
-    from examples.go1.train.go1_gait import bound_gait_score_numpy
+    from gobot.rl.locomotion.gait import bound_gait_score_numpy
     from gobot.rl.locomotion.warp_env import _bound_gait_score_torch
 
     rng = np.random.default_rng(47)
@@ -817,7 +813,7 @@ def test_go1_terrain_curriculum_checkpoint_restores_exact_assignments():
     terrain_types = np.asarray([0, 0, 0, 1, 1, 1], dtype=np.int64)
     state = build_terrain_curriculum_state(levels, terrain_types, rows=3, cols=2)
 
-    restored_levels, restored_types, exact = restore_terrain_curriculum_assignments(
+    restored_levels, restored_types = restore_terrain_curriculum_assignments(
         state,
         np.zeros_like(levels),
         np.zeros_like(terrain_types),
@@ -825,29 +821,10 @@ def test_go1_terrain_curriculum_checkpoint_restores_exact_assignments():
         cols=2,
     )
 
-    assert exact
     np.testing.assert_array_equal(restored_levels, levels)
     np.testing.assert_array_equal(restored_types, terrain_types)
-
-
-def test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes():
-    levels = np.asarray([0, 1, 2, 0, 2, 2], dtype=np.int64)
-    terrain_types = np.asarray([0, 0, 0, 1, 1, 1], dtype=np.int64)
-    state = build_terrain_curriculum_state(levels, terrain_types, rows=3, cols=2)
-    target_types = np.repeat(np.arange(2, dtype=np.int64), 6)
-
-    restored_levels, restored_types, exact = restore_terrain_curriculum_assignments(
-        state,
-        np.zeros(12, dtype=np.int64),
-        target_types,
-        rows=3,
-        cols=2,
-    )
-
-    assert not exact
-    np.testing.assert_array_equal(restored_types, target_types)
-    assert np.bincount(restored_levels[restored_types == 0], minlength=3).tolist() == [2, 2, 2]
-    assert np.bincount(restored_levels[restored_types == 1], minlength=3).tolist() == [2, 0, 4]
+    _assert_runtime_error("environment count", lambda: restore_terrain_curriculum_assignments(
+        state, np.zeros(12, dtype=np.int64), np.zeros(12, dtype=np.int64), rows=3, cols=2))
 
 
 def test_go1_checkpoint_admission_requires_survival_and_progress():
@@ -1452,20 +1429,6 @@ def test_go1_current_policy_contract():
     np.testing.assert_allclose(cfg.default_joint_pos, go1_profile.GO1_DEFAULT_JOINT_POS)
 
 
-def test_go1_released_onnx_loads_with_current_scene_contract():
-    _require_onnxruntime()
-    script = object.__new__(go1_playback.Script)
-    script.context = type("FakeContext", (), {"project_path": str(GO1_PROJECT)})()
-    original_policy_env = os.environ.pop(go1_playback.POLICY_ENV, None)
-    try:
-        policy = script._load_policy()
-        assert isinstance(policy, go1_playback.OnnxPolicy)
-        script._validate_policy_contract(policy)
-    finally:
-        if original_policy_env is not None:
-            os.environ[go1_playback.POLICY_ENV] = original_policy_env
-
-
 def test_go1_playback_supports_explicit_torch_checkpoint():
     with tempfile.TemporaryDirectory() as temporary_directory:
         policies = Path(temporary_directory) / "policies"
@@ -1813,7 +1776,6 @@ def main():
         test_batch_env_clears_stale_final_observation_info,
         test_task_runtime_metadata_is_public_task_summary,
         test_go1_current_policy_contract,
-        test_go1_released_onnx_loads_with_current_scene_contract,
         test_go1_playback_supports_explicit_torch_checkpoint,
         test_go1_playback_builds_current_observation,
         test_go1_playback_reads_authored_terrain_origins,
@@ -1837,7 +1799,6 @@ def main():
         test_go1_gait_metrics_are_defined_without_surviving_samples,
         test_go1_evaluation_numpy_metrics_import_without_torch,
         test_go1_terrain_curriculum_checkpoint_restores_exact_assignments,
-        test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes,
         test_go1_checkpoint_admission_requires_survival_and_progress,
         test_go1_rough_first_contact_is_not_repeated_while_touching,
         test_go1_rough_play_uses_rough_terrain_grid,

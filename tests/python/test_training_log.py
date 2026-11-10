@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from gobot.rl.locomotion.distributed import DistributedTraining
-from gobot.rl.locomotion.experiment import Experiment, task_config
+from examples.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.training_log import TrainingStatistics, format_training_log, step_statistics
 
 
@@ -109,7 +109,7 @@ def test_console_shows_global_steps_and_missing_samples():
                    learning_s=.1, episode_reward=None, episode_steps=None, action_std=.87,
                    learning_rate=.001, world_size=8, total_num_envs=8192, episodes_completed=0,
                    log={'Episode_Reward/upright': None, 'Episode_Termination/fell_over': 0},
-                   action_clip_fraction=0., joint_effort_saturation_fraction=.01, numerical_resets=0,
+                   action_clip_fraction=0., joint_effort_saturation_fraction=.01,
                    iteration_s=.64, elapsed_s=46.)
     text = format_training_log(metrics, target_iteration=18000, remaining_iterations=17932, average_iteration_s=.64)
     assert 'Learning iteration 67/18000' in text and '13,369,344' in text

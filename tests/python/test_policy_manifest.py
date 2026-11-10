@@ -33,7 +33,6 @@ def make_manifest() -> PolicyManifest:
     observation, action = make_specs()
     return PolicyManifest(
         task_name="test_velocity",
-        task_version="test_velocity_v1",
         observation_spec=observation.metadata(),
         action_spec=action.metadata(),
         joint_names=("left", "right"),
@@ -63,7 +62,6 @@ def test_manifest_round_trip_and_runtime_validation() -> None:
         physics_dt=0.005,
         decimation=4,
         task_name="test_velocity",
-        task_version="test_velocity_v1",
         scene_digest="sha256:test",
     )
 

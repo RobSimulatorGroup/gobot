@@ -1,4 +1,5 @@
 from __future__ import annotations
+from gobot.rl.locomotion.config import VELOCITY_REWARD_TERM_NAMES
 
 from copy import deepcopy
 from pathlib import Path
@@ -23,7 +24,6 @@ from examples.go1.tools.go1_parity import (  # noqa: E402
 )
 from examples.go1.train.go1_velocity_cfg import (  # noqa: E402
     GO1_JOINT_NAMES,
-    GO1_ROUGH_REWARD_TERM_NAMES,
 )
 from examples.go1.tools.compare_go1_traces import compare_traces  # noqa: E402
 
@@ -41,7 +41,7 @@ def main() -> int:
     assert metadata["seed"] == PARITY_SEED
     assert metadata["terrain_seed"] == PARITY_TERRAIN_SEED
     assert metadata["joint_names"] == list(GO1_JOINT_NAMES)
-    assert metadata["reward_names"] == list(GO1_ROUGH_REWARD_TERM_NAMES)
+    assert metadata["reward_names"] == list(VELOCITY_REWARD_TERM_NAMES)
     assert metadata["actor_dim"] == 235
     assert metadata["critic_dim"] == 259
     assert len(trace["snapshots"]) == len(PARITY_ACTIONS) + 1

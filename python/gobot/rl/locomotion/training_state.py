@@ -20,8 +20,6 @@ def build_terrain_curriculum_state(
     levels_np = np.asarray(levels, dtype=np.int64).reshape(-1)
     types_np = np.asarray(terrain_types, dtype=np.int64).reshape(-1)
     _validate_assignments(levels_np, types_np, rows=rows, cols=cols)
-    histogram = np.zeros((int(cols), int(rows)), dtype=np.int64)
-    np.add.at(histogram, (types_np, levels_np), 1)
     return {
         "version": TERRAIN_CURRICULUM_STATE_VERSION,
         "rows": int(rows),
@@ -29,7 +27,6 @@ def build_terrain_curriculum_state(
         "num_envs": int(levels_np.size),
         "levels": levels_np.copy(),
         "types": types_np.copy(),
-        "level_histogram_by_type": histogram,
     }
 
 
@@ -40,7 +37,7 @@ def restore_terrain_curriculum_assignments(
     *,
     rows: int,
     cols: int,
-) -> tuple[np.ndarray, np.ndarray, bool]:
+) -> tuple[np.ndarray, np.ndarray]:
     version = int(state.get("version", 0))
     if version != TERRAIN_CURRICULUM_STATE_VERSION:
         raise RuntimeError(f"unsupported terrain curriculum checkpoint version {version}")
@@ -58,43 +55,10 @@ def restore_terrain_curriculum_assignments(
 
     saved_levels = np.asarray(state.get("levels", ()), dtype=np.int64).reshape(-1)
     saved_types = np.asarray(state.get("types", ()), dtype=np.int64).reshape(-1)
-    if saved_levels.size == current_levels_np.size and saved_types.size == current_types_np.size:
-        _validate_assignments(saved_levels, saved_types, rows=rows, cols=cols)
-        return saved_levels.copy(), saved_types.copy(), True
-
-    histogram = np.asarray(state.get("level_histogram_by_type", ()), dtype=np.int64)
-    if histogram.shape != (int(cols), int(rows)):
-        if saved_levels.size == 0 or saved_levels.size != saved_types.size:
-            raise RuntimeError("terrain curriculum checkpoint has no usable assignment histogram")
-        _validate_assignments(saved_levels, saved_types, rows=rows, cols=cols)
-        histogram = np.zeros((int(cols), int(rows)), dtype=np.int64)
-        np.add.at(histogram, (saved_types, saved_levels), 1)
-
-    restored_levels = current_levels_np.copy()
-    for terrain_type in range(int(cols)):
-        target_ids = np.flatnonzero(current_types_np == terrain_type)
-        if target_ids.size == 0:
-            continue
-        counts = _resample_histogram_counts(histogram[terrain_type], int(target_ids.size))
-        values = np.repeat(np.arange(int(rows), dtype=np.int64), counts)
-        # Keep environment index and difficulty from becoming monotonically correlated.
-        np.random.default_rng(0x6B07 + terrain_type).shuffle(values)
-        restored_levels[target_ids] = values
-    return restored_levels, current_types_np.copy(), False
-
-
-def _resample_histogram_counts(histogram: np.ndarray, count: int) -> np.ndarray:
-    histogram = np.asarray(histogram, dtype=np.float64).reshape(-1)
-    if np.any(histogram < 0.0):
-        raise RuntimeError("terrain curriculum checkpoint histogram contains negative counts")
-    if not np.any(histogram > 0.0):
-        histogram = np.ones_like(histogram)
-    ideal = histogram / float(histogram.sum()) * int(count)
-    counts = np.floor(ideal).astype(np.int64)
-    remainder = int(count) - int(counts.sum())
-    if remainder > 0:
-        counts[np.argsort(-(ideal - counts))[:remainder]] += 1
-    return counts
+    if saved_levels.size != current_levels_np.size or saved_types.size != current_types_np.size:
+        raise RuntimeError("terrain curriculum checkpoint environment count does not match")
+    _validate_assignments(saved_levels, saved_types, rows=rows, cols=cols)
+    return saved_levels.copy(), saved_types.copy()
 
 
 def _validate_assignments(

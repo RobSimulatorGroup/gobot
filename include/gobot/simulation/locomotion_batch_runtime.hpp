@@ -75,8 +75,11 @@ public:
 
     void ClearResetContacts(std::span<const std::size_t> environment_indices);
 
-    void UpdateState(const PhysicsRobotBatchStepResult& physics_state);
+    // Retain the last ray sample while extracting a physics substep for rewards.
+    void UpdateState(const PhysicsRobotBatchStepResult& physics_state, bool update_rays = true);
 
+    // Advance timers from completed substeps without replacing the instantaneous
+    // contacts/forces populated by UpdateState. Sample peak heights from that state.
     void UpdateFootHistory(const PhysicsRobotBatchStepResult& physics_state,
                            std::span<const float> foot_heights,
                            RealType step_dt,
