@@ -688,3 +688,77 @@ TEST(TestResourceFormatMJCF, preserves_collision_exclusions_through_scene_and_ph
     gobot::Object::Delete(clone);
     gobot::Object::Delete(root);
 }
+
+TEST(TestResourceFormatMJCF, preserves_constraint_response_through_packed_scene) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) GTEST_SKIP();
+    const auto path = std::filesystem::temp_directory_path() / "gobot_constraint_response.xml";
+    {
+        std::ofstream file(path);
+        file << R"(<mujoco model="constraints"><compiler angle="radian"/>
+          <worldbody><body name="base">
+            <joint name="hinge" range="-1 1" solreflimit="-2500 -100" solimplimit="0 0.99 0.01 0.5 2"/>
+            <geom name="contact" type="sphere" size="0.1" solimp="0.9 0.99 0.003 0.5 2"/>
+            <body name="tip" pos="0 0 0.2">
+              <joint name="soft" range="-1 1" solreflimit="0.03 0.8"/>
+              <geom type="sphere" size="0.1"/>
+            </body>
+          </body></worldbody></mujoco>)";
+    }
+    auto loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    auto scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(path.string()));
+    ASSERT_TRUE(scene.IsValid());
+    auto* root = scene->Instantiate();
+    ASSERT_NE(root, nullptr);
+    auto packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(root));
+    auto* clone = packed->Instantiate();
+    ASSERT_NE(clone, nullptr);
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(clone, "hinge"));
+    ASSERT_NE(joint, nullptr);
+    EXPECT_DOUBLE_EQ(joint->GetLimitStiffness(), 2500);
+    EXPECT_DOUBLE_EQ(joint->GetLimitDamping(), 100);
+    const std::vector<gobot::RealType> limit{0, .99, .01, .5, 2};
+    EXPECT_EQ(joint->GetLimitImpedance(), limit);
+    // Invalid curves do not corrupt existing authoring data.
+    joint->SetLimitImpedance({0, 1});
+    EXPECT_EQ(joint->GetLimitImpedance(), limit);
+    auto* soft = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(clone, "soft"));
+    ASSERT_NE(soft, nullptr);
+    EXPECT_NEAR(soft->GetLimitCompliance(), .0009, 1.e-9);
+    EXPECT_NEAR(soft->GetLimitDampingRatio(), .8, 1.e-7);
+    auto* shape = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(clone, "contact"));
+    ASSERT_NE(shape, nullptr);
+    const std::vector<gobot::RealType> impedance{.9, .99, .003, .5, 2};
+    EXPECT_EQ(shape->GetPhysicsMaterial()->GetContactImpedance(), impedance);
+    std::string error;
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(clone, &compiled, &error)) << error;
+    gobot::PhysicsSceneArtifact artifact;
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
+        gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error)) << error;
+    EXPECT_NE(artifact.content.find("solreflimit=\"-2500 -100\""), std::string::npos);
+
+    EXPECT_NE(artifact.content.find("solreflimit=\"0.03 0.8\""), std::string::npos);
+    const auto compiled_path = path.parent_path() / "gobot_constraint_response_compiled.xml";
+    { std::ofstream file(compiled_path); file << artifact.content; }
+    auto reimported = gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(compiled_path.string()));
+    ASSERT_TRUE(reimported.IsValid());
+    auto* rebuilt = reimported->Instantiate();
+    auto* rebuilt_joint = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(rebuilt, "constraints_hinge"));
+    auto* rebuilt_shape = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(rebuilt, "constraints_contact"));
+    ASSERT_NE(rebuilt_joint, nullptr);
+    ASSERT_NE(rebuilt_shape, nullptr);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_NEAR(rebuilt_joint->GetLimitImpedance()[i], limit[i], 1.e-6);
+        EXPECT_NEAR(rebuilt_shape->GetPhysicsMaterial()->GetContactImpedance()[i], impedance[i], 1.e-6);
+    }
+    gobot::Object::Delete(rebuilt);
+    compiled.snapshot.robots.front().joints.front().limit_impedance = {0, 1};
+    EXPECT_FALSE(gobot::PhysicsServer::CompileSceneArtifact(
+        gobot::PhysicsBackendType::MuJoCoCpu, compiled.snapshot, {}, &artifact, &error));
+    EXPECT_NE(error.find("Invalid constraint"), std::string::npos);
+    std::filesystem::remove(compiled_path);
+    gobot::Object::Delete(clone);
+    gobot::Object::Delete(root);
+    std::filesystem::remove(path);
+}

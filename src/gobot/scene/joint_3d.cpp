@@ -12,6 +12,7 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
+#include "gobot/core/constraint_impedance.hpp"
 
 namespace gobot {
 
@@ -128,6 +129,56 @@ void Joint3D::SetFrictionLoss(RealType friction_loss) {
 RealType Joint3D::GetFrictionLoss() const {
     return friction_loss_;
 }
+
+void Joint3D::SetLimitStiffness(RealType value) {
+    if (!std::isfinite(value) || value < 0) {
+        LOG_ERROR("Joint3D limit_stiffness must be finite and non-negative.");
+        return;
+    }
+    limit_stiffness_ = value;
+}
+
+RealType Joint3D::GetLimitStiffness() const { return limit_stiffness_; }
+
+void Joint3D::SetLimitDamping(RealType value) {
+    if (!std::isfinite(value) || value < 0) {
+        LOG_ERROR("Joint3D limit_damping must be finite and non-negative.");
+        return;
+    }
+    limit_damping_ = value;
+}
+
+RealType Joint3D::GetLimitDamping() const { return limit_damping_; }
+
+void Joint3D::SetLimitCompliance(RealType value) {
+    if (!std::isfinite(value) || value < 0) {
+        LOG_ERROR("Joint3D limit_compliance must be finite and non-negative.");
+        return;
+    }
+    limit_compliance_ = value;
+}
+
+RealType Joint3D::GetLimitCompliance() const { return limit_compliance_; }
+
+void Joint3D::SetLimitDampingRatio(RealType value) {
+    if (!std::isfinite(value) || value < 0) {
+        LOG_ERROR("Joint3D limit_damping_ratio must be finite and non-negative.");
+        return;
+    }
+    limit_damping_ratio_ = value;
+}
+
+RealType Joint3D::GetLimitDampingRatio() const { return limit_damping_ratio_; }
+
+void Joint3D::SetLimitImpedance(const std::vector<RealType>& value) {
+    if (!IsValidConstraintImpedance(value)) {
+        LOG_ERROR("Invalid joint limit impedance curve.");
+        return;
+    }
+    limit_impedance_ = value;
+}
+
+const std::vector<RealType>& Joint3D::GetLimitImpedance() const { return limit_impedance_; }
 
 void Joint3D::SetActuatorConfig(const Ref<JointActuatorConfig>& config) {
     actuator_config_ = config;
@@ -415,6 +466,11 @@ GOBOT_REGISTRATION {
             .property("damping", &Joint3D::GetDamping, &Joint3D::SetDamping)
             .property("armature", &Joint3D::GetArmature, &Joint3D::SetArmature)
             .property("friction_loss", &Joint3D::GetFrictionLoss, &Joint3D::SetFrictionLoss)
+            .property("limit_stiffness", &Joint3D::GetLimitStiffness, &Joint3D::SetLimitStiffness)
+            .property("limit_damping", &Joint3D::GetLimitDamping, &Joint3D::SetLimitDamping)
+            .property("limit_compliance", &Joint3D::GetLimitCompliance, &Joint3D::SetLimitCompliance)
+            .property("limit_damping_ratio", &Joint3D::GetLimitDampingRatio, &Joint3D::SetLimitDampingRatio)
+            .property("limit_impedance", &Joint3D::GetLimitImpedance, &Joint3D::SetLimitImpedance)
             .property("actuator_config", &Joint3D::GetActuatorConfig, &Joint3D::SetActuatorConfig)
             .property("drive_mode", &Joint3D::GetDriveMode, &Joint3D::SetDriveMode)
             .property("drive_stiffness", &Joint3D::GetDriveStiffness, &Joint3D::SetDriveStiffness)

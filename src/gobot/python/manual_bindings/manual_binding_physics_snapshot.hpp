@@ -19,6 +19,7 @@ inline py::dict PhysicsSnapshotMaterial(const PhysicsMaterialSnapshot& material)
     result["restitution"] = material.restitution;
     result["compliance"] = material.contact_compliance;
     result["damping"] = material.contact_damping;
+    result["contact_impedance"] = material.contact_impedance;
     return result;
 }
 

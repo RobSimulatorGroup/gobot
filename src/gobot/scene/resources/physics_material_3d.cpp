@@ -8,6 +8,7 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
+#include "gobot/core/constraint_impedance.hpp"
 
 namespace gobot {
 
@@ -28,6 +29,21 @@ GOBOT_PHYSICS_MATERIAL_PROPERTY(ContactCompliance, contact_compliance_)
 GOBOT_PHYSICS_MATERIAL_PROPERTY(ContactDamping, contact_damping_)
 
 #undef GOBOT_PHYSICS_MATERIAL_PROPERTY
+
+void PhysicsMaterial3D::SetContactImpedance(const std::vector<RealType>& value) {
+    if (!IsValidConstraintImpedance(value)) {
+        LOG_ERROR("Invalid contact impedance curve.");
+        return;
+    }
+    if (contact_impedance_ != value) {
+        contact_impedance_ = value;
+        MarkChanged();
+    }
+}
+
+const std::vector<RealType>& PhysicsMaterial3D::GetContactImpedance() const {
+    return contact_impedance_;
+}
 
 void PhysicsMaterial3D::SetContactPriority(int value) {
     if (contact_priority_ != value) {
@@ -79,6 +95,9 @@ GOBOT_REGISTRATION {
             .property("contact_damping",
                       &gobot::PhysicsMaterial3D::GetContactDamping,
                       &gobot::PhysicsMaterial3D::SetContactDamping)
+            .property("contact_impedance",
+                      &gobot::PhysicsMaterial3D::GetContactImpedance,
+                      &gobot::PhysicsMaterial3D::SetContactImpedance)
             .property("contact_priority",
                       &gobot::PhysicsMaterial3D::GetContactPriority,
                       &gobot::PhysicsMaterial3D::SetContactPriority)

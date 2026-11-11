@@ -1,4 +1,5 @@
 #include "manual_bindings_internal.hpp"
+#include "gobot/core/constraint_impedance.hpp"
 #include "gobot/scene/resources/triangle_mesh_shape_3d.hpp"
 
 #include "gobot/scene/resources/array_mesh.hpp"
@@ -976,6 +977,14 @@ Ref<PhysicsMaterial3D> PhysicsMaterialFromPython(const py::handle& value) {
     set_if_present("restitution", [&material](RealType v) { material->SetRestitution(v); });
     set_if_present("contact_compliance", [&material](RealType v) { material->SetContactCompliance(v); });
     set_if_present("contact_damping", [&material](RealType v) { material->SetContactDamping(v); });
+    if (source.contains("contact_impedance")) {
+        const auto impedance = py::cast<std::vector<RealType>>(source["contact_impedance"]);
+        if (!IsValidConstraintImpedance(impedance)) throw py::value_error("invalid contact_impedance curve");
+        material->SetContactImpedance(impedance);
+    }
+    if (source.contains("contact_priority")) {
+        material->SetContactPriority(py::cast<int>(source["contact_priority"]));
+    }
     if (source.contains("contact_friction_mode")) {
         const auto mode = py::cast<std::string>(source["contact_friction_mode"]);
         if (mode != "auto" && mode != "frictionless" && mode != "sliding" &&
@@ -1383,6 +1392,11 @@ py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     result["damping"] = joint.damping;
     result["armature"] = joint.armature;
     result["friction_loss"] = joint.friction_loss;
+    result["limit_stiffness"] = joint.limit_stiffness;
+    result["limit_damping"] = joint.limit_damping;
+    result["limit_compliance"] = joint.limit_compliance;
+    result["limit_damping_ratio"] = joint.limit_damping_ratio;
+    result["limit_impedance"] = joint.limit_impedance;
     result["joint_position"] = joint.joint_position;
     result["initial_position"] = joint.initial_position;
     result["drive_mode"] = joint.drive_mode;

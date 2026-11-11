@@ -5,6 +5,7 @@
  */
 
 #include "gobot/physics/physics_scene_compiler.hpp"
+#include "gobot/core/constraint_impedance.hpp"
 
 #include <algorithm>
 #include <array>
@@ -117,6 +118,7 @@ PhysicsMaterialSnapshot CapturePhysicsMaterial(const Ref<PhysicsMaterial3D>& mat
     snapshot.contact_damping = material->GetContactDamping();
     snapshot.contact_friction_mode = material->GetContactFrictionMode();
     snapshot.contact_priority = material->GetContactPriority();
+    snapshot.contact_impedance = material->GetContactImpedance();
     return snapshot;
 }
 
@@ -650,6 +652,11 @@ void CollectRobotNodes(const Node* node,
         snapshot.damping = joint->GetDamping();
         snapshot.armature = joint->GetArmature();
         snapshot.friction_loss = joint->GetFrictionLoss();
+        snapshot.limit_stiffness = joint->GetLimitStiffness();
+        snapshot.limit_damping = joint->GetLimitDamping();
+        snapshot.limit_compliance = joint->GetLimitCompliance();
+        snapshot.limit_damping_ratio = joint->GetLimitDampingRatio();
+        snapshot.limit_impedance = joint->GetLimitImpedance();
         if (const Ref<JointActuatorConfig>& config = joint->GetActuatorConfig();
             config.IsValid()) {
             snapshot.actuator_model.command_delay_steps = config->GetCommandDelaySteps();
@@ -868,7 +875,8 @@ bool ValidateContactParameters(const PhysicsMaterialSnapshot& material,
     const bool valid_material = std::ranges::all_of(values, [](RealType value) {
         return std::isfinite(value) && value >= 0.0;
     });
-    if (!valid_material || material.restitution > 1.0 ||
+    if (!valid_material || !IsValidConstraintImpedance(material.contact_impedance) ||
+        material.restitution > 1.0 ||
         !std::isfinite(contact_offset) || contact_offset < 0.0 ||
         !std::isfinite(rest_offset) || rest_offset > contact_offset) {
         AddDiagnostic(compiled_scene,

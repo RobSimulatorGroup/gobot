@@ -875,6 +875,14 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
                 dof_address >= 0 && dof_address < model->nv
                         ? static_cast<RealType>(model->dof_frictionloss[dof_address])
                         : static_cast<RealType>(0.0));
+    const mjtNum* limit_response = model->jnt_solref + 2 * joint_id;
+    const bool spring_response = limit_response[0] <= 0 && limit_response[1] <= 0;
+    AddProperty(node_data, "limit_stiffness", RealType(spring_response ? -limit_response[0] : 0));
+    AddProperty(node_data, "limit_damping", RealType(spring_response ? -limit_response[1] : 0));
+    AddProperty(node_data, "limit_compliance", RealType(spring_response ? 0 : limit_response[0] * limit_response[0]));
+    AddProperty(node_data, "limit_damping_ratio", RealType(spring_response ? 1 : limit_response[1]));
+    const mjtNum* limit_impedance = model->jnt_solimp + 5 * joint_id;
+    AddProperty(node_data, "limit_impedance", std::vector<RealType>(limit_impedance, limit_impedance + 5));
     RealType initial_joint_position = 0.0;
     if (model->jnt_type[joint_id] == mjJNT_HINGE || model->jnt_type[joint_id] == mjJNT_SLIDE) {
         const int qpos_address = model->jnt_qposadr[joint_id];
@@ -981,6 +989,8 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
     material->SetTorsionalFriction(friction.y());
     material->SetRollingFriction(friction.z());
     material->SetContactPriority(model->geom_priority[geom_id]);
+    const mjtNum* impedance = model->geom_solimp + 5 * geom_id;
+    material->SetContactImpedance(std::vector<RealType>(impedance, impedance + 5));
     switch (model->geom_condim[geom_id]) {
         case 1: material->SetContactFrictionMode("frictionless"); break;
         case 3: material->SetContactFrictionMode("sliding"); break;

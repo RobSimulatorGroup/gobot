@@ -79,6 +79,7 @@ examples/newton_g1/assets/*
 /mujoco_uni/
 /warp/
 /Taccel/
+/MimicKit/
 /genesis-world/
 /libuipc-samples/
 

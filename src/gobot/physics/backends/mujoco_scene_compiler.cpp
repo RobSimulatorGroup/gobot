@@ -1,3 +1,4 @@
+#include "gobot/core/constraint_impedance.hpp"
 /*
  * The gobot is a robot simulation platform.
  * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
@@ -315,6 +316,7 @@ void ConfigureMaterialContact(mjsGeom* geom,
             : 0.02;
     const RealType restitution_damping = std::max<RealType>(
             0.001, material.contact_damping * (1.0 - material.restitution));
+    std::copy(material.contact_impedance.begin(), material.contact_impedance.end(), geom->solimp);
     geom->solref[0] = compliance_time;
     geom->solref[1] = restitution_damping;
     geom->margin = contact_offset;
@@ -638,6 +640,14 @@ void AddJointToBody(mjsBody* body,
     mujoco_joint->damping[0] = static_cast<double>(joint.damping);
     mujoco_joint->armature = static_cast<double>(joint.armature);
     mujoco_joint->frictionloss = static_cast<double>(joint.friction_loss);
+    std::copy(joint.limit_impedance.begin(), joint.limit_impedance.end(), mujoco_joint->solimp_limit);
+    if (joint.limit_stiffness > 0 || joint.limit_damping > 0) {
+        mujoco_joint->solref_limit[0] = -joint.limit_stiffness;
+        mujoco_joint->solref_limit[1] = -joint.limit_damping;
+    } else {
+        mujoco_joint->solref_limit[0] = joint.limit_compliance > 0 ? std::sqrt(joint.limit_compliance) : 0.02;
+        mujoco_joint->solref_limit[1] = joint.limit_damping_ratio;
+    }
 }
 
 void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& joint, bool control_is_position) {
@@ -773,6 +783,32 @@ private:
 
 bool ModelBuilder::Compile() {
     scene_artifact_ = {};
+    // CompileSceneArtifact also accepts owned snapshots directly. Validate
+    // curve sizes before copying them into the fixed-size backend arrays.
+    const auto material_valid = [](const auto& value) {
+        return IsValidConstraintImpedance(value.material.contact_impedance);
+    };
+    bool valid_constraints = std::all_of(scene_snapshot_.loose_collision_shapes.begin(),
+                                         scene_snapshot_.loose_collision_shapes.end(), material_valid) &&
+                             std::all_of(scene_snapshot_.terrains.begin(), scene_snapshot_.terrains.end(), material_valid);
+    for (const auto& robot : scene_snapshot_.robots) {
+        for (const auto& link : robot.links) {
+            valid_constraints = valid_constraints && std::all_of(
+                    link.collision_shapes.begin(), link.collision_shapes.end(), material_valid);
+        }
+        for (const auto& joint : robot.joints) {
+            const std::array<RealType, 4> response{joint.limit_stiffness, joint.limit_damping,
+                                                 joint.limit_compliance, joint.limit_damping_ratio};
+            valid_constraints = valid_constraints && IsValidConstraintImpedance(joint.limit_impedance) &&
+                    std::all_of(response.begin(), response.end(), [](RealType value) {
+                        return std::isfinite(value) && value >= 0;
+                    });
+        }
+    }
+    if (!valid_constraints) {
+        SetLastError("Invalid constraint impedance curve or joint limit response.");
+        return false;
+    }
     for (const auto& shape : scene_snapshot_.loose_collision_shapes) {
         if (!shape.disabled && shape.type == PhysicsShapeType::Mesh && !shape.convex) {
             SetLastError("MuJoCo does not preserve non-convex TriangleMeshShape3D contacts: " + shape.scene_path);
