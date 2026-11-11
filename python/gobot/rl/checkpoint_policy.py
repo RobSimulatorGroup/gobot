@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+import math
 
 from gobot.rl.policy import PolicyManifest
 
@@ -55,6 +56,9 @@ class CheckpointPolicy(torch.nn.Module):
             if variance is not None:
                 std = torch.sqrt(torch.clamp(variance, min=0.0))
         self.use_obs_normalizer = mean is not None
+        self.obs_normalizer_clip = manifest.model.get('obs_normalizer_clip')
+        if self.obs_normalizer_clip is not None and (not math.isfinite(self.obs_normalizer_clip) or self.obs_normalizer_clip <= 0):
+            raise ValueError('obs_normalizer_clip must be finite and positive')
         self.obs_normalizer_eps = float(manifest.model.get("obs_normalizer_eps", 1.e-2))
         if mean is None:
             mean = torch.zeros((self.obs_size,), dtype=torch.float32)
@@ -66,11 +70,29 @@ class CheckpointPolicy(torch.nn.Module):
             )
         self.register_buffer("obs_mean", mean.reshape(1, -1))
         self.register_buffer("obs_std", std.reshape(1, -1))
+        distribution = manifest.model.get('distribution_cfg') or {}
+        scale = torch.ones(self.action_size)
+        offset = torch.zeros(self.action_size)
+        if distribution.get('class_name') == 'gobot.rl.motion_amp.models:JointRangeGaussian':
+            scale = torch.as_tensor(distribution['action_scale'], dtype=torch.float32)
+            offset = torch.as_tensor(distribution['action_offset'], dtype=torch.float32)
+            if (scale.shape != (self.action_size,) or offset.shape != (self.action_size,)
+                    or not bool(torch.isfinite(scale).all() and torch.isfinite(offset).all())
+                    or not bool((scale > 0).all())):
+                raise ValueError('invalid checkpoint action scale or offset')
+            for name, expected in (('scale', scale), ('offset', offset)):
+                saved = actor_state.get(f'distribution.output_transform.{name}')
+                if saved is None or not torch.equal(saved.detach().cpu(), expected):
+                    raise ValueError('checkpoint action transform does not match manifest')
+        self.register_buffer('action_scale', scale)
+        self.register_buffer('action_offset', offset)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         if self.use_obs_normalizer:
             obs = (obs - self.obs_mean) / (self.obs_std + self.obs_normalizer_eps)
-        return self.mlp(obs)
+        if self.obs_normalizer_clip is not None:
+            obs = obs.clamp(-self.obs_normalizer_clip,self.obs_normalizer_clip)
+        return self.mlp(obs) * self.action_scale + self.action_offset
 
 
 def checkpoint_mlp_layer_indices(

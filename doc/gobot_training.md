@@ -10,6 +10,7 @@
 | `go1-velocity` / `g1-velocity` | 标准速度控制 PPO |
 | `go1-gait` | PPO 加步态相位奖励 |
 | `g1-amp` | PPO 加动作先验 |
+| `g1-motion-amp` | RSL-RL PPO 加动作判别器，Gobot 场景仿真 |
 | `g1-tracking` | SuperMimic 动作跟踪 |
 
 ```bash
@@ -21,8 +22,15 @@ python -m gobot.rl.train go1-velocity \
 这些工作流支持 `mujoco-cpu` 和 `mujoco-warp`。CPU 仿真可通过 `--device cuda:0`
 配合 CUDA learner；Warp 需要 CUDA。CPU 是语义基准，后端不能静默回退。
 
-速度任务用 `--terrain flat|rough`。AMP 和步态任务还可使用 `mixed`。
-PPO/AMP 的 `--iterations` 表示本次运行的更新次数；动作跟踪的 `--stop-iteration`
+动作模仿任务 `g1-motion-amp` 使用默认对齐配方，配置、数据与命令见
+[训练说明](../examples/g1/mimickit/README.md)。它复用 RSL-RL 的 PPO、runner 和日志，
+使用从 MimicKit 导出的 G1 动作数据，没有额外的 Gymnasium 依赖。
+该任务的 CPU 后端使用 CPU learner，更新次数通过 `--set updates=2000` 设置。
+保留 COM-v2 观测与固定动作噪声的 SGD 配方，checkpoint 校验场景、控制和数据协议。
+`--resume` 恢复模型、优化器、判别器、replay 和 RNG，再开始新的物理回合。
+
+速度任务用 `--terrain flat|rough`。`g1-amp` 和步态任务还可使用 `mixed`。
+这些通用 PPO/AMP 任务的 `--iterations` 表示本次运行的更新次数；动作跟踪的 `--stop-iteration`
 表示绝对控制步停止点，不改变学习率调度。
 
 ## 标准速度训练

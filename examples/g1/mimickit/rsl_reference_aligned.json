@@ -1,0 +1,38 @@
+{
+  "velocity_reference": "base_body_com",
+  "output": "logs/g1-motion-amp/walk_s1_aligned",
+  "agent": {
+    "actor": {
+      "class_name": "gobot.rl.motion_amp.models:ReferenceMLP",
+      "normalization_samples": 100000000,
+      "distribution_cfg": {
+        "class_name": "gobot.rl.motion_amp.models:JointRangeGaussian",
+        "init_std": 0.05
+      }
+    },
+    "critic": {
+      "class_name": "gobot.rl.motion_amp.models:ReferenceMLP",
+      "normalization_samples": 100000000
+    },
+    "algorithm": {
+      "optimizer": "sgd",
+      "optimizer_momentum": 0.9,
+      "learning_rate": 0.0001,
+      "schedule": "fixed",
+      "num_learning_epochs": 5,
+      "num_mini_batches": 8,
+      "use_clipped_value_loss": false,
+      "max_grad_norm": 1000000000.0,
+      "advantage_clip": 4.0
+    }
+  },
+  "amp": {
+    "optimizer": "sgd",
+    "momentum": 0.9,
+    "batch_size": 8192,
+    "updates_per_iteration": 32,
+    "normalization_update": "rollout",
+    "normalization_samples": 200000000,
+    "initialization": "reference"
+  }
+}

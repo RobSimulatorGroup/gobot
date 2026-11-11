@@ -18,7 +18,7 @@ class ArticulationBatch:
     def __init__(self, *, project_path, scene_path, spec: RobotBatchSpec, num_envs,
                  backend='mujoco-cpu', device=None, physics_dt=.005, decimation=4,
                  solver_settings=None, contact_links=(), capture_graphs=True, nconmax=128, njmax=500,
-                 sliding_friction=None, deterministic=False):
+                 sliding_friction=None, deterministic=False, contact_scope='all'):
         if int(num_envs) != num_envs or num_envs <= 0 or int(decimation) != decimation or decimation <= 0:
             raise ValueError('batch size and decimation must be positive integers')
         if not math.isfinite(physics_dt) or physics_dt <= 0:
@@ -32,6 +32,12 @@ class ArticulationBatch:
         self.device = str(device or ('cuda:0' if backend=='mujoco-warp' else 'cpu'))
         if backend == 'mujoco-cpu' and self.device != 'cpu':
             raise ValueError('native CPU articulation state uses CPU tensors')
+        if contact_scope not in ('all', 'static_world'):
+            raise ValueError('contact_scope must be all or static_world')
+        # static_world excludes self-contact. It is intentionally restricted to
+        # one articulation, so native unbound contacts and provider world-body
+        # contacts have the same meaning.
+        self.contact_scope = contact_scope
         self.contact_links = tuple(contact_links)
         self._physics_parameters = {"link_center_of_mass_offsets": {}, "shape_friction": {}}
         self._cpu_parameters = {}
@@ -55,6 +61,9 @@ class ArticulationBatch:
             if solver_settings:
                 self.context.set_mujoco_solver_settings(dict(solver_settings))
             self.snapshot = self.context.compile_physics_scene_snapshot()
+            if contact_scope == 'static_world':
+                if len(self.snapshot['robots']) != 1 or self.snapshot['deformables']:
+                    raise ValueError('static_world contact scope requires a single articulation scene')
             self.artifact = CompiledSceneArtifact.from_mapping(
                 self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu))
             self._targets = torch.zeros((self.num_envs, len(spec.joint_names)), device=self.device)
@@ -68,7 +77,9 @@ class ArticulationBatch:
                 prefix = self.artifact.robot_prefix(spec.robot_name)
                 sensors = () if not self.contact_links else (MuJoCoWarpContactSensorSpec(
                     name='articulation_contacts', primary_type='body',
-                    primary_names=tuple(prefix+name for name in self.contact_links), reduce='netforce'),)
+                    primary_names=tuple(prefix+name for name in self.contact_links), reduce='netforce',
+                    secondary_type='body' if contact_scope == 'static_world' else None,
+                    secondary_name='world' if contact_scope == 'static_world' else None),)
                 self._provider = MuJoCoWarpProvider(self.artifact, num_envs=self.num_envs, device=self.device,
                     nconmax=nconmax, njmax=njmax, capture_graphs=capture_graphs, deterministic=deterministic, contact_sensors=sensors)
                 self._view = self._provider.create_robot_view(spec)
@@ -97,9 +108,9 @@ class ArticulationBatch:
         if self._closed:
             raise RuntimeError('articulation is closed')
 
-    def _tensor(self, value, shape, name):
+    def _tensor(self, value, shape, name, *, mask=None):
         value = torch.as_tensor(value, dtype=self._targets.dtype, device=self.device)
-        if tuple(value.shape) != shape or not bool(torch.isfinite(value).all()):
+        if tuple(value.shape) != shape or not bool(torch.isfinite(value if mask is None else value[mask]).all()):
             raise ValueError(f'{name} must have finite shape {shape}')
         return value
 
@@ -160,11 +171,13 @@ class ArticulationBatch:
             counts = np.asarray(raw['contact_count'])
             valid = np.arange(link_ids.shape[1])[None, :] < counts[:, None]
             values = np.asarray(raw['contact_force'])
+            if self.contact_scope == 'static_world':
+                valid &= (link_ids < 0).any(axis=-1)
             for i, link in enumerate(self._contact_indices):
-                # Typed batch contacts contain one pair, with force on side B.
+                # Native contacts flip the force if side A is outside the queried links.
                 side_a = valid & (link_ids[..., 0] == link)
                 side_b = valid & (link_ids[..., 1] == link)
-                sign = side_b.astype(np.int8) - side_a.astype(np.int8)
+                sign = (side_b.astype(np.int8) - side_a.astype(np.int8)) * np.where(link_ids[..., 0] < 0, -1, 1)
                 force[:, i].copy_(torch.as_tensor((values*sign[..., None]).sum(1), dtype=force.dtype))
                 self._contacts['found'][:, i].logical_or_(torch.as_tensor((side_a|side_b).any(1)))
         self._contacts['impulse'].add_(force, alpha=self.physics_dt)
@@ -197,12 +210,15 @@ class ArticulationBatch:
         mask = torch.as_tensor(mask, dtype=torch.bool, device=self.device)
         if mask.shape != (self.num_envs,):
             raise ValueError('reset mask must have one entry per environment')
-        pose = self._tensor(base_pose, (self.num_envs, 7), 'base pose')
-        velocity = self._tensor(base_velocity, (self.num_envs, 6), 'base velocity')
-        q = self._tensor(joint_position, tuple(self._targets.shape), 'joint position')
-        qd = self._tensor(joint_velocity, tuple(self._targets.shape), 'joint velocity')
-        targets = self._tensor(targets, tuple(self._targets.shape), 'reset targets')
-        if not bool(torch.allclose(pose[:, 3:].norm(dim=-1), torch.ones(self.num_envs, device=self.device), atol=1.e-4)):
+        # Only selected rows are consumed by a masked reset. Other worlds may
+        # be awaiting recovery, so their unused source rows need not be finite.
+        pose = self._tensor(base_pose, (self.num_envs, 7), 'base pose', mask=mask)
+        velocity = self._tensor(base_velocity, (self.num_envs, 6), 'base velocity', mask=mask)
+        q = self._tensor(joint_position, tuple(self._targets.shape), 'joint position', mask=mask)
+        qd = self._tensor(joint_velocity, tuple(self._targets.shape), 'joint velocity', mask=mask)
+        targets = self._tensor(targets, tuple(self._targets.shape), 'reset targets', mask=mask)
+        norms=pose[mask, 3:].norm(dim=-1)
+        if not bool(torch.allclose(norms, torch.ones_like(norms), atol=1.e-4)):
             raise ValueError('reset orientation must be a unit xyzw quaternion')
         if self._provider is not None:
             self._view.reset(mask, base_pose=pose, base_velocity=velocity,

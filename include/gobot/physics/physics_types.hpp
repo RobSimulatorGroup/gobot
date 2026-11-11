@@ -198,6 +198,7 @@ struct PhysicsMaterialSnapshot {
     RealType contact_damping{1.0};
     std::string contact_friction_mode{"auto"};
     int contact_priority{0};
+    std::vector<RealType> contact_impedance{0.9, 0.95, 0.001, 0.5, 2.0};
 };
 
 struct PhysicsShapeSnapshot {
@@ -307,6 +308,11 @@ struct PhysicsJointSnapshot {
     RealType damping{0.0};
     RealType armature{0.0};
     RealType friction_loss{0.0};
+    RealType limit_stiffness{0.0};
+    RealType limit_damping{0.0};
+    RealType limit_compliance{0.0};
+    RealType limit_damping_ratio{1.0};
+    std::vector<RealType> limit_impedance{0.9, 0.95, 0.001, 0.5, 2.0};
     JointActuatorModel actuator_model;
     RealType joint_position{0.0};
     RealType initial_position{0.0};

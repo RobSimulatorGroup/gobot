@@ -1876,14 +1876,22 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     updates.push_back({link, std::move(transform), depth});
                 }
 
-                std::stable_sort(updates.begin(), updates.end(), [](const auto& left, const auto& right) {
-                    return left.depth < right.depth;
-                });
+                // Some libstdc++ versions allocate stable_sort's temporary
+                // buffer without the extended alignment required by Affine3.
+                // Sort pointers so the transforms stay in aligned vector storage.
+                std::vector<const LinkPoseUpdate*> ordered_updates;
+                ordered_updates.reserve(updates.size());
                 for (const LinkPoseUpdate& update : updates) {
-                    if (update.link->IsInsideTree()) {
-                        update.link->SetGlobalTransform(update.transform);
+                    ordered_updates.push_back(&update);
+                }
+                std::stable_sort(ordered_updates.begin(), ordered_updates.end(), [](const auto* left, const auto* right) {
+                    return left->depth < right->depth;
+                });
+                for (const LinkPoseUpdate* update : ordered_updates) {
+                    if (update->link->IsInsideTree()) {
+                        update->link->SetGlobalTransform(update->transform);
                     } else {
-                        update.link->SetTransform(update.transform);
+                        update->link->SetTransform(update->transform);
                     }
                 }
             }, py::arg("links"), py::arg("poses"))

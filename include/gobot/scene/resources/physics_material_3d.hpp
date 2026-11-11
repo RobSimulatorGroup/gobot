@@ -9,6 +9,7 @@
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/math/math_defs.hpp"
 #include <string>
+#include <vector>
 
 namespace gobot {
 
@@ -36,6 +37,10 @@ public:
     void SetContactDamping(RealType value);
     RealType GetContactDamping() const;
 
+    // Minimum, maximum, width, midpoint, power of the contact impedance curve.
+    void SetContactImpedance(const std::vector<RealType>& value);
+    const std::vector<RealType>& GetContactImpedance() const;
+
     // Higher priority selects this material when combining a contact pair.
     void SetContactPriority(int value);
     int GetContactPriority() const;
@@ -50,6 +55,7 @@ private:
     RealType restitution_{0.0};
     RealType contact_compliance_{0.0};
     RealType contact_damping_{1.0};
+    std::vector<RealType> contact_impedance_{0.9, 0.95, 0.001, 0.5, 2.0};
     int contact_priority_{0};
     std::string contact_friction_mode_{"auto"};
 };
