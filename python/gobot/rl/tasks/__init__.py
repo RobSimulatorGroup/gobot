@@ -3,5 +3,6 @@ from .registry import TaskSpec, get_task, list_tasks, load_training_spec, regist
 from . import g1_tracking as _g1_tracking
 from . import g1_supermimic_official as _g1_supermimic_official
 from . import velocity as _velocity
+from . import g1_motion_amp as _g1_motion_amp
 
 __all__ = ["TaskSpec", "get_task", "list_tasks", "load_training_spec", "register_task"]

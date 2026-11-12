@@ -101,6 +101,27 @@ def test_substep_observer_reads_preintegration_state_without_changing_dynamics(t
         batch.close()
 
 
+def test_link_pose_batch_handles_child_before_parent(tmp_path):
+    from gobot.rl.locomotion.math import find_node_by_name
+    batch = make_batch(tmp_path)
+    try:
+        root = find_node_by_name(batch.context.root, 'batch_test')
+        links = [find_node_by_name(root, name) for name in ('foot', 'base')]
+        original = batch.read_state().base_pose.clone()
+        for offset in range(32):
+            poses = torch.tensor([[offset + 2., 3., 4., 0., 0., 0., 1.],
+                                  [offset + 1., 2., 3., 0., 0., 0., 1.]])
+            batch.context.apply_link_poses(links, poses.numpy())
+            snapshot = batch.context.compile_physics_scene_snapshot()
+            robot = next(r for r in snapshot['robots'] if r['name'] == 'batch_test')
+            actual = {link['name']: link['global_transform']['position'] for link in robot['links']}
+            for index, name in enumerate(('foot', 'base')):
+                torch.testing.assert_close(torch.tensor(actual[name], dtype=poses.dtype), poses[index, :3])
+        torch.testing.assert_close(batch.read_state().base_pose, original, rtol=0, atol=0)
+    finally:
+        batch.close()
+
+
 def test_friction_only_update_does_not_recompute_com_constants():
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -121,3 +142,65 @@ def test_friction_only_update_does_not_recompute_com_constants():
     provider.expand_model_fields.assert_called_once_with(['geom_friction'])
     torch.testing.assert_close(friction[:,0],value)
     torch.testing.assert_close(batch._physics_parameters['link_center_of_mass_offsets']['base'],torch.ones(2,3)*.01)
+
+
+def test_static_world_contacts_exclude_self_and_point_away_from_ground(tmp_path):
+    source=tmp_path/'self_contact.xml'
+    source.write_text('''<mujoco model="self_test"><option gravity="0 0 0"/>
+      <worldbody><geom name="ground" type="plane" size="0 0 .1"/>
+        <body name="base" pos="0 0 1"><freejoint/>
+          <geom type="sphere" size=".1"/>
+          <body name="arm" pos="0 0 .3"><joint name="arm_joint"/>
+            <geom type="sphere" size=".02"/>
+            <body name="hand" pos=".15 0 -.3"><joint name="hand_joint"/>
+              <geom type="sphere" size=".1"/>
+            </body>
+          </body>
+        </body>
+      </worldbody><actuator><position joint="arm_joint" kp="1"/>
+      <position joint="hand_joint" kp="1"/></actuator></mujoco>''')
+    gobot.set_project_path(str(tmp_path))
+    gobot.import_mjcf_scene(str(source),'res://self.jscn',name='self_test')
+    def create(scope):
+        return ArticulationBatch(project_path=tmp_path,scene_path='res://self.jscn',
+            spec=RobotBatchSpec('self_test','base',('arm_joint','hand_joint'),('base','arm','hand')),
+            num_envs=1,decimation=1,contact_links=('base','hand'),contact_scope=scope)
+    all_contacts=create('all')
+    try:
+        all_contacts.step_control()
+        assert all_contacts.read_contacts()['force'].abs().max()>.1
+    finally:all_contacts.close()
+    world=create('static_world')
+    try:
+        world.step_control()
+        assert world.read_contacts()['force'].abs().max()==0
+        state=world.read_state()
+        pose=state.base_pose.clone();pose[:,2]=.08
+        world.reset([True],base_pose=pose,base_velocity=torch.zeros_like(state.base_velocity),
+                    joint_position=state.joint_position,joint_velocity=torch.zeros_like(state.joint_velocity),
+                    targets=state.joint_position)
+        world.step_control()
+        assert world.read_contacts()['force'][0,0,2]>0
+    finally:world.close()
+
+
+def test_masked_reset_validates_only_rows_it_applies(tmp_path):
+    batch=make_batch(tmp_path)
+    try:
+        saved={k:v.clone() for k,v in batch.read_state().__dict__.items()}
+        values={k:v.clone() for k,v in saved.items()}
+        for value in values.values():value[1]=float('nan')
+        arguments=dict(base_pose=values['base_pose'],base_velocity=values['base_velocity'],
+            joint_position=values['joint_position'],joint_velocity=values['joint_velocity'],targets=values['joint_control'])
+        batch.reset([True,False],**arguments)
+        for key,value in batch.read_state().__dict__.items():
+            torch.testing.assert_close(value[1],saved[key][1],atol=0,rtol=0)
+        with pytest.raises(ValueError,match='base pose must have finite shape'):
+            batch.reset([False,True],**arguments)
+        bad=dict(arguments);bad['base_pose']=values['base_pose'][:1]
+        with pytest.raises(ValueError,match='finite shape'):
+            batch.reset([True,False],**bad)
+        bad=dict(arguments);bad['base_pose']=saved['base_pose'].clone();bad['base_pose'][0,3:]=0.
+        with pytest.raises(ValueError,match='unit xyzw'):
+            batch.reset([True,False],**bad)
+    finally:batch.close()

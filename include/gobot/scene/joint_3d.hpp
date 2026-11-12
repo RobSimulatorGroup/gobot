@@ -67,6 +67,19 @@ public:
 
     RealType GetFrictionLoss() const;
 
+    // Nonzero stiffness/damping selects a direct spring response at the limit.
+    // Otherwise compliance is the squared relaxation time (0 uses backend default).
+    void SetLimitStiffness(RealType value);
+    RealType GetLimitStiffness() const;
+    void SetLimitDamping(RealType value);
+    RealType GetLimitDamping() const;
+    void SetLimitCompliance(RealType value);
+    RealType GetLimitCompliance() const;
+    void SetLimitDampingRatio(RealType value);
+    RealType GetLimitDampingRatio() const;
+    void SetLimitImpedance(const std::vector<RealType>& value);
+    const std::vector<RealType>& GetLimitImpedance() const;
+
     void SetActuatorConfig(const Ref<JointActuatorConfig>& config);
 
     const Ref<JointActuatorConfig>& GetActuatorConfig() const;
@@ -169,6 +182,11 @@ private:
     RealType damping_{0.0};
     RealType armature_{0.0};
     RealType friction_loss_{0.0};
+    RealType limit_stiffness_{0.0};
+    RealType limit_damping_{0.0};
+    RealType limit_compliance_{0.0};
+    RealType limit_damping_ratio_{1.0};
+    std::vector<RealType> limit_impedance_{0.9, 0.95, 0.001, 0.5, 2.0};
     Ref<JointActuatorConfig> actuator_config_{nullptr};
     RealType joint_position_{0.0};
     RealType initial_position_{0.0};
