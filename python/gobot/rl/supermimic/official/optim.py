@@ -115,6 +115,15 @@ class CapturedUpdate:
     self._identity: list[int] = []
     self._outputs: dict[str, torch.Tensor] = {}
 
+  def close(self) -> None:
+    """Release NCCL graph references before destroying the process group."""
+    if self._graph is not None:
+      self._graph.reset()
+      self._graph = None
+    self._inputs = None
+    self._outputs = {}
+    self._identity = []
+
   def __call__(self, inputs: TensorDict) -> dict[str, torch.Tensor]:
     state = self._state()
     if not self.enabled or not state[0].is_cuda:

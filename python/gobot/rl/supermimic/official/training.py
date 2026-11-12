@@ -345,7 +345,7 @@ def run(cfg):
         torch.cuda.set_device(cfg.device)
         torch.set_float32_matmul_precision('high')
     distributed=Distributed.initialize(cfg.device)
-    env=None;progress=None;handlers={}
+    env=None;trainer=None;progress=None;handlers={}
     try:
         distributed.primary_call(lambda:Path(cfg.output).mkdir(parents=True,exist_ok=False))
         distributed.primary_call(lambda:write_json(Path(cfg.output)/'requested_config.json',requested))
@@ -367,6 +367,9 @@ def run(cfg):
         raise
     finally:
         for sig,handler in handlers.items():signal.signal(sig,handler)
+        if trainer is not None:
+            trainer.wm._captured_update.close()
+            trainer.policy._captured_update.close()
         if env is not None:env.close()
         if progress is not None:progress.close()
         distributed.close()
