@@ -4,10 +4,11 @@
 数学/学习器。训练进程不导入 mjlab、官方 checkout 或 W&B。
 `g1-tracking` 仍为旧 Reproduced 配方，checkpoint 互不兼容。
 
-首版支持 **单 GPU / 单进程**。不要对 `g1-supermimic` 使用 torchrun；多 seed 用不同
-进程、不同 GPU、不同输出目录运行。完整 BONES 数据转为 float32 后约占 13.5 GB
-设备内存，正式 4096 环境/2048 WM batch/4096 policy batch 的峰值还取决于图编译。
-本机验证覆盖真实数据的小 batch；没有宣称完整 4096 batch 已在 24 GB 卡上验收。
+支持单卡和 `torchrun` 同步多卡：每卡有独立物理环境/回放，WM、actor、critic 的梯度在
+裁剪与 Muon/Adam 更新前求全局平均；归一化和 ReturnSampler 统计也全局同步。
+**默认 `--batch-scope global`**：环境数、WM/policy batch 是全局数量，均分到各卡；
+不随卡数放大学习率。`per_rank` 明确表示每卡数量，属于扩大训练量的另一个实验。
+完整 BONES 库会复制到每张卡，float32 约占 13.5 GB；多卡不会把数据显存均分。
 
 ## 1. 场景
 
@@ -69,11 +70,11 @@ cd /home/h3c-r5300-g6/wqq/gobot
 cd /home/h3c-r5300-g6/wqq/gobot
 CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
 .venv/bin/python -m gobot.rl.train g1-supermimic \
-  --config examples/g1/train/official_bones.json \
+  --config examples/g1/train/official_bones_1024.json \
   --project examples/g1/assets/official \
   --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
   --backend mujoco-warp --device cuda:0 --seed 0 \
-  --output logs/g1-supermimic-official/bones_s0
+  --output logs/g1-supermimic-official/bones_1024_s0
 ```
 
 先加 `--dry-run` 可核对配置，不构建物理世界。
@@ -106,7 +107,7 @@ python src/supermimic/scripts/train.py SuperMimic-GenCoord-G1 \
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.train g1-supermimic \
-  --config examples/g1/train/official_bones.json \
+  --config examples/g1/train/official_bones_1024.json \
   --project examples/g1/assets/official \
   --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
   --backend mujoco-warp --seed 0 --steps 200000 \
@@ -128,3 +129,68 @@ replay 重填，旧回合的 sampler 窗口被清除；不是物理轨迹逐位�
 以有限数量 lane 排队评估。输出每片段回报、失败和 coverage。`--clips name...` 限定片段；
 `--max-steps 100` 仅用于调试，到达上限会标记 incomplete 并返回失败退出码。
 该评估是训练集重放，不能替代 held-out 或正式多 seed 质量验收。
+
+
+## 5. 多卡、日志与等预算对比
+
+使用与已完成单卡实验相同的全局 1024 env / WM512 / policy1024、H32 配方：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
+.venv/bin/torchrun --standalone --nproc_per_node=4 -m gobot.rl.train g1-supermimic \
+  --config examples/g1/train/official_bones_1024.json \
+  --project examples/g1/assets/official \
+  --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
+  --backend mujoco-warp --device cuda:0 --seed 0 --steps 100000 \
+  --output logs/g1-supermimic-official/bones_1024_4gpu_s0
+```
+
+四卡时每卡 256 env / WM128 / policy256，100k 仍然是全局 102400000 transitions；
+Ratio 仍为 .4，学习率不变。八卡改可见设备和 `--nproc_per_node=8`，不要再把 batch 乘八。
+是否更快由目标机器短跑决定；小 batch 的通信开销可能超过计算收益。
+`official_bones.json` 是全局 4096/2048/4096 配方，训练量是上述配方的四倍。
+
+单卡与多卡随机数流、回放分片不同，不能承诺训练轨迹逐位相同。所有 rank 同步跳过无效
+回放窗口；任一卡的信号/时间预算均在同一控制步结束后停止。rank0 独占公共日志和 checkpoint。
+`config.json` 是每卡实际配置；`requested_config.json` 是命令输入的全局配置。
+恢复应重用原始命令/全局配置，不能把每卡配置再次当成全局配置切分。
+
+日志立即显示加载阶段；每 10 秒 heartbeat 更新 `status.json`，各卡另有
+`status.rankN.json`。每 10 控制步记录 JSONL、全局吞吐、更新速度、阶段耗时和显存峰值。
+RSL-RL 负责 TensorBoard writer 生命周期；不使用 PPO/OnPolicyRunner 替换 SuperMimic 学习器。
+
+```bash
+.venv/bin/tensorboard --logdir logs/g1-supermimic-official --port 6006
+```
+
+`--no-tensorboard` 关闭事件文件，JSONL 和实时状态仍保留。冷编译可能持续数分钟，heartbeat
+会标记 `world_model_compile_or_update` / `policy_compile_or_update`，不会一直显示 step0。
+
+同代码/同卡数/同 batch：追加 `--resume RUN/latest.pt` 和新的输出目录，可以恢复优化器、
+全局 sampler、每卡 RNG/启动 DR。换卡数或从此前完成的单卡 checkpoint 迁移时，显式使用：
+
+```bash
+# 在上述新训练命令中追加；不要同时使用 --resume。
+--initialize-from logs/g1-supermimic-official/bones_s0/latest.pt
+```
+
+此方式校验官方 checkpoint 架构、场景和数据，只载入三组网络及归一化，优化器/回放/sampler/
+计数器重新开始，并记录原文件 SHA256。旧 Reproduced checkpoint 不能跨算法加载。
+初始化后的实验要同时报告前一阶段和本阶段训练预算，不能当作从零训练。
+
+用完整库做顺序单卡/双卡/四卡短跑，保留冷启动耗时和稳定区间吞吐，并核验各卡网络、
+优化器状态 SHA256 完全相同：
+
+```bash
+.venv/bin/python -m examples.g1.official.benchmark \
+  --project examples/g1/assets/official \
+  --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
+  --output logs/g1-supermimic-official/scaling_1024 \
+  --gpus 0 1 2 3 --workers 1 2 4 --steps 200 --warmup-steps 50
+```
+
+比较等时间质量时，固定卡数、数据和新建 seed，双方设相同墙钟预算；官方追加
+`--max-seconds 12360`，Reproduced 使用 `--set runner.max_hours=3.4333333333`。
+同时记录实际 transitions、更新次数和 GPU·小时。旧实验的 8 卡/32 倍 transitions
+不能作为本轮单卡的等预算基线。两边的输入信息、奖励锚点和评估时序仍有差异；比较的是完整
+训练配方，不是只改变优化器的一项消融。历史成绩及详细差异见 `doc/supermimic_official_alignment.md`。

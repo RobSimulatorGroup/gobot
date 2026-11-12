@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from tensordict import TensorDict
 
+from .distributed import GradientReducer
 from .optim import (
   CapturedUpdate,
   _optimize_step,
@@ -84,6 +85,7 @@ class BpttPolicyLearner:
     self.actor = policy
     self.wm_env = wm_env
     self.cfg = cfg
+    self.reduce_actor_grads = GradientReducer()
     self.actor_params = list(self.actor.parameters())
     self.actor_optimizers = build_optimizers(
       [self.actor], self.cfg.lr, betas=(0.9, self.cfg.beta2), device=device
@@ -130,7 +132,8 @@ class BpttPolicyLearner:
     ret = ret + self._bootstrap(obs, survival, term_prob)
     loss = (-ret + aux_loss).mean()
     grad_norm = _optimize_step(
-      self.actor_optimizers, loss, self.actor_params, 1.0, cfg.grad_clip_value
+      self.actor_optimizers, loss, self.actor_params, 1.0, cfg.grad_clip_value,
+      reduce_grads=self.reduce_actor_grads
     )
     return {
       "return": ret.mean().detach(),
@@ -174,6 +177,7 @@ class ActorCriticPolicyLearner(BpttPolicyLearner):
   ):
     super().__init__(policy, wm_env, cfg, device, compile=compile, capture=capture)
     self.critic = critic
+    self.reduce_critic_grads = GradientReducer()
     self.critic_optimizers = build_optimizers([critic], self.cfg.lr, device=device)
     self._v_max = self.wm_env.max_step_reward / (1 - self.cfg.gamma)
 
@@ -208,7 +212,8 @@ class ActorCriticPolicyLearner(BpttPolicyLearner):
       for idx in perm.view(4, -1):
         loss = (returns[idx] - self.critic(obs[idx])).pow(2).mean()
         _optimize_step(
-          self.critic_optimizers, loss, self.critic.parameters(), max_norm=1.0
+          self.critic_optimizers, loss, self.critic.parameters(), max_norm=1.0,
+          reduce_grads=self.reduce_critic_grads
         )
         losses.append(loss.detach())
     return {"value_function": torch.stack(losses).mean()}

@@ -1,4 +1,4 @@
-"""Official GenCoord configuration on Gobot scenes; single-process training."""
+"""Official GenCoord configuration on Gobot scenes; synchronous data-parallel training."""
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
@@ -21,6 +21,10 @@ class Config:
     max_seconds: float | None = None
     output: Path = Path('logs/g1-supermimic-official/seed0')
     resume: Path | None = None
+    initialize_from: Path | None = None
+    batch_scope: str = "global"
+    tensorboard: bool = True
+    heartbeat_seconds: float = 10.
     buffer_size: int = 1000
     replay_ratio: float = 16.
     history_length: int = 1
@@ -49,6 +53,12 @@ class Config:
     torch_threads: int = 4
 
     def validate(self):
+        if self.batch_scope not in ("global", "per_rank"):
+            raise ValueError("batch_scope must be global or per_rank")
+        if self.resume and self.initialize_from:
+            raise ValueError("choose resume or initialize_from, not both")
+        if not math.isfinite(self.heartbeat_seconds) or self.heartbeat_seconds <= 0:
+            raise ValueError("heartbeat_seconds must be finite and positive")
         if isinstance(self.seed,bool) or not isinstance(self.seed,int) or self.seed<0:
             raise ValueError('seed must be a nonnegative integer')
         if not 0<self.policy.gamma<1 or not 0<=self.policy.lam<=1:

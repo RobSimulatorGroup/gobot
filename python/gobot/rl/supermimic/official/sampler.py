@@ -142,6 +142,12 @@ class ReturnSampler:
     bins = keys % self.bin_count
     new = torch.zeros_like(self.count).scatter_add_(0, bins, torch.ones_like(samples))
     total = torch.zeros_like(self.value).scatter_add_(0, bins, samples)
+    if torch.distributed.is_initialized():
+      # Combine sufficient statistics before applying the nonlinear memory cap.
+      # Each local env/episode is distinct, so local bin samples concatenate.
+      combined = torch.stack((new, total))
+      torch.distributed.all_reduce(combined)
+      new, total = combined.unbind(0)
     self.count = self.count.clamp(max=self.cfg.memory) + new
     self.value = torch.where(
       new > 0, self.value + (total - new * self.value) / self.count, self.value

@@ -153,3 +153,24 @@ def test_articulation_capacity_error_is_exposed_before_reset():
     with pytest.raises(RuntimeError,match='capacity overflow'):batch.assert_no_overflow()
     batch._provider=None
     batch.assert_no_overflow()
+
+
+def test_explicit_weight_transfer_starts_fresh_and_logs_tensorboard(scene_config):
+    from gobot.rl.supermimic.official.training import run
+    first=run(scene_config)
+    ck=torch.load(first['checkpoint'],weights_only=True)
+    # A changed source identity blocks resume but explicit compatible weight transfer is recorded.
+    ck['signature']='older-source-identity'
+    legacy=scene_config.output.parent/'older.pt';torch.save(ck,legacy)
+    second=run(replace(scene_config,steps=1,seed=7,initialize_from=legacy,
+                       output=scene_config.output.parent/'initialized'))
+    loaded=torch.load(second['checkpoint'],weights_only=True)
+    assert second['learner_updates']==0 and second['control_steps']==1
+    assert loaded['actor_optimizers'][0]['state']=={}
+    assert loaded['initialization']['source_signature']=='older-source-identity'
+    for key,value in ck['actor'].items():
+        if not 'normalizer' in key:torch.testing.assert_close(loaded['actor'][key],value,rtol=0,atol=0)
+    assert list((scene_config.output/'tensorboard').glob('events.out.tfevents.*'))
+    ck['format']='reproduced';torch.save(ck,legacy)
+    with pytest.raises(ValueError,match='not Reproduced'):
+        run(replace(scene_config,initialize_from=legacy,output=scene_config.output.parent/'invalid_init'))

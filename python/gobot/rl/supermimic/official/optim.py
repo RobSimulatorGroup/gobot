@@ -45,11 +45,15 @@ def _optimize_step(
   params: Iterable[torch.Tensor] | None = None,
   max_norm: float | None = None,
   clip_value: float = 0.0,
+  reduce_grads: Callable | None = None,
 ) -> torch.Tensor | None:
   """Run one optimizer step: zero_grad -> backward -> optional clip -> step."""
   for optimizer in optimizers:
     optimizer.zero_grad(set_to_none=True)
   loss.backward()
+  params = list(params) if params is not None else None
+  if reduce_grads is not None:
+    reduce_grads(params)
   grad_norm = None
   if params is not None and max_norm is not None:
     # Don't set error_if_nonfinite=True: it forces a per-step CPU<->GPU sync.

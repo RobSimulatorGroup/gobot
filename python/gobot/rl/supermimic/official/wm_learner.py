@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import torch
 from tensordict import TensorDict
 
+from .distributed import GradientReducer
 from .optim import (
   CapturedUpdate,
   _optimize_step,
@@ -63,6 +64,7 @@ class WorldModelLearner:
     self.cfg = cfg
     self.device = device
 
+    self.reduce_grads = GradientReducer()
     self._all_params = list(dynamics.parameters())
     self.optimizers = build_optimizers([dynamics], self.cfg.lr, device=self.device)
 
@@ -139,7 +141,8 @@ class WorldModelLearner:
       )
 
       # 3. Backprop
-      _optimize_step(self.optimizers, loss_state, self._all_params, max_norm=1.0)
+      _optimize_step(self.optimizers, loss_state, self._all_params, max_norm=1.0,
+                     reduce_grads=self.reduce_grads)
 
       # 4. Logging
       stats.append(torch.cat([loss_state.unsqueeze(0), group_mse]).detach())
