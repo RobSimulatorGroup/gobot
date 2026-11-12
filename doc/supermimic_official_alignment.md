@@ -191,3 +191,13 @@ ReturnSampler memory cap、单 rank 回放不足、停止信号、时间预算�
 200次critic更新，启用全库、DR、ReturnSampler和CUDA graph，关闭torch.compile以减少启动时间。
 八卡模型/优化器一致，正常保存退出；八卡正式batch的稳定加速比尚未测量。
 详细报告和原始日志位于 `logs/supermimic_official/distributed_validation_20261112/`。
+
+
+## 后续统一评估
+
+已在原始FP32参考、同一Gobot场景、128/500容量、N−1步时序、相同失败阈值下重新评估
+Reproduced与官方八卡模型，并在同条轨迹上同时计算骨盆/躯干奖励。
+全量失败为429→19；共用骨盆回报0.931829→0.950115，共用躯干回报0.935604→0.945823。
+这组结果可用于同评估协议比较，替代上方历史各自协议的跨算法分数对照。
+训练预算和策略输入信息仍不同；完整配置、校验与结果见
+[统一评估基准](supermimic_common_evaluation.md)。
