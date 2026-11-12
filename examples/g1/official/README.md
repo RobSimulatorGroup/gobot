@@ -33,6 +33,9 @@ PYTHONPATH="$PWD/supermimic/src:$PWD/mjlab_research/src" \
 
 ## 2. BONES-SEED 数据转换（只需一次）
 
+2026-11-12：118 下述目标目录已完成全量转换和校验（129943 clips / 47475680 frames），
+且已通过完整库加载与 CPU 单步检查。现有 118 环境可直接跳到训练步骤，不要覆盖重建。
+
 在 118 上，从原先已审计的 129943 clips 紧凑库转换：
 
 ```bash

@@ -19,7 +19,8 @@ BONES 分数不能作为官方版本的验收证据。旧实现仍支撑当前 `
 - 本轮实际版本写入 fixture metadata。当前为 Torch 2.11.0+cu128、rsl-rl 5.5.2、
   TensorDict 0.13.0、MuJoCo / MuJoCo Warp 3.17.0、Warp 1.17.0。
 
-目前只验证 **同一软件栈、CPU FP32、关闭 compile/TF32 的数学与学习更新**。
+独立 oracle 首先验证 **同一软件栈、CPU FP32、关闭 compile/TF32 的数学与学习更新**；
+后续真实场景和 CUDA 联通检查见下方记录。
 源码读取前检查 commit、工作树状态和 Git 对象字节；fixture 记录实际运行模块、导出器、
 合成环境和张量文件的 SHA256。参考进程不导入 Gobot，Gobot 测试也不需要参考 checkout。
 绕过参考 package 的环境注册 initializer，但直接执行原始数学函数，不替换数值实现。
@@ -67,7 +68,7 @@ Gobot 的运行统计模块来自本轮同栈 rsl-rl 5.5.2，保留许可证。�
 - 重放窗口测试涵盖环绕覆盖、terminated/truncated、相邻 clips 的目标窗口。
 
 普通数学比较容差 `atol=1e-5, rtol=1e-4`；更新参数容差 `atol=1e-6, rtol=1e-4`。
-布尔、索引和 replay row 精确比较。正式宽度模型、GPU compile/capture、物理对照尚未验收。
+布尔、索引和 replay row 精确比较。正式批量的 GPU 显存峰值、长期动力学对照与训练质量尚未验收。
 
 2026-11-12 新增工程验证：
 
@@ -77,7 +78,13 @@ Gobot 的运行统计模块来自本轮同栈 rsl-rl 5.5.2，保留许可证。�
 - CUDA `torch.compile + graph capture` 完成 12 控制步 / 5 learner updates；冷编译包含在计时中。
 - 完整官方网络宽度、H=32，以 64 环境 / 64 学习 batch 完成一次真实 BONES GPU 更新。
 - 配置入口、数据完整性、clip 边界、启动 DR、checkpoint 恢复与计时停止有回归测试。
+- 118 完整转换：129943 clips / 47475680 frames，六组状态保留源 fp16 值，全部 SHA256 校验通过；全库加载与 CPU 单控制步通过。
+- 本机合并当前 master 后：111 tests passed，1 个可选 GPU 测试跳过；实际 GPU 联通检查另行通过。
 - 仍需在目标硬件验证全库正式 batch 峰值，以及从头训练的最终质量。未修改 C++ 引擎代码。
+
+完整数据 manifest SHA256：`f3ec3ea8025f39e827c3c86ea9a5736c9764cb48a492dc9aa7c2ac384980b422`。
+本次代码在本机 `codex/supermimic-bones-seed` 分支提交，jump-wqq 拉取后同步到 118。
+正式长训练未启动，由用户执行操作指南中的命令。
 
 生成独立参考数据（不安装或改写参考源码；需要已安装 Torch/RSL/TensorDict 的 Python）：
 
