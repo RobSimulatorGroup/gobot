@@ -80,7 +80,7 @@ CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
 先加 `--dry-run` 可核对配置，不构建物理世界。
 按训练循环墙钟时间限制，例如每次 1 小时：追加 `--max-seconds 3600`。
 计时包含编译、采样、更新、日志和中间 checkpoint，排除数据载入/环境构建和最后保存；
-到期在完整 learner 更新结束后保存，因此可能略超预算。`--steps` 是绝对控制步目标，
+到期在当前控制步及其 learner 更新结束后保存；首次编译可能使停止时间超出预算数分钟。`--steps` 是绝对控制步目标，
 默认 100000。日志分别记录控制步、环境 transitions、WM/actor/critic 更新次数。
 `Ctrl+C` / SIGTERM 请求在当前控制步完成后保存，不用强制 kill 模拟正常结束。
 
@@ -111,8 +111,8 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.train g1-supermimic \
   --project examples/g1/assets/official \
   --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
   --backend mujoco-warp --seed 0 --steps 200000 \
-  --resume logs/g1-supermimic-official/bones_s0/latest.pt \
-  --output logs/g1-supermimic-official/bones_s0_continue
+  --resume logs/g1-supermimic-official/bones_1024_s0/latest.pt \
+  --output logs/g1-supermimic-official/bones_1024_s0_continue
 
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.supermimic.official.evaluate \
   --checkpoint logs/g1-supermimic-official/bones_s0/latest.pt \
@@ -190,7 +190,59 @@ RSL-RL 负责 TensorBoard writer 生命周期；不使用 PPO/OnPolicyRunner 替
 ```
 
 比较等时间质量时，固定卡数、数据和新建 seed，双方设相同墙钟预算；官方追加
-`--max-seconds 12360`，Reproduced 使用 `--set runner.max_hours=3.4333333333`。
+`--max-seconds 12360`，Reproduced 使用 `--set schedule.max_hours=3.4333333333`。
 同时记录实际 transitions、更新次数和 GPU·小时。旧实验的 8 卡/32 倍 transitions
 不能作为本轮单卡的等预算基线。两边的输入信息、奖励锚点和评估时序仍有差异；比较的是完整
 训练配方，不是只改变优化器的一项消融。历史成绩及详细差异见 `doc/supermimic_official_alignment.md`。
+
+
+### 可执行的 Reproduced 等时间对照
+
+下面保持旧实现代码、10 帧 proprio 输入、原奖励与学习率调度，只把四卡总环境数和学习 batch
+设为与官方 1024 配方相同。两边都从零训练、四卡、seed0，目标预算为 3600 秒；实际耗时和样本数由日志报告。
+旧实现原本就有 sqrt(world) 学习率缩放，此命令保留该规则，属于完整配方对照。
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
+.venv/bin/torchrun --standalone --nproc_per_node=4 -m gobot.rl.train g1-tracking \
+  --config examples/g1/train/reproduced_bones_nj500.json \
+  --project examples/g1/logs/reproduced_alignment/project_317 \
+  --library /home/h3c-r5300-g6/wqq/datasets/bones_gobot_e8_50hz/library.pt \
+  --backend mujoco-warp --device cuda:0 --seed 0 --num-envs 256 \
+  --set wm_trainer.batch_size=128 --set policy_trainer.batch_size=256 \
+  --set schedule.max_hours=1.0 --stop-iteration 320000 \
+  --output logs/g1-reproduced/bones_1024_4gpu_1h_s0
+```
+
+官方四卡命令改用新输出目录 `bones_1024_4gpu_1h_s0`，追加 `--max-seconds 3600` 并将
+`--steps` 设为 `10000000`，避免先碰到步数上限。两边都不要带 resume/initialize 参数。
+最终评估分别使用对应任务评估器，再按同名动作汇总；不能把旧策略直接放进官方观测协议。
+旧 Reproduced 在日志步（此配方每 500 步）检查时间，因此会超出目标预算；以实际
+`elapsed_seconds` 为准。该命令尚未进行正式一小时训练；不要把短跑结果当成这个实验的质量成绩。
+
+
+### 118 八卡正式训练命令
+
+已完成八卡完整网络/H32的小batch同步、保存和退出验证。下方使用官方默认全局4096配方，
+每卡512 env / WM256 / policy512；100k控制步共409600000 transitions，是此前单卡1024实验的四倍。
+这条命令从零训练新模型，输出目录必须不存在。
+
+```bash
+cd /home/h3c-r5300-g6/wqq/gobot
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
+.venv/bin/torchrun --standalone --nproc_per_node=8 -m gobot.rl.train g1-supermimic \
+  --config examples/g1/train/official_bones.json \
+  --project examples/g1/assets/official \
+  --library /home/h3c-r5300-g6/wqq/datasets/bones_supermimic_official_50hz \
+  --backend mujoco-warp --device cuda:0 --seed 0 --steps 100000 \
+  --output logs/g1-supermimic-official/bones_4096_8gpu_s0
+```
+
+如果要固定为此前单卡的全局1024配方，只把配置换成 `official_bones_1024.json`，同时换输出目录。
+实测1024配方2/4卡都只有约1.07×加速；2048配方四卡约1.32×。不要把卡数直接当加速倍数。
+`official_bones_2048.json` 是全局2048 / WM1024 / policy2048 的中间配方；八卡正式batch吞吐尚未测量。
+
+与此前单卡的约12360秒进行等时比较时，将 `--steps 100000` 换成
+`--steps 10000000 --max-seconds 12360`，并使用新输出目录。此时总样本量由实际吞吐决定。
+追加 `--initialize-from logs/g1-supermimic-official/bones_s0/latest.pt` 可从已训练权重开始新阶段，
+但应把之前的3.43小时训练预算也计入，不能与从零运行混为同一实验。

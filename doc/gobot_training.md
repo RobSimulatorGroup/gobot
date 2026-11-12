@@ -11,13 +11,18 @@
 | `go1-gait` | PPO 加步态相位奖励 |
 | `g1-amp` | PPO 加动作先验 |
 | `g1-motion-amp` | RSL-RL PPO 加动作判别器，Gobot 场景仿真 |
-| `g1-tracking` | SuperMimic 动作跟踪 |
+| `g1-tracking` | SuperMimic-Reproduced 动作跟踪 |
+| `g1-supermimic` | 官方 GenCoord WM/BPTT，支持同步多卡 |
 
 ```bash
 python -m gobot.rl.train --list
 python -m gobot.rl.train go1-velocity \
   --backend mujoco-cpu --num-envs 4 --iterations 10 --no-eval --output logs/go1_cpu
 ```
+
+官方 SuperMimic 的数据、单卡/多卡命令和恢复语义见
+[操作指南](../examples/g1/official/README.md)。该任务的环境数和学习 batch 默认是**全局数量**，
+与其他任务的每卡数量口径不同；多卡均分全局 batch，学习率不缩放。
 
 这些工作流支持 `mujoco-cpu` 和 `mujoco-warp`。CPU 仿真可通过 `--device cuda:0`
 配合 CUDA learner；Warp 需要 CUDA。CPU 是语义基准，后端不能静默回退。
