@@ -307,6 +307,8 @@ Important boundaries:
 
 ## Development Rules
 
+- Create code commits only on the local development machine. Switching to a local feature branch before committing is allowed. `jump-wqq` must pull those commits; `h3c-118` synchronizes from `jump-wqq`. Never create code commits on either remote host.
+
 - Prefer existing project patterns and local helper APIs.
 - Keep edits scoped to the requested boundary or feature.
 - Add tests for behavior that affects serialization, scene traversal, rendering contracts, or editor commands.

@@ -154,6 +154,10 @@ python -m examples.locomotion.verify_export \
 
 ## 动作跟踪与 AMP
 
-G1 SuperMimic 的数据准备、训练、恢复、全量 BONES 评测和视频入口统一见
+官方 SuperMimic 使用 `g1-supermimic`，BONES-SEED 转换、单卡训练、计时停止与恢复见
+[官方接入指南](../examples/g1/official/README.md)。它与 `g1-tracking` 的 Reproduced 配方
+使用不同 checkpoint 协议。
+
+G1 SuperMimic-Reproduced 的数据准备、训练、恢复、全量 BONES 评测和视频入口统一见
 [动作跟踪复现指南](../examples/g1/reproduction/README.md)。其配置、控制步调度和
 checkpoint 分片与速度 PPO 分开。G1 AMP 动作库与回放步骤见 [G1 指南](../examples/g1/README.md)。

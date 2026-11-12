@@ -1,0 +1,17 @@
+{
+  "num_envs": 2,
+  "steps": 12,
+  "buffer_size": 32,
+  "dynamics_hidden_dims": [32, 24, 16],
+  "actor_hidden_dims": [32, 24, 16],
+  "critic_hidden_dims": [16, 8],
+  "wm": {"num_batches": 1, "batch_size": 4, "horizon": 8},
+  "policy": {"num_batches": 1, "batch_size": 4, "horizon": 4},
+  "sampling_mode": "start",
+  "domain_randomization": false,
+  "reset_noise": false,
+  "log_interval": 4,
+  "compile": false,
+  "capture_graphs": false,
+  "capture_updates": false
+}

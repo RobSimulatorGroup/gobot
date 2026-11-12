@@ -1,5 +1,8 @@
 # SuperMimic-Reproduced → Gobot：G1 训练与结果对齐计划
 
+> 2026-11-11：本文件保留 Reproduced 实验的计划与口径。当前官方源码对齐见
+> [SuperMimic 官方 GenCoord 对齐](supermimic_official_alignment.md)，两者的验收证据不可混用。
+
 这份计划定义同栈、同预算、多 seed 的复现方法与验收要求。
 
 目标是用 **Gobot 自己的场景、物理批处理和 Python 训练接口**，从头训练 G1，复现
