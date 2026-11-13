@@ -11,7 +11,6 @@
 | `go1-gait` | PPO 加步态相位奖励 |
 | `g1-amp` | PPO 加动作先验 |
 | `g1-motion-amp` | RSL-RL PPO 加动作判别器，Gobot 场景仿真 |
-| `g1-tracking` | SuperMimic-Reproduced 动作跟踪 |
 | `g1-supermimic` | 官方 GenCoord WM/BPTT，支持同步多卡 |
 
 ```bash
@@ -21,7 +20,7 @@ python -m gobot.rl.train go1-velocity \
 ```
 
 官方 SuperMimic 的数据、单卡/多卡命令和恢复语义见
-[操作指南](../examples/g1/official/README.md)。该任务的环境数和学习 batch 默认是**全局数量**，
+[操作指南](../examples/g1/supermimic/README.md)。该任务的环境数和学习 batch 默认是**全局数量**，
 与其他任务的每卡数量口径不同；多卡均分全局 batch，学习率不缩放。
 
 这些工作流支持 `mujoco-cpu` 和 `mujoco-warp`。CPU 仿真可通过 `--device cuda:0`
@@ -167,10 +166,6 @@ python -m examples.locomotion.verify_export \
 
 ## 动作跟踪与 AMP
 
-官方 SuperMimic 使用 `g1-supermimic`，BONES-SEED 转换、单卡训练、计时停止与恢复见
-[官方接入指南](../examples/g1/official/README.md)。它与 `g1-tracking` 的 Reproduced 配方
-使用不同 checkpoint 协议。
-
-G1 SuperMimic-Reproduced 的数据准备、训练、恢复、全量 BONES 评测和视频入口统一见
-[动作跟踪复现指南](../examples/g1/reproduction/README.md)。其配置、控制步调度和
-checkpoint 分片与速度 PPO 分开。G1 AMP 动作库与回放步骤见 [G1 指南](../examples/g1/README.md)。
+SuperMimic 使用 `g1-supermimic`，数据、单卡/多卡训练、恢复和完整评估见
+[SuperMimic 指南](../examples/g1/supermimic/README.md)。G1 AMP 动作库与回放见
+[G1 指南](../examples/g1/README.md)。

@@ -1,1 +1,1 @@
-"""SuperMimic-Reproduced training on scene-owned Gobot articulations."""
+"""SuperMimic GenCoord world-model training on Gobot-authored scenes."""

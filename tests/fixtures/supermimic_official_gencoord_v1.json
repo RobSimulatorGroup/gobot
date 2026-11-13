@@ -108,8 +108,8 @@
     "supermimic.learners.policy_learner": "58b29adc8495685fc4dbdff5ecf7b3bcaaa1601689c4e3ba4074cadda48dbd2f",
     "supermimic.tasks.task_spec": "1a9935fec21d2cae607754c96aa50b6b8b5820ecdd198dbf1885eae863a8f389"
   },
-  "exporter_sha256": "922c21d468433c9dae9d6e2f6e318a3d9ee83ee62f9087f2e1587f3eca410606",
-  "probe_sha256": "2bbb1c70713da1e9324ad0004a43ee25cb328a03cbb6b507e511e31c64c069d4",
-  "verifier_sha256": "36f9905be378a9b6f53d377e47f238d8b36aa6512e11d90d9ff51b44df042a93",
+  "exporter_sha256": "227decf33815844cbc349e3c654bdce96f6011b52b8ab61f31d674f28cdfca1b",
+  "probe_sha256": "833bc2cda27d967d32bf6cac48845c640b758fee2ddf265c124f3f5ea2a2924d",
+  "verifier_sha256": "92f98eaba4f70275ba7266408b5bebd5109f39e32435ed433a784fe123116729",
   "lock_sha256": "d1e3c766c574fff12963a4aaf84369590e701e046e0f6bd7ed1ff22ea2394828"
 }

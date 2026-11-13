@@ -15,7 +15,7 @@ from examples.locomotion.presets import training_spec
 GO1 = "go1-velocity"
 G1 = "g1-velocity"
 AMP = "g1-amp"
-SM = "g1-tracking"
+SM = "g1-supermimic"
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -85,24 +85,20 @@ def test_experiment_recipe_and_cli_precedence(tmp_path):
 
 
 def test_supermimic_keeps_schedule_and_dispatch(monkeypatch, tmp_path):
-    from gobot.rl.motion_tracking import runner
+    from gobot.rl.supermimic import training
     captured = {}
     def run(cfg):
-        captured.update(cfg=cfg)
-        return {"iteration": 45}
-    monkeypatch.setattr(runner, "run", run)
-    main([SM, "--config", str(ROOT / "examples/g1/train/reproduced_smoke.json"),
-          "--backend", "mujoco-cpu", "--num-envs", "2", "--stop-iteration", "45",
-          "--output", str(tmp_path / "sm"), "--no-compile", "--no-capture-graphs"])
-    cfg = captured["cfg"]
-    assert cfg.schedule.total_iterations == 320000
-    assert cfg.stop_iteration == 45
-    assert cfg.env.num_envs == 2
-    assert cfg.device == "cpu"
-    assert cfg.wm_trainer.compile is None
-    assert cfg.policy_trainer.compile is None
-    assert not cfg.capture_graphs
-    assert cfg.log_root / cfg.run_name == tmp_path / "sm"
+        captured['cfg'] = cfg
+        return {'control_steps': 45}
+    monkeypatch.setattr(training, 'run', run)
+    main([SM, '--config', str(ROOT / 'examples/g1/train/supermimic_smoke.json'),
+          '--backend', 'mujoco-cpu', '--num-envs', '2', '--steps', '45',
+          '--output', str(tmp_path / 'sm'), '--no-compile', '--no-capture-graphs'])
+    cfg = captured['cfg']
+    assert cfg.steps == 45 and cfg.replay_ratio == 16
+    assert cfg.num_envs == 2 and cfg.device == 'cpu'
+    assert not cfg.compile and not cfg.capture_graphs
+    assert cfg.output == tmp_path / 'sm'
 
 
 @pytest.mark.parametrize("args,message", [
@@ -191,8 +187,12 @@ def test_reward_override_does_not_mutate_registered_defaults():
 def test_backend_override_infers_device_after_dotted_settings(task):
     result = main([task, "--set", 'backend="mujoco-cpu"', "--dry-run"])
     assert result["config"]["device"] == "cpu"
-    explicit = main([task, "--backend", "mujoco-cpu", "--device", "cuda:1", "--dry-run"])
-    assert explicit["config"]["device"] == "cuda:1"
+    if task == GO1:
+        explicit = main([task, '--backend', 'mujoco-cpu', '--device', 'cuda:1', '--dry-run'])
+        assert explicit['config']['device'] == 'cuda:1'
+    else:
+        with pytest.raises(SystemExit):
+            main([task, '--backend', 'mujoco-cpu', '--device', 'cuda:1', '--dry-run'])
 
 
 def test_standard_ppo_has_no_stage_gate_or_forced_action_clipping():

@@ -1,170 +1,128 @@
-# Adapted from CuboiLeo/SuperMimic-Reproduced, ba6105349069bf040f1fdad60873d13138d505a2.
-# Copyright (c) 2026 Yuxi Liu. SPDX-License-Identifier: MIT
-# See LICENSE-SuperMimic-Reproduced.
-"""GPU ring replay buffer laid out as [env, time].
-
-Each row holds the state ``s_t`` at the start of a control step together with the
-transition that followed it: clean action ``a_t``, executed action ``a_exec_t``, sim
-context ``xi_t``, reward ``r_{t+1}``, the target frame/clip of that step and bookkeeping
-flags. When an episode ends an extra *terminal* row is written that holds ``s_{T+1}``
-(no transition out of it) and the termination label of that state, so k-step windows
-can use it as their last target state and the termination head gets positive labels.
-"""
-
-from __future__ import annotations
-
+# Adapted from HybridRobotics/supermimic, abc124c1bd5976341034668af3d12c087f2f1f55.
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# See LICENSE-SuperMimic. Gobot adaptation: backend-neutral tensor interfaces.
 from dataclasses import dataclass
 
 import torch
+from tensordict import TensorDict
 
 
-@dataclass
-class WindowBatch:
-    states: torch.Tensor  # (k+1, n, S)
-    a_exec: torch.Tensor  # (k, n, A)
-    a_clean: torch.Tensor  # (k, n, A)
-    xi: torch.Tensor  # (n, X) context at the window start (constant inside an episode)
-    reward: torch.Tensor  # (k, n)
-    done: torch.Tensor  # (k, n) termination label of states 1..k
-    frame: torch.Tensor  # (k, n) target frame of each transition
+@dataclass(frozen=True)
+class FieldSpec:
+    dim: int = 0  # 0 = scalar (no trailing axis); >0 = vector with trailing dim
+    dtype: torch.dtype = torch.float32
 
-
-@dataclass
-class StartBatch:
-    state: torch.Tensor  # (n, S)
-    xi: torch.Tensor  # (n, X)
-    frame: torch.Tensor  # (n,) current target frame
-    prev_action: torch.Tensor  # (n, A) clean action of the previous step (0 at episode start)
-    hist_states: torch.Tensor  # (hist, n, S) states s_{t-hist+1..t} (backfilled at episode start)
-    hist_actions: torch.Tensor  # (hist, n, A) clean actions a_{t-hist..t-1} aligned with hist_states' obs
+    def shape(self, num_envs: int, buffer_size: int) -> tuple[int, ...]:
+        return (
+            (num_envs, buffer_size, self.dim) if self.dim else (num_envs, buffer_size)
+        )
 
 
 class ReplayBuffer:
-    def __init__(self, num_envs: int, capacity: int, state_dim: int, act_dim: int, xi_dim: int, device):
-        self.E, self.T = num_envs, capacity
-        self.device = torch.device(device)
-        E, T = num_envs, capacity
-        f = lambda *shape: torch.zeros(E, T, *shape, device=self.device)  # noqa: E731
-        self.s = f(state_dim)
-        self.a = f(act_dim)
-        self.a_exec = f(act_dim)
-        self.xi = f(xi_dim)
-        self.r = f()
-        self.done = f()
-        self.frame = torch.zeros(E, T, dtype=torch.long, device=self.device)
-        self.clip = torch.zeros(E, T, dtype=torch.long, device=self.device)
-        self.ep_id = torch.full((E, T), -1, dtype=torch.long, device=self.device)
-        self.terminal = torch.zeros(E, T, dtype=torch.bool, device=self.device)
-        self.ep_start = torch.zeros(E, T, dtype=torch.bool, device=self.device)
-        self.valid = torch.zeros(E, T, dtype=torch.bool, device=self.device)
-        self.ptr = torch.zeros(E, dtype=torch.long, device=self.device)
-        self.ep_counter = torch.zeros(E, dtype=torch.long, device=self.device)
-        self.total_rows = 0
-        self._env_ar = torch.arange(E, device=self.device)
+    """Per-env circular buffer over a TensorDict, with env-stratified window sampling."""
 
-    # ------------------------------------------------------------------ writes
-
-    @torch.no_grad()
-    def add(self, env_ids, s, a, a_exec, xi, r, done, frame, clip, terminal, ep_start) -> None:
-        p = self.ptr[env_ids]
-        self.s[env_ids, p] = s
-        self.a[env_ids, p] = a
-        self.a_exec[env_ids, p] = a_exec
-        self.xi[env_ids, p] = xi
-        self.r[env_ids, p] = r
-        self.done[env_ids, p] = done
-        self.frame[env_ids, p] = frame
-        self.clip[env_ids, p] = clip
-        self.ep_id[env_ids, p] = self.ep_counter[env_ids]
-        self.terminal[env_ids, p] = terminal
-        self.ep_start[env_ids, p] = ep_start
-        self.valid[env_ids, p] = True
-        self.ptr[env_ids] = (p + 1) % self.T
-        self.total_rows += int(env_ids.numel())
-
-    @torch.no_grad()
-    def end_episode(self, env_ids) -> None:
-        self.ep_counter[env_ids] += 1
-
-    @property
-    def size(self) -> int:
-        return int(self.valid.sum().item())
-
-    # ------------------------------------------------------------------ sampling helpers
-
-    def _rolled(self, x: torch.Tensor, j: int) -> torch.Tensor:
-        """x[:, (t + j) % T] for every t."""
-        return torch.roll(x, shifts=-j, dims=1) if j else x
-
-    @torch.no_grad()
-    def window_mask(self, k: int) -> torch.Tensor:
-        """(E,T) True where rows t..t+k are valid, same episode, and t..t+k-1 are non-terminal."""
-        ok = self.valid & ~self.terminal
-        ep0 = self.ep_id
-        for j in range(1, k + 1):
-            v = self._rolled(self.valid, j) & (self._rolled(ep0, j) == ep0)
-            if j < k:
-                v &= ~self._rolled(self.terminal, j)
-            ok &= v
-        # The row currently under the write pointer may be overwritten next; the rolled window must not
-        # wrap across the write pointer. Rows t with t + k crossing ptr are excluded by the ep_id test
-        # (new rows carry a newer ep_id) except for same-episode wraps, which are rare; exclude explicitly.
-        t = torch.arange(self.T, device=self.device)[None, :]
-        dist_to_ptr = (self.ptr[:, None] - t - 1) % self.T  # rows strictly before ptr: 0 = newest
-        ok &= dist_to_ptr >= k
-        return ok
-
-    @torch.no_grad()
-    def _sample_from_mask(self, mask: torch.Tensor, n: int) -> tuple[torch.Tensor, torch.Tensor]:
-        flat = mask.reshape(-1)
-        total = int(flat.sum().item())
-        if total == 0:
-            raise RuntimeError("replay buffer has no sampleable rows yet")
-        idx = torch.multinomial(flat.float(), n, replacement=True)
-        return idx // self.T, idx % self.T
-
-    @torch.no_grad()
-    def sample_windows(self, n: int, k: int) -> WindowBatch:
-        e, t = self._sample_from_mask(self.window_mask(k), n)
-        offs = torch.arange(k + 1, device=self.device)
-        tt = (t[None, :] + offs[:, None]) % self.T  # (k+1, n)
-        ee = e[None, :].expand(k + 1, n)
-        return WindowBatch(
-            states=self.s[ee, tt],
-            a_exec=self.a_exec[ee[:-1], tt[:-1]],
-            a_clean=self.a[ee[:-1], tt[:-1]],
-            xi=self.xi[e, t],
-            reward=self.r[ee[:-1], tt[:-1]],
-            done=self.done[ee[1:], tt[1:]],
-            frame=self.frame[ee[:-1], tt[:-1]],
+    def __init__(
+        self,
+        schema: dict[str, FieldSpec],
+        buffer_size: int,
+        num_envs: int,
+        device: str = "cpu",
+    ):
+        if not {"terminated", "truncated"} <= schema.keys():
+            raise ValueError("schema needs 'terminated' and 'truncated'")
+        self.num_transitions = 0
+        self.buffer_size = buffer_size
+        self.num_envs = num_envs
+        self.device = device
+        self._step = 0
+        self._storage = TensorDict(
+            {
+                name: torch.zeros(
+                    spec.shape(num_envs, buffer_size), dtype=spec.dtype, device=device
+                )
+                for name, spec in schema.items()
+            },
+            batch_size=[num_envs, buffer_size],
         )
 
-    @torch.no_grad()
-    def sample_starts(self, n: int, hist: int) -> StartBatch:
-        mask = self.valid & ~self.terminal
-        t_idx = torch.arange(self.T, device=self.device)[None, :]
-        dist_to_ptr = (self.ptr[:, None] - t_idx - 1) % self.T
-        mask &= dist_to_ptr < self.T - hist - 1  # keep history rows from being overwritten underneath
-        e, t = self._sample_from_mask(mask, n)
-        offs = torch.arange(hist, device=self.device) - (hist - 1)  # -(hist-1) .. 0
-        tt = (t[None, :] + offs[:, None]) % self.T  # (hist, n)
-        ee = e[None, :].expand(hist, n)
-        same_ep = (self.ep_id[ee, tt] == self.ep_id[e, t][None, :]) & self.valid[ee, tt]
-        # Backfill: for rows outside the episode, use the first in-episode row of the window.
-        first_ok = same_ep.float().argmax(dim=0)  # first True index per column (same_ep[-1] is always True)
-        pos = torch.arange(hist, device=self.device)[:, None].expand(hist, n)
-        tt_fixed = torch.where(same_ep, tt, tt[first_ok, torch.arange(n, device=self.device)][None, :].expand(hist, n))
-        hist_states = self.s[ee, tt_fixed]
-        # Actions preceding each history state: a at row-1 if same episode else 0.
-        tprev = (tt_fixed - 1) % self.T
-        prev_ok = (self.ep_id[ee, tprev] == self.ep_id[e, t][None, :]) & self.valid[ee, tprev] & ~self.ep_start[ee, tt_fixed]
-        hist_actions = torch.where(prev_ok[..., None], self.a[ee, tprev], torch.zeros_like(self.a[ee, tprev]))
-        del pos
-        return StartBatch(
-            state=self.s[e, t],
-            xi=self.xi[e, t],
-            frame=self.frame[e, t],
-            prev_action=hist_actions[-1],
-            hist_states=hist_states,
-            hist_actions=hist_actions,
+    def insert(self, td: TensorDict) -> None:
+        if td.batch_size != torch.Size([self.num_envs]):
+            raise ValueError(
+                f"insert expects batch_size=[{self.num_envs}], got {list(td.batch_size)}"
+            )
+        if set(td.keys()) != set(self._storage.keys()):
+            raise ValueError("schema mismatch")
+        self._storage[:, self._step] = td
+        self._step = (self._step + 1) % self.buffer_size
+        self.num_transitions = min(self.buffer_size, self.num_transitions + 1)
+
+    def sample_causal(
+        self, sequence_length: int, batch_size: int
+    ) -> tuple[TensorDict, torch.Tensor]:
+        """Sample a window of ``L`` frames ENDING at a uniformly-drawn filled frame.
+
+        The newest frame (index ``-1``) is the sampled "current" state — drawn like
+        a 1-step ``sample``, so its distribution is independent of ``L``. Preceding
+        slots hold the current frame's real in-episode predecessors; slots before
+        the episode start (a stored ``terminated``/``truncated``) or before the
+        oldest filled frame are clamped to the first in-episode frame, matching the
+        real-sim history ring's reset padding.
+
+        Returns ``(window, padded)``: the ``(B, L)`` window and a ``(B, L)`` bool
+        mask that is ``True`` on the clamp-padded slots, so the caller can noise the
+        oldest real frame once and share that realization across them.
+        """
+        L, B, E, T = sequence_length, batch_size, self.num_envs, self.buffer_size
+        dev, n = self.device, self.num_transitions
+        if L > T:
+            raise ValueError(f"sequence_length {L} exceeds buffer_size {T}")
+        if n < 1:
+            raise RuntimeError("sample_causal on empty buffer")
+        base = self._step if n == T else 0
+        env_idx = torch.randint(E, (B,), device=dev)
+        current_age = torch.randint(n, (B,), device=dev)
+        ages = current_age[:, None] + (
+            torch.arange(L, device=dev) - (L - 1)
+        )  # (B, L), newest last
+        ended = (self._storage["terminated"] | self._storage["truncated"])[
+            env_idx[:, None], (base + ages.clamp(min=0)) % T
+        ]
+        # Reachable = contiguous in-episode suffix ending at the (always-valid) newest
+        # frame; a stored done at an earlier slot ends the prior episode there.
+        valid = (ages >= 0) & ~ended.bool()
+        valid[:, -1] = True
+        reachable = torch.cummin(valid.flip(-1).int(), dim=-1).values.flip(-1).bool()
+        first_age = torch.where(reachable, ages, current_age[:, None]).amin(
+            dim=-1, keepdim=True
         )
+        slot = (base + torch.where(reachable, ages, first_age)) % T
+        return self._storage[env_idx[:, None], slot], ~reachable
+
+    def sample(self, sequence_length: int, batch_size: int) -> TensorDict:
+        L, B, E, T = sequence_length, batch_size, self.num_envs, self.buffer_size
+        dev, n = self.device, self.num_transitions
+        if L > T:
+            raise ValueError(f"sequence_length {L} exceeds buffer_size {T}")
+        # Index by age (0 = oldest filled, n-1 = newest); slot = (base + age) % T.
+        # In age-space windows are linear, so wrap and warm-up collapse into one predicate.
+        base = self._step if n == T else 0
+        ages = torch.arange(T, device=dev)
+        ended = (self._storage["terminated"] | self._storage["truncated"])[
+            :, (base + ages) % T
+        ].long()
+        # Interior [a, a+L-2] is done-free iff c[a+L-1] == c[a] (c is cumsum with leading 0).
+        c = torch.cat(
+            [ended.new_zeros(E, 1), ended.cumsum(1), ended.new_zeros(E, L - 1)], dim=1
+        )
+        valid = (c[:, L - 1 : L - 1 + T] == c[:, :T]) & (ages + L - 1 < n)
+        csum = valid.cumsum(dim=1, dtype=torch.long)
+        total = csum[:, -1]
+        if not (total > 0).any():
+            raise RuntimeError(f"no valid sequences L={L} n={n}")
+        env_idx = torch.multinomial((total > 0).float(), B, replacement=True)
+        u = (torch.rand(B, device=dev) * total[env_idx].float()).long()
+        age_start = torch.searchsorted(csum[env_idx], u[:, None], right=True).squeeze(
+            -1
+        )
+        storage_idx = (base + age_start[:, None] + torch.arange(L, device=dev)) % T
+        return self._storage[env_idx[:, None], storage_idx]

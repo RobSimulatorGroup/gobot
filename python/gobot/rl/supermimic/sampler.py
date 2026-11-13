@@ -1,112 +1,164 @@
-# Adapted from CuboiLeo/SuperMimic-Reproduced, ba6105349069bf040f1fdad60873d13138d505a2.
-# Copyright (c) 2026 Yuxi Liu. SPDX-License-Identifier: MIT
-# See LICENSE-SuperMimic-Reproduced.
-"""Episode return-to-go sampling with explicit task inputs."""
+# Adapted from HybridRobotics/supermimic, abc124c1bd5976341034668af3d12c087f2f1f55.
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# See LICENSE-SuperMimic. Gobot adaptation: backend-neutral tensor interfaces.
+"""Return-based RSI reset sampling.
+
+The motion timeline is cut into the motion command's bins. ReturnSampler measures
+V[b], the discounted return the policy earns from bin b on its own rollouts, and
+turns it into the reset distribution: a uniform explore share, a softmax focus on
+the bins with low return, and a keep share on the bins the focus has concentrated
+on, so a hard motion that is learned keeps some practice.
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
-import math
+
 import torch
 
+
 @dataclass
-class SamplerCfg:
-    sampling_mode: str = "return"
-    uniform_ratio: float = 0.5
-    hard_ratio: float = 0.4
-    memory_ratio: float = 0.1
-    softmax_temp: float = 25.0
-    g_max: float = 10.0
+class ReturnSamplerCfg:
     gamma: float = 0.99
-    ema_alpha: float = 0.05
-    memory_alpha: float = 0.01
-    min_remaining_steps: int = 100
+    """Discount of the measured return; sets v_max = max_step_reward / (1 - gamma)."""
+    horizon: int = 20
+    """Steps per update. Each env's last `horizon` steps turn into returns that
+  bootstrap from V where the window ends."""
+    memory: int = 256
+    """Most samples a bin's V remembers: V is the exact mean of a bin's first
+  `memory` samples; after that, earlier samples count as `memory` samples against
+  each update's new ones, so V follows the current policy."""
+    steepness: float = 25.0
+    """Softmax gain on V / v_max."""
+    explore: float = 0.5
+    """Share of resets spread uniformly over all bins."""
+    keep: float = 0.1
+    """Share of resets on bins in proportion to the summed square of the focus each
+  received: concentrated focus earns keep, focus spread thin earns almost none."""
+
 
 class ReturnSampler:
-    def __init__(self, library, num_envs, max_episode_steps, cfg=None):
-        self.library, self.num_envs, self.device = library, num_envs, library.device
-        self.cfg = cfg or SamplerCfg()
-        self.max_ep_steps = min(max_episode_steps + 2, 1024)
-        self.bin_return = torch.full((library.num_bins,), self.cfg.g_max, device=self.device)
-        self.bin_memory = torch.full_like(self.bin_return, 1.0/library.num_bins)
-        self.ep_rewards = torch.zeros(num_envs, self.max_ep_steps, device=self.device)
-        self.ep_bins = torch.zeros(num_envs, self.max_ep_steps, dtype=torch.long, device=self.device)
-        self.ep_len = torch.zeros(num_envs, dtype=torch.long, device=self.device)
-        self._gamma_pow = self.cfg.gamma ** torch.arange(self.max_ep_steps, device=self.device, dtype=torch.float64)
-        self.bootstrap_fn = None
-        self.metrics = {k: torch.zeros(num_envs, device=self.device) for k in ("sampling_entropy", "episode_return_to_go")}
+    def __init__(
+        self,
+        cfg: ReturnSamplerCfg,
+        bin_count: int,
+        frame_count: int,
+        num_envs: int,
+        max_step_reward: float,
+        device: str = "cpu",
+    ) -> None:
+        assert 0.0 < cfg.gamma < 1.0, f"gamma must be in (0, 1), got {cfg.gamma}"
+        assert cfg.explore + cfg.keep < 1.0, "explore + keep must leave room for focus"
+        self.cfg = cfg
+        self.bin_count = bin_count
+        self.frame_count = frame_count
+        self.v_max = max_step_reward / (1.0 - cfg.gamma)
+        # A bin reads v_max until it is first measured.
+        self.value = torch.full((bin_count,), self.v_max, device=device)
+        self.count = torch.zeros(bin_count, device=device)
+        # Summed over the whole run, so float64 keeps the small per-bin terms exact.
+        self.effort = torch.zeros(bin_count, dtype=torch.float64, device=device)
+        shape = (num_envs, cfg.horizon)
+        self._frames = torch.zeros(shape, dtype=torch.long, device=device)
+        self._rewards = torch.zeros(shape, device=device)
+        self._terminated = torch.zeros(shape, dtype=torch.bool, device=device)
+        self._clip_end = torch.zeros(shape, dtype=torch.bool, device=device)
+        self._timed_out = torch.zeros(shape, dtype=torch.bool, device=device)
+        self._step = 0
 
-    def log_step(self, reward, frame, env_mask: torch.Tensor | None = None) -> None:
-        """Append this step's simulator reward (and the bin it was earned in) to each env's episode log."""
-        ids = torch.arange(self.num_envs, device=self.device) if env_mask is None else env_mask.nonzero().squeeze(-1)
-        if ids.numel() == 0:
-            return
-        pos = self.ep_len[ids].clamp_max(self.max_ep_steps - 1)
-        self.ep_rewards[ids, pos] = reward[ids]
-        self.ep_bins[ids, pos] = self.library.bin_of_frame(frame[ids])
-        self.ep_len[ids] = torch.minimum(self.ep_len[ids] + 1, torch.full_like(pos, self.max_ep_steps))
+    def _bins(self, frames: torch.Tensor) -> torch.Tensor:
+        """Frame -> bin, as the motion command bins its adaptive-sampling failures."""
+        return frames * self.bin_count // self.frame_count
 
-    def finalize(self, env_ids: torch.Tensor, terminated, clip_end) -> None:
-        """Fold the finished episodes' discounted returns-to-go into the per-bin estimates."""
-        cfg = self.cfg
-        lens = self.ep_len[env_ids]
-        if lens.sum() == 0:
-            return
-        T = int(lens.max().item())
-        r = self.ep_rewards[env_ids, :T].double()
-        bins = self.ep_bins[env_ids, :T]
-        tmask = torch.arange(T, device=self.device)[None, :] < lens[:, None]
-        r = r * tmask
-        gp = self._gamma_pow[:T]
-        # Return-to-go R_t = sum_{s>=t} gamma^{s-t} r_s via a reverse cumulative sum.
-        disc = r * gp[None, :]
-        rtg = torch.flip(torch.cumsum(torch.flip(disc, [1]), 1), [1]) / gp[None, :]
-        # Truncated (timed-out) episodes: bootstrap with the critic if available, otherwise
-        # drop the steps too close to the truncation point (plan D14).
-        truncated = ~terminated[env_ids] & ~clip_end[env_ids]
-        if truncated.any():
-            if self.bootstrap_fn is not None:
-                v = self.bootstrap_fn(env_ids).double()  # (n,)
-                remaining = (lens[:, None] - torch.arange(T, device=self.device)[None, :]).clamp_min(0).double()
-                rtg = rtg + truncated[:, None] * (cfg.gamma ** remaining) * v[:, None]
-            else:
-                remaining = lens[:, None] - torch.arange(T, device=self.device)[None, :]
-                tmask = tmask & ~(truncated[:, None] & (remaining < cfg.min_remaining_steps))
-        valid = tmask.reshape(-1)
-        b = bins.reshape(-1)[valid]
-        g = rtg.reshape(-1)[valid].float()
-        if b.numel() == 0:
-            return
-        sums = torch.zeros(self.library.num_bins, device=self.device).index_add_(0, b, g)
-        cnts = torch.zeros(self.library.num_bins, device=self.device).index_add_(0, b, torch.ones_like(g))
-        touched = cnts > 0
-        mean = sums[touched] / cnts[touched]
-        self.bin_return[touched] = (1 - cfg.ema_alpha) * self.bin_return[touched] + cfg.ema_alpha * mean
-        self.metrics["episode_return_to_go"][env_ids] = rtg[:, 0].float()
-        self.ep_len[env_ids] = 0
+    def record(
+        self,
+        frames: torch.Tensor,
+        rewards: torch.Tensor,
+        terminated: torch.Tensor,
+        clip_end: torch.Tensor,
+        timed_out: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Buffer one env step: each env's frame before the step, its reward, and how
+        its episode ended, if it did (a fall terminates; reaching the clip's last frame
+        and a time-out truncate). Every `horizon` steps, update V and return the new
+        reset distribution; otherwise None."""
+        col = self._step
+        self._frames[:, col] = frames
+        self._rewards[:, col] = rewards
+        self._terminated[:, col] = terminated
+        self._clip_end[:, col] = clip_end
+        self._timed_out[:, col] = timed_out
+        self._step += 1
+        if self._step < self.cfg.horizon:
+            return None
+        self._step = 0
+        self._update()
+        return self._distribution()
 
-    # ------------------------------------------------------------------ sampling
+    def _dones(self) -> torch.Tensor:
+        return self._terminated | self._clip_end | self._timed_out
 
-    def sample(self, n: int) -> torch.Tensor:
-        lib = self.library
-        cfg = self.cfg
-        if cfg.sampling_mode == "start":
-            clips = torch.randint(0, lib.num_clips, (n,), device=self.device)
-            return lib.clip_start[clips]
-        if cfg.sampling_mode == "uniform":
-            # Uniform over frames (long clips get proportionally more starts), leaving >= 2 steps.
-            f = torch.randint(0, lib.num_frames, (n,), device=self.device)
-            return torch.minimum(f, lib.last_frame_of(f) - 2).clamp_min(0)
-        assert cfg.sampling_mode == "return"
-        hard = torch.softmax(-cfg.softmax_temp * self.bin_return / cfg.g_max, dim=0)
-        self.bin_memory = (1 - cfg.memory_alpha) * self.bin_memory + cfg.memory_alpha * hard
-        p = (
-            cfg.uniform_ratio / lib.num_bins
-            + cfg.hard_ratio * hard
-            + cfg.memory_ratio * self.bin_memory / self.bin_memory.sum()
+    def _returns(self) -> torch.Tensor:
+        """Discounted return of every buffered step, computed backwards like
+        gae_returns with lambda 1. Where an episode ends, and at the buffer's last step,
+        the return continues from the value of the state after the step: none after a
+        fall; the mean of V after the clip's last frame, whose successor has no bin on
+        the timeline; V at the next frame's bin after a time-out or the buffer's end."""
+        gamma = self.cfg.gamma
+        rewards = self._rewards
+        next_frames = (self._frames + 1).clamp(max=self.frame_count - 1)
+        next_value = torch.where(
+            self._terminated,
+            0.0,
+            torch.where(
+                self._clip_end, self.value.mean(), self.value[self._bins(next_frames)]
+            ),
         )
-        p = p / p.sum()
-        b = torch.multinomial(p, n, replacement=True)
-        u = torch.rand(n, device=self.device)
-        f = lib.bin_start[b] + (u * (lib.bin_end[b] - lib.bin_start[b]).float()).long()
-        f = torch.minimum(f, lib.last_frame_of(f) - 2).clamp_min(lib.clip_start[lib.frame_clip[f]])
-        ent = -(p * (p + 1e-12).log()).sum() / math.log(max(lib.num_bins, 2))
-        self.metrics["sampling_entropy"][:] = ent
-        return f
+        dones = self._dones()
+        returns = torch.empty_like(rewards)
+        next_return = next_value[:, -1]
+        for t in reversed(range(self.cfg.horizon)):
+            next_return = torch.where(dones[:, t], next_value[:, t], next_return)
+            returns[:, t] = rewards[:, t] + gamma * next_return
+            next_return = returns[:, t]
+        return returns
+
+    def _update(self) -> None:
+        """Fold the buffer into V. Each env's visits to one bin within one episode give
+        one sample, their mean return; a bin's earlier samples count at most `memory`
+        times."""
+        returns = self._returns()
+        dones = self._dones()
+        num_envs, horizon = dones.shape
+        episode = torch.cumsum(dones.long(), dim=1) - dones.long()
+        envs = torch.arange(num_envs, device=dones.device).unsqueeze(1)
+        key = (envs * horizon + episode) * self.bin_count + self._bins(self._frames)
+        keys, inverse, visits = torch.unique(
+            key.reshape(-1), return_inverse=True, return_counts=True
+        )
+        samples = torch.zeros(keys.numel(), device=returns.device)
+        samples.scatter_add_(0, inverse, returns.reshape(-1))
+        samples /= visits
+        bins = keys % self.bin_count
+        new = torch.zeros_like(self.count).scatter_add_(
+            0, bins, torch.ones_like(samples)
+        )
+        total = torch.zeros_like(self.value).scatter_add_(0, bins, samples)
+        if torch.distributed.is_initialized():
+            # Combine sufficient statistics before applying the nonlinear memory cap.
+            # Each local env/episode is distinct, so local bin samples concatenate.
+            combined = torch.stack((new, total))
+            torch.distributed.all_reduce(combined)
+            new, total = combined.unbind(0)
+        self.count = self.count.clamp(max=self.cfg.memory) + new
+        self.value = torch.where(
+            new > 0, self.value + (total - new * self.value) / self.count, self.value
+        )
+
+    def _distribution(self) -> torch.Tensor:
+        cfg = self.cfg
+        focus = torch.softmax(-cfg.steepness * self.value / self.v_max, dim=0)
+        self.effort += focus.double().square()
+        keep = (self.effort / self.effort.sum()).float()
+        explore = cfg.explore / self.bin_count
+        return explore + (1.0 - cfg.explore - cfg.keep) * focus + cfg.keep * keep

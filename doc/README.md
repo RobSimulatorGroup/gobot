@@ -13,8 +13,7 @@ Commands in these guides run from the repository root unless stated otherwise.
 | Independent mjlab comparison | [Shared terrain and training](mjlab_comparison.md) |
 | Engine ownership and API contracts | [Architecture](architecture.md) |
 | CPU and CUDA training contracts and roadmap | [MuJoCo RL](mujoco_rl_plan.md) |
-| Official SuperMimic alignment | [GenCoord status and numerical checks](supermimic_official_alignment.md) |
-| SuperMimic-Reproduced reference workflow | [Data preparation and evaluation](../examples/g1/reproduction/README.md) · [Alignment plan](supermimic_reproduced_alignment_plan.md) |
+| SuperMimic GenCoord | [Data, training and evaluation](../examples/g1/supermimic/README.md) |
 | MuJoCo SDK configuration | [MuJoCo setup](physics_mujoco_setup.md) |
 | Native CPU batch integration | [MuJoCo native batch](mujoco_cpu_batch.md) |
 | Import and runtime parity | [MJCF equivalence](mjcf_equivalence.md) |

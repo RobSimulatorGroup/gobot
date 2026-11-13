@@ -1,128 +1,136 @@
-# Adapted from CuboiLeo/SuperMimic-Reproduced, ba6105349069bf040f1fdad60873d13138d505a2.
-# Copyright (c) 2026 Yuxi Liu. SPDX-License-Identifier: MIT
-# See LICENSE-SuperMimic-Reproduced.
-"""All training configuration in one dataclass tree (tyro-friendly)."""
-
-from __future__ import annotations
+"""Official GenCoord configuration on Gobot scenes; synchronous data-parallel training."""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 import math
+from pathlib import Path
 
-from gobot.rl.supermimic.policy_trainer import PolicyTrainerCfg
-from gobot.rl.supermimic.policy import CriticCfg, PolicyCfg
-from gobot.rl.supermimic.wm_trainer import WMTrainerCfg
-from gobot.rl.supermimic.world_model import WorldModelCfg
-
-
-@dataclass
-class DataCfg:
-    npz_dir: Path = Path("data/npz/lafan1")
-    clips: list[str] | None = None  # None = all npz in npz_dir
-    limit: int | None = None
-    manifest: Path | None = None  # csv with name,keep (filter_bones_seed.py output)
-    library: Path | None = None  # packed compact library (.pt from build_library.py); overrides npz_dir
+from .policy_learner import ActorCriticPolicyLearnerCfg
+from .sampler import ReturnSamplerCfg
+from .wm_learner import WorldModelLearnerCfg
 
 
 @dataclass
-class EnvCfg:
-    num_envs: int = 4096
-    episode_length_s: float = 10.0
-    action_noise_std: float = 0.1
-    obs_noise: bool = True
-    reset_noise: bool = True
-    domain_randomization: bool = True
-    sampling_mode: str = "return"
-    replay_capacity: int = 1000
-    future_frames: int = 10
-    compact_library: bool = False
-    anchor_obs: bool = False
-
-
-@dataclass
-class ScheduleCfg:
-    total_iterations: int = 320_000  # env steps (plan D12 reading A)
-    updates_per_env_step: float = 0.4  # UTD
-    policy_updates_per_wm_update: int = 1
-    warmup_iterations: int = 40  # env steps before the first update (fills k-step windows)
-    lr_final_ratio: float = 0.03
-    lr_decay_fraction: float = 250_000 / 320_000
-    log_interval: int = 50  # iterations
-    checkpoint_interval: int = 4000  # iterations
-    max_hours: float | None = None
-
-
-@dataclass
-class TrainConfig:
-    run_name: str = "debug"
-    log_root: Path = Path("logs")
-    seed: int = 0
-    device: str = "cuda:0"
-    data: DataCfg = field(default_factory=DataCfg)
-    env: EnvCfg = field(default_factory=EnvCfg)
-    world_model: WorldModelCfg = field(default_factory=WorldModelCfg)
-    wm_trainer: WMTrainerCfg = field(default_factory=WMTrainerCfg)
-    policy: PolicyCfg = field(default_factory=PolicyCfg)
-    critic: CriticCfg = field(default_factory=CriticCfg)
-    policy_trainer: PolicyTrainerCfg = field(default_factory=PolicyTrainerCfg)
-    schedule: ScheduleCfg = field(default_factory=ScheduleCfg)
-    resume: Path | None = None
-    project: Path = Path("examples/g1")
+class Config:
+    project: Path = Path("examples/g1/assets/supermimic")
     scene: str = "res://g1_29dof_flat_scene.jscn"
+    library: Path = Path("data/bones_official_50hz")
     backend: str = "mujoco-warp"
+    device: str | None = None
+    seed: int = 0
+    num_envs: int = 4096
+    steps: int = 100000
+    max_seconds: float | None = None
+    output: Path = Path("logs/g1-supermimic/seed0")
+    resume: Path | None = None
+    initialize_from: Path | None = None
+    batch_scope: str = "global"
+    tensorboard: bool = True
+    heartbeat_seconds: float = 10.0
+    buffer_size: int = 1000
+    replay_ratio: float = 16.0
+    history_length: int = 1
+    actor_obs: str = "rep_state"
+    sampling_mode: str = "return"
+    termination_softness: float = 0.05
+    dynamics_hidden_dims: tuple[int, ...] = (2048, 2048, 2048)
+    actor_hidden_dims: tuple[int, ...] = (2048, 1024, 512, 256)
+    critic_hidden_dims: tuple[int, ...] = (256, 128)
+    latent_dim: int = 32
+    latent_bc_weight: float = 0.1
+    wm: WorldModelLearnerCfg = field(default_factory=WorldModelLearnerCfg)
+    policy: ActorCriticPolicyLearnerCfg = field(
+        default_factory=ActorCriticPolicyLearnerCfg
+    )
+    sampler: ReturnSamplerCfg = field(default_factory=ReturnSamplerCfg)
+    log_interval: int = 10
+    save_interval: int = 1000
+    compile: bool = True
     capture_graphs: bool = True
-    deterministic: bool = False
+    capture_updates: bool = True
+    verify_data: bool = True
+    domain_randomization: bool = True
+    reset_noise: bool = True
+    episode_length_s: float = 10.0
     nconmax: int = 35
-    njmax: int = 250
-    stop_iteration: int | None = None
+    njmax: int = 500
+    torch_threads: int = 4
 
     def validate(self):
-        counts = {
-            'num_envs':self.env.num_envs, 'replay_capacity':self.env.replay_capacity,
-            'future_frames':self.env.future_frames, 'history':self.policy.history,
-            'horizon':self.policy_trainer.horizon, 'wm_batch':self.wm_trainer.batch_size,
-            'wm_batches':self.wm_trainer.batches_per_update, 'wm_window':self.wm_trainer.window,
-            'policy_batch':self.policy_trainer.batch_size, 'critic_epochs':self.policy_trainer.critic_epochs,
-            'critic_minibatches':self.policy_trainer.critic_minibatches,
-            'total_iterations':self.schedule.total_iterations, 'warmup_iterations':self.schedule.warmup_iterations,
-            'log_interval':self.schedule.log_interval, 'checkpoint_interval':self.schedule.checkpoint_interval,
-            'policy_updates_per_wm_update':self.schedule.policy_updates_per_wm_update,
-            'nconmax':self.nconmax, 'njmax':self.njmax,
-        }
-        if self.stop_iteration is not None:
-            counts['stop_iteration']=self.stop_iteration
-        for name,value in counts.items():
-            if isinstance(value,bool) or not isinstance(value,int) or value<1:
-                raise ValueError(f'{name} must be a positive integer')
-        for name,value in (('episode_length_s',self.env.episode_length_s),
-                           ('updates_per_env_step',self.schedule.updates_per_env_step),
-                           ('wm_lr',self.wm_trainer.lr),('policy_lr',self.policy_trainer.lr),
-                           ('critic_lr',self.policy_trainer.critic_lr)):
-            if not math.isfinite(value) or value<=0:
-                raise ValueError(f'{name} must be finite and positive')
-        if not math.isfinite(self.env.action_noise_std) or self.env.action_noise_std<0:
-            raise ValueError('action_noise_std must be finite and nonnegative')
-        if self.env.sampling_mode not in ('return','uniform','start'):
-            raise ValueError('unknown motion sampling mode')
-        if self.env.replay_capacity<=max(self.policy.history+2,self.wm_trainer.window+1):
-            raise ValueError('replay capacity must exceed history and WM window')
-        if self.schedule.warmup_iterations<=self.wm_trainer.window:
-            raise ValueError('warmup must fill a complete WM window')
-        if self.policy_trainer.horizon*self.policy_trainer.batch_size<self.policy_trainer.critic_minibatches:
-            raise ValueError('critic minibatches exceed rollout transitions')
-        if not math.isclose(self.world_model.state_spec.dt,.02):
-            raise ValueError('G1 tracking requires 50 Hz world-model integration')
-
-    @classmethod
-    def from_dict(cls, value):
-        value = dict(value)
-        for key, typ in (("data", DataCfg), ("env", EnvCfg), ("world_model", WorldModelCfg),
-                         ("wm_trainer", WMTrainerCfg), ("policy", PolicyCfg), ("critic", CriticCfg),
-                         ("policy_trainer", PolicyTrainerCfg), ("schedule", ScheduleCfg)):
-            if key in value:
-                data = dict(value[key])
-                if key == "world_model" and isinstance(data.get("state_spec"), dict):
-                    from .state_spec import StateSpecCfg
-                    data["state_spec"] = StateSpecCfg(**data["state_spec"])
-                value[key] = typ(**data)
-        return cls(**value)
+        if self.batch_scope not in ("global", "per_rank"):
+            raise ValueError("batch_scope must be global or per_rank")
+        if self.resume and self.initialize_from:
+            raise ValueError("choose resume or initialize_from, not both")
+        if not math.isfinite(self.heartbeat_seconds) or self.heartbeat_seconds <= 0:
+            raise ValueError("heartbeat_seconds must be finite and positive")
+        if (
+            isinstance(self.seed, bool)
+            or not isinstance(self.seed, int)
+            or self.seed < 0
+        ):
+            raise ValueError("seed must be a nonnegative integer")
+        if not 0 < self.policy.gamma < 1 or not 0 <= self.policy.lam <= 1:
+            raise ValueError("actor-critic gamma must be in (0,1), lambda in [0,1]")
+        if not math.isfinite(self.policy.noise) or self.policy.noise < 0:
+            raise ValueError("policy noise must be finite and nonnegative")
+        for name in (
+            "nominal_error_root_pose_pos",
+            "nominal_error_root_pose_ori",
+            "nominal_error_joint_pos",
+            "nominal_error_joint_vel",
+        ):
+            if not math.isfinite(getattr(self.wm, name)) or getattr(self.wm, name) <= 0:
+                raise ValueError("world-model loss scales must be finite and positive")
+        for name in (
+            "num_envs",
+            "steps",
+            "buffer_size",
+            "history_length",
+            "latent_dim",
+            "log_interval",
+            "save_interval",
+            "nconmax",
+            "njmax",
+            "torch_threads",
+        ):
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("replay_ratio", "episode_length_s", "termination_softness"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.max_seconds is not None and (
+            not math.isfinite(self.max_seconds) or self.max_seconds <= 0
+        ):
+            raise ValueError("max_seconds must be finite and positive")
+        if self.actor_obs not in ("rep_state", "proprio") or (
+            self.history_length > 1 and self.actor_obs != "proprio"
+        ):
+            raise ValueError("history_length > 1 requires proprio actor observations")
+        if self.sampling_mode not in ("return", "uniform", "start"):
+            raise ValueError("sampling_mode must be return, uniform or start")
+        if self.wm.horizon < 2 or self.buffer_size < max(
+            self.wm.horizon, self.history_length
+        ):
+            raise ValueError(
+                "replay must fit the WM window/history, and WM horizon must be >=2"
+            )
+        for cfg in (self.wm, self.policy):
+            for name in ("num_batches", "batch_size", "horizon"):
+                v = getattr(cfg, name)
+                if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                    raise ValueError(f"learner {name} must be a positive integer")
+            if not math.isfinite(cfg.lr) or cfg.lr <= 0:
+                raise ValueError("learner lr must be finite and positive")
+        if self.policy.batch_size * self.policy.horizon < 4:
+            raise ValueError("critic needs at least four rollout transitions")
+        if self.backend == "mujoco-cpu" and self.device not in (None, "cpu"):
+            raise ValueError("mujoco-cpu requires cpu")
+        for dims in (
+            self.dynamics_hidden_dims,
+            self.actor_hidden_dims,
+            self.critic_hidden_dims,
+        ):
+            if not dims or any(
+                isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in dims
+            ):
+                raise ValueError("network dimensions must be positive integers")

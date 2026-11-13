@@ -3,6 +3,7 @@
 # Extracted from mjlab 8bb2bc9, src/mjlab/utils/lab_api/math.py.
 # See LICENSE-IsaacLab for redistribution terms.
 """Tensor rotation primitives used by the reference-aligned learning model."""
+
 from __future__ import annotations
 import torch
 
@@ -85,7 +86,9 @@ def quat_inv(q: torch.Tensor, eps: float = 1e-9) -> torch.Tensor:
 
 
 @torch.jit.script
-def quat_from_euler_xyz(roll: torch.Tensor, pitch: torch.Tensor, yaw: torch.Tensor) -> torch.Tensor:
+def quat_from_euler_xyz(
+    roll: torch.Tensor, pitch: torch.Tensor, yaw: torch.Tensor
+) -> torch.Tensor:
     """Convert rotations given as Euler angles in radians to Quaternions.
 
     Note:
