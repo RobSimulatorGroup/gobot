@@ -3299,6 +3299,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "base_link",
                 "position": {
@@ -3522,6 +3533,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_mount",
                 "position": {
@@ -3851,6 +3873,17 @@
                 "initial_position": 0.8276203274726868,
                 "joint_position": 0.8276203274726868,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -3.4907000064849854,
                 "parent_link": "openarm_left_base_link",
                 "position": {
@@ -4233,6 +4266,17 @@
                 "initial_position": -0.3643956780433655,
                 "joint_position": -0.3643956780433655,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -3.3160998821258545,
                 "parent_link": "openarm_left_link1",
                 "position": {
@@ -4615,6 +4659,17 @@
                 "initial_position": 0.25079241394996643,
                 "joint_position": 0.25079241394996643,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_left_link2",
                 "position": {
@@ -4997,6 +5052,17 @@
                 "initial_position": 1.708229422569275,
                 "joint_position": 1.708229422569275,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_left_link3",
                 "position": {
@@ -5379,6 +5445,17 @@
                 "initial_position": 0.7283058166503906,
                 "joint_position": 0.7283058166503906,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_left_link4",
                 "position": {
@@ -5861,6 +5938,17 @@
                 "initial_position": -0.018419338390231133,
                 "joint_position": -0.018419338390231133,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.7853999733924866,
                 "parent_link": "openarm_left_link5",
                 "position": {
@@ -6243,6 +6331,17 @@
                 "initial_position": 0.919814944267273,
                 "joint_position": 0.919814944267273,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_left_link6",
                 "position": {
@@ -6625,6 +6724,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_left_ee_base_link",
                 "position": {
@@ -6901,6 +7011,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_sharpa_mount",
                 "position": {
@@ -7177,6 +7298,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_hand_C_MC",
                 "position": {
@@ -7453,6 +7585,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "left_pinky_MC",
                 "position": {
@@ -7729,6 +7872,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "left_pinky_MCP_VL",
                 "position": {
@@ -8005,6 +8159,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_pinky_PP",
                 "position": {
@@ -8281,6 +8446,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_pinky_MP",
                 "position": {
@@ -8557,6 +8733,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_pinky_DP",
                 "position": {
@@ -8833,6 +9020,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_pinky_elastomer",
                 "position": {
@@ -9006,6 +9204,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "left_hand_C_MC",
                 "position": {
@@ -9282,6 +9491,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "left_ring_MCP_VL",
                 "position": {
@@ -9558,6 +9778,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_ring_PP",
                 "position": {
@@ -9834,6 +10065,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_ring_MP",
                 "position": {
@@ -10110,6 +10352,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_ring_DP",
                 "position": {
@@ -10386,6 +10639,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_ring_elastomer",
                 "position": {
@@ -10559,6 +10823,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "left_hand_C_MC",
                 "position": {
@@ -10835,6 +11110,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "left_middle_MCP_VL",
                 "position": {
@@ -11111,6 +11397,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_middle_PP",
                 "position": {
@@ -11387,6 +11684,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_middle_MP",
                 "position": {
@@ -11663,6 +11971,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_middle_DP",
                 "position": {
@@ -11939,6 +12258,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_middle_elastomer",
                 "position": {
@@ -12112,6 +12442,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "left_hand_C_MC",
                 "position": {
@@ -12388,6 +12729,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "left_index_MCP_VL",
                 "position": {
@@ -12664,6 +13016,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_index_PP",
                 "position": {
@@ -12940,6 +13303,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_index_MP",
                 "position": {
@@ -13216,6 +13590,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_index_DP",
                 "position": {
@@ -13492,6 +13877,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_index_elastomer",
                 "position": {
@@ -13665,6 +14061,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745000034570694,
                 "parent_link": "left_hand_C_MC",
                 "position": {
@@ -13891,6 +14298,17 @@
                 "initial_position": -0.20000000298023224,
                 "joint_position": -0.20000000298023224,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.3490999937057495,
                 "parent_link": "left_thumb_CMC_VL",
                 "position": {
@@ -14167,6 +14585,17 @@
                 "initial_position": 0.15000000596046448,
                 "joint_position": 0.15000000596046448,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.5235999822616577,
                 "parent_link": "left_thumb_MC",
                 "position": {
@@ -14393,6 +14822,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.3490999937057495,
                 "parent_link": "left_thumb_MCP_VL",
                 "position": {
@@ -14669,6 +15109,17 @@
                 "initial_position": 0.15000000596046448,
                 "joint_position": 0.15000000596046448,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_thumb_PP",
                 "position": {
@@ -14945,6 +15396,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_thumb_DP",
                 "position": {
@@ -15221,6 +15683,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "left_thumb_elastomer",
                 "position": {
@@ -15394,6 +15867,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_mount",
                 "position": {
@@ -15723,6 +16207,17 @@
                 "initial_position": -0.8276199102401733,
                 "joint_position": -0.8276199102401733,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.396299958229065,
                 "parent_link": "openarm_right_base_link",
                 "position": {
@@ -16105,6 +16600,17 @@
                 "initial_position": 0.36439695954322815,
                 "joint_position": 0.36439695954322815,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745299994945526,
                 "parent_link": "openarm_right_link1",
                 "position": {
@@ -16487,6 +16993,17 @@
                 "initial_position": -0.2507908344268799,
                 "joint_position": -0.2507908344268799,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_right_link2",
                 "position": {
@@ -16869,6 +17386,17 @@
                 "initial_position": 1.708229660987854,
                 "joint_position": 1.708229660987854,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_right_link3",
                 "position": {
@@ -17251,6 +17779,17 @@
                 "initial_position": -0.7283059358596802,
                 "joint_position": -0.7283059358596802,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_right_link4",
                 "position": {
@@ -17733,6 +18272,17 @@
                 "initial_position": 0.018419478088617325,
                 "joint_position": 0.018419478088617325,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.7853999733924866,
                 "parent_link": "openarm_right_link5",
                 "position": {
@@ -18115,6 +18665,17 @@
                 "initial_position": -0.9198148846626282,
                 "joint_position": -0.9198148846626282,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -1.5707999467849731,
                 "parent_link": "openarm_right_link6",
                 "position": {
@@ -18497,6 +19058,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "openarm_right_ee_base_link",
                 "position": {
@@ -18773,6 +19345,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_sharpa_mount",
                 "position": {
@@ -19049,6 +19632,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_hand_C_MC",
                 "position": {
@@ -19325,6 +19919,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "right_pinky_MC",
                 "position": {
@@ -19601,6 +20206,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "right_pinky_MCP_VL",
                 "position": {
@@ -19877,6 +20493,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_pinky_PP",
                 "position": {
@@ -20153,6 +20780,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_pinky_MP",
                 "position": {
@@ -20429,6 +21067,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_pinky_DP",
                 "position": {
@@ -20705,6 +21354,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_pinky_elastomer",
                 "position": {
@@ -20878,6 +21538,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "right_hand_C_MC",
                 "position": {
@@ -21154,6 +21825,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "right_ring_MCP_VL",
                 "position": {
@@ -21430,6 +22112,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_ring_PP",
                 "position": {
@@ -21706,6 +22399,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_ring_MP",
                 "position": {
@@ -21982,6 +22686,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_ring_DP",
                 "position": {
@@ -22258,6 +22973,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_ring_elastomer",
                 "position": {
@@ -22431,6 +23157,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "right_hand_C_MC",
                 "position": {
@@ -22707,6 +23444,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "right_middle_MCP_VL",
                 "position": {
@@ -22983,6 +23731,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_middle_PP",
                 "position": {
@@ -23259,6 +24018,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_middle_MP",
                 "position": {
@@ -23535,6 +24305,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_middle_DP",
                 "position": {
@@ -23811,6 +24592,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_middle_elastomer",
                 "position": {
@@ -23984,6 +24776,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745329350233078,
                 "parent_link": "right_hand_C_MC",
                 "position": {
@@ -24260,6 +25063,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.03491000086069107,
                 "parent_link": "right_index_MCP_VL",
                 "position": {
@@ -24536,6 +25350,17 @@
                 "initial_position": 0.30000001192092896,
                 "joint_position": 0.30000001192092896,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_index_PP",
                 "position": {
@@ -24812,6 +25637,17 @@
                 "initial_position": 0.1599999964237213,
                 "joint_position": 0.1599999964237213,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_index_MP",
                 "position": {
@@ -25088,6 +25924,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_index_DP",
                 "position": {
@@ -25364,6 +26211,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_index_elastomer",
                 "position": {
@@ -25537,6 +26395,17 @@
                 "initial_position": 0.25,
                 "joint_position": 0.25,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.1745000034570694,
                 "parent_link": "right_hand_C_MC",
                 "position": {
@@ -25763,6 +26632,17 @@
                 "initial_position": -0.20000000298023224,
                 "joint_position": -0.20000000298023224,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.3490999937057495,
                 "parent_link": "right_thumb_CMC_VL",
                 "position": {
@@ -26039,6 +26919,17 @@
                 "initial_position": 0.15000000596046448,
                 "joint_position": 0.15000000596046448,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.5235999822616577,
                 "parent_link": "right_thumb_MC",
                 "position": {
@@ -26265,6 +27156,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.3490999937057495,
                 "parent_link": "right_thumb_MCP_VL",
                 "position": {
@@ -26541,6 +27443,17 @@
                 "initial_position": 0.15000000596046448,
                 "joint_position": 0.15000000596046448,
                 "joint_type": "Revolute",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_thumb_PP",
                 "position": {
@@ -26817,6 +27730,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_thumb_DP",
                 "position": {
@@ -27093,6 +28017,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Fixed",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": 0.0,
                 "parent_link": "right_thumb_elastomer",
                 "position": {
@@ -28524,6 +29459,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28570,6 +29512,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28616,6 +29565,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28662,6 +29618,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28708,6 +29671,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28754,6 +29724,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28800,6 +29777,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28846,6 +29830,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28892,6 +29883,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -28938,6 +29936,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29290,6 +30295,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29309,6 +30321,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29338,6 +30357,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29357,6 +30383,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29376,6 +30409,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29395,6 +30435,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29414,6 +30461,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29433,6 +30487,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29452,6 +30513,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29471,6 +30539,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29490,6 +30565,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29509,6 +30591,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29528,6 +30617,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29548,6 +30644,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29567,6 +30670,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29586,6 +30696,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29605,6 +30722,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29624,6 +30748,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29643,6 +30774,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29662,6 +30800,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29681,6 +30826,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29700,6 +30852,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29719,6 +30878,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29738,6 +30904,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29757,6 +30930,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29776,6 +30956,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29795,6 +30982,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29814,6 +31008,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29833,6 +31034,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29852,6 +31060,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29871,6 +31086,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29890,6 +31112,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29909,6 +31138,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29928,6 +31164,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29947,6 +31190,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29966,6 +31216,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -29985,6 +31242,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30004,6 +31268,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30023,6 +31294,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30042,6 +31320,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30061,6 +31346,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30080,6 +31372,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30099,6 +31398,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30118,6 +31424,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30137,6 +31450,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30156,6 +31476,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30175,6 +31502,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30194,6 +31528,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30213,6 +31554,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30232,6 +31580,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30252,6 +31607,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30271,6 +31633,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30290,6 +31659,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30309,6 +31685,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30328,6 +31711,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30347,6 +31737,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30366,6 +31763,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30385,6 +31789,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30404,6 +31815,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30423,6 +31841,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30442,6 +31867,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30461,6 +31893,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30480,6 +31919,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30499,6 +31945,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30518,6 +31971,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30537,6 +31997,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30556,6 +32023,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30575,6 +32049,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30594,6 +32075,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30613,6 +32101,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30632,6 +32127,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30651,6 +32153,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30670,6 +32179,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30689,6 +32205,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30708,6 +32231,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30727,6 +32257,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30746,6 +32283,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30792,6 +32336,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30872,6 +32423,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -30952,6 +32510,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -80138,6 +81703,13 @@
             "contact_compliance": 4.999999858590343e-10,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -84544,6 +86116,13 @@
             "contact_compliance": 4.999999858590343e-10,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -140500,6 +142079,13 @@
             "contact_compliance": 4.999999858590343e-10,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -144906,6 +146492,13 @@
             "contact_compliance": 4.999999858590343e-10,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,

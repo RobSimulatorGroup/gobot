@@ -461,6 +461,17 @@
                 "initial_position": 0.0,
                 "joint_position": 0.0,
                 "joint_type": "Prismatic",
+                "limit_compliance": 0.0,
+                "limit_damping": 0.0,
+                "limit_damping_ratio": 1.0,
+                "limit_impedance": [
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
+                    0.5,
+                    2.0
+                ],
+                "limit_stiffness": 0.0,
                 "lower_limit": -0.17000000178813934,
                 "parent_link": "press_frame",
                 "position": {
@@ -830,6 +841,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
@@ -876,6 +894,13 @@
             "contact_compliance": 0.0,
             "contact_damping": 1.0,
             "contact_friction_mode": "auto",
+            "contact_impedance": [
+                0.8999999761581421,
+                0.949999988079071,
+                0.0010000000474974513,
+                0.5,
+                2.0
+            ],
             "contact_priority": 0,
             "resource_name": "",
             "restitution": 0.0,
