@@ -1,0 +1,30 @@
+{
+  "protocol": "supermimic_official_gencoord_v1",
+  "supermimic": {
+    "repository": "https://github.com/HybridRobotics/supermimic",
+    "commit": "abc124c1bd5976341034668af3d12c087f2f1f55"
+  },
+  "mjlab_research": {
+    "repository": "https://github.com/HybridRobotics/mjlab_research",
+    "commit": "dd51a9fcc98791a2f0b018b3c7f71a3eefd5ecdd",
+    "provenance": "Companion HEAD fetched on 2026-11-11. SuperMimic's uv.lock pins an editable path, not a Git revision; this is not evidence of the authors' training revision.",
+    "numerical_source_paths": [
+      "src/mjlab/utils/lab_api/math.py"
+    ]
+  },
+  "upstream_locked_runtime": {
+    "python": ">=3.13,<3.14",
+    "torch": "2.10.0",
+    "rsl-rl-lib": "5.4.0",
+    "tensordict": "0.11.0",
+    "mujoco": "3.10.0",
+    "mujoco-warp": "3.10.0.1",
+    "warp-lang": "1.14.0"
+  },
+  "numerical_tolerances": {
+    "atol": 1e-05,
+    "rtol": 0.0001,
+    "parameter_atol": 1e-06,
+    "parameter_rtol": 0.0001
+  }
+}

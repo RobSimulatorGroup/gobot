@@ -101,3 +101,5 @@ uv run python tests/python/test_locomotion_training.py --backend mujoco-cpu
 
 The tests cover task contracts and short optimization/resume runs; policy admission
 is measured separately. Reference repositories and licensing are described in `NOTICE`.
+
+SuperMimic 世界模型动作跟踪的独立入口见 [SuperMimic 指南](supermimic/README.md)。

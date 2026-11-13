@@ -1,0 +1,10 @@
+{
+  "num_envs": 4096,
+  "steps": 100000,
+  "replay_ratio": 16.0,
+  "actor_obs": "rep_state",
+  "history_length": 1,
+  "wm": {"num_batches": 10, "batch_size": 2048, "horizon": 8},
+  "policy": {"num_batches": 1, "batch_size": 4096, "horizon": 32},
+  "njmax": 500
+}

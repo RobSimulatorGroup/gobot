@@ -20,6 +20,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv-official/
 uv.lock
 
 # Fortran module files
@@ -69,6 +70,8 @@ examples/newton_g1/assets/*
 
 # Local reference checkouts used during development.
 /.upstream/
+/supermimic/
+/mjlab_research/
 /envpool/
 /mjlab/
 /mujoco/

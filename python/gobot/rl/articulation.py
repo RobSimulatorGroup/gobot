@@ -236,6 +236,12 @@ class ArticulationBatch:
             value[mask] = 0
         return self.read_state()
 
+    def assert_no_overflow(self):
+        """Reject exhausted runtime capacity before a reset can clear diagnostics."""
+        self._require_open()
+        if self._provider is not None:
+            self._provider.assert_no_overflow()
+
     def read_contacts(self):
         self._require_open()
         return self._contacts

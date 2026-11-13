@@ -25,37 +25,6 @@ def environment(tmp_path):
     return env
 
 
-@pytest.mark.parametrize('script,default', [('train_tracking.sbatch', 4), ('pipeline_smoke.sbatch', 1)])
-@pytest.mark.parametrize('allocation,override', [(None, None), ('1', None), ('4', None), ('8', None), ('8', '4')])
-def test_launch_matches_allocation_and_keeps_arguments(environment, script, default, allocation, override):
-    if allocation:
-        environment['SLURM_GPUS_ON_NODE'] = allocation
-    if override:
-        environment['GOBOT_NPROC_PER_NODE'] = override
-    expected = override or allocation or str(default)
-    result = subprocess.run(['bash', str(ROOT / 'examples/locomotion/cluster' / script),
-                             '--output', '/tmp/result with spaces'], env=environment,
-                            check=True, capture_output=True, text=True)
-    args = json.loads(result.stdout)
-    assert args[:7] == ['-m', 'torch.distributed.run', '--standalone',
-                       f'--nproc-per-node={expected}', '-m', 'gobot.rl.train',
-                       'g1-tracking']
-    assert args[args.index('--project') + 1] == environment['GOBOT_SCENE_PROJECT']
-    assert args[-2:] == ['--output', '/tmp/result with spaces']
-
-
-@pytest.mark.parametrize('script', ['train_tracking.sbatch', 'pipeline_smoke.sbatch'])
-@pytest.mark.parametrize('extra', [
-    {'GOBOT_NPROC_PER_NODE': '0'}, {'GOBOT_NPROC_PER_NODE': 'eight'},
-    {'SLURM_GPUS_ON_NODE': '4', 'GOBOT_NPROC_PER_NODE': '8'},
-    {'SLURM_JOB_NUM_NODES': '2'},
-])
-def test_invalid_launch_fails_before_python(environment, script, extra):
-    result = subprocess.run(['bash', str(ROOT / 'examples/locomotion/cluster' / script)],
-                            env={**environment, **extra}, capture_output=True, text=True)
-    assert result.returncode == 2 and result.stderr and not result.stdout
-
-
 @pytest.mark.parametrize('processes,task,seed', [
     (None, 'go1-velocity', '42'),
     ('2', 'g1-velocity', '7'),

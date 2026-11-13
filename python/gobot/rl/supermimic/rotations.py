@@ -1,109 +1,86 @@
-# Adapted from CuboiLeo/SuperMimic-Reproduced, ba6105349069bf040f1fdad60873d13138d505a2.
-# Copyright (c) 2026 Yuxi Liu. SPDX-License-Identifier: MIT
-# See LICENSE-SuperMimic-Reproduced.
-"""Rotation helpers (torch, batched, quaternions in **wxyz**).
-
-Re-exports mjlab's `lab_api.math` primitives so the whole project shares one
-convention with the environment's reward and command code, and adds the few
-operations the world model needs: rotation-vector exp/log, 6D rotation
-representation and heading (yaw) frames.
-
-All functions are differentiable and work on arbitrary leading batch dims.
-"""
+# Adapted from HybridRobotics/supermimic, abc124c1bd5976341034668af3d12c087f2f1f55.
+# Copyright 2026 The SuperMimic Authors. SPDX-License-Identifier: Apache-2.0
+# See LICENSE-SuperMimic. Gobot adaptation: backend-neutral tensor interfaces.
+"""Differentiable rotation helpers used by the official core."""
 
 from __future__ import annotations
-
-import math
-
 import torch
-from gobot.rl.supermimic.rotation_primitives import (  # noqa: F401  (re-exported)
+from gobot.rl.supermimic.rotation_primitives import (
     matrix_from_quat,
     quat_apply,
-    quat_apply_inverse,
-    quat_conjugate,
-    quat_error_magnitude,
-    quat_from_angle_axis,
     quat_inv,
     quat_mul,
-    yaw_quat,
 )
 
-_EPS = 1.0e-8
+
+def small_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """``a @ b`` without TF32 rounding, fusable by ``torch.compile``."""
+    return (a.unsqueeze(-1) * b.unsqueeze(-3)).sum(-2)
 
 
-def quat_normalize(q: torch.Tensor) -> torch.Tensor:
-    return q / q.norm(dim=-1, keepdim=True).clamp_min(_EPS)
+def rotation_error_magnitude(mat1: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+    """Angular distance between two rotation matrices, in radians.
 
+    The clamp keeps ``cos_angle`` away from the ±1 acos singularity so the
+    gradient stays finite for identical or 180°-apart inputs.
 
-def quat_canonical(q: torch.Tensor) -> torch.Tensor:
-    """Flip sign so that w >= 0 (removes the double cover ambiguity)."""
-    return torch.where(q[..., :1] < 0, -q, q)
+    Args:
+      mat1: (..., 3, 3) rotation matrix
+      mat2: (..., 3, 3) rotation matrix
 
-
-def quat_from_rotvec(v: torch.Tensor) -> torch.Tensor:
-    """Exponential map: rotation vector (angle * axis) -> unit quaternion (wxyz).
-
-    Uses a Taylor expansion of sin(a/2)/a near zero so gradients stay finite at v = 0.
+    Returns:
+      (...,) angle in radians
     """
-    angle_sq = (v * v).sum(-1, keepdim=True)
-    angle = torch.sqrt(angle_sq.clamp_min(1e-30))
-    half = 0.5 * angle
-    small = angle < 1e-4
-    # sin(half)/angle with series fallback: 1/2 - angle^2/48
-    k = torch.where(small, 0.5 - angle_sq / 48.0, torch.sin(half) / angle)
-    w = torch.where(small, 1.0 - angle_sq / 8.0, torch.cos(half))
-    return torch.cat([w, v * k], dim=-1)
+    # trace(R1^T R2) via element-wise product (avoids materializing R1^T R2)
+    tr = torch.sum(mat1 * mat2, dim=(-2, -1))
+    cos_angle = torch.clamp((tr - 1.0) / 2.0, -1.0 + 1e-7, 1.0 - 1e-7)
+    return torch.acos(cos_angle)
 
 
-def rotvec_from_quat(q: torch.Tensor) -> torch.Tensor:
-    """Logarithmic map: unit quaternion (wxyz) -> rotation vector in (-pi, pi]."""
-    q = quat_canonical(q)
-    w = q[..., :1]
-    xyz = q[..., 1:]
-    s = xyz.norm(dim=-1, keepdim=True)
-    angle = 2.0 * torch.atan2(s, w)
-    small = s < 1e-6
-    # angle / sin(angle/2) == angle / s ; series: 2 + angle^2/12 ... (with s ~ angle/2)
-    k = torch.where(small, 2.0 + (angle * angle) / 12.0, angle / torch.where(small, torch.ones_like(s), s))
-    return xyz * k
+def quat_to_rot6d(quat: torch.Tensor) -> torch.Tensor:
+    """Convert quaternions to 6D rotation representation (first two columns of rotation matrix)."""
+    mat = matrix_from_quat(quat)  # (..., 3, 3)
+    return mat[..., :2].flatten(-2, -1)  # (..., 6)
 
 
-def quat_integrate(q: torch.Tensor, dtheta_body: torch.Tensor) -> torch.Tensor:
-    """Apply a body-frame rotation increment: q ⊗ exp(dtheta)."""
-    return quat_normalize(quat_mul(q, quat_from_rotvec(dtheta_body)))
+def quat_integrate(
+    quat: torch.Tensor, ang_vel: torch.Tensor, dt: float
+) -> torch.Tensor:
+    """Integrate quaternion by angular velocity over dt (axis-angle method).
+
+    Args:
+      quat: (..., 4) current quaternion (w, x, y, z)
+      ang_vel: (..., 3) angular velocity in world frame
+      dt: time step
+
+    Returns:
+      (..., 4) next quaternion, normalized
+    """
+    omega = ang_vel * dt
+    norm_sq = (omega * omega).sum(dim=-1, keepdim=True)
+    norm_safe = torch.sqrt(norm_sq + 1e-8)
+    half_angle = norm_safe / 2
+    axis = omega / norm_safe
+    delta_q = torch.cat([torch.cos(half_angle), torch.sin(half_angle) * axis], dim=-1)
+    q_next = quat_mul(delta_q, quat)
+    return q_next / torch.norm(q_next, dim=-1, keepdim=True)
 
 
-def rot6d_from_quat(q: torch.Tensor) -> torch.Tensor:
-    """First two columns of the rotation matrix, flattened (..., 6)."""
-    m = matrix_from_quat(q)
-    return m[..., :, :2].reshape(*q.shape[:-1], 6)
+def subtract_frame_transforms(root_pos, root_quat, target_pos, target_quat):
+    inverse = quat_inv(root_quat)
+    return quat_apply(inverse, target_pos - root_pos), quat_mul(inverse, target_quat)
 
 
-def heading_yaw(q: torch.Tensor) -> torch.Tensor:
-    """Yaw angle of the heading frame of q (rotation of the body x-axis about world z)."""
-    w, x, y, z = q.unbind(-1)
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    return torch.atan2(siny_cosp, cosy_cosp)
-
-
-def quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
-    half = 0.5 * yaw
-    zeros = torch.zeros_like(half)
-    return torch.stack([torch.cos(half), zeros, zeros, torch.sin(half)], dim=-1)
-
-
-def heading_quat(q: torch.Tensor) -> torch.Tensor:
-    """Unit quaternion of the pure-yaw heading frame (same as mjlab yaw_quat, but via atan2)."""
-    return quat_from_yaw(heading_yaw(q))
-
-
-def wrap_to_pi(a: torch.Tensor) -> torch.Tensor:
-    return (a + math.pi) % (2.0 * math.pi) - math.pi
-
-
-def projected_gravity(q_body_w: torch.Tensor) -> torch.Tensor:
-    """Gravity direction (0,0,-1) expressed in the body frame."""
-    g = torch.tensor([0.0, 0.0, -1.0], dtype=q_body_w.dtype, device=q_body_w.device)
-    g = g.expand(*q_body_w.shape[:-1], 3)
-    return quat_apply_inverse(q_body_w, g)
+def euler_quat(angles):
+    """XYZ Euler angles to a wxyz quaternion for reset perturbations."""
+    half = angles * 0.5
+    c, s = half.cos(), half.sin()
+    return torch.stack(
+        (
+            c[:, 0] * c[:, 1] * c[:, 2] + s[:, 0] * s[:, 1] * s[:, 2],
+            s[:, 0] * c[:, 1] * c[:, 2] - c[:, 0] * s[:, 1] * s[:, 2],
+            c[:, 0] * s[:, 1] * c[:, 2] + s[:, 0] * c[:, 1] * s[:, 2],
+            c[:, 0] * c[:, 1] * s[:, 2] - s[:, 0] * s[:, 1] * c[:, 2],
+        ),
+        -1,
+    )

@@ -3,14 +3,14 @@ import pytest
 from gobot.rl import tasks
 from gobot.rl.train import main
 
-TASK = "g1-tracking"
+TASK = "g1-supermimic"
 
 
 def test_task_factories():
     spec = tasks.load_training_spec(TASK)
     cfg = spec.config_factory()
-    cfg.wm_trainer.lr = .2
-    assert spec.config_factory().wm_trainer.lr == 2e-4
+    cfg.wm.lr = .2
+    assert spec.config_factory().wm.lr == 2e-4
     assert spec.supports_distributed
 
 
