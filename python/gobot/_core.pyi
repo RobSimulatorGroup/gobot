@@ -343,6 +343,11 @@ class AppContext:
     def reset_batch_joint_state(
         self, env_id: int, robot: str, joint: str, position: float, velocity: float = 0.0
     ) -> None: ...
+    def set_batch_link_velocities(
+        self, env_ids: Sequence[int], robot: str, link: str, velocities: Any
+    ) -> None:
+        """Write world linear/angular link-origin velocities without resetting state."""
+        ...
     def reset_batch_link_state(
         self,
         env_id: int,

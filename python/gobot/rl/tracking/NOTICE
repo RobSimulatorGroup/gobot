@@ -1,0 +1,14 @@
+Gobot whole-body tracking
+
+Tracking MDP equations and defaults adapted from mujocolab/mjlab,
+revision dcdf6ce519abfd2ea45e9503ae6fb650b75bb869.
+Copyright 2025, The mjlab Developers. Licensed under Apache-2.0;
+see LICENSE-mjlab in this directory.
+
+Upstream tracking describes itself as a reimplementation of BeyondMimic,
+based on HybridRobotics/whole_body_tracking
+f8e20c880d9c8ec7172a13d3a88a65e3a5a88448.
+
+Gobot modifications: scene-based articulation integration, explicit motion name
+mapping and validation, independent sampling state, CPU/Warp contact sensing,
+training checkpoint contracts, and local evaluation. Runtime imports no mjlab.

@@ -165,6 +165,25 @@ class _MuJoCoWarpRobotViewAdapter:
     def set_controls(self, controls: Any) -> None:
         self.provider.set_joint_controls(self.layout, controls)
 
+    def set_base_velocity(self, mask: Any, velocity: Any) -> None:
+        if self.base_qd is None or self.base_q is None:
+            raise ValueError("base velocity writes require a floating joint")
+        torch = self.provider._torch
+        mask = self.provider._as_tensor(mask, dtype=torch.bool)
+        qvel = self.provider.arrays["qvel"]
+        velocity = self.provider._as_tensor(velocity, dtype=qvel.dtype)
+        if mask.shape != (self.provider.num_envs,) or velocity.shape != (self.provider.num_envs, 6):
+            raise ValueError("base velocity mask or [num_envs, 6] shape is invalid")
+        if not bool(torch.isfinite(velocity[mask]).all()):
+            raise ValueError("base velocities must be finite")
+        quaternion = self.provider.arrays["qpos"][mask, self.base_q + 3:self.base_q + 7]
+        vector = -quaternion[:, 1:4]
+        angular = velocity[mask, 3:]
+        first_cross = torch.cross(vector, angular, dim=1)
+        local = angular + 2 * (quaternion[:, :1] * first_cross + torch.cross(vector, first_cross, dim=1))
+        qvel[mask, self.base_qd:self.base_qd + 3] = velocity[mask, :3]
+        qvel[mask, self.base_qd + 3:self.base_qd + 6] = local
+
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
         kinematics_only = bool(state.pop("kinematics_only", False))
         qpos = self.provider.arrays["qpos"].clone()

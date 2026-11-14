@@ -662,6 +662,14 @@ class RobotBatchView:
         self._validate()
         self._adapter.set_controls(controls)
 
+    def set_base_velocity(self, mask: Any, velocity: Any) -> None:
+        """Set selected bases' world linear/angular velocities without a reset."""
+        self._validate()
+        method = getattr(self._adapter, "set_base_velocity", None)
+        if method is None:
+            raise NotImplementedError("this provider does not support base velocity writes")
+        method(mask, velocity)
+
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
         self._validate()
         return self._adapter.reset(reset_mask, **state)

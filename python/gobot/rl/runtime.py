@@ -142,6 +142,13 @@ class BatchSimulationRuntime:
             bool(kinematic_readback),
         )
 
+    def set_base_velocities(self, env_ids: Sequence[int], velocities: Any) -> None:
+        """Write world linear/angular velocities without resetting the episode."""
+        self.context.set_batch_link_velocities(
+            list(env_ids), self.robot, self.base_link,
+            np.asarray(velocities, dtype=np.float64),
+        )
+
     def reset_robot_states(
         self,
         env_ids: Sequence[int],

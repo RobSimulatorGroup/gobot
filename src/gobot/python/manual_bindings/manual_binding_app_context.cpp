@@ -2287,6 +2287,40 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
+            .def("set_batch_link_velocities", [](EngineContext& context,
+                                                   const std::vector<std::size_t>& env_ids,
+                                                   const std::string& robot,
+                                                   const std::string& link,
+                                                   py::array_t<RealType, py::array::c_style | py::array::forcecast> velocities) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                Ref<PhysicsWorld> world = simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>{};
+                if (!world.IsValid()) {
+                    throw std::runtime_error("active batch physics world is unavailable");
+                }
+                auto values = velocities.unchecked<2>();
+                if (values.shape(0) != static_cast<py::ssize_t>(env_ids.size()) || values.shape(1) != 6) {
+                    throw std::invalid_argument("velocities must have shape [len(env_ids), 6]");
+                }
+                // Validate the full batch before changing any environment.
+                for (std::size_t row = 0; row < env_ids.size(); ++row) {
+                    if (env_ids[row] >= world->GetEnvironmentCount()) {
+                        throw std::out_of_range("velocity environment index is out of range");
+                    }
+                    for (int column = 0; column < 6; ++column) {
+                        if (!std::isfinite(values(row, column))) {
+                            throw std::invalid_argument("velocities must be finite");
+                        }
+                    }
+                }
+                for (std::size_t row = 0; row < env_ids.size(); ++row) {
+                    if (!world->WriteEnvironmentLinkVelocity(
+                                env_ids[row], robot, link,
+                                {values(row, 0), values(row, 1), values(row, 2)},
+                                {values(row, 3), values(row, 4), values(row, 5)})) {
+                        throw std::runtime_error(world->GetLastError());
+                    }
+                }
+            }, py::arg("env_ids"), py::arg("robot"), py::arg("link"), py::arg("velocities"))
             .def("reset_batch_link_state", [](EngineContext& context,
                                               std::size_t env_id,
                                               const std::string& robot,
