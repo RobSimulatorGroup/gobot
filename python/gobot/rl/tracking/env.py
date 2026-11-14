@@ -133,6 +133,9 @@ class TrackingEnv:
             k: torch.zeros(self.num_envs, device=self.device)
             for k in cfg.reward_weights
         }
+        self.completed_statistics = torch.zeros(
+            2 + len(cfg.reward_weights), device=self.device, dtype=torch.float64
+        )
         self.common_step_counter = 0
         self.state = None
         self.action_spec = ActionSpec(
@@ -436,6 +439,10 @@ class TrackingEnv:
         }
         ids = done.nonzero().flatten()
         if len(ids):
+            self.completed_statistics[0] += len(ids)
+            self.completed_statistics[1] += self.steps[ids].sum()
+            for index, value in enumerate(self.episode_terms.values(), 2):
+                self.completed_statistics[index] += value[ids].sum()
             info["log"] = {
                 f"Episode_Reward/{k}": v[ids].mean() / self.cfg_obj.episode_length_s
                 for k, v in self.episode_terms.items()
@@ -474,6 +481,11 @@ class TrackingEnv:
             self._observations(), reward, terminated, truncated, info, final
         )
         return self.state
+
+    def consume_episode_statistics(self):
+        values = self.completed_statistics.clone()
+        self.completed_statistics.zero_()
+        return values
 
     def training_state_dict(self):
         return dict(

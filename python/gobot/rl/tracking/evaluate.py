@@ -15,9 +15,9 @@ from .env import TrackingEnv
 
 
 @torch.inference_mode()
-def evaluate(checkpoint, *, steps=500, backend="mujoco-cpu", device=None, video=None):
+def evaluate(checkpoint, *, steps=None, backend="mujoco-cpu", device=None, video=None):
     checkpoint = Path(checkpoint).resolve()
-    if steps < 1:
+    if steps is not None and steps < 1:
         raise ValueError("steps must be positive")
     cfg = update_config(
         Config(), json.loads(checkpoint.with_name("config.json").read_text())
@@ -35,6 +35,9 @@ def evaluate(checkpoint, *, steps=500, backend="mujoco-cpu", device=None, video=
         sampling_mode="start",
     )
     env = TrackingEnv(cfg, autoreset=False)
+    # Evaluate the full clip without the training episode timeout truncating it.
+    env.max_episode_length = env.motion.frames + 1
+    steps = env.motion.frames - 1 if steps is None else steps
     writer = None
     try:
         payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
@@ -88,7 +91,7 @@ def evaluate(checkpoint, *, steps=500, backend="mujoco-cpu", device=None, video=
             steps=len(position_error),
             seconds=len(position_error) * env.control_dt,
             terminated=terminated,
-            motion_completed=wrapped,
+            motion_completed=wrapped and not terminated,
             truncated=bool(state.truncated.any()),
             termination_reasons=[
                 k for k, v in state.info["termination_terms"].items() if bool(v.any())
@@ -112,7 +115,9 @@ def evaluate(checkpoint, *, steps=500, backend="mujoco-cpu", device=None, video=
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("checkpoint", type=Path)
-    p.add_argument("--steps", type=int, default=500)
+    p.add_argument(
+        "--steps", type=int, help="Optional cap; default evaluates the entire motion"
+    )
     p.add_argument(
         "--backend", default="mujoco-cpu", choices=("mujoco-cpu", "mujoco-warp")
     )

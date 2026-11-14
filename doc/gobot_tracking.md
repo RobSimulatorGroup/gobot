@@ -85,7 +85,7 @@ NPZ 保留其已有身体轨迹，因此必须与所用机器人几何匹配。
 
 `--set` 可修改 dataclass 字段，例如 `sampling_mode="uniform"`、
 `state_estimation=false`、`agent.algorithm.learning_rate=0.0003`。
-`--dry-run` 校验并打印配置。此任务目前为单进程；多进程启动会明确拒绝。
+`--dry-run` 校验并打印配置。支持 `torchrun` 同步多进程，所有进程必须使用同一场景和同一动作文件。
 
 输出包含 `config.json`、`contract.json`、TensorBoard 日志、源代码归档、
 `model.pt` 和 `status.json`。checkpoint 记录场景/动作/名称布局摘要、观测约定、
@@ -98,7 +98,7 @@ PPO 模型与优化器、自适应采样统计、随机数状态和启动随机�
   --set updates=1000 --output logs/g1-tracking/walk-resume
 ```
 
-恢复必须保持任务、PPO、后端、批量大小、模型和动作配置一致。
+恢复必须保持任务、PPO、后端、进程数、每进程环境数、模型和动作配置一致。
 `updates` 是本次追加更新数。恢复启动新的物理回合，不承诺逐步精确接续物理状态。
 输出目录拒绝覆盖；恢复使用新的输出目录。
 
@@ -115,7 +115,8 @@ PPO 模型与优化器、自适应采样统计、随机数状态和启动随机�
   --video logs/g1-tracking/walk/evaluation.mp4
 ```
 
-评估关闭噪声、随机化和外推扰动，从动作开始运行，在第一次失败、超时或动作末尾停止。
+评估关闭噪声、随机化和外推扰动，从动作开始运行，默认运行完整动作，在第一次失败或动作末尾停止；训练时的 10 秒回合上限不会截断评估。
+`--steps` 可显式限制评估步数。
 报告持续时间、是否失败、是否完成动作及锚点位置误差。短 PPO 验证只证明可以更新参数，
 不证明策略已学会跟踪；正式效果需长训练和独立评测。
 
@@ -181,3 +182,65 @@ manifest 是 JSON 数组，每项包含 `name`、`dataset`（`seed` 或 `lafan`�
 与 `dataset: "seed"` 指 BONES-SEED 数据集不同。
 
 十次 PPO 更新只用于测试链路；不能据此报告全数据集成功率或已收敛的跟踪表现。
+
+## 一个动作、八卡共同训练一个策略
+
+tracking 的多卡使用 RSL-RL 原生 PPO 梯度平均、KL/学习率同步和全局观测归一化。
+各进程使用 `seed + rank` 采样独立环境，模型与优化器始终同步。
+`num_envs` 默认是**每卡**环境数；`batch_scope="global"` 时将总环境数均分到各卡。
+最终只有一套模型 checkpoint，rank 0 写 TensorBoard、metrics.jsonl 和 status.json。
+`synchronization.json` 检查各卡 actor/critic（含归一化）、优化器和采样统计的摘要相等。
+
+失败计数按全局总量合并。多卡时，每次 PPO rollout 内使用同一份冻结的采样分布，
+在 rollout 结束后同步该窗口的指数加权失败计数；每步 EMA 衰减时间保持不变。
+这避免在物理步进中插入通信，也使某个进程的仿真错误能够在进入 PPO 通信前共同报告。
+与单卡逐控制步更新采样分布的时间点不同，此差异记录在 distributed.json。
+
+选用 LAFAN `dance2_subject1`，原始 6771 帧、30 Hz，约 225.67 秒。
+只使用这一条舞蹈；不同 GPU 从同一动作的不同时间点采样，不混入其他动作。
+先将它准备为 Gobot 项目：
+
+```bash
+.venv/bin/python -m gobot.rl.tracking.prepare \
+  --csv /path/to/lafan1/g1/dance2_subject1.csv --csv-format lafan \
+  --output logs/dance2_subject1-assets
+```
+
+Python API：
+
+```python
+from gobot.rl.tracking import train_motion
+
+if __name__ == "__main__":
+    train_motion(
+        project_path="logs/dance2_subject1-assets",
+        motion_file="motion.npz",
+        output="logs/dance2_subject1-8gpu",
+        num_envs=1024,          # 每卡；8 卡共 8192 个环境
+        updates=30000,
+        seed=42,
+    )
+```
+
+保存为 `train_dance.py`，用 `python train_dance.py` 单卡运行，或用
+`torchrun --standalone --nproc-per-node=8 train_dance.py` 同步八卡运行。
+也可以直接调用仓库示例：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
+.venv/bin/torchrun --standalone --nproc-per-node=8 \
+  -m examples.g1.tracking.train_dance \
+  --project logs/dance2_subject1-assets \
+  --output logs/dance2_subject1-8gpu --num-envs 1024 --updates 30000
+```
+
+恢复时全部进程使用同一个 `--resume .../model.pt`；文件包含各 rank 的随机数状态、
+启动随机化参数及采样状态。恢复后重新开始物理回合，不保证物理轨迹逐位接续。
+旧版单卡 checkpoint 与新的多卡运行配置不互通；卡数或批量范围变化应新建实验。
+
+完整动作评估：
+
+```bash
+.venv/bin/python -m gobot.rl.tracking.evaluate \
+  logs/dance2_subject1-8gpu/model.pt --backend mujoco-warp --device cuda:0
+```
