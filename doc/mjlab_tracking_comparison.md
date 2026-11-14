@@ -160,12 +160,15 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
 - 顶部工具栏支持播放、暂停、停止和单步。
 - 视口控制焦点内 `R` 重置，`F` 施加 x 方向 0.8m/s 的根部速度扰动。
 - Physics 面板显示 LIVE、推理步数、误差及动作幅度；`live-status.json` 每秒更新。
-- 接触调试来自最后一个实际执行的 5ms 物理子步，在环境后续 forward/reset 前采集；
-  使用 MuJoCo Warp 的约束求解力并转到世界坐标，单位为 N。青色短箭头显示接触法向，
-  黄色显示各接触力，橙红色显示脚底合力；Physics 状态显示接触数量与左右脚 Fz。
-  `Contact points / normals`、`Contact force arrows` 及缩放/长度限制作用于这些显示。
-  合力排除自碰撞，绿色运动参考不产生物理接触力。暂停期间脚本停止，修改显示设置后
-  恢复 Play 或单步时刷新；停止与重置会清空旧箭头。
+- 接触调试由引擎内置：后端适配器在最后一个实际执行的 5ms 子步结束后、
+  forward/reset 前采集 SDK 求解结果；C++ 将接触对转换为逐连杆受力，随不可变快照
+  交给 SimulationServer、Physics 面板和原生调试渲染。示例不再生成 Python 箭头。
+  `Contact Forces (N)` 面板按机器人/连杆汇总 Fx/Fy/Fz 和合力，包含自碰撞的两侧反力；
+  这表示连杆的净接触力，不能一概当作地面支撑力。绿色运动参考不产生物理接触力。
+  `Contact points / normals` 和 `Contact force arrows` 可独立开关，暂停时立即生效；
+  原生力箭头长度使用 `min(max_length, force_scale * log1p(force_norm))`，真实数值仍以 N 显示。
+  `contact_roots` 只声明各环境的显示根节点，坐标变换由 C++ 完成；重置、失败、停止后
+  清除旧接触快照，已被读者持有的旧快照保持只读。
 - 关闭随机化、观测噪声和自动推力；首次失败或动作结束后保持最终姿态，按 R 重来。
 
 如需保存一次评估的实际运动，可给 `evaluate_mjlab_tracking.py` 增加

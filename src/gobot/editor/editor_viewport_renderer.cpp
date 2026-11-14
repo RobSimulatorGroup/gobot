@@ -703,7 +703,8 @@ void CollectVelocityCommandDebugArrowsRecursive(const Node* node, std::vector<De
 void EditorViewportRenderer::Render(const RID& viewport,
                                     const Node* scene_root,
                                     const Camera3D* camera,
-                                    const PhysicsWorld* physics_world,
+                                    const PhysicsSceneState* physics_state,
+                                    const PhysicsWorldSettings* physics_settings,
                                     const std::vector<DebugArrow>& debug_arrows,
                                     bool show_collision_debug) {
     GOBOT_PROFILE_ZONE("EditorViewportRenderer::Render");
@@ -716,7 +717,8 @@ void EditorViewportRenderer::Render(const RID& viewport,
         RS::GetInstance()->RenderEditorDebugToViewport(viewport,
                                                        camera,
                                                        scene_root,
-                                                       physics_world,
+                                                       physics_state,
+                                                       physics_settings,
                                                        show_collision_debug);
     }
     {

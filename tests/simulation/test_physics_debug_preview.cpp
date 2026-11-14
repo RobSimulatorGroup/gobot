@@ -55,3 +55,46 @@ TEST(PhysicsDebugPreview, SceneWithoutVisibleRaySensorsNeverBuildsAWorld) {
     Node::Delete(root);
 }
 } // namespace gobot
+
+#include "gobot/rendering/scene_debug_data.hpp"
+#include "gobot/simulation/simulation_contact_state.hpp"
+
+TEST(PhysicsContactPresentation, ForceToggleIsIndependentAndPausedStateIsReusable) {
+    gobot::PhysicsContactState contact;
+    contact.robot_name = "robot";
+    contact.link_name = "foot";
+    gobot::SceneDebugData data;
+    data.contacts.push_back(contact);
+    data.settings.debug_draw_contact_forces = true;
+    auto visibility = gobot::GetContactDebugVisibility(contact, data);
+    EXPECT_FALSE(visibility.points_and_normals);
+    EXPECT_TRUE(visibility.forces);
+    data.settings.debug_draw_contacts = true;
+    data.settings.debug_draw_contact_forces = false;
+    visibility = gobot::GetContactDebugVisibility(contact, data);
+    EXPECT_TRUE(visibility.points_and_normals);
+    EXPECT_FALSE(visibility.forces);
+    EXPECT_EQ(data.contacts.size(), 1); // toggles do not mutate or step the physics frame
+}
+
+TEST(PhysicsContactPresentation, RigidDisplayTransformPreservesForceUnitsAndSnapshot) {
+    gobot::SimulationSnapshot snapshot;
+    snapshot.environments = {0};
+    gobot::SimulationContact contact;
+    contact.body = {"robot", "foot", "sole"};
+    contact.position = {1, 2, 3}; contact.normal = {0, 0, 1}; contact.force = {3, 4, 100};
+    snapshot.contacts.push_back(contact);
+    gobot::Affine3 transform = gobot::Affine3::Identity();
+    transform.translation() = gobot::Vector3(-2, -3, 0);
+    transform.linear() = Eigen::AngleAxis<gobot::RealType>(gobot::RealType(1.57079632679), gobot::Vector3::UnitZ()).toRotationMatrix();
+    auto frame = gobot::CaptureContactStateFrame(snapshot, {{0, transform}});
+    ASSERT_EQ(frame->state.contacts.size(), 1);
+    EXPECT_TRUE(frame->state.contacts[0].force.isApprox(gobot::Vector3(-4, 3, 100), 1e-5));
+    EXPECT_TRUE(frame->state.contacts[0].position.isApprox(gobot::Vector3(-4, -2, 3), 1e-5));
+    EXPECT_EQ(snapshot.contacts[0].position, contact.position);
+    snapshot.contacts.clear();
+    EXPECT_TRUE(gobot::CaptureContactStateFrame(snapshot)->state.contacts.empty());
+    EXPECT_EQ(frame->state.contacts.size(), 1);
+    transform.linear() *= 2;
+    EXPECT_THROW(gobot::CaptureContactStateFrame(snapshot, {{0, transform}}), std::invalid_argument);
+}

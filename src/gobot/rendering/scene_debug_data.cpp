@@ -275,6 +275,15 @@ void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<flo
 
 } // namespace
 
+ContactDebugVisibility GetContactDebugVisibility(const PhysicsContactState& contact,
+                                                const SceneDebugData& data) {
+    const bool sensor_visible = std::any_of(data.sensors.begin(), data.sensors.end(), [&](const auto& sensor) {
+        return sensor.type == PhysicsSensorType::Contact && sensor.enabled && sensor.visible &&
+               sensor.visualize_debug && sensor.robot_name == contact.robot_name && sensor.link_name == contact.link_name;
+    });
+    return {data.settings.debug_draw_contacts || sensor_visible, data.settings.debug_draw_contact_forces};
+}
+
 SceneDebugData CaptureSceneDebugData(const Node* root,
                                      const PhysicsSceneState* state,
                                      const PhysicsWorldSettings& settings,

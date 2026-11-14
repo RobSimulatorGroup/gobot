@@ -213,7 +213,8 @@ bool RenderServer::CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
 void RenderServer::RenderEditorDebugToViewport(const RID& viewport,
                                                const Camera3D* camera,
                                                const Node* scene_root,
-                                               const PhysicsWorld* physics_world,
+                                               const PhysicsSceneState* physics_state,
+                                               const PhysicsWorldSettings* physics_settings,
                                                bool show_collision_shapes) {
     GOBOT_PROFILE_ZONE("RenderServer::RenderEditorDebugToViewport");
     ERR_FAIL_COND(RSG::debug_draw == nullptr);
@@ -221,9 +222,8 @@ void RenderServer::RenderEditorDebugToViewport(const RID& viewport,
     ERR_FAIL_COND(render_target.IsNull());
 
     ERR_FAIL_COND(camera == nullptr);
-    const auto* state = physics_world != nullptr ? &physics_world->GetSceneState() :
-                                                  debug_preview_->Update(scene_root);
-    const auto settings = physics_world != nullptr ? physics_world->GetSettings() : PhysicsWorldSettings{};
+    const auto* state = physics_state != nullptr ? physics_state : debug_preview_->Update(scene_root);
+    const auto settings = physics_settings != nullptr ? *physics_settings : PhysicsWorldSettings{};
     const auto data = CaptureSceneDebugData(scene_root, state, settings, show_collision_shapes);
     RSG::debug_draw->RenderEditorDebug(render_target, CaptureRenderViewSnapshot(*camera), data);
 }

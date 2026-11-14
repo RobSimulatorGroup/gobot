@@ -77,6 +77,9 @@ public:
         return last_error;
     }
 
+    std::shared_ptr<const SimulationStateFrame> CaptureStateFrame() const override { return frame; }
+    std::shared_ptr<const SimulationStateFrame> frame;
+
     bool IsAsynchronous() const override { return asynchronous; }
     bool CanRequestStep() override { return ready; }
     std::optional<ExternalSimulationCompletion> PollCompletion() override {
@@ -1736,4 +1739,29 @@ TEST(TestSimulationServer, mujoco_position_actuator_without_control_range_allows
 
     gobot::Object::Delete(robot);
 #endif
+}
+
+TEST(TestSimulationServer, external_contact_frame_is_available_without_world_and_cleared_on_stop) {
+    gobot::SimulationServer server;
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto frame = std::make_shared<gobot::SimulationStateFrame>();
+    frame->state.contacts.emplace_back();
+    frame->state.contacts.back().force = gobot::Vector3(0, 0, 100);
+    driver->frame = frame;
+    const auto token = server.BeginExternalSession(driver, root, .02);
+    ASSERT_NE(token, 0);
+    EXPECT_FALSE(server.HasWorld());
+    auto retained = server.CaptureStateFrame();
+    ASSERT_TRUE(retained);
+    EXPECT_EQ(retained->state.contacts.size(), 1);
+    server.SetPaused(true);
+    auto settings = server.GetPhysicsWorldSettings();
+    settings.debug_draw_contact_forces = true;
+    server.SetPhysicsWorldSettings(settings);
+    EXPECT_EQ(server.CaptureStateFrame(), retained);
+    EXPECT_TRUE(server.EndExternalSession(token));
+    EXPECT_FALSE(server.CaptureStateFrame());
+    EXPECT_EQ(retained->state.contacts.size(), 1);
+    gobot::Object::Delete(root);
 }

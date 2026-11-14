@@ -636,52 +636,21 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const std::vector<PhysicsSensor
 void GLRendererDebugDraw::DrawContactDebug(const SceneDebugData& data) {
     GOBOT_PROFILE_ZONE("OpenGL::DrawContactDebug");
     const PhysicsWorldSettings& settings = data.settings;
-    std::vector<std::pair<std::string, std::string>> visualized_sensor_links;
-    if (!settings.debug_draw_contacts) {
-        for (const PhysicsSensorState& sensor : data.sensors) {
-            if (sensor.type == PhysicsSensorType::Contact && ShouldVisualizeSensorDebug(sensor)) {
-                visualized_sensor_links.emplace_back(sensor.robot_name, sensor.link_name);
-            }
-        }
-        if (visualized_sensor_links.empty()) {
-            contact_point_lines_.vertex_count = 0;
-            contact_normal_lines_.vertex_count = 0;
-            contact_force_lines_.vertex_count = 0;
-            return;
-        }
-    }
-
-    auto should_draw_contact = [&](const PhysicsContactState& contact) {
-        if (settings.debug_draw_contacts) {
-            return true;
-        }
-        return std::any_of(visualized_sensor_links.begin(),
-                           visualized_sensor_links.end(),
-                           [&](const auto& link_key) {
-                               return link_key.first == contact.robot_name &&
-                                      link_key.second == contact.link_name;
-                           });
-    };
-
     std::vector<float> point_vertices;
     std::vector<float> normal_vertices;
     std::vector<float> force_vertices;
     for (const PhysicsContactState& contact : data.contacts) {
-        if (!should_draw_contact(contact)) {
-            continue;
-        }
-
-        AppendCross(point_vertices, contact.position, 0.035);
-
+        const auto visibility = GetContactDebugVisibility(contact, data);
+        if (visibility.points_and_normals) AppendCross(point_vertices, contact.position, 0.035);
         const RealType normal_norm = contact.normal.norm();
-        if (normal_norm > CMP_EPSILON) {
+        if (visibility.points_and_normals && normal_norm > CMP_EPSILON) {
             AppendArrow(normal_vertices,
                         contact.position,
                         contact.position + contact.normal / normal_norm * static_cast<RealType>(0.14));
         }
 
         const RealType force_norm = contact.force.norm();
-        if (settings.debug_draw_contact_forces && force_norm > CMP_EPSILON) {
+        if (visibility.forces && force_norm > CMP_EPSILON) {
             const RealType arrow_length =
                     std::min(settings.debug_contact_force_max_length,
                              settings.debug_contact_force_scale * std::log1p(force_norm));

@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include "gobot/simulation/simulation_session.hpp"
+#include "gobot/simulation/simulation_contacts.hpp"
 #include "gobot/simulation/simulation_task_worker.hpp"
 
 namespace gobot {
@@ -29,6 +30,7 @@ struct SimulationSnapshot {
     std::vector<std::size_t> environments;
     std::vector<SimulationEnvironmentClock> clocks;
     std::vector<SimulationBuffer> buffers;
+    std::vector<SimulationContact> contacts;
 };
 struct SimulationRuntimeInfo {
     std::string provider_name;
@@ -44,6 +46,7 @@ public:
     virtual void ApplyCommands(const std::vector<SimulationBuffer>& commands) = 0;
     virtual void CaptureSnapshot(const SimulationSubscription& subscription,
                                  std::vector<SimulationBuffer>& buffers) = 0;
+    virtual void CaptureContacts(const SimulationSubscription&, std::vector<SimulationContact>&) {}
 };
 struct SimulationExecutorInstallation {
     std::shared_ptr<SimulationDataExecutor> executor;
@@ -151,8 +154,16 @@ struct SimulationDataRuntime {
                 auto& frame = **slot;
                 try {
                     frame.buffers.clear();
+                    frame.contacts.clear();
                     executor_->CaptureSnapshot(subscription_, frame.buffers);
                     ValidateSnapshot(frame.buffers);
+                    executor_->CaptureContacts(subscription_, frame.contacts);
+                    for (const auto& contact : frame.contacts) {
+                        if (std::find(subscription_.environments.begin(), subscription_.environments.end(),
+                                      contact.environment) == subscription_.environments.end() ||
+                            !IsFiniteContact(contact))
+                            throw std::invalid_argument("Contact snapshot has an invalid environment or state");
+                    }
                     frame.epoch = request.epoch;
                     frame.environments = subscription_.environments;
                     frame.clocks.clear();

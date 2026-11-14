@@ -84,14 +84,11 @@ class LivePolicy:
         self.capacities = {"nconmax": env.cfg.sim.nconmax, "njmax": env.cfg.sim.njmax}
         self.host = mujoco.MjData(env.sim.mj_model)
         self.body_ids = [env.sim.mj_model.body("robot/" + n).id for n in self.robot.body_names]
-        import numpy as np
-        import warp as wp
-        from mjlab_contacts import CONTACT_COLUMNS
-        self.contact_capacity = env.sim.wp_data.naconmax
-        self.contacts = np.zeros((self.contact_capacity, CONTACT_COLUMNS), dtype=np.float32)
-        with wp.ScopedDevice(env.sim.wp_device):
-            self.contact_ids = wp.array(np.arange(self.contact_capacity, dtype=np.int32), dtype=wp.int32)
-            self.contact_force = wp.zeros(self.contact_capacity, dtype=wp.spatial_vector)
+        from gobot.sim.providers.mujoco_warp_contacts import MuJoCoWarpContactSource
+        self.contact_source = MuJoCoWarpContactSource(
+            env.sim.mj_model, env.sim.wp_model, env.sim.wp_data,
+            bodies={"robot/" + name: ("robot", name) for name in self.robot.body_names},
+            sample_dt=env.physics_dt, device=env.sim.wp_device)
         self.push_count = 0
         self.final_qpos = None
         self.last_error = 0.0
@@ -101,7 +98,7 @@ class LivePolicy:
             reward = original(dt)
             # Read the force actually solved by the last mj_step before the
             # env's forward/reset recomputes constraints for the next state.
-            self._capture_contacts()
+            self.contact_source.capture()
             self.last_error = float((self.command.anchor_pos_w - self.command.robot_anchor_pos_w).norm())
             # Preserve the final physical state before the command wraps its reference.
             if int(self.command.time_steps[0]) == self.command.motion.time_step_total - 1:
@@ -124,7 +121,7 @@ class LivePolicy:
         self.terminated = self.completed = False
         self.action_rms = self.last_error = 0.0
         self.final_qpos = None
-        self.contacts.fill(0)
+        self.contact_source.clear()
         self._update_arrays()
         self._write_status()
 
@@ -160,32 +157,8 @@ class LivePolicy:
             self.push_count += 1
         print(f"LIVE mjlab push #{self.push_count}: delta velocity {velocity}", flush=True)
 
-    def _capture_contacts(self):
-        import numpy as np
-        import warp as wp
-        import mujoco_warp as mjw
-        from mjlab_contacts import pack_contacts
-        sim = self.env.sim
-        data = sim.wp_data
-        with wp.ScopedDevice(sim.wp_device):
-            count = int(data.nacon.numpy()[0])
-            if count > self.contact_capacity:
-                raise OverflowError("native contact buffer overflow")
-            if count == 0:
-                self.contacts.fill(0)
-                return
-            mjw.contact_force(sim.wp_model, data, self.contact_ids, True, self.contact_force)
-            force = self.contact_force.numpy()[:count, :3]
-            positions = data.contact.pos.numpy()[:count]
-            normals = data.contact.frame.numpy()[:count, 0, :]
-            geoms = data.contact.geom.numpy()[:count]
-            active = (data.contact.efc_address.numpy()[:count, 0] >= 0)
-            active &= data.contact.worldid.numpy()[:count] == 0
-        self.contacts = pack_contacts(
-            body_ids=self.body_ids, body_names=self.robot.body_names,
-            geom_bodies=sim.mj_model.geom_bodyid, geoms=geoms,
-            positions=positions, normals=normals, forces=force,
-            active=active, capacity=self.contact_capacity)
+    def contact_snapshot(self, environments):
+        return self.contact_source.snapshot(environments)
 
     def _update_arrays(self):
         import numpy as np
@@ -202,32 +175,23 @@ class LivePolicy:
         motion = self.command.motion
         reference = torch.cat((motion._body_pos_w[self.frame],
                                motion._body_quat_w[self.frame][:, [1, 2, 3, 0]]), -1).cpu().numpy()[None]
-        from mjlab_contacts import foot_resultants
-        feet = foot_resultants(self.contacts)
-        count = int((self.contacts[:, 0] > 0).sum())
         self.arrays = {
-            "contacts": self.contacts[None],
             "policy": np.asarray(actual, dtype=np.float32),
             "reference": np.asarray(reference, dtype=np.float32),
             "status": np.asarray([[self.steps, self.steps * self.fixed_time_step,
                                    self.last_error, self.terminated, self.completed,
-                                   self.action_rms, self.push_count, count, feet[0, 2], feet[1, 2]]], dtype=np.float64),
+                                   self.action_rms, self.push_count]], dtype=np.float64),
         }
 
     def _write_status(self):
         if self.status_file is None:
             return
-        from mjlab_contacts import foot_resultants
-        feet = foot_resultants(self.contacts)
         value = dict(mode="live_policy_inference", inference_steps=self.steps,
                      physics_steps=self.steps * self.env.cfg.decimation,
                      seconds=self.steps * self.fixed_time_step, action_rms=self.action_rms,
                      anchor_position_error_m=self.last_error, terminated=self.terminated,
                      completed=self.completed, pushes=self.push_count,
-                     checkpoint_sha256=self.checkpoint_sha256,
-                     contact_count=int((self.contacts[:, 0] > 0).sum()),
-                     contact_sample="last completed 5ms physics substep",
-                     foot_force_world_n={"left": feet[0].tolist(), "right": feet[1].tolist()})
+                     checkpoint_sha256=self.checkpoint_sha256)
         temp = self.status_file.with_suffix(".tmp")
         temp.write_text(json.dumps(value, indent=2) + "\n")
         temp.replace(self.status_file)

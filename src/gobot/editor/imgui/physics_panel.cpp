@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <map>
 #include <vector>
 
 #include "gobot/core/registration.hpp"
@@ -300,6 +301,26 @@ void PhysicsPanel::OnImGuiContent() {
                 static_cast<double>(gravity.z()));
     if (ImGui::CollapsingHeader("Debug Visualization")) {
         DrawDebugVisualizationControls(simulation);
+    }
+
+    const auto physics_frame = simulation->CaptureStateFrame();
+    if (physics_frame && ImGui::CollapsingHeader("Contact Forces (N)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        struct LinkForce { std::size_t contacts{0}; Vector3 force{Vector3::Zero()}; };
+        std::map<std::pair<std::string, std::string>, LinkForce> forces;
+        for (const auto& contact : physics_frame->state.contacts) {
+            auto& value = forces[{contact.robot_name, contact.link_name}];
+            ++value.contacts;
+            value.force += contact.force;
+        }
+        ImGui::Text("Contact entries: %zu | sample %.3f s", physics_frame->state.contacts.size(),
+                    static_cast<double>(physics_frame->simulation_time));
+        if (forces.empty()) ImGui::TextDisabled("No contacts in this sample");
+        for (const auto& [name, value] : forces) {
+            ImGui::TextWrapped("%s / %s (%zu)", name.first.c_str(), name.second.c_str(), value.contacts);
+            ImGui::Text("Fx %.1f  Fy %.1f  Fz %.1f | |F| %.1f N",
+                        static_cast<double>(value.force.x()), static_cast<double>(value.force.y()),
+                        static_cast<double>(value.force.z()), static_cast<double>(value.force.norm()));
+        }
     }
 
     Node* edited_scene_root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;

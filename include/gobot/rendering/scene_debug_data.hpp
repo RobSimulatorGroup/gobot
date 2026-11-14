@@ -19,6 +19,13 @@ struct SceneDebugData {
     PhysicsWorldSettings settings;
 };
 
+struct ContactDebugVisibility {
+    bool points_and_normals{false};
+    bool forces{false};
+};
+GOBOT_EXPORT ContactDebugVisibility GetContactDebugVisibility(
+        const PhysicsContactState& contact, const SceneDebugData& data);
+
 GOBOT_EXPORT SceneDebugData CaptureSceneDebugData(const Node* root,
                                                   const PhysicsSceneState* state,
                                                   const PhysicsWorldSettings& settings,

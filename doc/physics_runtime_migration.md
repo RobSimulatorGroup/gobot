@@ -144,3 +144,39 @@ refresh the Python install component from the configured Python ABI build after
 building `gobot_python` and `gobot_editor`. The two example editor launch commands
 remain `uv run gobot_editor --path examples/mujoco_libuipc` and
 `uv run gobot_editor --path examples/libuipc`; they require working CUDA.
+
+
+## External provider contact state
+
+External workers publish contacts as typed `SimulationContact` entries on the same
+`SimulationSnapshot` as their pose buffers. `SimulationDataExecutor::CaptureContacts`
+is optional; native C++ executors can implement it directly. The Python SDK adapter
+calls `provider.contact_snapshot(environments)` when supported. This method returns
+`None` or a mapping with:
+
+- `geometries`: triples `(robot_name, link_name, shape_name)`; an empty robot name
+  denotes unarticulated environment geometry.
+- `sample_dt`: the positive physical substep duration in seconds.
+- `pairs`: an `[N,16]` numeric array: environment, geometry A, geometry B,
+  position xyz, normal xyz (A to B), world force xyz on B, world torque xyz on B,
+  signed separation distance. Positions are metres, force is N, torque is N.m.
+
+The native converter validates dimensions, indices, finite values and unit normals,
+filters subscribed environments, and emits equal and opposite entries when both
+receivers belong to robots. It derives normal impulse using the physical substep,
+not the policy interval. SDK adapters must capture the completed solve before any
+forward/reset replaces contact or constraint arrays. `MuJoCoWarpContactSource`
+encapsulates this SDK access; it performs no rendering and owns no scene objects.
+
+The external Play bridge exposes the completed contact frame through
+`SimulationServer::CaptureStateFrame()`, including when no `PhysicsWorld` exists.
+`ProviderPlaySession(contact_roots={environment: Node3D})` optionally declares rigid
+scene transforms for visible environments. The C++ scene-state conversion applies
+these transforms without changing solver coordinates or force units. Missing roots,
+scaled roots and malformed snapshots fail presentation without erasing committed
+physics ticks. Reset/close discard the current frame; retained leases remain valid.
+
+The editor consumes `PhysicsSceneState` and current `PhysicsWorldSettings` for both
+native and external sessions. Contact toggles and force scaling are resolved during
+rendering, so paused snapshots respond immediately. The Physics panel reports net
+contact force per robot/link; no task-specific Python draw callback is required.

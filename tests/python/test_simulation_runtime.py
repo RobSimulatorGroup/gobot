@@ -47,6 +47,18 @@ class Provider:
         self.probe.resets.append(mask)
         self.arrays["positions"][mask] = 0
 
+    def contact_snapshot(self, environments):
+        if not getattr(self.probe, "contacts", False):
+            return None
+        pairs = []
+        for env in range(self.num_envs):
+            if self.arrays["positions"][env, 0]:
+                other = 99 if getattr(self.probe, "bad_contact", False) else 1
+                pairs.append([env, 0, other, 1, 2, 0, 0, 0, 1, 3, 4, 100 + env,
+                              0, 0, 0, -0.001])
+        return {"geometries": [("", "ground", "floor"), ("robot", "foot", "sole")],
+                "pairs": np.asarray(pairs).reshape(-1, 16), "sample_dt": .002}
+
     def close(self):
         self.probe.events.append(("close", threading.get_ident()))
 
@@ -260,4 +272,46 @@ def test_play_rejects_runtime_timestep_mismatch_before_first_physics_step(probe)
         assert probe.calls == 0
     finally:
         play.close()
+        session.shutdown()
+
+
+def test_typed_contacts_share_snapshot_epoch_selection_and_reset(probe):
+    probe.contacts = True
+    session = AsyncSimulationSession(spec(), fields=("positions",), environments=(1,), max_hz=1e9)
+    try:
+        initial = await_result(session)
+        assert initial.snapshot.contacts == []
+        assert session.submit()
+        stepped = await_result(session)
+        contacts = stepped.snapshot.contacts
+        assert len(contacts) == 1
+        contact = contacts[0]
+        assert contact.environment == 1
+        assert contact.body.robot_name == "robot" and contact.body.link_name == "foot"
+        assert contact.other_body.shape_name == "floor"
+        np.testing.assert_allclose(contact.force, [3, 4, 101])
+        assert contact.normal_impulse == pytest.approx(.202)
+        assert session.reset()
+        reset = await_result(session)
+        assert reset.snapshot.epoch > stepped.snapshot.epoch
+        assert reset.snapshot.contacts == []
+        assert stepped.snapshot.contacts[0].force == contact.force
+    finally:
+        session.shutdown()
+
+
+def test_bad_contact_is_presentation_failure_without_losing_physics_tick(probe):
+    probe.contacts = True
+    session = AsyncSimulationSession(spec(), max_hz=1e9)
+    try:
+        await_result(session)
+        probe.bad_contact = True
+        assert session.submit()
+        result = await_result(session)
+        assert result.step.completed
+        assert result.clocks[0].tick == 1
+        assert not result.clocks[0].faulted
+        assert result.snapshot is None
+        assert "geometry index" in result.presentation_error
+    finally:
         session.shutdown()

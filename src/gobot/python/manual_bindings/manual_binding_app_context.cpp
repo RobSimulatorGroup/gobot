@@ -1,6 +1,7 @@
 #include "manual_bindings_internal.hpp"
 #include "manual_binding_physics_snapshot.hpp"
 #include "gobot/simulation/simulation_data_runtime.hpp"
+#include "gobot/simulation/simulation_contact_state.hpp"
 #include "gobot/simulation/simulation_scene_sync.hpp"
 
 #include <algorithm>
@@ -210,7 +211,8 @@ public:
                                py::object sync_scene,
                                py::object close,
                                py::object poll,
-                               py::object ready)
+                               py::object ready,
+                               std::unordered_map<std::size_t, ObjectID> contact_roots)
         : context_(context),
           scene_root_id_(scene_root_id),
           scene_epoch_(scene_epoch),
@@ -220,7 +222,7 @@ public:
           close_(std::move(close)),
           poll_(std::move(poll)),
           ready_(std::move(ready)),
-          asynchronous_(!poll_.is_none()) {}
+          asynchronous_(!poll_.is_none()), contact_roots_(std::move(contact_roots)) {}
 
     ~PyExternalSimulationDriver() override {
         if (!Py_IsInitialized()) {
@@ -247,6 +249,8 @@ public:
     }
 
     bool Reset() override {
+        contact_snapshot_.reset();
+        contact_frame_.reset();
         if (asynchronous_) {
             py::gil_scoped_acquire gil;
             py::object result;
@@ -290,6 +294,12 @@ public:
         // Presentation failure must not erase a committed physics tick. Report
         // it through scene synchronization, after the server commits the clock.
         presentation_error_ = completion.presentation_error;
+        if (!output.step.state_valid || !presentation_error_.empty()) {
+            contact_snapshot_.reset();
+            contact_frame_.reset();
+        } else if (completion.snapshot) {
+            contact_snapshot_ = completion.snapshot;
+        }
         output.step.diagnostics.total_step_time_seconds = completion.elapsed_seconds;
         return output;
     }
@@ -299,10 +309,37 @@ public:
             last_error_ = "Provider snapshot failed: " + presentation_error_;
             return false;
         }
-        return Invoke(sync_scene_);
+        if (!Invoke(sync_scene_)) return false;
+        if (contact_snapshot_) {
+            std::unordered_map<std::size_t, Affine3> transforms;
+            for (const auto& [environment, id] : contact_roots_) {
+                const auto* root = Object::PointerCastTo<Node3D>(ObjectDB::GetInstance(id));
+                if (!root) {
+                    contact_frame_.reset();
+                    last_error_ = "Contact presentation root is no longer alive";
+                    return false;
+                }
+                Affine3 transform = root->GetTransform();
+                for (const Node* parent = root->GetParent(); parent; parent = parent->GetParent())
+                    if (const auto* node = Object::PointerCastTo<Node3D>(parent))
+                        transform = node->GetTransform() * transform;
+                transforms.emplace(environment, std::move(transform));
+            }
+            try { contact_frame_ = CaptureContactStateFrame(*contact_snapshot_, transforms); }
+            catch (const std::exception& error) {
+                contact_frame_.reset();
+                last_error_ = error.what();
+                return false;
+            }
+        }
+        return true;
     }
 
+    std::shared_ptr<const SimulationStateFrame> CaptureStateFrame() const override { return contact_frame_; }
+
     void Close() override {
+        contact_snapshot_.reset();
+        contact_frame_.reset();
         if (!Py_IsInitialized()) {
             step_.release();
             reset_.release();
@@ -398,6 +435,9 @@ private:
     std::string presentation_error_;
     py::object ready_;
     bool asynchronous_{false};
+    std::unordered_map<std::size_t, ObjectID> contact_roots_;
+    std::shared_ptr<const SimulationSnapshot> contact_snapshot_;
+    std::shared_ptr<const SimulationStateFrame> contact_frame_;
     std::string last_error_;
 };
 
@@ -1725,7 +1765,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                    RealType fixed_time_step,
                                                    int max_sub_steps,
                                                    py::object poll,
-                                                   py::object ready) {
+                                                   py::object ready,
+                                                   py::dict contact_roots) {
                 if (poll.is_none() != ready.is_none())
                     throw std::invalid_argument("Asynchronous provider requires both poll and ready callbacks");
                 SimulationServer* simulation = context.GetSimulationServer();
@@ -1733,6 +1774,13 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 if (simulation == nullptr || root == nullptr) {
                     throw std::runtime_error(
                             "External simulation requires an active context and scene root");
+                }
+                std::unordered_map<std::size_t, ObjectID> roots;
+                for (const auto& item : contact_roots) {
+                    auto* target = item.second.cast<PyNode3DHandle>().ResolveAs<Node3D>();
+                    if (target != root && !root->IsAncestorOf(target))
+                        throw std::invalid_argument("Contact root must belong to the active scene");
+                    roots.emplace(item.first.cast<std::size_t>(), target->GetInstanceId());
                 }
                 Ref<ExternalSimulationDriver> driver =
                         MakeRef<PyExternalSimulationDriver>(&context,
@@ -1743,7 +1791,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                             std::move(sync_scene),
                                                             std::move(close),
                                                             std::move(poll),
-                                                            std::move(ready));
+                                                            std::move(ready), std::move(roots));
                 const std::uint64_t token = simulation->BeginExternalSession(
                         std::move(driver), root, fixed_time_step, max_sub_steps);
                 if (token == 0) {
@@ -1758,7 +1806,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
             py::arg("fixed_time_step"),
             py::arg("max_sub_steps") = 8,
             py::arg("poll") = py::none(),
-            py::arg("ready") = py::none())
+            py::arg("ready") = py::none(),
+            py::arg("contact_roots") = py::dict())
             .def("_end_external_simulation", [](EngineContext& context, std::uint64_t token) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -2005,13 +2054,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(
                             "active Gobot app context has no SimulationServer");
                 }
-                Ref<PhysicsWorld> world = simulation->GetWorld();
-                if (!world.IsValid()) {
-                    throw std::runtime_error(
-                            "simulation world has not been built from a scene");
-                }
-                return RuntimeStateToPythonDict(
-                        world->GetSceneState(), &world->GetSceneSnapshot());
+                auto frame = simulation->CaptureStateFrame();
+                if (!frame) throw std::runtime_error("simulation state is not available");
+                const auto world = simulation->GetWorld();
+                return RuntimeStateToPythonDict(frame->state,
+                        world.IsValid() ? &world->GetSceneSnapshot() : nullptr);
             })
             .def("get_physics_state_view", [](EngineContext& context) {
                 auto* simulation = context.GetSimulationServer();
@@ -2023,8 +2070,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 py::capsule owner(retained, [](void* pointer) {
                     delete static_cast<std::shared_ptr<const SimulationStateFrame>*>(pointer);
                 });
+                const auto world = simulation->GetWorld();
                 auto result = RuntimeStateToPythonDict((*retained)->state,
-                        &simulation->GetWorld()->GetSceneSnapshot(), owner);
+                        world.IsValid() ? &world->GetSceneSnapshot() : nullptr, owner);
                 result["epoch"] = (*retained)->epoch;
                 result["tick"] = (*retained)->tick;
                 result["simulation_time"] = (*retained)->simulation_time;

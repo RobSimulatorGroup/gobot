@@ -259,6 +259,7 @@ class AppContext:
         max_sub_steps: int = 8,
         poll: Callable[[], Any] | None = None,
         ready: Callable[[], bool] | None = None,
+        contact_roots: dict[int, Node3D] = {},
     ) -> int: ...
     def _end_external_simulation(self, token: int) -> bool: ...
     def _reset_external_simulation(self, token: int) -> bool: ...
@@ -808,7 +809,24 @@ class SimulationRuntimeInfo:
     controlled_joint_count: int
     capacities: dict[str, int]
 
+class SimulationContactBody:
+    robot_name: str
+    link_name: str
+    shape_name: str
+
+class SimulationContact:
+    environment: int
+    body: SimulationContactBody
+    other_body: SimulationContactBody
+    position: list[float]
+    normal: list[float]
+    force: list[float]
+    torque: list[float]
+    normal_impulse: float
+    distance: float
+
 class SimulationSnapshot:
+    contacts: list[SimulationContact]
     epoch: int
     environments: list[int]
     clocks: list[SimulationEnvironmentClock]

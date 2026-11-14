@@ -14,7 +14,7 @@ def prepare(scene, checkpoint, motion, output, extra_python_paths=()):
     scene, checkpoint, motion, output = [Path(p).resolve() for p in (scene, checkpoint, motion, output)]
     output.mkdir(parents=True, exist_ok=False)
     shutil.copytree(scene.parent / "assets", output / "assets")
-    for name in ("mjlab_live.py", "mjlab_live_runtime.py", "mjlab_contacts.py"):
+    for name in ("mjlab_live.py", "mjlab_live_runtime.py"):
         shutil.copy2(repository / "examples/g1/tracking" / name, output / name)
     with np.load(motion) as data:
         names = data["body_names"].tolist()
