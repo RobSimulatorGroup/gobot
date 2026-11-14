@@ -7,7 +7,7 @@ from pathlib import Path
 from mjlab_tracking_reference import reference, sha256, write_json
 
 
-def evaluate(source, checkpoint, motion, output, device="cuda:0"):
+def evaluate(source, checkpoint, motion, output, device="cuda:0", trajectory=None):
     reference(source)
     import torch
     from mjlab.envs import ManagerBasedRlEnv
@@ -49,6 +49,30 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0"):
         command = env.command_manager.get_term("motion")
         metrics = []
         rewards = []
+        trace = None
+        if trajectory is not None:
+            import mujoco
+            import numpy as np
+
+            trajectory = Path(trajectory)
+            trajectory.parent.mkdir(parents=True, exist_ok=True)
+            if trajectory.exists() or trajectory.with_suffix(".mjb").exists():
+                raise FileExistsError(f"trajectory already exists: {trajectory}")
+            mujoco.mj_saveModel(env.sim.mj_model, str(trajectory.with_suffix(".mjb")))
+            indexing = command.robot.indexing
+            root_qadr = indexing.free_joint_q_adr.cpu().numpy()
+            joint_qadr = indexing.joint_q_adr.cpu().numpy()
+            with np.load(motion) as data:
+                ref_qpos = np.tile(env.sim.mj_model.qpos0, (command.motion.time_step_total, 1))
+                pelvis = list(data["body_names"]).index("pelvis")
+                ref_qpos[:, root_qadr[:3]] = data["body_pos_w"][:, pelvis]
+                ref_qpos[:, root_qadr[3:7]] = data["body_quat_w"][:, pelvis]
+                ref_qpos[:, joint_qadr] = data["joint_pos"]
+            ref_qpos[:, root_qadr[:3]] += env.scene.env_origins[0].cpu().numpy()
+            trace = {
+                "qpos": [env.sim.data.qpos[0].cpu().numpy().copy()],
+                "reference_frame": [0],
+            }
         original = env.reward_manager.compute
 
         def capture(dt):
@@ -61,6 +85,10 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0"):
                 )
             )
             rewards.append(float(reward.mean()))
+            if trace is not None:
+                # Capture before command advancement can wrap/reset the motion.
+                trace["qpos"].append(env.sim.data.qpos[0].cpu().numpy().copy())
+                trace["reference_frame"].append(int(command.time_steps[0]))
             return reward
 
         env.reward_manager.compute = capture
@@ -75,6 +103,9 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0"):
                 completed = (
                     frame >= command.motion.time_step_total - 1 and not terminated
                 )
+                if len(metrics) % 500 == 0:
+                    print(f"Evaluation: {len(metrics) * env.step_dt:.1f}s / "
+                          f"{(command.motion.time_step_total - 1) * env.step_dt:.1f}s", flush=True)
                 if done.any() or completed:
                     break
         result = dict(
@@ -95,6 +126,18 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0"):
             ],
             protocol="frame0 state, frame1 first target; no DR/noise/push; first termination or full motion",
         )
+        if trace is not None:
+            frames = np.asarray(trace["reference_frame"])
+            np.savez_compressed(
+                trajectory,
+                qpos=np.stack(trace["qpos"]),
+                reference_qpos=ref_qpos[frames],
+                reference_frame=frames,
+                time_s=np.arange(len(frames)) * env.step_dt,
+                anchor_position_error_m=np.asarray([0.0, *metrics]),
+                step_dt=env.step_dt,
+            )
+            result["trajectory"] = str(trajectory.resolve())
         write_json(output, result)
         print(json.dumps(result, indent=2))
         return result
@@ -111,4 +154,6 @@ if __name__ == "__main__":
     p.add_argument("--motion", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--device", default="cuda:0")
+    p.add_argument("--trajectory", type=Path,
+                   help="Optionally save physical/reference poses and a render-only model")
     evaluate(**vars(p.parse_args()))

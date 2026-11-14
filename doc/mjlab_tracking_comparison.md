@@ -129,3 +129,46 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
 流水线等原生基线成功结束后，才占用相同八卡训练 Gobot；然后依次执行两个模型的
 完整片段评估并输出对照报告。任一步失败都停止后续步骤。运行期间报告是阶段状态，
 只有 `state=completed` 才包含最终结果。使用全新输出目录，不能与已有训练并发竞争 GPU。
+
+## 在 Gobot Editor 中实时运行原生 mjlab 模型
+
+`examples/g1/tracking/mjlab_live_runtime.py` 在 Gobot 的异步运行线程中加载
+原生 mjlab 环境和 checkpoint，每 20ms 重新推理动作，推进四个 5ms 物理步。
+`mjlab_live.py` 只在场景线程消费已完成的位姿快照，更新 Play 的 runtime clone。
+此模式的物理后端是原生 mjlab/MuJoCo Warp；它可视化原生模型效果，不代表
+该模型已经通过 Gobot 物理后端的迁移验证。
+
+```bash
+.venv/bin/python tests/support/prepare_mjlab_live.py \
+  --scene logs/tracking-comparison/gobot-aligned-scene/world.jscn \
+  --checkpoint logs/tracking-comparison/mjlab-dance2-s42/model.pt \
+  --motion logs/tracking-comparison/dance2-reference/motion.npz \
+  --output logs/tracking-comparison/mjlab-dance2-live-editor
+
+.venv/bin/gobot_editor --path logs/tracking-comparison/mjlab-dance2-live-editor
+```
+
+生成器要求新的输出目录。Python 环境须满足已固定的数值版本及 mjlab 依赖；
+`--extra-python-paths` 可显式追加已有可选依赖目录，运行器先加载并验证数值栈。
+本机复用了 `mjlab/.venv/lib/python3.13/site-packages` 的非数值依赖。
+
+点击顶部 Play：蓝色为策略控制的物理机器人，绿色为运动参考。
+模型分别使用独立 PBR 材质；可见地面的上表面和物理地面均为 z=0。
+两台机器人仅在显示时平移分开，并用相同的参考 pelvis XY 平移保持取景，
+该显示变换不改动物理状态或跟踪误差。
+
+- 顶部工具栏支持播放、暂停、停止和单步。
+- 视口控制焦点内 `R` 重置，`F` 施加 x 方向 0.8m/s 的根部速度扰动。
+- Physics 面板显示 LIVE、推理步数、误差及动作幅度；`live-status.json` 每秒更新。
+- 接触调试来自最后一个实际执行的 5ms 物理子步，在环境后续 forward/reset 前采集；
+  使用 MuJoCo Warp 的约束求解力并转到世界坐标，单位为 N。青色短箭头显示接触法向，
+  黄色显示各接触力，橙红色显示脚底合力；Physics 状态显示接触数量与左右脚 Fz。
+  `Contact points / normals`、`Contact force arrows` 及缩放/长度限制作用于这些显示。
+  合力排除自碰撞，绿色运动参考不产生物理接触力。暂停期间脚本停止，修改显示设置后
+  恢复 Play 或单步时刷新；停止与重置会清空旧箭头。
+- 关闭随机化、观测噪声和自动推力；首次失败或动作结束后保持最终姿态，按 R 重来。
+
+如需保存一次评估的实际运动，可给 `evaluate_mjlab_tracking.py` 增加
+`--trajectory trajectory.npz`；配套 `.mjb` 只用于离线可视化。
+`render_tracking_trajectory.py` 可生成并排 MP4；`prepare_tracking_replay.py`
+可生成纯记录回放项目。记录回放与上述实时推理项目是不同的入口。

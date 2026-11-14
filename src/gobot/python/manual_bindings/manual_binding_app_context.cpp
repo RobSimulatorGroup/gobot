@@ -2413,6 +2413,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 const PhysicsWorldSettings& settings =
                         simulation->GetPhysicsWorldSettings();
                 py::dict result;
+                result["draw_contacts"] = settings.debug_draw_contacts;
                 result["draw_contact_forces"] = settings.debug_draw_contact_forces;
                 result["contact_force_scale"] = settings.debug_contact_force_scale;
                 result["contact_force_max_length"] =
