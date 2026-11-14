@@ -18,7 +18,8 @@ class ArticulationBatch:
     def __init__(self, *, project_path, scene_path, spec: RobotBatchSpec, num_envs,
                  backend='mujoco-cpu', device=None, physics_dt=.005, decimation=4,
                  solver_settings=None, contact_links=(), capture_graphs=True, nconmax=128, njmax=500,
-                 sliding_friction=None, deterministic=False, contact_scope='all'):
+                 sliding_friction=None, deterministic=False, contact_scope='all',
+                 self_contact_threshold=None):
         if int(num_envs) != num_envs or num_envs <= 0 or int(decimation) != decimation or decimation <= 0:
             raise ValueError('batch size and decimation must be positive integers')
         if not math.isfinite(physics_dt) or physics_dt <= 0:
@@ -38,6 +39,10 @@ class ArticulationBatch:
         # one articulation, so native unbound contacts and provider world-body
         # contacts have the same meaning.
         self.contact_scope = contact_scope
+        if self_contact_threshold is not None and (not math.isfinite(self_contact_threshold) or self_contact_threshold < 0):
+            raise ValueError('self contact threshold must be finite and nonnegative')
+        self.self_contact_threshold = self_contact_threshold
+        self._self_contact_hits = torch.zeros(self.num_envs, self.decimation, device=self.device)
         self.contact_links = tuple(contact_links)
         self._physics_parameters = {"link_center_of_mass_offsets": {}, "shape_friction": {}}
         self._cpu_parameters = {}
@@ -61,9 +66,9 @@ class ArticulationBatch:
             if solver_settings:
                 self.context.set_mujoco_solver_settings(dict(solver_settings))
             self.snapshot = self.context.compile_physics_scene_snapshot()
-            if contact_scope == 'static_world':
+            if contact_scope == 'static_world' or self_contact_threshold is not None:
                 if len(self.snapshot['robots']) != 1 or self.snapshot['deformables']:
-                    raise ValueError('static_world contact scope requires a single articulation scene')
+                    raise ValueError('filtered contact sensing requires a single articulation scene')
             self.artifact = CompiledSceneArtifact.from_mapping(
                 self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu))
             self._targets = torch.zeros((self.num_envs, len(spec.joint_names)), device=self.device)
@@ -80,6 +85,11 @@ class ArticulationBatch:
                     primary_names=tuple(prefix+name for name in self.contact_links), reduce='netforce',
                     secondary_type='body' if contact_scope == 'static_world' else None,
                     secondary_name='world' if contact_scope == 'static_world' else None),)
+                if self_contact_threshold is not None:
+                    sensors += (MuJoCoWarpContactSensorSpec(
+                        name='articulation_self_contacts', primary_type='subtree',
+                        primary_names=(prefix + spec.base_link,), secondary_type='subtree',
+                        secondary_name=prefix + spec.base_link, reduce='none', num_slots=1),)
                 self._provider = MuJoCoWarpProvider(self.artifact, num_envs=self.num_envs, device=self.device,
                     nconmax=nconmax, njmax=njmax, capture_graphs=capture_graphs, deterministic=deterministic, contact_sensors=sensors)
                 self._view = self._provider.create_robot_view(spec)
@@ -94,6 +104,14 @@ class ArticulationBatch:
                 self._runtime.configure(self.num_envs)
                 self._link_indices = [links.index(name) for name in spec.link_names]
                 self._contact_indices = [links.index(name) for name in self.contact_links]
+                subtree = {spec.base_link}
+                while True:
+                    children = {j['child_link'] for j in robot['joints'] if j['parent_link'] in subtree}
+                    if children <= subtree:
+                        break
+                    subtree.update(children)
+                self._self_contact_link_ids = np.array([i for i, name in enumerate(links) if name in subtree])
+                self._link_velocities = torch.empty(self.num_envs, len(spec.link_names), 6)
                 self._state = RobotBatchState(torch.empty(self.num_envs, 7), torch.empty(self.num_envs, 6),
                     torch.empty_like(self._targets), torch.empty_like(self._targets), torch.empty_like(self._targets),
                     torch.empty(self.num_envs, len(spec.link_names), 7))
@@ -131,6 +149,8 @@ class ArticulationBatch:
         state.joint_control.copy_(array('joint_target_position'))
         state.link_pose[..., :3].copy_(array('link_position')[:, self._link_indices])
         state.link_pose[..., 3:].copy_(array('link_quaternion')[:, self._link_indices][..., (1, 2, 3, 0)])
+        self._link_velocities[..., :3].copy_(array('link_linear_velocity')[:, self._link_indices])
+        self._link_velocities[..., 3:].copy_(array('link_angular_velocity')[:, self._link_indices])
         self._raw_cpu = raw
         return state
 
@@ -183,29 +203,90 @@ class ArticulationBatch:
         self._contacts['impulse'].add_(force, alpha=self.physics_dt)
         torch.maximum(self._contacts['peak_force_norm'], force.norm(dim=-1), out=self._contacts['peak_force_norm'])
 
+    def _sample_self_contacts(self, substep):
+        if self.self_contact_threshold is None:
+            return
+        if self._provider is not None:
+            force = self._provider.contact_sensor('articulation_self_contacts')['force']
+            hit = (force.reshape(self.num_envs, -1, 3).norm(dim=-1) > self.self_contact_threshold).any(-1)
+        else:
+            raw = self._raw_cpu
+            indices = np.asarray(raw['contact_link_index'])
+            counts = np.asarray(raw['contact_count'])
+            valid = (np.arange(indices.shape[1])[None, :] < counts[:, None])
+            valid &= np.isin(indices, self._self_contact_link_ids).all(-1)
+            forces = np.linalg.norm(np.asarray(raw['contact_force']), axis=-1)
+            # Match the upstream subtree sensor: reduce=none, one contact slot.
+            if valid.shape[1] == 0:
+                return
+            first = valid.argmax(axis=1)
+            hit = torch.as_tensor(valid.any(axis=1) &
+                (forces[np.arange(self.num_envs), first] > self.self_contact_threshold))
+        self._self_contact_hits[:, substep] = hit
+
+    def read_self_contact_substeps(self):
+        """Per-world count of physics substeps with a self-contact over threshold."""
+        self._require_open()
+        return self._self_contact_hits.sum(-1)
+
     @torch.no_grad()
-    def step_control(self, *, before_substep=None):
+    def step_control(self, *, before_substep=None, refresh_kinematics=True):
         self._require_open()
         for value in self._contacts.values():
             value.zero_()
+        self._self_contact_hits.zero_()
         for substep in range(self.decimation):
             if before_substep is not None:
                 before_substep(substep)
             if self._provider is not None:
                 self._provider.step(nsteps=1)
-                if self.contact_links:
-                    self._provider.sense()
+                # MuJoCo step already computed contact sensordata. Re-sensing
+                # can reorder reduce=none contact slots and changes the reward
+                # sampled by a per-substep history sensor.
             else:
                 self._read_cpu(self._runtime.step_and_robot_state(self._targets.numpy(), 1, **self._cpu_parameters))
             self._sample_contacts()
+            self._sample_self_contacts(substep)
+        if refresh_kinematics:
+            if self._provider is not None:
+                self._provider.refresh_kinematics()
+            else:
+                self._read_cpu()
+        return self.read_state()
+
+    def read_link_velocities(self):
+        """Borrowed world link-origin twists, aligned with the current link poses."""
+        self._require_open()
+        return self._view.read_link_velocities() if self._provider is not None else self._link_velocities
+
+    @torch.no_grad()
+    def forward(self):
+        """Refresh complete physical derived state without integration."""
+        self._require_open()
         if self._provider is not None:
-            self._provider.refresh_kinematics()
+            self._provider.forward()
         else:
-            self._read_cpu()
+            raw = self._runtime.step_and_robot_state(self._targets.numpy(), 0, **self._cpu_parameters)
+            self._read_cpu(raw)
         return self.read_state()
 
     @torch.no_grad()
-    def reset(self, mask, *, base_pose, base_velocity, joint_position, joint_velocity, targets):
+    def set_base_velocity(self, mask, velocity):
+        """Write world link-origin linear/angular velocity, preserving caches and time."""
+        self._require_open()
+        mask = torch.as_tensor(mask, dtype=torch.bool, device=self.device)
+        if mask.shape != (self.num_envs,):
+            raise ValueError('velocity mask must have one entry per environment')
+        velocity = self._tensor(velocity, (self.num_envs, 6), 'base velocity', mask=mask)
+        if self._provider is not None:
+            self._view.set_base_velocity(mask, velocity)
+        else:
+            ids = mask.nonzero().flatten()
+            self._runtime.set_base_velocities(ids.tolist(), velocity[ids].numpy())
+        return self.refresh_kinematics()
+
+    @torch.no_grad()
+    def reset(self, mask, *, base_pose, base_velocity, joint_position, joint_velocity, targets, reset_physics=True):
         self._require_open()
         mask = torch.as_tensor(mask, dtype=torch.bool, device=self.device)
         if mask.shape != (self.num_envs,):
@@ -222,7 +303,7 @@ class ArticulationBatch:
             raise ValueError('reset orientation must be a unit xyzw quaternion')
         if self._provider is not None:
             self._view.reset(mask, base_pose=pose, base_velocity=velocity,
-                             joint_position=q, joint_velocity=qd, controls=targets, kinematics_only=True)
+                             joint_position=q, joint_velocity=qd, controls=targets, kinematics_only=True, reset_physics=reset_physics)
         else:
             ids = torch.nonzero(mask).flatten()
             self._runtime.reset_robot_states(ids.tolist(), base_positions=pose[ids, :3].numpy(),
@@ -232,6 +313,7 @@ class ArticulationBatch:
         self._targets[mask] = targets[mask]
         if self._provider is None:
             self._read_cpu()
+        self._self_contact_hits[mask] = 0
         for value in self._contacts.values():
             value[mask] = 0
         return self.read_state()

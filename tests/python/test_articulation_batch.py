@@ -164,16 +164,19 @@ def test_static_world_contacts_exclude_self_and_point_away_from_ground(tmp_path)
     def create(scope):
         return ArticulationBatch(project_path=tmp_path,scene_path='res://self.jscn',
             spec=RobotBatchSpec('self_test','base',('arm_joint','hand_joint'),('base','arm','hand')),
-            num_envs=1,decimation=1,contact_links=('base','hand'),contact_scope=scope)
+            num_envs=1,decimation=1,contact_links=('base','hand'),contact_scope=scope,
+            self_contact_threshold=.1)
     all_contacts=create('all')
     try:
         all_contacts.step_control()
         assert all_contacts.read_contacts()['force'].abs().max()>.1
+        assert all_contacts.read_self_contact_substeps().item()==1
     finally:all_contacts.close()
     world=create('static_world')
     try:
         world.step_control()
         assert world.read_contacts()['force'].abs().max()==0
+        assert world.read_self_contact_substeps().item()==1
         state=world.read_state()
         pose=state.base_pose.clone();pose[:,2]=.08
         world.reset([True],base_pose=pose,base_velocity=torch.zeros_like(state.base_velocity),
@@ -203,4 +206,53 @@ def test_masked_reset_validates_only_rows_it_applies(tmp_path):
         bad=dict(arguments);bad['base_pose']=saved['base_pose'].clone();bad['base_pose'][0,3:]=0.
         with pytest.raises(ValueError,match='unit xyzw'):
             batch.reset([True,False],**bad)
+    finally:batch.close()
+
+
+def test_base_velocity_write_preserves_pose_control_and_other_lane(tmp_path):
+    batch=make_batch(tmp_path)
+    try:
+        state=batch.read_state()
+        pose=state.base_pose.clone()
+        pose[:,3:]=torch.tensor([0.,0.,2**-.5,2**-.5])
+        batch.reset([True,True],base_pose=pose,base_velocity=state.base_velocity.clone(),
+                    joint_position=state.joint_position.clone(),joint_velocity=state.joint_velocity.clone(),
+                    targets=state.joint_control.clone())
+        before={k:v.clone() for k,v in batch.read_state().__dict__.items()}
+        contacts={k:v.clone() for k,v in batch.read_contacts().items()}
+        velocity=torch.tensor([[.1,.2,.3,.4,.5,.6],[float('nan')]*6])
+        batch.set_base_velocity([True,False],velocity)
+        current=batch.read_state()
+        torch.testing.assert_close(current.base_velocity[0],velocity[0],atol=1e-6,rtol=1e-6)
+        for key,value in current.__dict__.items():
+            torch.testing.assert_close(value[1],before[key][1],atol=0,rtol=0)
+            if key!='base_velocity':torch.testing.assert_close(value,before[key],atol=0,rtol=0)
+        for key,value in batch.read_contacts().items():torch.testing.assert_close(value,contacts[key],atol=0,rtol=0)
+        with pytest.raises(ValueError,match='finite'):
+            batch.set_base_velocity([True,True],velocity)
+    finally:batch.close()
+
+
+def test_backend_link_twists_match_scene_kinematics(tmp_path):
+    from gobot.rl.kinematics import SceneKinematics
+    from gobot.rl.tracking.math import matrix
+    batch=make_batch(tmp_path)
+    try:
+        state=batch.read_state()
+        velocity=torch.tensor([[.2,-.1,.3,.1,.2,-.4],[-.2,.4,.1,.3,-.2,.1]])
+        q=torch.tensor([[.4],[-.2]]);qd=torch.tensor([[1.2],[-.7]])
+        batch.reset([True,True],base_pose=state.base_pose.clone(),base_velocity=velocity,
+                    joint_position=q,joint_velocity=qd,targets=q)
+        state=batch.read_state()
+        kin=SceneKinematics(batch.snapshot,robot_name='batch_test',base_link='base',joint_names=('hinge',),tracked_links=('foot',))
+        p,r,v,w=kin(state.base_pose[:,:3],matrix(state.base_pose[:,(6,3,4,5)]),velocity[:,:3],velocity[:,3:],q,qd)
+        actual=batch.read_link_velocities()
+        torch.testing.assert_close(actual[...,:3],v,atol=1e-6,rtol=1e-6)
+        torch.testing.assert_close(actual[...,3:],w,atol=1e-6,rtol=1e-6)
+        pointer=actual.data_ptr()
+        batch.step_control(refresh_kinematics=False)
+        assert batch.read_link_velocities().data_ptr()==pointer
+        before=batch.read_state().link_pose.clone()
+        batch.forward()
+        assert not torch.equal(before,batch.read_state().link_pose)
     finally:batch.close()

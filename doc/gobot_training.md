@@ -10,6 +10,7 @@
 | `go1-velocity` / `g1-velocity` | 标准速度控制 PPO |
 | `go1-gait` | PPO 加步态相位奖励 |
 | `g1-amp` | PPO 加动作先验 |
+| `g1-tracking` | [mjlab/BeyondMimic 全身动作跟踪 PPO](gobot_tracking.md) |
 | `g1-motion-amp` | RSL-RL PPO 加动作判别器，Gobot 场景仿真 |
 | `g1-supermimic` | 官方 GenCoord WM/BPTT，支持同步多卡 |
 
