@@ -662,6 +662,22 @@ class RobotBatchView:
         self._validate()
         self._adapter.set_controls(controls)
 
+    def read_link_velocities(self) -> Any:
+        """World link-origin linear/angular velocities [world, link, 6].
+
+        Values are borrowed until the next read/physics operation and follow the
+        same derived-state time as link_pose. Reading never advances physics.
+        """
+        self._validate()
+        method = getattr(self._adapter, "read_link_velocities", None)
+        if method is None:
+            raise NotImplementedError("this provider does not expose link velocities")
+        values = method()
+        expected = (int(self._provider.num_envs), len(self.spec.link_names), 6)
+        if tuple(values.shape) != expected:
+            raise RuntimeError(f"link velocity shape {values.shape} differs from {expected}")
+        return values
+
     def set_base_velocity(self, mask: Any, velocity: Any) -> None:
         """Set selected bases' world linear/angular velocities without a reset."""
         self._validate()

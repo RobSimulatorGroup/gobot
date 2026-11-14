@@ -231,3 +231,28 @@ def test_base_velocity_write_preserves_pose_control_and_other_lane(tmp_path):
         with pytest.raises(ValueError,match='finite'):
             batch.set_base_velocity([True,True],velocity)
     finally:batch.close()
+
+
+def test_backend_link_twists_match_scene_kinematics(tmp_path):
+    from gobot.rl.kinematics import SceneKinematics
+    from gobot.rl.tracking.math import matrix
+    batch=make_batch(tmp_path)
+    try:
+        state=batch.read_state()
+        velocity=torch.tensor([[.2,-.1,.3,.1,.2,-.4],[-.2,.4,.1,.3,-.2,.1]])
+        q=torch.tensor([[.4],[-.2]]);qd=torch.tensor([[1.2],[-.7]])
+        batch.reset([True,True],base_pose=state.base_pose.clone(),base_velocity=velocity,
+                    joint_position=q,joint_velocity=qd,targets=q)
+        state=batch.read_state()
+        kin=SceneKinematics(batch.snapshot,robot_name='batch_test',base_link='base',joint_names=('hinge',),tracked_links=('foot',))
+        p,r,v,w=kin(state.base_pose[:,:3],matrix(state.base_pose[:,(6,3,4,5)]),velocity[:,:3],velocity[:,3:],q,qd)
+        actual=batch.read_link_velocities()
+        torch.testing.assert_close(actual[...,:3],v,atol=1e-6,rtol=1e-6)
+        torch.testing.assert_close(actual[...,3:],w,atol=1e-6,rtol=1e-6)
+        pointer=actual.data_ptr()
+        batch.step_control(refresh_kinematics=False)
+        assert batch.read_link_velocities().data_ptr()==pointer
+        before=batch.read_state().link_pose.clone()
+        batch.forward()
+        assert not torch.equal(before,batch.read_state().link_pose)
+    finally:batch.close()

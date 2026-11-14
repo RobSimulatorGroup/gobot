@@ -81,7 +81,7 @@ class Motion:
                         raise ValueError(
                             "body_quat_w must contain unit wxyz quaternions"
                         )
-                    a = a / norms
+                    # Preserve the shared reference bytes; the native loader does not renormalize.
                 setattr(self, key, torch.as_tensor(a.copy(), device=device))
 
     @staticmethod

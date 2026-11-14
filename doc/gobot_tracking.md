@@ -132,8 +132,9 @@ PPO 模型与优化器、自适应采样统计、随机数状态和启动随机�
   每项乘控制步长。自碰撞取 subtree 对 subtree 的第一个接触槽，阈值 10 N，
   累加一个控制周期内的物理子步。不同后端接触排序和数值轨迹不承诺逐位一致。
 - 终止检查锚点高度、末端高度和投影重力 z 分量差；最后一项不是 0.8 rad 朝向阈值。
-- 相对身体目标保持参考高度，使用真实 anchor 的水平位置和相对 yaw。
-- 奖励和终止使用最后一个物理子步积分前的身体状态，关节限位使用积分后的关节角度；
+- 相对身体目标保持参考高度，使用真实 anchor 的水平位置和相对 yaw。各环境使用与 mjlab 相同的 2 米网格原点。
+- 连杆位姿和速度直接由物理后端的批量状态接口读取，训练热路径不再重复计算 Python FK。
+  奖励和终止使用最后一个物理子步积分前的身体状态，关节限位使用积分后的关节角度；
   策略下一步观测使用刷新后的运动学。这与上游 manager 的采样时序相对应。
 - 自适应采样统计失败发生时的片段，EMA `alpha=0.001`，基础总权重 `0.1`，
   默认卷积窗口 1。支持 `start`、`uniform`、`adaptive`。多个重置批次的失败会累加，
@@ -189,12 +190,13 @@ tracking 的多卡使用 RSL-RL 原生 PPO 梯度平均、KL/学习率同步和�
 各进程使用 `seed + rank` 采样独立环境，模型与优化器始终同步。
 `num_envs` 默认是**每卡**环境数；`batch_scope="global"` 时将总环境数均分到各卡。
 最终只有一套模型 checkpoint，rank 0 写 TensorBoard、metrics.jsonl 和 status.json。
-`synchronization.json` 检查各卡 actor/critic（含归一化）、优化器和采样统计的摘要相等。
+`synchronization.json` 检查各卡 actor/critic（含归一化）和优化器摘要相等；仅全局采样模式要求采样摘要一致。
 
-失败计数按全局总量合并。多卡时，每次 PPO rollout 内使用同一份冻结的采样分布，
-在 rollout 结束后同步该窗口的指数加权失败计数；每步 EMA 衰减时间保持不变。
-这避免在物理步进中插入通信，也使某个进程的仿真错误能够在进入 PPO 通信前共同报告。
-与单卡逐控制步更新采样分布的时间点不同，此差异记录在 distributed.json。
+默认 `sampler_sync="rank_local"`：与原生 mjlab 相同，各卡独立统计失败，每个控制步更新 EMA。
+模型和归一化仍跨卡同步；采样分布可以不同。`rollout_global` 保留为显式实验选项，
+只在 rollout 结束后合并全卡失败统计；不能把这个变体当作原生 mjlab 配方。
+`random_source="torch_global"` 默认使用原生 Torch RNG，各 rank 以 `seed+rank` 初始化。
+`init_at_random_ep_len=true` 与原生 runner 一样随机化初始回合时钟，`allow_tf32=false` 使用 IEEE FP32。
 
 选用 LAFAN `dance2_subject1`，原始 6771 帧、30 Hz，约 225.67 秒。
 只使用这一条舞蹈；不同 GPU 从同一动作的不同时间点采样，不混入其他动作。

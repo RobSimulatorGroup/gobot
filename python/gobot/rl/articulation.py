@@ -111,6 +111,7 @@ class ArticulationBatch:
                         break
                     subtree.update(children)
                 self._self_contact_link_ids = np.array([i for i, name in enumerate(links) if name in subtree])
+                self._link_velocities = torch.empty(self.num_envs, len(spec.link_names), 6)
                 self._state = RobotBatchState(torch.empty(self.num_envs, 7), torch.empty(self.num_envs, 6),
                     torch.empty_like(self._targets), torch.empty_like(self._targets), torch.empty_like(self._targets),
                     torch.empty(self.num_envs, len(spec.link_names), 7))
@@ -148,6 +149,8 @@ class ArticulationBatch:
         state.joint_control.copy_(array('joint_target_position'))
         state.link_pose[..., :3].copy_(array('link_position')[:, self._link_indices])
         state.link_pose[..., 3:].copy_(array('link_quaternion')[:, self._link_indices][..., (1, 2, 3, 0)])
+        self._link_velocities[..., :3].copy_(array('link_linear_velocity')[:, self._link_indices])
+        self._link_velocities[..., 3:].copy_(array('link_angular_velocity')[:, self._link_indices])
         self._raw_cpu = raw
         return state
 
@@ -227,7 +230,7 @@ class ArticulationBatch:
         return self._self_contact_hits.sum(-1)
 
     @torch.no_grad()
-    def step_control(self, *, before_substep=None):
+    def step_control(self, *, before_substep=None, refresh_kinematics=True):
         self._require_open()
         for value in self._contacts.values():
             value.zero_()
@@ -237,16 +240,34 @@ class ArticulationBatch:
                 before_substep(substep)
             if self._provider is not None:
                 self._provider.step(nsteps=1)
-                if self.contact_links or self.self_contact_threshold is not None:
-                    self._provider.sense()
+                # MuJoCo step already computed contact sensordata. Re-sensing
+                # can reorder reduce=none contact slots and changes the reward
+                # sampled by a per-substep history sensor.
             else:
                 self._read_cpu(self._runtime.step_and_robot_state(self._targets.numpy(), 1, **self._cpu_parameters))
             self._sample_contacts()
             self._sample_self_contacts(substep)
+        if refresh_kinematics:
+            if self._provider is not None:
+                self._provider.refresh_kinematics()
+            else:
+                self._read_cpu()
+        return self.read_state()
+
+    def read_link_velocities(self):
+        """Borrowed world link-origin twists, aligned with the current link poses."""
+        self._require_open()
+        return self._view.read_link_velocities() if self._provider is not None else self._link_velocities
+
+    @torch.no_grad()
+    def forward(self):
+        """Refresh complete physical derived state without integration."""
+        self._require_open()
         if self._provider is not None:
-            self._provider.refresh_kinematics()
+            self._provider.forward()
         else:
-            self._read_cpu()
+            raw = self._runtime.step_and_robot_state(self._targets.numpy(), 0, **self._cpu_parameters)
+            self._read_cpu(raw)
         return self.read_state()
 
     @torch.no_grad()
@@ -265,7 +286,7 @@ class ArticulationBatch:
         return self.refresh_kinematics()
 
     @torch.no_grad()
-    def reset(self, mask, *, base_pose, base_velocity, joint_position, joint_velocity, targets):
+    def reset(self, mask, *, base_pose, base_velocity, joint_position, joint_velocity, targets, reset_physics=True):
         self._require_open()
         mask = torch.as_tensor(mask, dtype=torch.bool, device=self.device)
         if mask.shape != (self.num_envs,):
@@ -282,7 +303,7 @@ class ArticulationBatch:
             raise ValueError('reset orientation must be a unit xyzw quaternion')
         if self._provider is not None:
             self._view.reset(mask, base_pose=pose, base_velocity=velocity,
-                             joint_position=q, joint_velocity=qd, controls=targets, kinematics_only=True)
+                             joint_position=q, joint_velocity=qd, controls=targets, kinematics_only=True, reset_physics=reset_physics)
         else:
             ids = torch.nonzero(mask).flatten()
             self._runtime.reset_robot_states(ids.tolist(), base_positions=pose[ids, :3].numpy(),

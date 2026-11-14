@@ -429,3 +429,40 @@ def test_checkpoint_state_owns_storage_and_restore_restarts_timers(tmp_path):
         assert ((env.push_time >= 1) & (env.push_time <= 3)).all()
     finally:
         env.close()
+
+
+def test_tracking_uses_backend_state_without_runtime_fk(tmp_path):
+    env = TrackingEnv(tiny_config(tmp_path))
+    try:
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("runtime FK must not be recomputed")
+
+        env.kin.forward = forbidden
+        for _ in range(5):
+            state = env.step(torch.zeros(2, 1))
+            assert torch.isfinite(state.reward).all()
+        assert env.origins.tolist() == [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]]
+    finally:
+        env.close()
+
+
+def test_motion_reference_values_preserve_native_fp32(tmp_path):
+    path = tmp_path / "motion.npz"
+    values = archive(path)
+    values["body_quat_w"][..., 0] = 1.00002
+    np.savez(path, **values)
+    motion = Motion(path, ("a", "b"), ("base", "foot"))
+    np.testing.assert_array_equal(motion.body_quat_w.numpy(), values["body_quat_w"])
+
+
+def test_randomized_clock_does_not_inflate_logged_episode_length(tmp_path):
+    env = TrackingEnv(tiny_config(tmp_path))
+    try:
+        env.steps.fill_(env.max_episode_length - 1)
+        env.step(torch.zeros(2, 1))
+        statistics = env.consume_episode_statistics()
+        assert statistics[0].item() == 2
+        assert statistics[1].item() == 2  # Each world collected only one actual step.
+    finally:
+        env.close()

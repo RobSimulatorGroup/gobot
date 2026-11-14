@@ -85,7 +85,9 @@ class TrackingConfig:
     backend: str = "mujoco-warp"
     device: str | None = None
     num_envs: int = 4096
+    env_spacing: float = 2.0
     seed: int = 42
+    random_source: str = "torch_global"
     physics_dt: float = 0.005
     decimation: int = 4
     episode_length_s: float = 10.0
@@ -111,7 +113,7 @@ class TrackingConfig:
             cone="Pyramidal",
             iterations=10,
             line_search_iterations=20,
-            convex_collision_iterations=500,
+            convex_collision_iterations=50,
             impedance_ratio=1.0,
         )
     )
@@ -133,6 +135,8 @@ class TrackingConfig:
                 raise ValueError(f"{name} must be finite and positive")
         if self.backend not in ("mujoco-cpu", "mujoco-warp"):
             raise ValueError("unsupported tracking backend")
+        if self.random_source not in ("torch_global", "local_generator"):
+            raise ValueError("random_source must be torch_global or local_generator")
         if self.sampling_mode not in ("adaptive", "uniform", "start"):
             raise ValueError("unknown sampling mode")
         if not 0 < self.adaptive_alpha <= 1 or not 0 <= self.adaptive_lambda <= 1:

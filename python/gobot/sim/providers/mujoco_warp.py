@@ -83,6 +83,9 @@ class _MuJoCoWarpRobotViewAdapter:
         self.angular_velocity = torch.empty(
             (provider.num_envs, 3, 1), dtype=provider.arrays["qvel"].dtype, device=device
         )
+        self.link_velocity = torch.empty((provider.num_envs, len(spec.link_names), 6),
+                                         dtype=pose_dtype, device=device)
+        self.root_body_id = int(provider._mj_model.body_rootid[self.layout.base_body_id])
         body = self.layout.base_body_id
         joint_adr = int(provider._mj_model.body_jntadr[body])
         joint_count = int(provider._mj_model.body_jntnum[body])
@@ -165,6 +168,14 @@ class _MuJoCoWarpRobotViewAdapter:
     def set_controls(self, controls: Any) -> None:
         self.provider.set_joint_controls(self.layout, controls)
 
+    def read_link_velocities(self) -> Any:
+        arrays = self.provider.arrays
+        spatial = arrays["cvel"][:, self.links]
+        offset = arrays["xpos"][:, self.links] - arrays["subtree_com"][:, self.root_body_id, None]
+        self.link_velocity[..., :3].copy_(spatial[..., 3:] + self.provider._torch.linalg.cross(spatial[..., :3], offset))
+        self.link_velocity[..., 3:].copy_(spatial[..., :3])
+        return self.link_velocity
+
     def set_base_velocity(self, mask: Any, velocity: Any) -> None:
         if self.base_qd is None or self.base_q is None:
             raise ValueError("base velocity writes require a floating joint")
@@ -186,6 +197,7 @@ class _MuJoCoWarpRobotViewAdapter:
 
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
         kinematics_only = bool(state.pop("kinematics_only", False))
+        reset_physics = bool(state.pop("reset_physics", True))
         qpos = self.provider.arrays["qpos"].clone()
         qvel = self.provider.arrays["qvel"].clone()
         ctrl = self.provider.arrays["ctrl"].clone()
@@ -230,7 +242,7 @@ class _MuJoCoWarpRobotViewAdapter:
         copy_columns(ctrl, self.controls, state.pop("controls", None), "controls")
         if state:
             raise TypeError("unexpected robot reset fields: " + ", ".join(sorted(state)))
-        result = self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl, forward=not kinematics_only)
+        result = self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl, forward=not kinematics_only, reset_physics=reset_physics)
         if kinematics_only:
             self.provider.refresh_kinematics()
         return result
@@ -693,6 +705,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         qvel: Any | None = None,
         ctrl: Any | None = None,
         forward: bool = True,
+        reset_physics: bool = True,
     ) -> Mapping[str, Any]:
         self._require_open()
         self._validate_storage()
@@ -701,7 +714,8 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise ValueError(f"reset mask must have shape ({self._num_envs},), got {tuple(mask.shape)}")
         self._reset_mask_tensor.copy_(mask)
         with self._stream_scope():
-            self._launch_or_call("reset", self._mjw.reset_data, self._reset_mask)
+            if reset_physics:
+                self._launch_or_call("reset", self._mjw.reset_data, self._reset_mask)
             self._copy_masked_state("qpos", qpos, mask)
             self._copy_masked_state("qvel", qvel, mask)
             self._copy_masked_state("ctrl", ctrl, mask)

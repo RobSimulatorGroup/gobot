@@ -53,6 +53,9 @@ def default_agent():
 @dataclass
 class Config(TrackingConfig):
     batch_scope: str = "per_rank"
+    sampler_sync: str = "rank_local"
+    init_at_random_ep_len: bool = True
+    allow_tf32: bool = False
     updates: int = 30000
     output: Path = Path("logs/g1-tracking/run")
     resume: Path | None = None
@@ -61,6 +64,8 @@ class Config(TrackingConfig):
 
     def validate(self):
         super().validate()
+        if self.sampler_sync not in ("rank_local", "rollout_global"):
+            raise ValueError("sampler_sync must be rank_local or rollout_global")
         if self.batch_scope not in ("per_rank", "global"):
             raise ValueError("batch_scope must be per_rank or global")
         for name in ("updates", "torch_threads"):
@@ -182,7 +187,9 @@ class Runner(OnPolicyRunner):
 
     def learn(self, num_learning_iterations, init_at_random_ep_len=False):
         if init_at_random_ep_len:
-            raise ValueError("tracking uses explicit reference-state episode resets")
+            self.env.episode_length_buf = torch.randint_like(
+                self.env.episode_length_buf, high=self.env.max_episode_length
+            )
         self.alg.train_mode()
         if self.is_distributed:
             self.alg.broadcast_parameters()
@@ -280,20 +287,28 @@ class Runner(OnPolicyRunner):
     def audit(self):
         # Includes observation normalizers and optimizer state, not just weights.
         digests = {k: state_digest(v) for k, v in self.alg.save().items()}
-        digests["sampler"] = state_digest(self.env.sampler.failed)
+        sampler_digest = state_digest(self.env.sampler.failed)
         ranks = self.group.gather(
             dict(
                 rank=self.group.rank,
                 device=self.device,
                 seed=self.env.seed,
                 digests=digests,
+                sampler_digest=sampler_digest,
             )
         )
 
         def check():
             if any(r["digests"] != ranks[0]["digests"] for r in ranks):
-                raise RuntimeError("distributed models, optimizer or sampler diverged")
-            return dict(passed=True, ranks=ranks)
+                raise RuntimeError("distributed models or optimizer diverged")
+            if (
+                self.env.cfg_obj.sampler_sync == "rollout_global"
+                and len({r["sampler_digest"] for r in ranks}) != 1
+            ):
+                raise RuntimeError("global sampler scores diverged")
+            return dict(
+                passed=True, sampler_sync=self.env.cfg_obj.sampler_sync, ranks=ranks
+            )
 
         return self.group.on_main(check)
 
@@ -311,6 +326,9 @@ def run(cfg):
     started = time.monotonic()
     try:
         group.initialize()
+        torch.backends.cuda.matmul.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
+        torch.backends.cudnn.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
+        torch.backends.cudnn.benchmark = True
         random.seed(local.seed)
         np.random.seed(local.seed)
         torch.manual_seed(local.seed)
@@ -325,7 +343,7 @@ def run(cfg):
                     batch_scope=cfg.batch_scope,
                     num_envs_per_rank=local.num_envs,
                     total_num_envs=local.num_envs * group.world_size,
-                    sampler_sync="global failure-count EMA once per PPO rollout",
+                    sampler_sync=cfg.sampler_sync,
                 ),
             )
 
@@ -337,7 +355,7 @@ def run(cfg):
         except Exception as caught:
             error = caught
         group.check_error(error, phase="environment initialization")
-        if group.world_size > 1:
+        if group.world_size > 1 and cfg.sampler_sync == "rollout_global":
             env.sampler.defer()
         agent = deepcopy(cfg.agent)
         agent["seed"] = cfg.seed
@@ -391,7 +409,7 @@ def run(cfg):
         if group.world_size > 1:
             runner.alg.broadcast_parameters()
         initial = next(runner.alg.actor.parameters()).detach().clone()
-        runner.learn(cfg.updates, init_at_random_ep_len=False)
+        runner.learn(cfg.updates, init_at_random_ep_len=cfg.init_at_random_ep_len)
         audit = runner.audit()
         runner.save(output / "model.pt")
         result = dict(

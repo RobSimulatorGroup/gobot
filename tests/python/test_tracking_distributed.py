@@ -109,6 +109,8 @@ def test_shared_ppo_normalizers_checkpoint_and_resume(tmp_path):
         agent=agent,
     )
     cfg.sampling_mode = "adaptive"
+    cfg.sampler_sync = "rollout_global"
+    cfg.init_at_random_ep_len = False
     cfg.episode_length_s = 0.04
     from gobot.rl.training.workflow import config_dict
 
@@ -189,3 +191,12 @@ def test_batch_scope_and_public_one_motion_api(monkeypatch, tmp_path):
     assert captured["spec"].supports_distributed
     assert captured["cfg"].motion_file == Path("dance.npz")
     assert captured["cfg"].num_envs == 512 and captured["cfg"].batch_scope == "per_rank"
+
+
+def test_native_mjlab_sampling_defaults(tmp_path):
+    cfg = Config(project_path=tmp_path)
+    assert cfg.sampler_sync == "rank_local"
+    assert cfg.random_source == "torch_global"
+    assert cfg.init_at_random_ep_len is True
+    assert cfg.allow_tf32 is False
+    assert cfg.solver_settings["convex_collision_iterations"] == 50

@@ -48,7 +48,7 @@ class AdaptiveSampler:
 
     def update(self):
         target = self.failed if self.deferred is None else self.deferred
-        target.mul_(1 - self.alpha).add_(self.pending, alpha=self.alpha)
+        target.copy_(self.alpha * self.pending + (1 - self.alpha) * target)
         if self.deferred is not None:
             self.deferred_steps += 1
         self.pending.zero_()

@@ -13,7 +13,7 @@ from gobot.rl.kinematics import SceneKinematics
 from gobot.rl.spec import ActionSpec, ObservationSpec, SpecField
 from gobot.sim.providers.base import RobotBatchSpec
 from . import mdp
-from .math import matrix, quaternion, multiply, from_euler
+from .math import multiply, from_euler
 from .motion import Motion
 from .sampler import AdaptiveSampler
 
@@ -33,8 +33,32 @@ class TrackingEnv:
         self.device = str(
             cfg.device or ("cuda:0" if cfg.backend == "mujoco-warp" else "cpu")
         )
+        rows = math.ceil(self.num_envs / int(math.sqrt(self.num_envs)))
+        columns = math.ceil(self.num_envs / rows)
+        i, j = torch.meshgrid(
+            torch.arange(rows, device=self.device),
+            torch.arange(columns, device=self.device),
+            indexing="ij",
+        )
+        self.origins = torch.zeros(self.num_envs, 3, device=self.device)
+        self.origins[:, 0] = (
+            -(i.flatten()[: self.num_envs] - (rows - 1) / 2) * cfg.env_spacing
+        )
+        self.origins[:, 1] = (
+            j.flatten()[: self.num_envs] - (columns - 1) / 2
+        ) * cfg.env_spacing
         self.seed = cfg.seed
-        self.generator = torch.Generator(device=self.device).manual_seed(cfg.seed)
+        if cfg.random_source == "torch_global":
+            if self.device.startswith("cuda"):
+                torch.cuda.set_device(self.device)
+                self.generator = torch.cuda.default_generators[
+                    torch.cuda.current_device()
+                ]
+            else:
+                self.generator = torch.default_generator
+            self.generator.manual_seed(cfg.seed)
+        else:
+            self.generator = torch.Generator(device=self.device).manual_seed(cfg.seed)
         self.autoreset = autoreset
         self.control_dt = cfg.physics_dt * cfg.decimation
         self.max_episode_length = math.ceil(cfg.episode_length_s / self.control_dt)
@@ -110,6 +134,7 @@ class TrackingEnv:
         self.bias = torch.zeros(self.num_envs, self.num_actions, device=self.device)
         self.imu_position = torch.tensor(cfg.imu_position, device=self.device)
         self.imu_orientation = torch.tensor(cfg.imu_orientation, device=self.device)
+        self.push_time = 1 + 2 * self._rand((self.num_envs,))
         self._startup_randomization(robot)
         self.sampler = AdaptiveSampler(
             self.motion.frames,
@@ -123,12 +148,12 @@ class TrackingEnv:
         self.frame = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.steps = torch.zeros_like(self.frame)
         self.episode_length_buf = self.steps
+        self.measured_episode_steps = torch.zeros_like(self.steps)
         self.action = torch.zeros_like(self.bias)
         self.pending_reset = torch.ones(
             self.num_envs, dtype=torch.bool, device=self.device
         )
         self.ids = torch.arange(self.num_envs, device=self.device)
-        self.push_time = 1 + 2 * self._rand((self.num_envs,))
         self.episode_terms = {
             k: torch.zeros(self.num_envs, device=self.device)
             for k in cfg.reward_weights
@@ -154,10 +179,14 @@ class TrackingEnv:
     def _startup_randomization(self, robot):
         if not self.cfg_obj.domain_randomization:
             return
-        offsets = (self._rand((self.num_envs, 3)) * 2 - 1) * torch.tensor(
-            [0.025, 0.05, 0.05], device=self.device
+        offsets = torch.stack(
+            [
+                self._rand((self.num_envs,)) * (2 * limit) - limit
+                for limit in (0.025, 0.05, 0.05)
+            ],
+            -1,
         )
-        self.bias.copy_((self._rand(self.bias.shape) * 2 - 1) * 0.01)
+        self.bias.copy_(self._rand(self.bias.shape) * 0.02 - 0.01)
         slide = 0.3 + 0.9 * self._rand((self.num_envs,))
         friction = {}
         feet = {n for n in self.cfg_obj.end_effectors if "ankle" in n}
@@ -181,18 +210,20 @@ class TrackingEnv:
         )
 
     def _bodies(self, state):
-        p, r, v, w = self.kin(
-            state.base_pose[:, :3],
-            matrix(state.base_pose[:, (6, 3, 4, 5)]),
-            state.base_velocity[:, :3],
-            state.base_velocity[:, 3:],
-            state.joint_position,
-            state.joint_velocity,
+        # The physics engine already computed FK at its documented readback
+        # point. Preserve that timestamp instead of recomputing from qpos/qvel.
+        pose = state.link_pose.clone()
+        velocity = self.batch.read_link_velocities().clone()
+        return (
+            pose[..., :3],
+            pose[..., (6, 3, 4, 5)],
+            velocity[..., :3],
+            velocity[..., 3:],
         )
-        return p, quaternion(r), v, w
 
     def _refresh_reference(self):
-        self.reference = self.motion.bodies(self.frame)
+        p, r, v, w = self.motion.bodies(self.frame)
+        self.reference = (p + self.origins[:, None], r, v, w)
         self.relative = mdp.reanchor(
             self.reference, self._bodies(self.batch.read_state()), self.anchor
         )
@@ -236,7 +267,9 @@ class TrackingEnv:
                 joint_vel=0.5,
             )
             actor = {
-                k: v + (self._rand(v.shape) * 2 - 1) * ranges[k] if k in ranges else v
+                k: v + (self._rand(v.shape) * (2 * ranges[k]) - ranges[k])
+                if k in ranges
+                else v
                 for k, v in actor.items()
             }
         result = {
@@ -263,21 +296,19 @@ class TrackingEnv:
             return
         self.frame[ids] = frames
         p, r, v, w = (x.clone() for x in self.motion.bodies(frames))
-        p, r, v, w = p[:, 0], r[:, 0], v[:, 0], w[:, 0]
+        p, r, v, w = p[:, 0] + self.origins[ids], r[:, 0], v[:, 0], w[:, 0]
         q = self.motion.joint_pos[frames].clone()
         qd = self.motion.joint_vel[frames]
         if noise and self.cfg_obj.reset_noise:
-            delta = (self._rand((len(ids), 6)) * 2 - 1) * torch.tensor(
-                [0.05, 0.05, 0.01, 0.1, 0.1, 0.2], device=self.device
-            )
-            speed = (self._rand((len(ids), 6)) * 2 - 1) * torch.tensor(
-                [0.5, 0.5, 0.2, 0.52, 0.52, 0.78], device=self.device
-            )
+            limit = torch.tensor([0.05, 0.05, 0.01, 0.1, 0.1, 0.2], device=self.device)
+            delta = self._rand((len(ids), 6)) * (2 * limit) - limit
+            limit = torch.tensor([0.5, 0.5, 0.2, 0.52, 0.52, 0.78], device=self.device)
+            speed = self._rand((len(ids), 6)) * (2 * limit) - limit
             p += delta[:, :3]
             r = multiply(from_euler(delta[:, 3:]), r)
             v += speed[:, :3]
             w += speed[:, 3:]
-            q += (self._rand(q.shape) * 2 - 1) * 0.1
+            q += self._rand(q.shape) * 0.2 - 0.1
         s = self.batch.read_state()
         bp, bv, jp, jv, targets = (
             x.clone()
@@ -293,7 +324,8 @@ class TrackingEnv:
         bv[ids] = torch.cat((v, w), -1)
         jp[ids] = q.clamp(self.soft_limits[:, 0], self.soft_limits[:, 1])
         jv[ids] = qd
-        targets[ids] = 0.0
+        if episode:
+            targets[ids] = 0.0
         mask = torch.zeros_like(self.pending_reset)
         mask[ids] = True
         self.batch.reset(
@@ -303,10 +335,12 @@ class TrackingEnv:
             joint_position=jp,
             joint_velocity=jv,
             targets=targets,
+            reset_physics=episode,
         )
         if episode:
             self.action[ids] = 0
             self.steps[ids] = 0
+            self.measured_episode_steps[ids] = 0
             self.pending_reset[ids] = False
             self.push_time[ids] = 1 + 2 * self._rand((len(ids),))
             for value in self.episode_terms.values():
@@ -327,6 +361,9 @@ class TrackingEnv:
         ids = mask.nonzero().flatten()
         sampled = frames is None
         if sampled:
+            torch.empty(len(ids), device=self.device).uniform_(
+                1e9, 1e9, generator=self.generator
+            )
             frames = self.sampler.sample(
                 len(ids), self.generator, self.cfg_obj.sampling_mode
             )
@@ -340,6 +377,7 @@ class TrackingEnv:
             ):
                 raise ValueError("invalid reset frames")
         self._reset_rows(ids, frames, noise=sampled)
+        self.batch.forward()
         # Upstream explicit reset samples frame k then computes command k+1.
         if sampled:
             self.frame[ids] += 1
@@ -362,12 +400,6 @@ class TrackingEnv:
         )
         return self.state
 
-    def _before_substep(self, tick):
-        if tick == self.cfg_obj.decimation - 1:
-            self.batch.refresh_kinematics()
-            # Upstream reward and termination see pre-final-integration body state.
-            self.reward_bodies = self._bodies(self.batch.read_state())
-
     def _push(self):
         if not self.cfg_obj.pushes:
             return
@@ -378,9 +410,8 @@ class TrackingEnv:
             return
         s = self.batch.read_state()
         velocity = s.base_velocity.clone()
-        velocity[ids] += (self._rand((len(ids), 6)) * 2 - 1) * torch.tensor(
-            [0.5, 0.5, 0.2, 0.52, 0.52, 0.78], device=self.device
-        )
+        limit = torch.tensor([0.5, 0.5, 0.2, 0.52, 0.52, 0.78], device=self.device)
+        velocity[ids] += self._rand((len(ids), 6)) * (2 * limit) - limit
         self.batch.set_base_velocity(mask, velocity)
         self.push_time[ids] = 1 + 2 * self._rand((len(ids),))
 
@@ -397,7 +428,8 @@ class TrackingEnv:
         self.batch.set_joint_targets(
             self.default + self.action_scale * action - self.bias
         )
-        state = self.batch.step_control(before_substep=self._before_substep)
+        state = self.batch.step_control(refresh_kinematics=False)
+        self.reward_bodies = self._bodies(state)
         self.batch.assert_no_overflow()
         if not all(torch.isfinite(v).all() for v in vars(state).values()):
             raise FloatingPointError("nonfinite tracking simulation state")
@@ -423,6 +455,7 @@ class TrackingEnv:
         )
         terminated = torch.stack(tuple(conditions.values())).any(0)
         self.steps += 1
+        self.measured_episode_steps += 1
         self.common_step_counter += 1
         truncated = self.steps >= self.max_episode_length
         done = terminated | truncated
@@ -440,18 +473,24 @@ class TrackingEnv:
         ids = done.nonzero().flatten()
         if len(ids):
             self.completed_statistics[0] += len(ids)
-            self.completed_statistics[1] += self.steps[ids].sum()
+            self.completed_statistics[1] += self.measured_episode_steps[ids].sum()
             for index, value in enumerate(self.episode_terms.values(), 2):
                 self.completed_statistics[index] += value[ids].sum()
             info["log"] = {
                 f"Episode_Reward/{k}": v[ids].mean() / self.cfg_obj.episode_length_s
                 for k, v in self.episode_terms.items()
             }
-            info["log"]["Episode/length"] = self.steps[ids].float().mean()
+            info["log"]["Episode/length"] = (
+                self.measured_episode_steps[ids].float().mean()
+            )
         if self.cfg_obj.sampling_mode == "adaptive":
             self.sampler.record(target_frame, terminated)
         self._push()
         if self.autoreset:
+            if len(ids):
+                torch.empty(len(ids), device=self.device).uniform_(
+                    1e9, 1e9, generator=self.generator
+                )
             self._reset_rows(
                 ids,
                 self.sampler.sample(
@@ -460,6 +499,7 @@ class TrackingEnv:
             )
         else:
             self.pending_reset.copy_(done)
+        self.batch.forward()
         self.frame += 1
         wrap = (self.frame >= self.motion.frames) & ~self.pending_reset
         wrapped = wrap.nonzero().flatten()
@@ -470,6 +510,8 @@ class TrackingEnv:
             ),
             episode=False,
         )
+        if len(wrapped):
+            self.batch.forward()
         # Keep a valid reference for terminal observations during manual-reset mode.
         self.frame.clamp_(max=self.motion.frames - 1)
         self._refresh_reference()

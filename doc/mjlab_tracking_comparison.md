@@ -56,3 +56,76 @@ mjlab/.venv/bin/torchrun --standalone --nproc-per-node=8 \
 
 物理编译精度和 GPU 接触排序仍可能导致长期轨迹分歧；必须报告参数差异及容差。
 通过配置检查或短训练不代表训练收敛结果严格相同。训练结果使用相同最终更新数和固定评估协议。
+
+## 已落地的对齐和可复现探针
+
+`tests/support/prepare_gobot_tracking_reference.py` 将原生名义模型导入 Gobot，
+保留 `init_state` 默认关节角，并比较 1092 项物理属性。`ctrlrange` 在两边
+`ctrllimited=false` 时不参与有效物理参数判定；其余差异不被静默忽略。
+默认随机化使用 Torch 全局 RNG、各卡独立 sampler、原生初始随机回合时钟，
+二维网格环境原点和 solver 参数。连杆位置/朝向/速度读取后端已有结果，
+保持 pre-integration 奖励和 post-forward 观测时序。
+
+原生探针与 Gobot 对照：
+
+```bash
+mjlab/.venv/bin/python tests/support/probe_mjlab_tracking.py \
+  --motion logs/tracking-comparison/dance2-reference/motion.npz \
+  --output logs/tracking-comparison/native-probe
+
+.venv/bin/python tests/support/prepare_gobot_tracking_reference.py \
+  --reference logs/tracking-comparison/dance2-reference \
+  --output logs/tracking-comparison/gobot-aligned-scene
+
+.venv/bin/python tests/support/compare_tracking_probe.py \
+  --project logs/tracking-comparison/gobot-aligned-scene \
+  --probe logs/tracking-comparison/native-probe \
+  --output logs/tracking-comparison/probe-comparison.json
+```
+
+原生探针加 `--randomized` 可比较启动随机化、观测噪声、采样帧和 CUDA RNG。
+固定帧探针使用 0、1200、6000、10000，针对这条长舞蹈，不适用于任意短动作。
+连续奖励、观测、终止和帧/RNG 都有明确阈值检查；自碰撞计数另行列出。
+
+必须保留的一项限制：上游 `reduce=none, num_slots=1` 的自碰撞传感器依赖
+GPU 原子并行匹配到的第一个接触。原生 mjlab 自身重复同 seed 的短回放，
+也观察到单步 0.2 的自碰撞奖励差异。不能将这项离散误差描述为零，或将
+配方对齐描述为长期逐位确定性。对照不修改上游接触槽语义。
+
+最终原生整段评估（关闭随机化、噪声和推力）：
+
+```bash
+mjlab/.venv/bin/python tests/support/evaluate_mjlab_tracking.py \
+  --checkpoint logs/tracking-comparison/mjlab-dance2-s42/model.pt \
+  --motion logs/tracking-comparison/dance2-reference/motion.npz \
+  --output logs/tracking-comparison/mjlab-full-evaluation.json
+```
+
+正式 Gobot 对照入口会拒绝未完成的原生基线、不同进程数、动作哈希或已改动的编译模型：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
+.venv/bin/torchrun --standalone --nproc-per-node=8 \
+  tests/support/train_gobot_tracking_comparison.py \
+  --baseline logs/tracking-comparison/mjlab-dance2-s42 \
+  --project logs/tracking-comparison/gobot-aligned-scene \
+  --output logs/tracking-comparison/gobot-dance2-s42
+```
+
+它从 baseline 的 comparison.json 取卡数、每卡环境数、seed、总更新数和容量，
+从通过审计的 task.json 取场景配置。`--preflight-updates N` 仅用于显式短验证，
+会标注 preflight，不能代替正式训练。正式运行必须等 mjlab 的 status.json 为 trained。
+
+可在单独 tmux 中运行完整顺序流水线（前提是已导入并通过物理审计的 Gobot 项目）：
+
+```bash
+.venv/bin/python tests/support/finish_tracking_comparison.py \
+  --baseline logs/tracking-comparison/mjlab-dance2-s42 \
+  --project logs/tracking-comparison/gobot-aligned-scene \
+  --output logs/tracking-comparison/gobot-dance2-s42 \
+  --report logs/tracking-comparison/final-comparison.json
+```
+
+流水线等原生基线成功结束后，才占用相同八卡训练 Gobot；然后依次执行两个模型的
+完整片段评估并输出对照报告。任一步失败都停止后续步骤。运行期间报告是阶段状态，
+只有 `state=completed` 才包含最终结果。使用全新输出目录，不能与已有训练并发竞争 GPU。
