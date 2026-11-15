@@ -21,7 +21,7 @@ def create(source, checkpoint, motion, support, extra_python_paths=(), status_fi
             sys.path.append(path)
     if support not in sys.path:
         sys.path.insert(0, support)
-    from mjlab_tracking_reference import reference, sha256
+    from mjlab_tracking_reference import reference, sha256, configure_deterministic_physics
     reference(source)
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import RslRlVecEnvWrapper, MjlabOnPolicyRunner
@@ -38,6 +38,7 @@ def create(source, checkpoint, motion, support, extra_python_paths=(), status_fi
     cfg = unitree_g1_flat_tracking_env_cfg()
     cfg.scene.num_envs = 1
     cfg.seed = saved["seed"]
+    cfg.scene.sensors[0].reduce = saved.get("self_contact_reduction", "none")
     cfg.auto_reset = False
     cfg.sim.nconmax, cfg.sim.njmax = saved["nconmax"], saved["njmax"]
     cfg.episode_length_s = 1e9
@@ -49,6 +50,7 @@ def create(source, checkpoint, motion, support, extra_python_paths=(), status_fi
     command.pose_range = {}
     command.velocity_range = {}
     command.joint_position_range = (0.0, 0.0)
+    configure_deterministic_physics(cfg.sim, saved.get("deterministic_physics", False))
     env = ManagerBasedRlEnv(cfg, device="cuda:0")
     try:
         wrapped = RslRlVecEnvWrapper(env)

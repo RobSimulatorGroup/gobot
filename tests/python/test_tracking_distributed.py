@@ -186,11 +186,14 @@ def test_batch_scope_and_public_one_motion_api(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gobot.rl.training, "launch", launch)
     assert train_motion(
-        tmp_path, "dance.npz", output=tmp_path / "run", num_envs=512
+        tmp_path, "dance.npz", output=tmp_path / "run", num_envs=512,
+        self_contact_reduction="maxforce", deterministic_physics=True
     ) == {"ready": True}
     assert captured["spec"].supports_distributed
     assert captured["cfg"].motion_file == Path("dance.npz")
     assert captured["cfg"].num_envs == 512 and captured["cfg"].batch_scope == "per_rank"
+    assert captured["cfg"].self_contact_reduction == "maxforce"
+    assert captured["cfg"].deterministic_physics is True
 
 
 def test_native_mjlab_sampling_defaults(tmp_path):

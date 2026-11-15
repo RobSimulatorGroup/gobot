@@ -237,3 +237,16 @@ mjlab/.venv/bin/torchrun --standalone --nproc-per-node=8 \
 `--extra-python-path mjlab/.venv/lib/python3.13/site-packages`。支持torchrun：
 各rank写入独立 `rankN/trace.pt`，重放参数可指向含这些子目录的共同输出目录。
 完整trace包含模型、梯度和rollout，体积较大，仅用于少量更新的验收。
+
+### 八卡验收边界
+
+同输入重放已在118上通过：8卡、每卡1,024环境、rollout 24、一次PPO更新的
+20个minibatch梯度、GAE、优化器、normalizer和更新后权重逐位一致（各rank都通过）。
+实际仿真的maxforce配方仍会在少数环境发生接触阈值/终止分叉；原生自身重复八卡运行
+也出现同类差异。因此不能把maxforce称为全流程逐位确定性，只能说它移除了任意首接触
+选槽造成的主要离散奖励噪声，学习循环本身已有严格同输入验收。
+
+`--deterministic-physics` 在本机64环境能运行，但在118的每卡1,024环境时，原生Warp
+确定性内核临时数组申请超过32位shape上限，运行失败。当前八卡生产配方不要开启该开关；
+它保留为诊断选项，且不会静默回退。最终3.19mm误差差距仍需新配方的多种子长训练才能
+判断是否系统性改善，本次没有启动长期训练。

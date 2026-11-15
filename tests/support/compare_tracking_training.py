@@ -44,6 +44,8 @@ def compare(a,b,output,require_exact_ppo=False):
         print('losses',d['losses'],'post_update_max',worst(d['post_update']))
     output.write_text(json.dumps(result,indent=2)+'\n')
     if require_exact_ppo:
+        if len(a['updates']) != len(b['updates']) or not result['updates']:
+            raise AssertionError('PPO replay update counts differ or are empty')
         def exact(value):
             if isinstance(value, dict):
                 if 'equal' in value: return value['equal']

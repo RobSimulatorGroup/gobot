@@ -18,6 +18,8 @@ def train_motion(
     nconmax=128,
     njmax=500,
     resume=None,
+    self_contact_reduction="none",
+    deterministic_physics=False,
 ):
     """Train exactly one named NPZ motion against an authored Gobot scene.
 
@@ -42,6 +44,8 @@ def train_motion(
         batch_scope=batch_scope,
         nconmax=nconmax,
         njmax=njmax,
+        self_contact_reduction=self_contact_reduction,
+        deterministic_physics=deterministic_physics,
         resume=None if resume is None else Path(resume),
     )
     return launch(training_spec(), cfg)
