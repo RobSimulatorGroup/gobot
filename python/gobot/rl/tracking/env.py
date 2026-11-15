@@ -1,7 +1,4 @@
-"""mjlab tracking MDP over Gobot's scene and articulation services.
-
-No editor, mjlab environment, or backend model pointers enter this task.
-"""
+"""BeyondMimic tracking over Gobot scenes and backend-neutral articulation state."""
 
 from dataclasses import asdict
 import math
@@ -48,17 +45,12 @@ class TrackingEnv:
             j.flatten()[: self.num_envs] - (columns - 1) / 2
         ) * cfg.env_spacing
         self.seed = cfg.seed
-        if cfg.random_source == "torch_global":
-            if self.device.startswith("cuda"):
-                torch.cuda.set_device(self.device)
-                self.generator = torch.cuda.default_generators[
-                    torch.cuda.current_device()
-                ]
-            else:
-                self.generator = torch.default_generator
-            self.generator.manual_seed(cfg.seed)
+        if self.device.startswith("cuda"):
+            torch.cuda.set_device(self.device)
+            self.generator = torch.cuda.default_generators[torch.cuda.current_device()]
         else:
-            self.generator = torch.Generator(device=self.device).manual_seed(cfg.seed)
+            self.generator = torch.default_generator
+        self.generator.manual_seed(cfg.seed)
         self.autoreset = autoreset
         self.control_dt = cfg.physics_dt * cfg.decimation
         self.max_episode_length = math.ceil(cfg.episode_length_s / self.control_dt)
@@ -90,11 +82,9 @@ class TrackingEnv:
             decimation=cfg.decimation,
             solver_settings=cfg.solver_settings,
             capture_graphs=cfg.capture_graphs,
-            deterministic=cfg.deterministic_physics,
             nconmax=cfg.nconmax,
             njmax=cfg.njmax,
             self_contact_threshold=10.0,
-            self_contact_reduction=cfg.self_contact_reduction,
         )
         try:
             self._initialize()
@@ -252,11 +242,11 @@ class TrackingEnv:
             state_estimation=cfg.state_estimation,
         )
         self.observation_spec = ObservationSpec(
-            "gobot_mjlab_tracking_actor_v1",
+            "gobot_tracking_actor_v1",
             tuple(SpecField(k, v.shape[1]) for k, v in actor.items()),
         )
         self.critic_spec = ObservationSpec(
-            "gobot_mjlab_tracking_critic_v1",
+            "gobot_tracking_critic_v1",
             tuple(SpecField(k, v.shape[1]) for k, v in critic.items()),
         )
         if cfg.observation_noise and buffered:
@@ -505,15 +495,17 @@ class TrackingEnv:
         self.frame += 1
         wrap = (self.frame >= self.motion.frames) & ~self.pending_reset
         wrapped = wrap.nonzero().flatten()
-        self._reset_rows(
-            wrapped,
-            self.sampler.sample(
-                len(wrapped), self.generator, self.cfg_obj.sampling_mode
-            ),
-            episode=False,
-        )
-        if len(wrapped):
-            self.batch.forward()
+        if self.autoreset:
+            self._reset_rows(
+                wrapped,
+                self.sampler.sample(len(wrapped), self.generator, self.cfg_obj.sampling_mode),
+                episode=False,
+            )
+            if len(wrapped):
+                self.batch.forward()
+        else:
+            # Evaluation and live inference retain the final physical pose.
+            self.pending_reset |= wrap
         # Keep a valid reference for terminal observations during manual-reset mode.
         self.frame.clamp_(max=self.motion.frames - 1)
         self._refresh_reference()

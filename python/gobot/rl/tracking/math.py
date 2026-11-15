@@ -1,5 +1,5 @@
-# Adapted from mjlab (Apache-2.0); modified for Gobot's tensor-only task boundary.
-# See LICENSE-mjlab. Quaternions in this module are wxyz.
+# SPDX-License-Identifier: Apache-2.0; provenance in NOTICE.
+# See LICENSE. Quaternions in this module are wxyz.
 import torch
 
 

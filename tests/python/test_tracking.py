@@ -1,7 +1,6 @@
 """Tracking regression tests against independent upstream outputs and real physics."""
 
 from dataclasses import replace
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,15 +20,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def oracle():
-    return json.loads((ROOT / "tests/fixtures/mjlab_tracking.json").read_text())
+    return json.loads((ROOT / "tests/fixtures/tracking_mdp.json").read_text())
 
 
-def test_pinned_reference_and_ppo_configuration():
+def test_tracking_equations_and_ppo_configuration():
     ref = oracle()
-    for name, digest in ref["source_sha256"].items():
-        path = ROOT / "mjlab" / name
-        if path.exists():
-            assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
     cfg = TrackingConfig()
     assert cfg.reward_weights == ref["weights"]
     agent = default_agent()
@@ -43,7 +38,7 @@ def test_pinned_reference_and_ppo_configuration():
             assert agent["algorithm"][key] == value, key
 
 
-def test_observation_reward_termination_equations_match_mjlab():
+def test_observation_reward_termination_equations_match_reference():
     ref = oracle()
     v = {k: torch.tensor(x, dtype=torch.float32) for k, x in ref["inputs"].items()}
     reference = tuple(v[k] for k in ("rp", "rr", "rv", "rw"))

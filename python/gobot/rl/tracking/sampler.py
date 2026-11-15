@@ -1,4 +1,4 @@
-# Adapted from mjlab dcdf6ce5, Apache-2.0. See LICENSE-mjlab.
+# SPDX-License-Identifier: Apache-2.0; provenance in NOTICE.
 # Modified: explicit RNG, validation, and accumulation across multiple reset calls.
 """Failure-count EMA sampler. Timeouts and manual resets are not failures."""
 
@@ -35,8 +35,6 @@ class AdaptiveSampler:
         self.uniform = uniform
         self.failed = torch.zeros(self.bins, device=device)
         self.pending = torch.zeros_like(self.failed)
-        self.deferred = None
-        self.deferred_steps = 0
         self.kernel = decay ** torch.arange(
             kernel_size, device=device, dtype=torch.float32
         )
@@ -47,40 +45,8 @@ class AdaptiveSampler:
         self.pending.add_(torch.bincount(bins, minlength=self.bins))
 
     def update(self):
-        target = self.failed if self.deferred is None else self.deferred
-        target.copy_(self.alpha * self.pending + (1 - self.alpha) * target)
-        if self.deferred is not None:
-            self.deferred_steps += 1
+        self.failed.copy_(self.alpha * self.pending + (1 - self.alpha) * self.failed)
         self.pending.zero_()
-
-    def defer(self):
-        """Freeze one shared sampling distribution for the next PPO rollout."""
-        self.deferred = torch.zeros_like(self.failed)
-        self.deferred_steps = 0
-
-    def synchronize(self, group):
-        """Merge globally summed failure counts with the original per-step EMA.
-
-        No collective runs inside physics stepping: all ranks meet here after a
-        successful rollout. Time-weighted local contributions are summed, while
-        the common previous score is decayed only once.
-        """
-        if self.deferred is None:
-            return
-        import torch.distributed as dist
-
-        steps = group.reduce([self.deferred_steps], maximum=True)[0]
-        group.check_error(
-            ValueError("sampler rollout lengths differ")
-            if steps != self.deferred_steps
-            else None,
-            phase="sampler",
-        )
-        if group.world_size > 1:
-            dist.all_reduce(self.deferred)
-        self.failed.mul_((1 - self.alpha) ** self.deferred_steps).add_(self.deferred)
-        self.deferred.zero_()
-        self.deferred_steps = 0
 
     def probabilities(self):
         w = self.failed + self.uniform / self.bins

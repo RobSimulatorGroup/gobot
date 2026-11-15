@@ -1,10 +1,10 @@
-"""Tracking MDP configuration, pinned to mjlab dcdf6ce5 (Apache-2.0)."""
+"""BeyondMimic whole-body tracking configuration."""
 
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
 
-REFERENCE_REVISION = "dcdf6ce519abfd2ea45e9503ae6fb650b75bb869"
+ALGORITHM = "beyondmimic"
 G1_JOINTS = tuple(
     [
         f"{s}_{j}_joint"
@@ -87,7 +87,6 @@ class TrackingConfig:
     num_envs: int = 4096
     env_spacing: float = 2.0
     seed: int = 42
-    random_source: str = "torch_global"
     physics_dt: float = 0.005
     decimation: int = 4
     episode_length_s: float = 10.0
@@ -102,10 +101,8 @@ class TrackingConfig:
     pushes: bool = True
     state_estimation: bool = True
     capture_graphs: bool = True
-    deterministic_physics: bool = False
-    self_contact_reduction: str = "none"
-    nconmax: int = 35
-    njmax: int = 250
+    nconmax: int = 128
+    njmax: int = 500
     soft_joint_limit_factor: float = 0.9
     reward_weights: dict = field(default_factory=lambda: dict(REWARD_WEIGHTS))
     solver_settings: dict = field(
@@ -121,10 +118,6 @@ class TrackingConfig:
     )
 
     def validate(self):
-        if self.self_contact_reduction not in ("none", "maxforce"):
-            raise ValueError("self_contact_reduction must be none or maxforce")
-        if not isinstance(self.deterministic_physics, bool):
-            raise ValueError("deterministic_physics must be boolean")
         for name in (
             "num_envs",
             "decimation",
@@ -141,8 +134,6 @@ class TrackingConfig:
                 raise ValueError(f"{name} must be finite and positive")
         if self.backend not in ("mujoco-cpu", "mujoco-warp"):
             raise ValueError("unsupported tracking backend")
-        if self.random_source not in ("torch_global", "local_generator"):
-            raise ValueError("random_source must be torch_global or local_generator")
         if self.sampling_mode not in ("adaptive", "uniform", "start"):
             raise ValueError("unknown sampling mode")
         if not 0 < self.adaptive_alpha <= 1 or not 0 <= self.adaptive_lambda <= 1:

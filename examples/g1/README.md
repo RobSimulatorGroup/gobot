@@ -1,6 +1,6 @@
 # G1 training in Gobot
 
-G1 supports velocity PPO, motion-prior AMP, and SuperMimic motion tracking through
+G1 supports velocity PPO, motion-prior AMP, BeyondMimic tracking, and SuperMimic through
 [one training entry](../../doc/gobot_training.md). The robot and terrain are Gobot
 `.jscn` / `.jres` resources. MuJoCo CPU is the control/state reference; MuJoCo Warp
 runs batched CUDA training. G1 assets, sensor placement and presets live in this
@@ -9,6 +9,8 @@ task configuration and does not select robot models.
 
 See the [reference/data tools](reproduction/README.md) for preparing and evaluating
 SuperMimic motion tracking.
+
+BeyondMimic preparation, synchronized training and editor inference: [Tracking guide](../../doc/gobot_tracking.md).
 
 ## Locomotion model and AMP data
 

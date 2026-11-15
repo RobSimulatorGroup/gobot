@@ -7,14 +7,7 @@ from gobot.rl.locomotion.distributed import DistributedTraining, cpu_state
 
 
 def resolve_config(cfg, group):
-    count = cfg.num_envs
-    if cfg.batch_scope == "global":
-        if count % group.world_size:
-            raise ValueError("global num_envs must be divisible by world size")
-        count //= group.world_size
-    local = replace(
-        cfg, num_envs=count, device=group.device, seed=cfg.seed + group.rank
-    )
+    local = replace(cfg, device=group.device, seed=cfg.seed + group.rank)
     local.validate()
     return local
 

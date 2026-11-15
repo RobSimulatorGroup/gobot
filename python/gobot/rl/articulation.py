@@ -19,7 +19,7 @@ class ArticulationBatch:
                  backend='mujoco-cpu', device=None, physics_dt=.005, decimation=4,
                  solver_settings=None, contact_links=(), capture_graphs=True, nconmax=128, njmax=500,
                  sliding_friction=None, deterministic=False, contact_scope='all',
-                 self_contact_threshold=None, self_contact_reduction="none"):
+                 self_contact_threshold=None):
         if int(num_envs) != num_envs or num_envs <= 0 or int(decimation) != decimation or decimation <= 0:
             raise ValueError('batch size and decimation must be positive integers')
         if not math.isfinite(physics_dt) or physics_dt <= 0:
@@ -41,9 +41,6 @@ class ArticulationBatch:
         self.contact_scope = contact_scope
         if self_contact_threshold is not None and (not math.isfinite(self_contact_threshold) or self_contact_threshold < 0):
             raise ValueError('self contact threshold must be finite and nonnegative')
-        if self_contact_reduction not in ("none", "maxforce"):
-            raise ValueError("self contact reduction must be none or maxforce")
-        self.self_contact_reduction = self_contact_reduction
         self.self_contact_threshold = self_contact_threshold
         self._self_contact_hits = torch.zeros(self.num_envs, self.decimation, device=self.device)
         self.contact_links = tuple(contact_links)
@@ -92,7 +89,7 @@ class ArticulationBatch:
                     sensors += (MuJoCoWarpContactSensorSpec(
                         name='articulation_self_contacts', primary_type='subtree',
                         primary_names=(prefix + spec.base_link,), secondary_type='subtree',
-                        secondary_name=prefix + spec.base_link, reduce=self_contact_reduction, num_slots=1),)
+                        secondary_name=prefix + spec.base_link, reduce="maxforce", num_slots=1),)
                 self._provider = MuJoCoWarpProvider(self.artifact, num_envs=self.num_envs, device=self.device,
                     nconmax=nconmax, njmax=njmax, capture_graphs=capture_graphs, deterministic=deterministic, contact_sensors=sensors)
                 self._view = self._provider.create_robot_view(spec)
@@ -219,15 +216,13 @@ class ArticulationBatch:
             valid = (np.arange(indices.shape[1])[None, :] < counts[:, None])
             valid &= np.isin(indices, self._self_contact_link_ids).all(-1)
             forces = np.linalg.norm(np.asarray(raw['contact_force']), axis=-1)
-            # Match the upstream subtree sensor: reduce=none, one contact slot.
+            # A self-contact event means any matching contact exceeds the
+            # threshold. This is independent of contact ordering and agrees
+            # with the GPU max-force reduction; duplicate pair entries cannot
+            # increase this per-substep boolean.
             if valid.shape[1] == 0:
                 return
-            if self.self_contact_reduction == "maxforce":
-                hit = torch.as_tensor((valid & (forces > self.self_contact_threshold)).any(axis=1))
-            else:
-                first = valid.argmax(axis=1)
-                hit = torch.as_tensor(valid.any(axis=1) &
-                    (forces[np.arange(self.num_envs), first] > self.self_contact_threshold))
+            hit = torch.as_tensor((valid & (forces > self.self_contact_threshold)).any(axis=1))
         self._self_contact_hits[:, substep] = hit
 
     def read_self_contact_substeps(self):
@@ -405,6 +400,41 @@ class ArticulationBatch:
         return {key:{name:value.detach().cpu().clone() for name,value in values.items()}
                 for key,values in self._physics_parameters.items()}
 
+    @property
+    def presentation_link_names(self):
+        robot = next(r for r in self.snapshot['robots'] if r['name'] == self.spec.robot_name)
+        subtree = {self.spec.base_link}
+        while True:
+            children = {joint['child_link'] for joint in robot['joints'] if joint['parent_link'] in subtree}
+            if children <= subtree:
+                break
+            subtree.update(children)
+        return tuple(link['name'] for link in robot['links']
+                     if link['name'] in subtree and link.get('role') != 'virtual_root')
+
+    def read_presentation_poses(self):
+        """Read all physical links for visualization, with no scene mutation."""
+        self._require_open()
+        names = self.presentation_link_names
+        if self._provider is not None:
+            if not hasattr(self, '_display_view'):
+                self._display_view = self._provider.create_robot_view(
+                    RobotBatchSpec(self.spec.robot_name, self.spec.base_link, self.spec.joint_names, names))
+            return self._display_view.read_state().link_pose
+        ids = [self._runtime.link_names.index(name) for name in names]
+        return torch.cat((torch.as_tensor(self._raw_cpu['link_position'][:, ids], dtype=torch.float32),
+                          torch.as_tensor(self._raw_cpu['link_quaternion'][:, ids][:, :, (1, 2, 3, 0)],
+                                          dtype=torch.float32)), dim=-1)
+
+    def enable_contact_snapshots(self):
+        self._require_open()
+        if self._provider is not None:
+            self._provider.enable_contact_snapshots()
+
+    def contact_snapshot(self, environments):
+        self._require_open()
+        return self._provider.contact_snapshot(environments) if self._provider is not None else None
+
     @torch.no_grad()
     def sync_scene(self, env_index=0):
         """Present one batch lane through the scene pose API, without an editor."""
@@ -413,25 +443,13 @@ class ArticulationBatch:
             raise IndexError('scene presentation environment is out of range')
         if not hasattr(self, '_presentation_links'):
             from .locomotion.math import find_node_by_name
-            robot = next(r for r in self.snapshot['robots'] if r['name']==self.spec.robot_name)
-            names = tuple(link['name'] for link in robot['links'] if link.get('role')!='virtual_root')
             root = find_node_by_name(self.context.root, self.spec.robot_name)
-            self._presentation_links = tuple(find_node_by_name(root,name) for name in names)
+            self._presentation_links = tuple(
+                find_node_by_name(root, name) for name in self.presentation_link_names)
             if any(link is None for link in self._presentation_links):
                 raise RuntimeError('scene presentation links differ from compiled articulation')
-            if self._provider is not None:
-                self._presentation_view = self._provider.create_robot_view(
-                    RobotBatchSpec(self.spec.robot_name,self.spec.base_link,self.spec.joint_names,names))
-                self._presentation_view.bind_scene(self.context,self._presentation_links)
-            else:
-                self._presentation_indices = [self._runtime.link_names.index(name) for name in names]
-        if self._provider is not None:
-            self._presentation_view.sync_scene(env_index=env_index)
-        else:
-            ids = self._presentation_indices
-            positions = self._raw_cpu['link_position'][env_index,ids]
-            quaternions = self._raw_cpu['link_quaternion'][env_index,ids][:,(1,2,3,0)]
-            self.context.apply_link_poses(self._presentation_links,np.concatenate((positions,quaternions),axis=-1))
+        poses = self.read_presentation_poses()[env_index].detach().cpu().numpy()
+        self.context.apply_link_poses(self._presentation_links, poses)
 
     def close(self):
         if self._closed:

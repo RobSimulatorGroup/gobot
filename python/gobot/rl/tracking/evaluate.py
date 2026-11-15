@@ -1,56 +1,22 @@
 """Evaluate a Gobot tracking checkpoint headlessly, optionally capture RGB video."""
 
 import argparse
-from copy import deepcopy
-from dataclasses import replace
 import json
 from pathlib import Path
 import torch
-from rsl_rl.runners import OnPolicyRunner
-from gobot.rl.rsl_rl import RslRlVecEnvWrapper
-from gobot.rl.training.workflow import update_config
 from gobot.rl.training.status import write_json
-from .training import Config, contract
-from .env import TrackingEnv
+from .inference import load_policy
 
 
 @torch.inference_mode()
-def evaluate(checkpoint, *, steps=None, backend="mujoco-cpu", device=None, video=None):
+def evaluate(checkpoint, *, steps=None, backend="mujoco-cpu", device=None, video=None, project_path=None):
     checkpoint = Path(checkpoint).resolve()
     if steps is not None and steps < 1:
         raise ValueError("steps must be positive")
-    cfg = update_config(
-        Config(), json.loads(checkpoint.with_name("config.json").read_text())
-    )
-    torch.set_num_threads(cfg.torch_threads)
-    torch.backends.cuda.matmul.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
-    torch.backends.cudnn.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
-    cfg = replace(
-        cfg,
-        num_envs=1,
-        backend=backend,
-        device=device or ("cuda:0" if backend == "mujoco-warp" else "cpu"),
-        observation_noise=False,
-        domain_randomization=False,
-        reset_noise=False,
-        pushes=False,
-        sampling_mode="start",
-    )
-    env = TrackingEnv(cfg, autoreset=False)
-    # Evaluate the full clip without the training episode timeout truncating it.
-    env.max_episode_length = env.motion.frames + 1
+    env, wrapper, policy = load_policy(checkpoint, backend=backend, device=device, project_path=project_path)
     steps = env.motion.frames - 1 if steps is None else steps
     writer = None
     try:
-        payload = torch.load(checkpoint, map_location=env.device, weights_only=True)
-        if payload["infos"].get("tracking_contract") != contract(env):
-            raise ValueError("checkpoint scene, motion or observation contract differs")
-        wrapper = RslRlVecEnvWrapper(env, device=env.device)
-        runner = OnPolicyRunner(
-            wrapper, deepcopy(cfg.agent), log_dir=None, device=env.device
-        )
-        runner.alg.load(payload, {"actor": True}, True)
-        policy = runner.get_inference_policy(env.device)
         if video is not None:
             import imageio.v2 as imageio
 
@@ -124,6 +90,7 @@ def main():
         "--backend", default="mujoco-cpu", choices=("mujoco-cpu", "mujoco-warp")
     )
     p.add_argument("--device")
+    p.add_argument("--project-path", type=Path)
     p.add_argument("--video", type=Path)
     p.add_argument("--output", type=Path)
     args = vars(p.parse_args())

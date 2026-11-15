@@ -1,5 +1,5 @@
-# Adapted from mujocolab/mjlab dcdf6ce5, Apache-2.0. See LICENSE-mjlab.
-# Modified: pure tensor functions over Gobot state, independent of mjlab managers.
+# SPDX-License-Identifier: Apache-2.0; provenance in NOTICE.
+# Modified: pure tensor functions over Gobot state, independent of simulation managers.
 """Observations, rewards and termination predicates for whole-body tracking."""
 
 import torch

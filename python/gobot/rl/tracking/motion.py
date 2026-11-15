@@ -1,4 +1,4 @@
-"""Validated, name-mapped BeyondMimic/mjlab NPZ references; no simulator dependency."""
+"""Validated, name-mapped tracking NPZ references; no simulator dependency."""
 
 import hashlib
 import json
@@ -33,7 +33,7 @@ class Motion:
                     names[key] = value
             if not all(k in names for k in ("joint_names", "body_names", "fps")):
                 raise ValueError(
-                    "motion needs fps, joint_names and body_names; supply motion_layout for unnamed mjlab NPZ"
+                    "motion needs fps, joint_names and body_names; supply motion_layout for unnamed NPZ"
                 )
             fps = np.asarray(names["fps"]).reshape(-1)
             if (

@@ -2,7 +2,6 @@
 from copy import deepcopy
 from types import SimpleNamespace
 
-import numpy as np
 import torch
 from tensordict import TensorDict
 from rsl_rl.runners import OnPolicyRunner
@@ -15,7 +14,6 @@ class RecordedEnv:
     num_envs, num_actions, max_episode_length, device = 8, 2, 5, 'cpu'
     cfg = {}
     cfg_obj = SimpleNamespace(reward_weights={}, episode_length_s=.1)
-    sampler = SimpleNamespace(synchronize=lambda group: None)
 
     def __init__(self):
         g = torch.Generator().manual_seed(123)
@@ -87,51 +85,3 @@ def test_recorded_rollouts_produce_identical_gae_gradients_optimizer_and_normali
     exact(native,gobot)
     assert len(native['gradients'])==40  # two updates x five epochs x four minibatches
     assert int(native['models']['actor_state_dict']['obs_normalizer.count'])==64
-
-
-def test_maxforce_self_contact_reduction_is_independent_of_pair_order():
-    from gobot.rl.articulation import ArticulationBatch
-    env = object.__new__(ArticulationBatch)
-    env._closed=False;env._provider=None;env.num_envs=1;env.self_contact_threshold=10.
-    env._self_contact_hits=torch.zeros(1,1);env._self_contact_link_ids=np.array([1,2])
-    def sample(forces,mode):
-        env.self_contact_reduction=mode
-        env._raw_cpu={'contact_link_index':np.array([[[1,2],[1,2]]]),
-                      'contact_count':np.array([2]),'contact_force':np.array([[ [0,0,f] for f in forces]])}
-        env._sample_self_contacts(0)
-        return env.read_self_contact_substeps().item()
-    assert sample([0,20],'none')==0 and sample([20,0],'none')==1
-    assert sample([0,20],'maxforce')==sample([20,0],'maxforce')==1
-    assert sample([0,9],'maxforce')==0
-
-
-def test_warp_determinism_flag_enables_all_bits_not_just_contacts():
-    from enum import IntFlag
-    from gobot.sim.providers.mujoco_warp import _determinism_option
-    class Flags(IntFlag):
-        CONTACTS=1;CONSTRAINT=2;ATOMICS=4;ALL=7
-    runtime=SimpleNamespace(DeterminismType=Flags)
-    assert _determinism_option(runtime,True)==7
-    assert _determinism_option(runtime,False) is False
-    assert _determinism_option(SimpleNamespace(),True) is True
-
-
-def test_alignment_recipe_is_explicit_and_preserved_by_configuration(tmp_path):
-    from gobot.rl.tracking.training import Config
-    from gobot.rl.training.workflow import config_dict,update_config
-    from gobot.rl.tracking.training import contract
-    from test_tracking import tiny_config
-    from gobot.rl.tracking import TrackingEnv
-    from dataclasses import asdict,replace
-    config=Config(**asdict(tiny_config(tmp_path)))
-    assert config.self_contact_reduction=='none' and not config.deterministic_physics
-    original=TrackingEnv(config)
-    try:baseline=contract(original)
-    finally:original.close()
-    assert 'self_contact_reduction' not in baseline and 'deterministic_physics' not in baseline
-    variant=replace(config,self_contact_reduction='maxforce')
-    loaded=update_config(Config(),config_dict(variant))
-    assert loaded.self_contact_reduction=='maxforce'
-    env=TrackingEnv(loaded)
-    try:assert contract(env)['self_contact_reduction']=='maxforce'
-    finally:env.close()

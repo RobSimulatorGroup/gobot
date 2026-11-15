@@ -1,14 +1,6 @@
 {
-  "reference_revision": "dcdf6ce519abfd2ea45e9503ae6fb650b75bb869",
-  "source_sha256": {
-    "src/mjlab/tasks/tracking/mdp/commands.py": "b8700e65bb519b5e68962216ed78a107f6a3c02bab2ff75854e62b1983d1ad97",
-    "src/mjlab/tasks/tracking/mdp/observations.py": "af2cf6613d657529455eb254c7b13892ab67a0cf8ea5aec2d4df5fad6b4a5330",
-    "src/mjlab/tasks/tracking/mdp/rewards.py": "fd7ef49a8015ca19c12586c6b87afca8c8ee7c03c3bb4b3f0a4b58c1dde6c7d4",
-    "src/mjlab/tasks/tracking/mdp/terminations.py": "5f88576b5995408a744cde451c7e43982d2f03284cfeebb8856969ca3dc76019",
-    "src/mjlab/tasks/tracking/tracking_env_cfg.py": "631b446ffc478c170ce5ef2a1a74b766e963f13a660f78b168060cd425cac243",
-    "src/mjlab/tasks/tracking/config/g1/env_cfgs.py": "ce67f0a0e4f8246aa13e7a1e855b30cbd5f5c40fec7ee8ee1c92ddf72ac44d50",
-    "src/mjlab/tasks/tracking/config/g1/rl_cfg.py": "88a8a0acc8052a4bb64957a93ab2a88fa345ee84f63e405ffc6fa70148c6e104"
-  },
+  "algorithm": "beyondmimic",
+  "provenance": "python/gobot/rl/tracking/NOTICE",
   "inputs": {
     "p": [
       [

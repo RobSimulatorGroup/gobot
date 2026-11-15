@@ -27,8 +27,11 @@ class MuJoCoWarpContactSource:
             self.force = wp.zeros(self.capacity, dtype=wp.spatial_vector)
         self.clear()
 
-    def clear(self):
-        self.pairs = np.empty((0, 16), dtype=np.float64)
+    def clear(self, environments=None):
+        if environments is None:
+            self.pairs = np.empty((0, 16), dtype=np.float64)
+        else:
+            self.pairs = self.pairs[~np.isin(self.pairs[:, 0], environments)]
 
     def capture(self):
         """Call after a physics substep, before any forward/reset overwrites it."""

@@ -1,7 +1,7 @@
 """Prepare a Gobot G1 scene and named motion archive for tracking.
 
 The source scene remains the authoring source. This utility requires the Gobot
-examples checkout, but neither training nor evaluation imports mjlab.
+examples checkout; training and evaluation use the generated Gobot project.
 """
 
 import argparse
@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import gobot
 from gobot.rl.kinematics import SceneKinematics
-from .config import G1_JOINTS, G1_BODIES, REFERENCE_REVISION
+from .config import G1_JOINTS, G1_BODIES, ALGORITHM
 from .math import matrix, quaternion
 from .motion import Motion, FIELDS
 
@@ -238,7 +238,7 @@ def prepare(
         (output / "tracking-source.json").write_text(
             json.dumps(
                 dict(
-                    reference_revision=REFERENCE_REVISION,
+                    algorithm=ALGORITHM,
                     motion_source=str(csv or npz or "synthetic standing smoke"),
                     source_sha256=hashlib.sha256(
                         Path(csv or npz).read_bytes()

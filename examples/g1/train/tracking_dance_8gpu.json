@@ -2,7 +2,6 @@
   "project_path": "logs/dance2_subject1-assets",
   "motion_file": "motion.npz",
   "backend": "mujoco-warp",
-  "batch_scope": "per_rank",
   "num_envs": 1024,
   "updates": 30000,
   "nconmax": 128,

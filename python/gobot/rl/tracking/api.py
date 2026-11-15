@@ -14,19 +14,16 @@ def train_motion(
     seed=42,
     backend="mujoco-warp",
     device=None,
-    batch_scope="per_rank",
     nconmax=128,
     njmax=500,
     resume=None,
-    self_contact_reduction="none",
-    deterministic_physics=False,
 ):
     """Train exactly one named NPZ motion against an authored Gobot scene.
 
     Run normally for one device, or run the same Python script with torchrun for
-    synchronized data parallel PPO. num_envs is per rank by default; use
-    batch_scope='global' to split a fixed total evenly. Only rank zero writes the
-    shared model and log files. The output directory must be new.
+    synchronized data parallel PPO. num_envs always counts environments per GPU.
+    Only rank zero writes the shared model and log files.
+    The output directory must be new.
     """
     from gobot.rl.training import launch
     from .training import Config, training_spec
@@ -41,11 +38,8 @@ def train_motion(
         seed=seed,
         backend=backend,
         device=device,
-        batch_scope=batch_scope,
         nconmax=nconmax,
         njmax=njmax,
-        self_contact_reduction=self_contact_reduction,
-        deterministic_physics=deterministic_physics,
         resume=None if resume is None else Path(resume),
     )
     return launch(training_spec(), cfg)

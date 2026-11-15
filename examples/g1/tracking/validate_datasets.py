@@ -1,6 +1,6 @@
 """Bounded SEED/LAFAN integration validation: prepare, train, evaluate each clip.
 
-Each clip trains a separate PPO policy, as in mjlab tracking. This is not a
+Each clip trains a separate PPO policy, using BeyondMimic tracking. This is not a
 multi-motion policy benchmark or evidence of converged motion quality.
 """
 

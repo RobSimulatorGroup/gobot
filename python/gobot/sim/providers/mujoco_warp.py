@@ -385,8 +385,7 @@ def _major_minor(version: str) -> tuple[int, int] | None:
 def _determinism_option(runtime, enabled):
     if not enabled:
         return False
-    flags = getattr(runtime, "DeterminismType", None)
-    return int(flags.ALL) if flags is not None else True
+    return int(runtime.DeterminismType.ALL)
 
 
 class MuJoCoWarpProvider(BatchPhysicsProvider):
@@ -443,6 +442,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._capture_enabled = bool(capture_graphs)
         self._overflow_check_interval = int(overflow_check_interval)
         self._step_count = 0
+        self._contact_source = None
         self._generation = 1
         self._closed = False
         self._graphs: dict[str, Any] = {}
@@ -515,8 +515,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                     raise ProviderUnavailableError("this Warp runtime has no deterministic execution option")
                 # 3.17 changed this from a bool into a bitmask. True (1)
                 # enables contact sorting only, leaving atomic match order and
-                # constraint order nondeterministic. Retain bool support for
-                # older runtimes that do not expose DeterminismType.
+                # constraint order nondeterministic.
                 self._model.opt.deterministic = _determinism_option(self._mjw, True)
             # MuJoCo 3.17 records finite solver-budget exhaustion in overflow as
             # diagnostics. These bits do not indicate discarded contacts/data.
@@ -703,6 +702,9 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         with self._stream_scope():
             for _ in range(int(nsteps)):
                 self._launch_or_call("step", self._mjw.step)
+        if self._contact_source is not None:
+            with self._stream_scope():
+                self._contact_source.capture()
         self._step_count += 1
         if self._overflow_check_interval and self._step_count % self._overflow_check_interval == 0:
             self.assert_no_overflow()
@@ -732,8 +734,25 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             self._copy_masked_state("ctrl", ctrl, mask)
             if forward:
                 self._launch_or_call("forward", self._mjw.forward)
+        if self._contact_source is not None:
+            self._contact_source.clear(mask.nonzero().flatten().cpu().tolist())
         self._reset_mask_tensor.zero_()
         return self._arrays
+
+    def enable_contact_snapshots(self):
+        """Enable solved-contact publication for editor presentation only."""
+        self._require_open()
+        if self._contact_source is None:
+            from .mujoco_warp_contacts import MuJoCoWarpContactSource
+            bodies = {name: (robot.name, name.removeprefix(robot.runtime_prefix))
+                      for robot in self.artifact.robots for name in robot.body_names}
+            self._contact_source = MuJoCoWarpContactSource(
+                self._mj_model, self._model, self._data, bodies=bodies,
+                sample_dt=float(self._mj_model.opt.timestep), device=self._wp_device)
+
+    def contact_snapshot(self, environments):
+        self._require_open()
+        return self._contact_source.snapshot(environments) if self._contact_source is not None else None
 
     def forward(self) -> Mapping[str, Any]:
         self._require_open()
@@ -1011,6 +1030,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             self._graphs.clear()
             self._actuator_index_cache.clear()
             self._model_view_cache.clear()
+            self._contact_source = None
             self._raycast_runtimes.clear()
             self._contact_sensor_views = MappingProxyType({})
             self._raycast_views = MappingProxyType({})

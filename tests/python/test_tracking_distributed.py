@@ -53,12 +53,9 @@ def _sampler_worker(rank, path, port):
     try:
         s = AdaptiveSampler(150, 0.02)
         s.failed.fill_(0.05)
-        s.defer()
         for step in range(4):
             s.record(torch.tensor([20 + rank * 50]), torch.tensor([True]))
             s.update()
-            assert s.failed.eq(0.05).all()
-        s.synchronize(group)
         torch.save(s.failed, Path(path) / f"sampler{rank}.pt")
         # All workers report a rollout failure before entering PPO collectives.
         with pytest.raises(RuntimeError, match="rank 1: ValueError: deliberate"):
@@ -71,17 +68,19 @@ def _sampler_worker(rank, path, port):
         group.close()
 
 
-def test_global_failure_ema_and_collective_errors(tmp_path):
+def test_rank_local_sampler_and_collective_errors(tmp_path):
     _spawn(_sampler_worker, tmp_path)
-    expected = AdaptiveSampler(150, 0.02)
-    expected.failed.fill_(0.05)
-    for _ in range(4):
-        expected.record(torch.tensor([20, 70]), torch.tensor([True, True]))
-        expected.update()
-    a = torch.load(tmp_path / "sampler0.pt", weights_only=True)
-    b = torch.load(tmp_path / "sampler1.pt", weights_only=True)
-    torch.testing.assert_close(a, b, atol=0, rtol=0)
-    torch.testing.assert_close(a, expected.failed, atol=1e-8, rtol=1e-6)
+    values = []
+    for rank in range(2):
+        expected = AdaptiveSampler(150, 0.02)
+        expected.failed.fill_(0.05)
+        for _ in range(4):
+            expected.record(torch.tensor([20 + rank * 50]), torch.tensor([True]))
+            expected.update()
+        actual = torch.load(tmp_path / f"sampler{rank}.pt", weights_only=True)
+        torch.testing.assert_close(actual, expected.failed, atol=0, rtol=0)
+        values.append(actual)
+    assert not torch.equal(*values)
 
 
 def _training_worker(rank, path, port, config):
@@ -109,7 +108,6 @@ def test_shared_ppo_normalizers_checkpoint_and_resume(tmp_path):
         agent=agent,
     )
     cfg.sampling_mode = "adaptive"
-    cfg.sampler_sync = "rollout_global"
     cfg.init_at_random_ep_len = False
     cfg.episode_length_s = 0.04
     from gobot.rl.training.workflow import config_dict
@@ -165,16 +163,12 @@ def test_shared_ppo_normalizers_checkpoint_and_resume(tmp_path):
         )
 
 
-def test_batch_scope_and_public_one_motion_api(monkeypatch, tmp_path):
-    cfg = Config(project_path=tmp_path, num_envs=16, batch_scope="global")
+def test_per_rank_batch_and_public_one_motion_api(monkeypatch, tmp_path):
+    cfg = Config(project_path=tmp_path, num_envs=16)
     group = DistributedTraining("cuda:3", rank=3, local_rank=3, world_size=4)
     local = resolve_config(cfg, group)
-    assert local.num_envs == 4 and local.seed == 45 and local.device == "cuda:3"
+    assert local.num_envs == 16 and local.seed == 45 and local.device == "cuda:3"
     assert cfg.num_envs == 16
-    local = resolve_config(replace(cfg, batch_scope="per_rank"), group)
-    assert local.num_envs == 16
-    with pytest.raises(ValueError, match="divisible"):
-        resolve_config(replace(cfg, num_envs=15), group)
     from gobot.rl.tracking import train_motion
     import gobot.rl.training
 
@@ -186,20 +180,15 @@ def test_batch_scope_and_public_one_motion_api(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gobot.rl.training, "launch", launch)
     assert train_motion(
-        tmp_path, "dance.npz", output=tmp_path / "run", num_envs=512,
-        self_contact_reduction="maxforce", deterministic_physics=True
+        tmp_path, "dance.npz", output=tmp_path / "run", num_envs=512
     ) == {"ready": True}
     assert captured["spec"].supports_distributed
     assert captured["cfg"].motion_file == Path("dance.npz")
-    assert captured["cfg"].num_envs == 512 and captured["cfg"].batch_scope == "per_rank"
-    assert captured["cfg"].self_contact_reduction == "maxforce"
-    assert captured["cfg"].deterministic_physics is True
+    assert captured["cfg"].num_envs == 512
 
 
-def test_native_mjlab_sampling_defaults(tmp_path):
+def test_tracking_sampling_defaults(tmp_path):
     cfg = Config(project_path=tmp_path)
-    assert cfg.sampler_sync == "rank_local"
-    assert cfg.random_source == "torch_global"
     assert cfg.init_at_random_ep_len is True
     assert cfg.allow_tf32 is False
     assert cfg.solver_settings["convex_collision_iterations"] == 50

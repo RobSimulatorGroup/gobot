@@ -256,3 +256,75 @@ def test_backend_link_twists_match_scene_kinematics(tmp_path):
         batch.forward()
         assert not torch.equal(before,batch.read_state().link_pose)
     finally:batch.close()
+
+
+def test_self_contact_event_detects_any_force_independent_of_order():
+    import itertools
+    import numpy as np
+
+    batch = object.__new__(ArticulationBatch)
+    batch._closed = False
+    batch._provider = None
+    batch.num_envs = 1
+    batch.self_contact_threshold = 10.0
+    batch._self_contact_hits = torch.zeros(1, 4)
+    batch._self_contact_link_ids = np.array([1, 2, 3])
+    # Two opposing strong self contacts must not cancel. A large floor contact
+    # must not turn into a self collision; a weak first contact must not hide one.
+    rows = [([1, 2], [0, 0, 0]), ([1, 3], [20, 0, 0]),
+            ([2, 3], [-20, 0, 0]), ([0, 1], [0, 0, 1000])]
+    for order in itertools.permutations(rows):
+        batch._raw_cpu = dict(contact_count=np.array([4]),
+            contact_link_index=np.array([[pair for pair, _ in order]]),
+            contact_force=np.array([[force for _, force in order]]))
+        batch._sample_self_contacts(0)
+        assert batch.read_self_contact_substeps().item() == 1
+    batch._raw_cpu['contact_force'][0, :, :] = 0
+    batch._sample_self_contacts(1)
+    assert batch.read_self_contact_substeps().item() == 1
+    assert max(np.linalg.norm(force) for pair, force in rows if 0 not in pair) > 10
+
+
+@pytest.mark.skipif(__import__('os').environ.get('GOBOT_RUN_MUJOCO_WARP_GPU_TEST') != '1',
+                    reason='opt-in CUDA contact oracle')
+def test_gpu_self_contact_sensor_matches_all_solved_contact_pairs(tmp_path):
+    import numpy as np
+    source = tmp_path / 'contacts.xml'
+    source.write_text('''<mujoco><option gravity="0 0 0"/><worldbody>
+      <body name="base" pos="0 0 1"><freejoint/><geom type="sphere" size=".1"/>
+        <body name="arm" pos="0 0 .4"><joint name="arm_joint"/>
+          <geom type="sphere" size=".02"/>
+          <body name="hand" pos=".15 0 -.4"><joint name="hand_joint"/>
+            <geom type="sphere" size=".1"/></body>
+          <body name="other" pos="-.1999 0 -.4"><joint name="other_joint"/>
+            <geom type="sphere" size=".1"/></body>
+        </body>
+      </body></worldbody><actuator><position joint="arm_joint" kp="1"/>
+        <position joint="hand_joint" kp="1"/><position joint="other_joint" kp="1"/>
+      </actuator></mujoco>''')
+    gobot.set_project_path(str(tmp_path))
+    gobot.import_mjcf_scene(str(source), 'res://contacts.jscn', name='robot')
+    batch = ArticulationBatch(project_path=tmp_path, scene_path='res://contacts.jscn',
+        spec=RobotBatchSpec('robot', 'base', ('arm_joint','hand_joint','other_joint'),
+                           ('base','arm','hand','other')), num_envs=8, decimation=1,
+        backend='mujoco-warp', self_contact_threshold=10.)
+    try:
+        provider = batch._provider
+        provider.enable_contact_snapshots()
+        saw_contact = False
+        for _ in range(16):
+            batch.step_control()
+            snapshot = provider.contact_snapshot(range(8))
+            pairs = snapshot['pairs']
+            geometry = snapshot['geometries']
+            expected = np.zeros(8, dtype=bool)
+            for pair in pairs:
+                a,b = geometry[int(pair[1])], geometry[int(pair[2])]
+                if a[0] == b[0] == 'robot':
+                    expected[int(pair[0])] |= np.linalg.norm(pair[9:12]) > 10.
+            np.testing.assert_array_equal(batch.read_self_contact_substeps().cpu().numpy(), expected)
+            saw_contact |= bool(expected.any())
+        assert saw_contact
+        assert np.isfinite(pairs).all()
+    finally:
+        batch.close()

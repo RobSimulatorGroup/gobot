@@ -14,6 +14,6 @@ register_task(
     TaskSpec(
         training_factory=_training,
         algorithm="ppo",
-        description="mjlab/BeyondMimic G1 whole-body motion tracking",
+        description="BeyondMimic G1 whole-body motion tracking",
     ),
 )

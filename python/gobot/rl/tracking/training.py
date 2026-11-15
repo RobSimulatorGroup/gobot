@@ -22,12 +22,12 @@ from gobot.rl.training.status import write_json
 from gobot.rl.locomotion.logger import _install_cpu_logger_bookkeeping
 from gobot.rl.locomotion.training import snapshot_sources, update_policy
 from .distributed import DistributedTraining, cpu_state, resolve_config, state_digest
-from .config import TrackingConfig, REFERENCE_REVISION
+from .config import TrackingConfig, ALGORITHM
 from .env import TrackingEnv
 
 
 def default_agent():
-    return rsl_rl_cfg_to_dict(
+    agent = rsl_rl_cfg_to_dict(
         RslRlOnPolicyRunnerCfg(
             actor=RslRlModelCfg(
                 hidden_dims=(512, 256, 128),
@@ -48,12 +48,16 @@ def default_agent():
             experiment_name="g1-tracking",
         )
     )
+    # The tracking runner owns checkpoint paths, resume and iteration count.
+    # Keep only fields consumed by PPO and the active logging loop.
+    return {key: agent[key] for key in (
+        "actor", "critic", "algorithm", "obs_groups", "num_steps_per_env",
+        "save_interval", "experiment_name", "logger", "check_for_nan",
+    )}
 
 
 @dataclass
 class Config(TrackingConfig):
-    batch_scope: str = "per_rank"
-    sampler_sync: str = "rank_local"
     init_at_random_ep_len: bool = True
     allow_tf32: bool = False
     updates: int = 30000
@@ -64,10 +68,6 @@ class Config(TrackingConfig):
 
     def validate(self):
         super().validate()
-        if self.sampler_sync not in ("rank_local", "rollout_global"):
-            raise ValueError("sampler_sync must be rank_local or rollout_global")
-        if self.batch_scope not in ("per_rank", "global"):
-            raise ValueError("batch_scope must be per_rank or global")
         for name in ("updates", "torch_threads"):
             v = getattr(self, name)
             if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
@@ -89,9 +89,9 @@ class Config(TrackingConfig):
 
 
 def contract(env):
-    metadata = dict(
-        schema="gobot_mjlab_tracking_v1",
-        reference_revision=REFERENCE_REVISION,
+    return dict(
+        schema="gobot_tracking_v1",
+        algorithm=ALGORITHM,
         scene_digest=env.batch.artifact.content_digest,
         motion_digest=env.motion.digest,
         layout_digest=env.motion.layout_digest,
@@ -106,13 +106,6 @@ def contract(env):
         physics_dt=env.cfg_obj.physics_dt,
         decimation=env.cfg_obj.decimation,
     )
-    # Keep existing non-deterministic checkpoint contracts loadable, while
-    # preventing silent evaluation of the deterministic variant in another mode.
-    if env.cfg_obj.self_contact_reduction != "none":
-        metadata["self_contact_reduction"] = env.cfg_obj.self_contact_reduction
-    if env.cfg_obj.deterministic_physics:
-        metadata["deterministic_physics"] = True
-    return metadata
 
 
 class Runner(OnPolicyRunner):
@@ -215,7 +208,6 @@ class Runner(OnPolicyRunner):
                     distributed=self.group,
                     timings=timing,
                 )
-                self.env.sampler.synchronize(self.group)
                 self.current_learning_iteration = iteration
                 episode = self.group.reduce(self.env.consume_episode_statistics())
                 averaged = self.group.reduce(list(losses.values()))
@@ -308,14 +300,7 @@ class Runner(OnPolicyRunner):
         def check():
             if any(r["digests"] != ranks[0]["digests"] for r in ranks):
                 raise RuntimeError("distributed models or optimizer diverged")
-            if (
-                self.env.cfg_obj.sampler_sync == "rollout_global"
-                and len({r["sampler_digest"] for r in ranks}) != 1
-            ):
-                raise RuntimeError("global sampler scores diverged")
-            return dict(
-                passed=True, sampler_sync=self.env.cfg_obj.sampler_sync, ranks=ranks
-            )
+            return dict(passed=True, ranks=ranks)
 
         return self.group.on_main(check)
 
@@ -347,10 +332,8 @@ def run(cfg):
                 output / "distributed.json",
                 dict(
                     world_size=group.world_size,
-                    batch_scope=cfg.batch_scope,
                     num_envs_per_rank=local.num_envs,
                     total_num_envs=local.num_envs * group.world_size,
-                    sampler_sync=cfg.sampler_sync,
                 ),
             )
 
@@ -362,18 +345,10 @@ def run(cfg):
         except Exception as caught:
             error = caught
         group.check_error(error, phase="environment initialization")
-        if group.world_size > 1 and cfg.sampler_sync == "rollout_global":
-            env.sampler.defer()
         agent = deepcopy(cfg.agent)
         agent["seed"] = local.seed
         metadata = contract(env)
         semantic = config_dict(cfg)
-        # Preserve signatures of the existing native-default recipe. Explicit
-        # alignment variants remain part of the resume compatibility boundary.
-        if not cfg.deterministic_physics:
-            semantic.pop("deterministic_physics")
-        if cfg.self_contact_reduction == "none":
-            semantic.pop("self_contact_reduction")
         for name in (
             "updates",
             "output",
@@ -419,8 +394,6 @@ def run(cfg):
         )
         if cfg.resume is not None:
             runner.load(cfg.resume)
-        if group.world_size > 1:
-            runner.alg.broadcast_parameters()
         initial = next(runner.alg.actor.parameters()).detach().clone()
         runner.learn(cfg.updates, init_at_random_ep_len=cfg.init_at_random_ep_len)
         audit = runner.audit()
