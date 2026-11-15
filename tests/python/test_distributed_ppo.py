@@ -19,7 +19,7 @@ def _worker(rank, directory, ports, mode):
                       MASTER_ADDR='127.0.0.1', MASTER_PORT=str(ports[0]), GLOO_SOCKET_IFNAME='lo',
                       OMP_NUM_THREADS='1')
     from gobot.rl.locomotion import training
-    from examples.locomotion.presets import Experiment, task_config, training_spec
+    from gobot.rl.locomotion.presets import Experiment, task_config, training_spec
     root = Path(directory)
     algorithms = []
     seeds = []

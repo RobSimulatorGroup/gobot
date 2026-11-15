@@ -29,7 +29,11 @@ static Ref<ResourceFormatLoaderUSD> s_resource_loader_usd = nullptr;
 static Ref<ResourceFormatLoaderPythonScript> s_resource_loader_python_script = nullptr;
 
 
+// Editor and embedded Python share the same format registry.
+static std::size_t s_initializer_users = 0;
+
 void SceneInitializer::Init() {
+    if (s_initializer_users++ != 0) return;
     s_resource_saver_scene = MakeRef<ResourceFormatSaverScene>();
     ResourceSaver::AddResourceFormatSaver(s_resource_saver_scene, true);
 
@@ -62,6 +66,7 @@ void SceneInitializer::Init() {
 }
 
 void SceneInitializer::Destroy() {
+    if (s_initializer_users == 0 || --s_initializer_users != 0) return;
     ResourceSaver::RemoveResourceFormatSaver(s_resource_saver_ply);
     s_resource_saver_ply.Reset();
 

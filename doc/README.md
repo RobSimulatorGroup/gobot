@@ -9,11 +9,11 @@ Commands in these guides run from the repository root unless stated otherwise.
 | --- | --- |
 | Source builds, native rebuilds, tests, wheels | [Build and test](building.md) |
 | Example projects and editor discovery | [Examples](examples.md) |
-| Training, evaluation, policy playback | [Training guide](gobot_training.md) · [Locomotion examples](../examples/locomotion/README.md) |
+| Training, evaluation, policy playback | [Training guide](gobot_training.md) |
 | Independent mjlab comparison | [Shared terrain and training](mjlab_comparison.md) |
 | Engine ownership and API contracts | [Architecture](architecture.md) |
 | CPU and CUDA training contracts and roadmap | [MuJoCo RL](mujoco_rl_plan.md) |
-| SuperMimic GenCoord | [Data, training and evaluation](../examples/g1/supermimic/README.md) |
+| SuperMimic GenCoord | [Data, training and evaluation](../examples/g1_velocity/supermimic/README.md) |
 | MuJoCo SDK configuration | [MuJoCo setup](physics_mujoco_setup.md) |
 | Native CPU batch integration | [MuJoCo native batch](mujoco_cpu_batch.md) |
 | Import and runtime parity | [MJCF equivalence](mjcf_equivalence.md) |

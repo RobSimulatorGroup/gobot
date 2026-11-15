@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from examples.g1.supermimic.prepare_reference import prepare
+from examples.g1_velocity.supermimic.prepare_reference import prepare
 from gobot.rl.supermimic.evaluate import (
     ANCHORS,
     PROTOCOL,
@@ -351,7 +351,7 @@ def test_invalid_clip_result_is_rejected(key, value):
 
 def test_checkpoint_comparison_rejects_different_conditions(tmp_path):
     from copy import deepcopy
-    from examples.g1.supermimic.evaluate import compare
+    from examples.g1_velocity.supermimic.evaluate import compare
 
     paths, names = reports(tmp_path)
     baseline = merge_reports(paths, names, tmp_path / "full.json")

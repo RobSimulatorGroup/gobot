@@ -92,7 +92,7 @@ is required explicitly.
 `NewtonModelConfig` provides explicit Newton-side joint-limit and contact
 response overrides for policies that were trained with a known Newton model
 profile. Its fields default to `None`, so ordinary providers preserve the
-physics parameters compiled from the Gobot scene. The `newton_g1` example
+physics parameters compiled from the Gobot scene. The `tests/fixtures/newton_g1` regression project
 uses the exact limit and contact defaults from Newton's released G1 policy
 demo while keeping the imported Gobot scene as the model source of truth.
 Contact overrides replace geom `solref` values; explicit MJCF contact pairs
@@ -116,7 +116,7 @@ Headless providers use the authored scene state and do not execute editor Play
 scripts. A scene whose script computes a terrain-relative spawn pose must pass
 that valid pose through `reset()` before the first simulation step.
 
-`examples/newton_g1` is the end-to-end editor example: Gobot imports and
+`tests/fixtures/newton_g1` retains the Newton regression project: Gobot imports and
 persists Newton's canonical `g1_isaac.usd` as one generated `.jscn` plus
 compact binary mesh sidecars, compiles the physics artifact from that same
 Gobot robot tree, runs the official ONNX policy with Warp-NN, and writes Newton

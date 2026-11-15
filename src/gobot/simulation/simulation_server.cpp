@@ -739,6 +739,7 @@ Ref<PhysicsWorld> SimulationServer::GetWorld() const {
 }
 
 std::shared_ptr<const SimulationStateFrame> SimulationServer::CaptureStateFrame() const {
+    if (external_driver_.IsValid()) return external_driver_->CaptureStateFrame();
     if (!world_.IsValid()) {
         return {};
     }

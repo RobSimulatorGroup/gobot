@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from examples.g1.supermimic.prepare_reference import prepare
+from examples.g1_velocity.supermimic.prepare_reference import prepare
 from gobot.rl.supermimic.motion import digest, inspect_library
 
 

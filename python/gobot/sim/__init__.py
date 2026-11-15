@@ -53,6 +53,7 @@ class ProviderPlaySession:
         reset: Callable[[], None] | None = None,
         sync_scene: Callable[..., None] | None = None,
         close_provider: bool = True,
+        contact_roots: Any = None,
     ) -> None:
         normalized_fixed_dt = float(fixed_dt)
         if not math.isfinite(normalized_fixed_dt) or normalized_fixed_dt <= 0.0:
@@ -69,6 +70,7 @@ class ProviderPlaySession:
             raise TypeError("provider must define step(...)")
         if self._asynchronous and reset is not None:
             raise TypeError("asynchronous reset belongs to the runtime controller")
+        self.contact_roots = dict(contact_roots or {})
         self.context = context
         self.provider = provider
         self.fixed_dt = normalized_fixed_dt
@@ -96,6 +98,10 @@ class ProviderPlaySession:
         if not callable(begin):
             raise RuntimeError("this Gobot build does not support external simulation sessions")
         async_callbacks = {"poll": self._poll, "ready": self._ready} if self._asynchronous else {}
+        if self.contact_roots:
+            if not self._asynchronous:
+                raise ValueError("Contact snapshots require an asynchronous provider")
+            async_callbacks["contact_roots"] = self.contact_roots
         self._token = int(
             begin(
                 self._step,

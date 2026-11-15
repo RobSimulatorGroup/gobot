@@ -79,14 +79,22 @@ class Provider:
     num_envs = 1
     fixed_time_step = .002
     def __init__(self):
+        self.tick = 0
         events.append(('build', threading.get_ident()))
     def step(self, actions=None, *, nsteps=1):
         time.sleep(.01)
+        self.tick += 1
         events.append(('step', threading.get_ident()))
     def reset(self, mask):
+        self.tick = 0
         events.append(('reset', threading.get_ident()))
     def close(self):
         events.append(('close', threading.get_ident()))
+    def contact_snapshot(self, environments):
+        import numpy as np
+        return {'geometries': [('', 'ground', 'floor'), ('robot', 'foot', 'sole')],
+                'pairs': np.asarray([[0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 100, 0, 0, 0, 0]]
+                                    if self.tick else []).reshape(-1, 16), 'sample_dt': .002}
     def snapshot_arrays(self, fields, environments):
         if fail_snapshot:
             raise RuntimeError('injected snapshot failure')
@@ -96,7 +104,11 @@ def create():
 ''', factory.__dict__)
 runtime = gobot.sim.AsyncSimulationSession(gobot.sim.SimulationRuntimeSpec(
     'gobot_runtime_play_bridge:create', {}), fields=('positions',), max_hz=1e9)
-play = gobot.sim.ProviderPlaySession(gobot.app.context(), runtime, fixed_dt=.002).start()
+display_root = gobot.create_node('Node3D', 'display')
+gobot.app.context().root.add_child(display_root)
+display_root.position = (2, 3, 0)
+play = gobot.sim.ProviderPlaySession(gobot.app.context(), runtime, fixed_dt=.002,
+                                   contact_roots={0: display_root}).start()
 )PY", &context);
     EXPECT_TRUE(install.ok) << install.error;
     EXPECT_TRUE(server.IsSessionAsynchronous());
@@ -117,11 +129,27 @@ play = gobot.sim.ProviderPlaySession(gobot.app.context(), runtime, fixed_dt=.002
         EXPECT_EQ(server.GetFrameCount(), 0);
         EXPECT_TRUE(poll_until([&] { return server.GetFrameCount() == 1; })) << server.GetLastError();
         EXPECT_NEAR(server.GetSimulationTime(), .002, 1e-8);
+        auto retained_contact_frame = server.CaptureStateFrame();
+        ASSERT_TRUE(retained_contact_frame);
+        ASSERT_EQ(retained_contact_frame->state.contacts.size(), 1);
+        EXPECT_TRUE(retained_contact_frame->state.contacts[0].position.isApprox(Vector3(3, 3, 0)));
+        EXPECT_TRUE(retained_contact_frame->state.contacts[0].force.isApprox(Vector3(0, 0, 100)));
+        const auto state_read = Runner::ExecuteString(R"PY(
+state = gobot.app.context().get_physics_state()
+assert len(state['contacts']) == 1
+view = gobot.app.context().get_physics_state_view()
+assert view['tick'] == 1
+)PY", &context);
+        EXPECT_TRUE(state_read.ok) << state_read.error;
         EXPECT_TRUE(server.Reset()) << server.GetLastError();
+        EXPECT_FALSE(server.CaptureStateFrame());
         EXPECT_FALSE(server.IsSessionReady());
         EXPECT_TRUE(poll_until([&] { return !server.IsAsyncOperationPending(); }));
         EXPECT_EQ(server.GetFrameCount(), 0);
         EXPECT_EQ(server.GetSimulationTime(), 0);
+        ASSERT_TRUE(server.CaptureStateFrame());
+        EXPECT_TRUE(server.CaptureStateFrame()->state.contacts.empty());
+        EXPECT_EQ(retained_contact_frame->state.contacts.size(), 1);
         const auto inject = Runner::ExecuteString("factory.fail_snapshot = True", &context);
         EXPECT_TRUE(inject.ok) << inject.error;
         EXPECT_TRUE(server.RequestStep());

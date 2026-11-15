@@ -11,7 +11,7 @@ from gobot.rl.motion_amp.features import Features
 from gobot.rl.motion_amp.motion import MotionLibrary
 
 ROOT = Path(__file__).resolve().parents[2]
-PROJECT = ROOT/'examples/g1/assets/mimickit/gobot'
+PROJECT = ROOT/'examples/g1_velocity/assets/mimickit/gobot'
 
 
 def features(**kwargs):
@@ -354,7 +354,7 @@ def test_training_recovers_from_numerical_failure_without_poisoning_checkpoint(t
     from gobot.rl.articulation import ArticulationBatch
     from gobot.rl.motion_amp.training import Config,run
     from gobot.rl.training.workflow import update_config
-    config=update_config(Config(),json.loads((ROOT/'examples/g1/mimickit/rsl_reference_aligned.json').read_text()))
+    config=update_config(Config(),json.loads((ROOT/'examples/g1_velocity/mimickit/rsl_reference_aligned.json').read_text()))
     config=update_config(config,{'project_path':str(PROJECT),'backend':backend,
         'device':'cuda:0' if backend=='mujoco-warp' else 'cpu','num_envs':4,'updates':2,
         'output':str(tmp_path/'training'),'amp':{'batch_size':16,'updates_per_iteration':2,'replay_capacity':1024}})

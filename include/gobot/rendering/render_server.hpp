@@ -27,6 +27,8 @@ class Camera3D;
 class Node;
 class SceneTree;
 class PhysicsWorld;
+struct PhysicsSceneState;
+struct PhysicsWorldSettings;
 class PhysicsDebugPreview;
 struct DebugArrow;
 
@@ -171,7 +173,8 @@ public:
     void RenderEditorDebugToViewport(const RID& viewport,
                                      const Camera3D* camera,
                                      const Node* scene_root,
-                                     const PhysicsWorld* physics_world = nullptr,
+                                     const PhysicsSceneState* physics_state = nullptr,
+                                     const PhysicsWorldSettings* physics_settings = nullptr,
                                      bool show_collision_shapes = true);
 
     void RenderDebugArrowsToViewport(const RID& viewport,

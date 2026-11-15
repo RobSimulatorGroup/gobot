@@ -38,4 +38,7 @@ GOBOT_EXPORT HeadlessRenderContext& EnsureHeadlessRenderContext();
 
 GOBOT_EXPORT void ShutdownHeadlessRenderContext();
 
+// Release Python-owned contexts before the embedding engine services go away.
+GOBOT_EXPORT void ShutdownAppRuntime();
+
 } // namespace gobot::python

@@ -26,7 +26,7 @@ from gobot.rl.supermimic.state import (
 )
 from gobot.rl.supermimic.tasks import EncoderSpec
 from gobot.rl.supermimic.wm_learner import WorldModelLearner, WorldModelLearnerCfg
-from examples.g1.supermimic._reference.probes import DifferentiableProbeEnv
+from examples.g1_velocity.supermimic._reference.probes import DifferentiableProbeEnv
 
 FIXTURE = (
     Path(__file__).resolve().parents[1] / "fixtures/supermimic_official_gencoord_v1.pt"
@@ -44,7 +44,7 @@ def reference():
     assert (
         hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == metadata["fixture_sha256"]
     )
-    tools = Path(__file__).resolve().parents[2] / "examples/g1/supermimic"
+    tools = Path(__file__).resolve().parents[2] / "examples/g1_velocity/supermimic"
     for name, key in (
         ("reference.lock.json", "lock_sha256"),
         ("_reference/export.py", "exporter_sha256"),

@@ -49,6 +49,7 @@ class BatchSimulationRuntime:
                              override_link_names: Sequence[str] = (), link_center_of_mass_offset: Any = None,
                              override_shape_names: Sequence[str] = (), shape_friction: Any = None,
                              kinematic_readback: bool = False) -> Any: ...
+    def set_base_velocities(self, env_ids: Sequence[int], velocities: Any) -> None: ...
     def reset_robot_states(
         self,
         env_ids: Sequence[int],

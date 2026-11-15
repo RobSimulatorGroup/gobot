@@ -1246,15 +1246,20 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "*.pyc" EXCLUDE
         PATTERN "logs" EXCLUDE
         PATTERN "gaussian_splatting/assets" EXCLUDE
-        PATTERN "newton_g1/assets" EXCLUDE
-        PATTERN "g1/assets" EXCLUDE
-        PATTERN "g1/policies" EXCLUDE
+        PATTERN "g1_track/assets" EXCLUDE
+        PATTERN "g1_velocity/assets" EXCLUDE
+        PATTERN "g1_velocity/policies" EXCLUDE
         PATTERN "cartpole/policies" EXCLUDE
         PATTERN "*.ptx" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"
         DESTINATION "gobot/examples/go1/policies" COMPONENT python)
+install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.onnx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.verification.json"
+        DESTINATION "gobot/examples/g1_velocity/policies" COMPONENT python)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
 

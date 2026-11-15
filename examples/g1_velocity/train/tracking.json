@@ -1,0 +1,11 @@
+{
+  "project_path": "logs/g1-tracking-assets",
+  "scene_path": "res://world.jscn",
+  "motion_file": "motion.npz",
+  "backend": "mujoco-warp",
+  "num_envs": 4096,
+  "updates": 30000,
+  "output": "logs/g1-tracking/walk",
+  "nconmax": 128,
+  "njmax": 500
+}

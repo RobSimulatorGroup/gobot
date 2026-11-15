@@ -83,6 +83,9 @@ class _MuJoCoWarpRobotViewAdapter:
         self.angular_velocity = torch.empty(
             (provider.num_envs, 3, 1), dtype=provider.arrays["qvel"].dtype, device=device
         )
+        self.link_velocity = torch.empty((provider.num_envs, len(spec.link_names), 6),
+                                         dtype=pose_dtype, device=device)
+        self.root_body_id = int(provider._mj_model.body_rootid[self.layout.base_body_id])
         body = self.layout.base_body_id
         joint_adr = int(provider._mj_model.body_jntadr[body])
         joint_count = int(provider._mj_model.body_jntnum[body])
@@ -165,8 +168,36 @@ class _MuJoCoWarpRobotViewAdapter:
     def set_controls(self, controls: Any) -> None:
         self.provider.set_joint_controls(self.layout, controls)
 
+    def read_link_velocities(self) -> Any:
+        arrays = self.provider.arrays
+        spatial = arrays["cvel"][:, self.links]
+        offset = arrays["xpos"][:, self.links] - arrays["subtree_com"][:, self.root_body_id, None]
+        self.link_velocity[..., :3].copy_(spatial[..., 3:] + self.provider._torch.linalg.cross(spatial[..., :3], offset))
+        self.link_velocity[..., 3:].copy_(spatial[..., :3])
+        return self.link_velocity
+
+    def set_base_velocity(self, mask: Any, velocity: Any) -> None:
+        if self.base_qd is None or self.base_q is None:
+            raise ValueError("base velocity writes require a floating joint")
+        torch = self.provider._torch
+        mask = self.provider._as_tensor(mask, dtype=torch.bool)
+        qvel = self.provider.arrays["qvel"]
+        velocity = self.provider._as_tensor(velocity, dtype=qvel.dtype)
+        if mask.shape != (self.provider.num_envs,) or velocity.shape != (self.provider.num_envs, 6):
+            raise ValueError("base velocity mask or [num_envs, 6] shape is invalid")
+        if not bool(torch.isfinite(velocity[mask]).all()):
+            raise ValueError("base velocities must be finite")
+        quaternion = self.provider.arrays["qpos"][mask, self.base_q + 3:self.base_q + 7]
+        vector = -quaternion[:, 1:4]
+        angular = velocity[mask, 3:]
+        first_cross = torch.cross(vector, angular, dim=1)
+        local = angular + 2 * (quaternion[:, :1] * first_cross + torch.cross(vector, first_cross, dim=1))
+        qvel[mask, self.base_qd:self.base_qd + 3] = velocity[mask, :3]
+        qvel[mask, self.base_qd + 3:self.base_qd + 6] = local
+
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
         kinematics_only = bool(state.pop("kinematics_only", False))
+        reset_physics = bool(state.pop("reset_physics", True))
         qpos = self.provider.arrays["qpos"].clone()
         qvel = self.provider.arrays["qvel"].clone()
         ctrl = self.provider.arrays["ctrl"].clone()
@@ -211,7 +242,7 @@ class _MuJoCoWarpRobotViewAdapter:
         copy_columns(ctrl, self.controls, state.pop("controls", None), "controls")
         if state:
             raise TypeError("unexpected robot reset fields: " + ", ".join(sorted(state)))
-        result = self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl, forward=not kinematics_only)
+        result = self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl, forward=not kinematics_only, reset_physics=reset_physics)
         if kinematics_only:
             self.provider.refresh_kinematics()
         return result
@@ -351,6 +382,12 @@ def _major_minor(version: str) -> tuple[int, int] | None:
         return None
 
 
+def _determinism_option(runtime, enabled):
+    if not enabled:
+        return False
+    return int(runtime.DeterminismType.ALL)
+
+
 class MuJoCoWarpProvider(BatchPhysicsProvider):
     """Persistent MuJoCo Warp session over CUDA-resident simulation arrays.
 
@@ -405,6 +442,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._capture_enabled = bool(capture_graphs)
         self._overflow_check_interval = int(overflow_check_interval)
         self._step_count = 0
+        self._contact_source = None
         self._generation = 1
         self._closed = False
         self._graphs: dict[str, Any] = {}
@@ -432,7 +470,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 "contact_sensor_maxmatch": contact_sensor_maxmatch,
                 "ls_parallel": ls_parallel,
                 "capture_graphs": self._capture_enabled,
-                "deterministic": bool(deterministic),
+                "deterministic": _determinism_option(self._mjw, deterministic),
                 "contact_sensors": self._contact_specs,
                 "raycast_sensors": self._raycast_specs,
             },
@@ -475,7 +513,10 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             if deterministic:
                 if not hasattr(self._model.opt, "deterministic"):
                     raise ProviderUnavailableError("this Warp runtime has no deterministic execution option")
-                self._model.opt.deterministic = True
+                # 3.17 changed this from a bool into a bitmask. True (1)
+                # enables contact sorting only, leaving atomic match order and
+                # constraint order nondeterministic.
+                self._model.opt.deterministic = _determinism_option(self._mjw, True)
             # MuJoCo 3.17 records finite solver-budget exhaustion in overflow as
             # diagnostics. These bits do not indicate discarded contacts/data.
             if hasattr(self._model.opt, "warn_overflow"):
@@ -661,6 +702,9 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         with self._stream_scope():
             for _ in range(int(nsteps)):
                 self._launch_or_call("step", self._mjw.step)
+        if self._contact_source is not None:
+            with self._stream_scope():
+                self._contact_source.capture()
         self._step_count += 1
         if self._overflow_check_interval and self._step_count % self._overflow_check_interval == 0:
             self.assert_no_overflow()
@@ -674,6 +718,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         qvel: Any | None = None,
         ctrl: Any | None = None,
         forward: bool = True,
+        reset_physics: bool = True,
     ) -> Mapping[str, Any]:
         self._require_open()
         self._validate_storage()
@@ -682,14 +727,32 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise ValueError(f"reset mask must have shape ({self._num_envs},), got {tuple(mask.shape)}")
         self._reset_mask_tensor.copy_(mask)
         with self._stream_scope():
-            self._launch_or_call("reset", self._mjw.reset_data, self._reset_mask)
+            if reset_physics:
+                self._launch_or_call("reset", self._mjw.reset_data, self._reset_mask)
             self._copy_masked_state("qpos", qpos, mask)
             self._copy_masked_state("qvel", qvel, mask)
             self._copy_masked_state("ctrl", ctrl, mask)
             if forward:
                 self._launch_or_call("forward", self._mjw.forward)
+        if self._contact_source is not None:
+            self._contact_source.clear(mask.nonzero().flatten().cpu().tolist())
         self._reset_mask_tensor.zero_()
         return self._arrays
+
+    def enable_contact_snapshots(self):
+        """Enable solved-contact publication for editor presentation only."""
+        self._require_open()
+        if self._contact_source is None:
+            from .mujoco_warp_contacts import MuJoCoWarpContactSource
+            bodies = {name: (robot.name, name.removeprefix(robot.runtime_prefix))
+                      for robot in self.artifact.robots for name in robot.body_names}
+            self._contact_source = MuJoCoWarpContactSource(
+                self._mj_model, self._model, self._data, bodies=bodies,
+                sample_dt=float(self._mj_model.opt.timestep), device=self._wp_device)
+
+    def contact_snapshot(self, environments):
+        self._require_open()
+        return self._contact_source.snapshot(environments) if self._contact_source is not None else None
 
     def forward(self) -> Mapping[str, Any]:
         self._require_open()
@@ -967,6 +1030,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             self._graphs.clear()
             self._actuator_index_cache.clear()
             self._model_view_cache.clear()
+            self._contact_source = None
             self._raycast_runtimes.clear()
             self._contact_sensor_views = MappingProxyType({})
             self._raycast_views = MappingProxyType({})

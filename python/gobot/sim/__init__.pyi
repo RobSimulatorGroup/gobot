@@ -52,6 +52,7 @@ class ProviderPlaySession:
         reset: Callable[[], None] | None = ...,
         sync_scene: Callable[..., None] | None = ...,
         close_provider: bool = ...,
+        contact_roots: dict[int, Any] | None = ...,
     ) -> None: ...
     @property
     def running(self) -> bool: ...

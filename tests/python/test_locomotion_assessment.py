@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 import torch
 
-from examples.locomotion.assessment import evaluation_scene, fixed_commands, rollout
+from gobot.rl.locomotion.assessment import evaluation_scene, fixed_commands, rollout
 from gobot.rl.locomotion import make_velocity_env
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 
 
 @pytest.mark.parametrize('robot', ['g1', 'go1'])
@@ -196,7 +196,7 @@ def test_signed_turn_bias_and_unwrapped_heading_stop_at_first_episode_end():
 
 def test_fixed_turn_commands_are_passed_without_rewriting(monkeypatch, capsys):
     from contextlib import nullcontext
-    from examples.locomotion import assessment
+    from gobot.rl.locomotion import assessment
     calls=[]
     monkeypatch.setattr(assessment,'evaluation_budget',lambda *a,**k:nullcontext())
     monkeypatch.setattr(assessment,'evaluate',lambda *a,**kw:(calls.append(kw) or {'scenarios':[]}))
@@ -205,3 +205,48 @@ def test_fixed_turn_commands_are_passed_without_rewriting(monkeypatch, capsys):
     assessment.main()
     assert calls[0]['commands']==[[.8,0.,.5],[.8,0.,-.5],[.8,0.,0.]]
     capsys.readouterr()
+
+
+def test_deployment_checks_authored_assets_and_runtime_robot_snapshot():
+    from copy import deepcopy
+    from dataclasses import replace
+    from gobot.rl.locomotion.manifest import build_policy_manifest, deployment_manifest, validate_policy
+    from gobot.rl.locomotion.training import agent_config
+    from gobot.rl.rsl_rl import RslRlVecEnvWrapper
+    experiment = Experiment(robot='g1', stage='flat')
+    cfg = task_config(experiment, play=True)
+    env = make_velocity_env(cfg, num_envs=1, backend='mujoco-cpu', device='cpu')
+    try:
+        original = build_policy_manifest(RslRlVecEnvWrapper(env), cfg,
+                                         agent_config(experiment), Path(cfg.project_path))
+        # Text hashes can differ across compilers while all source bytes match.
+        original = replace(original, scene_digest='training-compiler-digest')
+        deployed = deployment_manifest(original, env, cfg)
+        assert deployed.extras['scene_digest_kind'] == 'robot_snapshot_v1'
+        assert deployed.extras['training_robot_digest'] == original.scene_digest
+        validate_policy(deployed, env, cfg)
+        wrong_source = replace(original, extras={**original.extras, 'training_scene_digest': 'different'})
+        with pytest.raises(ValueError, match='unchanged training scene'):
+            deployment_manifest(wrong_source, env, cfg)
+        wrong_control = replace(original, control={**original.control, 'kp': [1.] * 29})
+        with pytest.raises(ValueError, match='kp'):
+            deployment_manifest(wrong_control, env, cfg)
+        extras = deepcopy(deployed.extras)
+        extras['robot_snapshot']['links'][0]['mass'] += 1.e-8
+        with pytest.raises(ValueError, match='mass'):
+            validate_policy(replace(deployed, extras=extras), env, cfg)
+    finally:
+        env.close()
+
+
+def test_robot_snapshot_keeps_internal_paths_when_editor_adds_a_wrapper():
+    from copy import deepcopy
+    from gobot.rl.locomotion.robot_model import relative_robot_snapshot
+    source = dict(name='g1', path='/root/world/g1', stable_id=1,
+                  links=[dict(name='pelvis', path='/root/world/g1/base/pelvis', stable_id=2, mass=3.8)])
+    editor = deepcopy(source)
+    editor.update(path='/root/Editor/Runtime/world/g1', stable_id=10)
+    editor['links'][0].update(path='/root/Editor/Runtime/world/g1/base/pelvis', stable_id=20)
+    assert relative_robot_snapshot(source) == relative_robot_snapshot(editor)
+    editor['links'][0]['path'] = '/root/Editor/Runtime/world/g1/other/pelvis'
+    assert relative_robot_snapshot(source) != relative_robot_snapshot(editor)

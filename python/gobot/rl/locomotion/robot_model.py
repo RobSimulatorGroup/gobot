@@ -26,3 +26,20 @@ def robot_physics_digest(artifact, robot_name):
     options = root.find('option')
     payload = [node(options) if options is not None else None, [node(b) for b in bodies], assets, controls, exclusions]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def relative_robot_snapshot(robot):
+    """Keep physical state and internal topology independent of the scene wrapper."""
+    root = robot['path']
+
+    def normalize(value):
+        if isinstance(value, dict):
+            # stable_id is derived from the absolute scene path, not physics.
+            return {key: normalize(item) for key, item in value.items() if key != 'stable_id'}
+        if isinstance(value, (list, tuple)):
+            return [normalize(item) for item in value]
+        if isinstance(value, str) and (value == root or value.startswith(root + '/')):
+            return '.' + value[len(root):]
+        return value
+
+    return normalize(robot)

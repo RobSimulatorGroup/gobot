@@ -1,7 +1,7 @@
 # Go1: training and playback
 
 Velocity PPO and the walk/trot/gallop task use the
-[shared locomotion training framework](../locomotion/README.md).
+[shared locomotion training framework](../../doc/gobot_training.md).
 The gait task adds phase observations and uses practical terrain resources.
 
 The editable `go1_scene.jscn` and `terrain/rough_terrain.jres` are shared by
@@ -43,7 +43,7 @@ uv run python -m gobot.rl.train go1-velocity \
 
 uv run python -m gobot.rl.train go1-gait \
   --backend mujoco-warp --device cuda:0 --num-envs 1024 \
-  --config examples/locomotion/configs/go1_gait.json --output logs/go1_gait
+  --config examples/go1/train/gait.json --output logs/go1_gait
 ```
 
 `--terrain flat|rough` selects the standard velocity task terrain. Training can start
@@ -57,11 +57,11 @@ terrain coverage and measured gait. Training reward alone does not establish
 successful walking or running.
 
 ```bash
-uv run python -m examples.locomotion.assessment \
+uv run python -m gobot.rl.locomotion.assessment \
   --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/validation.json
-uv run python -m examples.locomotion.record \
+uv run python -m gobot.rl.locomotion.record \
   --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/walk.mp4 --continuous
-uv run python -m examples.locomotion.verify_export \
+uv run python -m gobot.rl.locomotion.verify_export \
   --checkpoint logs/go1_gait/best.pt --output logs/go1_gait/candidate.onnx
 ```
 
@@ -71,7 +71,7 @@ clock and observation layout. `T` cycles walk/trot/run commands. The bundled
 `go1_scene.jscn` baseline has its own policy contract; incompatible policies are
 rejected rather than guessed from their tensor dimensions.
 
-See [shared locomotion](../locomotion/README.md) for full admission, custom rewards,
+See [shared locomotion](../../doc/gobot_training.md) for full admission, custom rewards,
 resume semantics and training on a cluster.
 
 ## Benchmark and parity

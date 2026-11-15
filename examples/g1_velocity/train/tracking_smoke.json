@@ -1,0 +1,9 @@
+{
+  "project_path": "logs/g1-tracking-assets",
+  "backend": "mujoco-warp",
+  "num_envs": 32,
+  "updates": 2,
+  "output": "logs/g1-tracking/smoke",
+  "nconmax": 128,
+  "njmax": 500
+}

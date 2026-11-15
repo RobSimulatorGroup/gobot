@@ -11,7 +11,8 @@ uv run gobot_editor --path examples/go1
 | --- | --- | --- |
 | `cartpole` | Inverted-pendulum playback and scene-authored CPU batch training | [Guide](../examples/cartpole/README.md) |
 | `go1` | Rough-terrain locomotion, CPU/CUDA training, ONNX playback | [Go1](../examples/go1/README.md) |
-| `newton_g1` | Humanoid policy playback with Newton and USD assets | [Newton G1](../examples/newton_g1/README.md) |
+| `g1_velocity` | G1 velocity PPO training and policy playback | [G1 velocity](../examples/g1_velocity/README.md) |
+| `g1_track` | BeyondMimic single-motion tracking and live reference comparison | [G1 tracking](../examples/g1_track/README.md) |
 | `libuipc` | FEM/contact and articulated grasping demos | [libuipc](../examples/libuipc/README.md) |
 | `mujoco_libuipc` | Coupled rigid/deformable batch simulation | [MuJoCo + libuipc](../examples/mujoco_libuipc/README.md) |
 | `conveyor_packages` | Conveyor and two-hand manipulation experiments | [Conveyor](../examples/conveyor_packages/README.md) |

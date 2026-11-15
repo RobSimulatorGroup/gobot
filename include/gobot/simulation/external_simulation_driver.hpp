@@ -8,6 +8,8 @@
 
 #include <string>
 #include <optional>
+#include <memory>
+#include "gobot/simulation/simulation_state_frame.hpp"
 
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/types.hpp"
@@ -48,6 +50,8 @@ public:
     virtual std::optional<ExternalSimulationCompletion> PollCompletion() { return std::nullopt; }
 
     virtual bool SyncScene() = 0;
+
+    virtual std::shared_ptr<const SimulationStateFrame> CaptureStateFrame() const { return {}; }
 
     virtual void Close() = 0;
 

@@ -59,6 +59,45 @@ public:
         py::gil_scoped_acquire gil;
         buffers = CopyBuffers(adapter_.attr("snapshot")(subscription.fields, subscription.environments));
     }
+    void CaptureContacts(const SimulationSubscription& subscription,
+                         std::vector<SimulationContact>& contacts) override {
+        py::gil_scoped_acquire gil;
+        py::object value = adapter_.attr("contact_snapshot")(subscription.environments);
+        if (value.is_none()) return;
+        const auto mapping = value.cast<py::dict>();
+        std::vector<SimulationContactBody> geometries;
+        for (const auto& item : mapping["geometries"].cast<py::list>()) {
+            const auto body = item.cast<std::array<std::string, 3>>();
+            geometries.push_back({body[0], body[1], body[2]});
+        }
+        auto pairs = py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(mapping["pairs"]);
+        if (!pairs || pairs.ndim() != 2 || pairs.shape(1) != 16)
+            throw std::invalid_argument("Contact pairs must have shape [count,16]");
+        const auto indices = [](double value) -> std::size_t {
+            if (!std::isfinite(value) || value < 0 || value > 2147483647. || std::floor(value) != value)
+                throw std::invalid_argument("Contact indices must be non-negative integers");
+            return static_cast<std::size_t>(value);
+        };
+        std::vector<SimulationContactPair> decoded;
+        const auto rows = pairs.unchecked<2>();
+        for (py::ssize_t row = 0; row < rows.shape(0); ++row) {
+            SimulationContactPair pair;
+            pair.environment = indices(rows(row, 0));
+            if (std::find(subscription.environments.begin(), subscription.environments.end(),
+                          pair.environment) == subscription.environments.end()) continue;
+            pair.geometry_a = indices(rows(row, 1));
+            pair.geometry_b = indices(rows(row, 2));
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                pair.position[axis] = rows(row, 3 + axis);
+                pair.normal[axis] = rows(row, 6 + axis);
+                pair.force_on_b[axis] = rows(row, 9 + axis);
+                pair.torque_on_b[axis] = rows(row, 12 + axis);
+            }
+            pair.distance = rows(row, 15);
+            decoded.push_back(std::move(pair));
+        }
+        contacts = MakeSimulationContacts(geometries, decoded, mapping["sample_dt"].cast<double>());
+    }
 private:
     py::object adapter_; // Created, closed and decref'd on the worker, under the GIL.
 };
@@ -137,7 +176,22 @@ void RegisterSimulationWorkerBindings(py::module_& module) {
                 return py::buffer_info(const_cast<double*>(buffer.values.data()), sizeof(double),
                         py::format_descriptor<double>::format(), shape.size(), shape, strides, true);
             });
+    py::class_<SimulationContactBody>(module, "SimulationContactBody")
+            .def_readonly("robot_name", &SimulationContactBody::robot_name)
+            .def_readonly("link_name", &SimulationContactBody::link_name)
+            .def_readonly("shape_name", &SimulationContactBody::shape_name);
+    py::class_<SimulationContact>(module, "SimulationContact")
+            .def_readonly("environment", &SimulationContact::environment)
+            .def_readonly("body", &SimulationContact::body)
+            .def_readonly("other_body", &SimulationContact::other_body)
+            .def_readonly("position", &SimulationContact::position)
+            .def_readonly("normal", &SimulationContact::normal)
+            .def_readonly("force", &SimulationContact::force)
+            .def_readonly("torque", &SimulationContact::torque)
+            .def_readonly("normal_impulse", &SimulationContact::normal_impulse)
+            .def_readonly("distance", &SimulationContact::distance);
     py::class_<SnapshotLease>(module, "SimulationSnapshot")
+            .def_property_readonly("contacts", [](const SnapshotLease& lease) { return lease.frame->contacts; })
             .def_property_readonly("epoch", [](const SnapshotLease& lease) { return lease.frame->epoch; })
             .def_property_readonly("environments", [](const SnapshotLease& lease) { return lease.frame->environments; })
             .def_property_readonly("clocks", [](const SnapshotLease& lease) { return lease.frame->clocks; })

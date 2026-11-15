@@ -11,7 +11,7 @@ from .wm_learner import WorldModelLearnerCfg
 
 @dataclass
 class Config:
-    project: Path = Path("examples/g1/assets/supermimic")
+    project: Path = Path("examples/g1_velocity/assets/supermimic")
     scene: str = "res://g1_29dof_flat_scene.jscn"
     library: Path = Path("data/bones_official_50hz")
     backend: str = "mujoco-warp"

@@ -10,7 +10,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = ROOT / "examples" / "newton_g1"
+EXAMPLE = ROOT / "tests" / "fixtures" / "newton_g1"
 REPLAY_POSITION_ATOL_M = 1.0e-5
 REPLAY_ANGLE_ATOL_RAD = 1.0e-5
 

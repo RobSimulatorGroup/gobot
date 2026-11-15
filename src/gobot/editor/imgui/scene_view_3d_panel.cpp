@@ -430,11 +430,13 @@ void SceneView3DPanel::OnImGuiContent()
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
     auto* scene_root = Editor::GetInstance()->GetActiveSceneRoot();
-    const PhysicsWorld* physics_world = nullptr;
+    std::shared_ptr<const SimulationStateFrame> physics_frame;
+    const PhysicsWorldSettings* physics_settings = nullptr;
     if (SimulationServer::HasInstance()) {
-        Ref<PhysicsWorld> world = SimulationServer::GetInstance()->GetWorld();
-        if (world.IsValid()) {
-            physics_world = world.Get();
+        const auto* simulation = SimulationServer::GetInstance();
+        if (simulation->GetSceneRoot() == scene_root) {
+            physics_frame = simulation->CaptureStateFrame();
+            physics_settings = &simulation->GetPhysicsWorldSettings();
         }
     }
     static const std::vector<DebugArrow> empty_debug_arrows;
@@ -446,7 +448,8 @@ void SceneView3DPanel::OnImGuiContent()
     viewport_renderer_->Render(view_port_,
                                scene_root,
                                camera_3d,
-                               physics_world,
+                               physics_frame ? &physics_frame->state : nullptr,
+                               physics_settings,
                                debug_arrows,
                                show_collision_debug);
 

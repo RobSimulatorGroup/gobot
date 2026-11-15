@@ -36,7 +36,7 @@ def test_velocity_launch_trains_one_shared_policy(environment, processes, task, 
     if processes:
         environment['GOBOT_NPROC_PER_NODE'] = processes
     result = subprocess.run(
-        ['bash', str(ROOT / 'examples/locomotion/cluster/train_velocity.sbatch'),
+        ['bash', str(ROOT / 'scripts/cluster/train_velocity.sbatch'),
          '--terrain-reference', '/tmp/shared terrain.json'],
         env=environment, capture_output=True, text=True, check=True,
     )

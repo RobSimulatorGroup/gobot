@@ -117,6 +117,7 @@ def main():
     assert context.has_world is False
     assert context.frame_count == 0
     physics_debug_settings = context.get_physics_debug_settings()
+    assert isinstance(physics_debug_settings["draw_contacts"], bool)
     assert physics_debug_settings["draw_contact_forces"] is False
     assert abs(physics_debug_settings["contact_force_scale"] - 0.08) < 1e-6
     assert abs(physics_debug_settings["contact_force_max_length"] - 0.8) < 1e-6

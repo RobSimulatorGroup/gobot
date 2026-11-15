@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from gobot.rl.locomotion import make_velocity_env
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 
 
 BACKENDS = ['mujoco-cpu', pytest.param('mujoco-warp', marks=pytest.mark.skipif(

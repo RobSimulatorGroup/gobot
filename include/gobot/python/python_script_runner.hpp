@@ -75,6 +75,9 @@ public:
                                                    double delta_time,
                                                    OutputCallback output_callback);
 
+    // Drain background simulation while scene/render services are still alive.
+    static void ShutdownSimulationWorkers();
+
     static void Shutdown();
 };
 

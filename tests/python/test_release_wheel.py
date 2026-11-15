@@ -71,6 +71,13 @@ class ReleaseWheelTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "go1_velocity.onnx"):
             smoke_installed_wheel.verify_payload(self.installed_payload(wheel))
 
+    def test_g1_velocity_release_policy_is_required(self):
+        missing = "gobot/examples/g1_velocity/policies/g1_velocity.onnx"
+        wheel = self.make_wheel(omit=(missing,))
+        self.assertIn("missing payload: " + missing, verify_release_wheel.verify_wheel(wheel))
+        with self.assertRaisesRegex(RuntimeError, "g1_velocity.onnx"):
+            smoke_installed_wheel.verify_payload(self.installed_payload(wheel))
+
     def test_cmake_installs_current_example_and_excludes_retired_local_policies(self):
         # Exercise the production examples install rule without building native
         # runtimes or copying unrelated large sample assets.

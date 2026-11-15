@@ -277,6 +277,10 @@ class _DataProviderExecutor(_ProviderExecutor):
         else:
             raise ValueError("provider without a controller accepts only the 'actions' command")
 
+    def contact_snapshot(self, environments):
+        capture = getattr(self.provider, "contact_snapshot", None)
+        return capture(environments) if capture is not None else None
+
     def snapshot(self, fields, environments):
         if not fields:
             return {}

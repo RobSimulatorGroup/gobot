@@ -694,6 +694,14 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
     return result;
 }
 
+void PythonScriptRunner::ShutdownSimulationWorkers() {
+    if (!Py_IsInitialized()) return;
+    py::gil_scoped_acquire gil;
+    py::dict modules = py::module_::import("sys").attr("modules");
+    if (modules.contains("gobot.sim.runtime"))
+        modules["gobot.sim.runtime"].attr("_shutdown_all")();
+}
+
 void PythonScriptRunner::Shutdown() {
     if (InterpreterStartedByRunner() && Py_IsInitialized()) {
         PyEval_RestoreThread(RunnerThreadState());
@@ -701,12 +709,11 @@ void PythonScriptRunner::Shutdown() {
         {
             // Workers must finish Python callbacks and release their SDKs while
             // the interpreter is still running, before Python starts finalizing.
-            py::dict modules = py::module_::import("sys").attr("modules");
-            if (modules.contains("gobot.sim.runtime"))
-                modules["gobot.sim.runtime"].attr("_shutdown_all")();
+            ShutdownSimulationWorkers();
             SceneScriptInstances().clear();
             ScriptGlobals().clear();
             SetActiveAppContext(nullptr);
+            ShutdownAppRuntime();
         }
         py::finalize_interpreter();
         InterpreterStartedByRunner() = false;

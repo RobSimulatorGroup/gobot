@@ -12,7 +12,7 @@ import torch
 
 from gobot.rl.locomotion.config import VELOCITY_REWARD_TERM_NAMES
 from gobot.rl.locomotion.cpu_env import CpuVelocityEnv, _TASK_PARAM
-from examples.locomotion.presets import Experiment, MJLAB_REFERENCE_REVISION, task_config
+from gobot.rl.locomotion.presets import Experiment, MJLAB_REFERENCE_REVISION, task_config
 from gobot.rl.locomotion.training import agent_config
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv, _quat_apply
 
@@ -298,7 +298,7 @@ def test_g1_locomotion_model_matches_reference_physics():
     """Mass, inertia, joints, contacts and actuators, beyond configuration equality."""
     import gobot
     import mujoco
-    from examples.g1.supermimic.model_audit import audit_model
+    from examples.g1_velocity.supermimic.model_audit import audit_model
     from gobot.rl.locomotion.scene import configure_robot_drives
     cfg = task_config(Experiment(robot='g1'))
     context = gobot.app.create_context()

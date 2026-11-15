@@ -66,7 +66,7 @@ logs/
 examples/go1/policies/*
 !examples/go1/policies/go1_velocity.onnx
 examples/gaussian_splatting/assets/*
-examples/newton_g1/assets/*
+tests/fixtures/newton_g1/assets/*
 
 # Local reference checkouts used during development.
 /.upstream/
@@ -93,10 +93,16 @@ examples/newton_g1/assets/*
 !/examples/conveyor_packages/assets/openarm_sharpa/**/*.obj
 !/examples/conveyor_packages/assets/sharpa/**/*.obj
 
-# Prepared G1 meshes are copied from the shared Unitree source by examples.g1.prepare.
-/examples/g1/assets/
-/examples/g1/logs/
-/examples/g1/policies/
+# Prepared G1 meshes are copied from the shared Unitree source by examples.g1_velocity.prepare.
+/examples/g1_velocity/assets/
+/examples/g1_velocity/logs/
+/examples/g1_velocity/policies/*
+!/examples/g1_velocity/policies/g1_velocity.onnx
+!/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json
+!/examples/g1_velocity/policies/g1_velocity.verification.json
 
 # Generated, inspectable locomotion evaluation scenes.
 /examples/go1/assets/evaluation/
+
+# Local tracking policy and motion project.
+/examples/g1_track/assets/

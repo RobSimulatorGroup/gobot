@@ -114,14 +114,19 @@ def test_scene_is_reproducible() -> None:
         generated = builder.build_scene(output)
         actual = json.loads(generated.read_text())
         expected = json.loads(SCENE.read_text())
+        # Quaternion decomposition can differ by a few float32 ULPs across
+        # builds. Degree-valued rotations need relative tolerance as well.
+        # Only these transform fields permit roundoff; other data stays exact.
+        tolerance = 8 * np.finfo(np.float32).eps
         for new, old in zip(actual["__NODES__"], expected["__NODES__"], strict=True):
-            # Quaternion decomposition can differ by float32 roundoff. Only
-            # these transform fields permit it; geometry/materials stay exact.
             for key in ("scale", "rotation_degrees"):
                 if key in old["properties"] and key in new["properties"]:
                     lhs = new["properties"][key]["matrix_data"]["storage"]
                     rhs = old["properties"][key]["matrix_data"]["storage"]
-                    np.testing.assert_allclose(lhs, rhs, rtol=0, atol=1e-6)
+                    np.testing.assert_allclose(
+                        lhs, rhs, rtol=tolerance, atol=tolerance,
+                        err_msg=f"{old['name']}/{key}",
+                    )
                     new["properties"][key]["matrix_data"]["storage"] = rhs
         assert actual == expected
         assert {

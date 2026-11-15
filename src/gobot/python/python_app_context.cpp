@@ -148,9 +148,15 @@ struct GobotRuntime {
     }
 };
 
-GobotRuntime& Runtime() {
-    static GobotRuntime runtime;
+std::unique_ptr<GobotRuntime>& RuntimeStorage() {
+    static std::unique_ptr<GobotRuntime> runtime;
     return runtime;
+}
+
+GobotRuntime& Runtime() {
+    auto& runtime = RuntimeStorage();
+    if (!runtime) runtime = std::make_unique<GobotRuntime>();
+    return *runtime;
 }
 
 } // namespace
@@ -209,6 +215,10 @@ HeadlessRenderContext& EnsureHeadlessRenderContext() {
 
 void ShutdownHeadlessRenderContext() {
     Runtime().ShutdownHeadlessRenderContext();
+}
+
+void ShutdownAppRuntime() {
+    RuntimeStorage().reset();
 }
 
 } // namespace gobot::python

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from examples.g1.supermimic.prepare_bones import prepare
+from examples.g1_velocity.supermimic.prepare_bones import prepare
 from gobot.rl.supermimic.motion import MotionLibrary, inspect_library, SLICES
 from gobot.rl.supermimic.training import Ratio
 from gobot.rl.supermimic.config import Config

@@ -1,0 +1,24 @@
+{
+  "main_scene": "res://world.jscn",
+  "editor_scene_views": {
+    "res://world.jscn": {
+      "eye": [
+        0,
+        -5.8,
+        2.7
+      ],
+      "at": [
+        0,
+        0,
+        0.8
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "fov_y": 42
+    }
+  },
+  "project_load_hook": "res://prepare.py"
+}

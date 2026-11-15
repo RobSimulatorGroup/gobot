@@ -158,3 +158,31 @@ TEST(SimulationDataWorkerContract, RetirementDiscardsBlockedStepWithoutJoiningCa
     EXPECT_EQ(probe->built, probe->destroyed);
 }
 } // namespace gobot
+
+namespace gobot {
+TEST(SimulationContactContract, PairOrderPreservesRobotForceAndSelfContactHasBothReceivers) {
+    std::vector<SimulationContactBody> geometry{{"", "ground", "floor"},
+            {"robot", "left_foot", "left"}, {"robot", "right_foot", "right"}};
+    SimulationContactPair pair;
+    pair.geometry_a = 0; pair.geometry_b = 1;
+    pair.position = {2, 3, 0}; pair.normal = {0, 0, 1}; pair.force_on_b = {2, -3, 120};
+    auto first = MakeSimulationContacts(geometry, {pair}, .005);
+    ASSERT_EQ(first.size(), 1);
+    EXPECT_EQ(first[0].body.link_name, "left_foot");
+    EXPECT_EQ(first[0].force, pair.force_on_b);
+    EXPECT_NEAR(first[0].normal_impulse, .6, 1e-12);
+    pair.geometry_a = 1; pair.geometry_b = 0;
+    pair.normal = {0, 0, -1}; pair.force_on_b = {-2, 3, -120};
+    auto swapped = MakeSimulationContacts(geometry, {pair}, .005);
+    EXPECT_EQ(swapped[0].force, first[0].force);
+    EXPECT_EQ(swapped[0].normal, first[0].normal);
+    pair.geometry_b = 2;
+    auto self = MakeSimulationContacts(geometry, {pair}, .005);
+    ASSERT_EQ(self.size(), 2);
+    for (int i = 0; i < 3; ++i) EXPECT_DOUBLE_EQ(self[0].force[i], -self[1].force[i]);
+    pair.geometry_b = 9;
+    EXPECT_THROW(MakeSimulationContacts(geometry, {pair}, .005), std::invalid_argument);
+    pair.geometry_b = 2; pair.force_on_b[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(MakeSimulationContacts(geometry, {pair}, .005), std::invalid_argument);
+}
+} // namespace gobot

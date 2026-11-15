@@ -15,14 +15,16 @@ namespace gobot {
 
 class Camera3D;
 class Node;
-class PhysicsWorld;
+struct PhysicsSceneState;
+struct PhysicsWorldSettings;
 
 class GOBOT_EXPORT EditorViewportRenderer {
 public:
     void Render(const RID& viewport,
                 const Node* scene_root,
                 const Camera3D* camera,
-                const PhysicsWorld* physics_world = nullptr,
+                const PhysicsSceneState* physics_state = nullptr,
+                const PhysicsWorldSettings* physics_settings = nullptr,
                 const std::vector<DebugArrow>& debug_arrows = {},
                 bool show_collision_debug = true);
 

@@ -9,8 +9,8 @@ import tempfile
 from unittest.mock import patch
 import numpy as np
 import torch
-from examples.locomotion.presets import Experiment, task_config
-from examples.locomotion.assessment import rank_report, rollout
+from gobot.rl.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.assessment import rank_report, rollout
 from gobot.rl.locomotion.gait_metrics import QuadrupedGaitMetrics
 from gobot.rl.locomotion.natural_gait import desired_contact, gait_weights
 from examples.go1.train.go1_velocity_cfg import go1_gait_cfg
@@ -145,7 +145,7 @@ def integration(backend):
 
 def test_status_respects_pid_namespace():
     import os, socket, time
-    from examples.locomotion.status import inspect
+    from gobot.rl.locomotion.status import inspect
     with tempfile.TemporaryDirectory() as directory:
         path=Path(directory)/'status.json'
         value={'state':'running','pid':99999999,'host':socket.gethostname(),'heartbeat_unix':time.time(),

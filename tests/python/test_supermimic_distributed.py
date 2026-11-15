@@ -27,7 +27,7 @@ from gobot.rl.supermimic.sampler import ReturnSampler, ReturnSamplerCfg
 from gobot.rl.supermimic.state import GenCoordRepresentation
 from gobot.rl.supermimic.tasks import EncoderSpec
 from gobot.rl.supermimic.wm_learner import WorldModelLearner, WorldModelLearnerCfg
-from examples.g1.supermimic._reference.probes import DifferentiableProbeEnv
+from examples.g1_velocity.supermimic._reference.probes import DifferentiableProbeEnv
 
 FIXTURE = (
     Path(__file__).resolve().parents[1] / "fixtures/supermimic_official_gencoord_v1.pt"

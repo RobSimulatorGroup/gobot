@@ -41,6 +41,11 @@ def export_policy(checkpoint_path: Path, output_path: Path) -> None:
     actor_state = checkpoint.get("actor_state_dict")
     if not isinstance(actor_state, dict):
         raise RuntimeError("checkpoint has no actor_state_dict")
+    export_actor(actor_state, manifest, output_path)
+
+
+def export_actor(actor_state: dict, manifest: PolicyManifest, output_path: Path) -> None:
+    """Export unchanged actor weights and normalization with an explicit contract."""
     policy = CheckpointPolicy(actor_state, manifest).eval()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,5 +63,17 @@ def export_policy(checkpoint_path: Path, output_path: Path) -> None:
     )
     _embed_manifest(output_path, manifest)
     sidecar = write_policy_manifest_sidecar(output_path, manifest)
-    print(f"Exported {checkpoint_path} -> {output_path}")
+    print(f"Exported ONNX policy: {output_path}")
     print(f"Policy manifest: {sidecar}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    export_policy(args.checkpoint, args.output)
+
+
+if __name__ == "__main__":
+    main()
