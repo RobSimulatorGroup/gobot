@@ -47,7 +47,7 @@ def prepare(reference: Path) -> dict:
     reference = reference.resolve()
     meshes = reference / "src/unisupermimic/assets/robots/g1/assets"
     motions = reference / "src/unisupermimic/assets/motions/g1/lafan1_supermimic"
-    workspace = Path(__file__).resolve().parents[2]
+    project = Path(__file__).resolve().parents[1]
     csvs = [row for row in tree("g1") if row["Path"].endswith(".csv")]
     if len(csvs) != 40:
         raise ValueError(f"Expected 40 reference clips, found {len(csvs)}")
@@ -105,10 +105,10 @@ def prepare(reference: Path) -> dict:
     mesh_names = sorted({Path(mesh.attrib["filename"]).name
                          for mesh in ET.parse(urdf).getroot().iter("mesh")})
     jobs = [(row, motions / Path(row["Path"]).name,
-             workspace / "examples/g1/assets/motions/raw" / Path(row["Path"]).name)
+             project / "assets/motions/raw" / Path(row["Path"]).name)
             for row in csvs]
     jobs += [(robots[f"robot_description/g1/meshes/{name}"], meshes / name,
-              workspace / "examples/g1/assets/meshes" / name) for name in mesh_names]
+              project / "assets/meshes" / name) for name in mesh_names]
     with ThreadPoolExecutor(max_workers=4) as pool:
         records.extend(pool.map(lambda job: fetch(*job), jobs))
     frame_count = sum(row.get("frames", 0) for row in records)

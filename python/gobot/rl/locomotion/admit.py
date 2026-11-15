@@ -20,7 +20,7 @@ def main():
         for seed in (1001,2002,3003):
             for stage,slope,robust in [('rough',0.,False),('flat',0.,False),('flat',5.,False),('flat',0.,True)]:
                 output=a.output/f'{stage}_{slope:g}_{seed}_{"robust" if robust else "nominal"}.json'
-                command=[sys.executable,'-B','-m','examples.locomotion.assessment','--checkpoint',str(a.checkpoint),
+                command=[sys.executable,'-B','-m','gobot.rl.locomotion.assessment','--checkpoint',str(a.checkpoint),
                     '--output',str(output),'--final','--seed',str(seed),'--steps','1000' if slope else '1500','--terrain',stage,'--slope',str(slope),
                     '--budget-file',str(a.budget_file.resolve()),'--budget-parent-pid',str(os.getpid())]
                 if robust:command.append('--robust')
@@ -44,7 +44,7 @@ def main():
         report['passed']=all(r['passed'] for r in report['results'])
         report['visual_review_required']=True
         if report['passed']:
-            subprocess.run([sys.executable,'-B','-m','examples.locomotion.verify_export','--checkpoint',str(a.checkpoint),
+            subprocess.run([sys.executable,'-B','-m','gobot.rl.locomotion.verify_export','--checkpoint',str(a.checkpoint),
                             '--output',str(a.output/'policy.onnx')],check=True,timeout=min(300.,budget.remaining))
     except Exception as error:
         report['error']=str(error);raise

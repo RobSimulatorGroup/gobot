@@ -206,7 +206,7 @@ def main():
 
 def test_standing_is_not_locomotion_admission():
     from types import SimpleNamespace
-    from examples.locomotion.assessment import rollout
+    from gobot.rl.locomotion.assessment import rollout
     class StandingEnv:
         cfg_obj = SimpleNamespace(robot=SimpleNamespace(feet=("left", "right")))
         num_envs = 2

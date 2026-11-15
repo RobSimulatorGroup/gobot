@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from gobot.rl.locomotion.distributed import DistributedTraining
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.training_log import TrainingStatistics, format_training_log, step_statistics
 
 

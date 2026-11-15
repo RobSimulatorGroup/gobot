@@ -16,9 +16,9 @@ import torch
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
 from gobot.rl.locomotion import make_velocity_env
-from examples.locomotion.presets import Experiment, task_config, MJLAB_REFERENCE_REVISION
+from gobot.rl.locomotion.presets import Experiment, task_config, MJLAB_REFERENCE_REVISION
 from gobot.rl.locomotion.manifest import validate_policy
-from examples.locomotion.assessment import fixed_commands, evaluation_scene
+from gobot.rl.locomotion.assessment import fixed_commands, evaluation_scene
 
 
 def export(checkpoint, output, *, seeds=(71,72,73), device='cuda:0', allow_model_change=False):

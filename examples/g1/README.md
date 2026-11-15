@@ -4,7 +4,7 @@ G1 supports velocity PPO, motion-prior AMP, BeyondMimic tracking, and SuperMimic
 [one training entry](../../doc/gobot_training.md). The robot and terrain are Gobot
 `.jscn` / `.jres` resources. MuJoCo CPU is the control/state reference; MuJoCo Warp
 runs batched CUDA training. G1 assets, sensor placement and presets live in this
-example and `examples/locomotion/presets.py`. The shared trainer consumes a typed
+example and `python/gobot/rl/locomotion/presets.py`. The shared trainer consumes a typed
 task configuration and does not select robot models.
 
 See the [reference/data tools](reproduction/README.md) for preparing and evaluating
@@ -71,12 +71,12 @@ the training loop does not need a new robot branch.
 ## Evaluate, export and play
 
 ```bash
-uv run python -m examples.locomotion.assessment \
+uv run python -m gobot.rl.locomotion.assessment \
   --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/validation.json
-uv run python -m examples.locomotion.record \
+uv run python -m gobot.rl.locomotion.record \
   --checkpoint logs/g1_amp/best.pt --continuous --seconds 20 \
   --output logs/g1_amp/walk.mp4
-uv run python -m examples.locomotion.verify_export \
+uv run python -m gobot.rl.locomotion.verify_export \
   --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/candidate.onnx
 GOBOT_G1_POLICY="$PWD/logs/g1_amp/candidate.onnx" \
   uv run gobot_editor --path examples/g1
@@ -93,7 +93,7 @@ Standard velocity PPO and tracking policies use different observation contracts
 and cannot be used by this AMP playback script. W/S controls forward
 velocity, Q/E strafe, A/D yaw, T running command, and R reset. Play uses a runtime
 clone and does not modify the edited scene. Running is intended for flat and gentle
-terrain. See [shared locomotion](../locomotion/README.md) for full admission criteria.
+terrain. See [shared locomotion](../../doc/gobot_training.md) for full admission criteria.
 
 ## Validation
 

@@ -7,10 +7,9 @@ import signal
 import socket
 import threading
 
-from gobot.rl.locomotion.budget import TrainingBudget, effective_cap_hours
+from .budget import TrainingBudget
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_LEDGER = ROOT / 'examples/g1/logs/gpu_budget.json'
+DEFAULT_LEDGER = Path('logs/locomotion/gpu_budget.json')
 
 
 def add_budget_arguments(parser):

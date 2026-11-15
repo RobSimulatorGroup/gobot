@@ -25,7 +25,7 @@ def source_files(root):
     """
     files=set()
     for name in ('python/gobot', 'python/gobot_cli', 'src/gobot', 'include/gobot', 'cmake',
-                 'tests', 'examples/g1', 'examples/go1', 'examples/locomotion'):
+                 'tests', 'examples/g1', 'examples/go1', 'scripts/cluster'):
         for path in (root/name).rglob('*'):
             if not path.is_file() or any(p in {'logs','__pycache__','policies','evaluation','.venv'}
                                          for p in path.relative_to(root).parts):
@@ -45,8 +45,13 @@ def source_files(root):
     return files
 
 
-def build(output, configs, checkpoint=None, *, reports=()):
-    root=Path(__file__).resolve().parents[2]
+def build(output, configs, checkpoint=None, *, reports=(), source_root=None):
+    root=Path(source_root or Path.cwd()).resolve()
+    if not (root/'pyproject.toml').is_file() or not (root/'python/gobot').is_dir():
+        raise ValueError('source_root must be a Gobot checkout; pass --source-root /path/to/gobot')
+    configs=[(root/Path(path)).resolve() for path in configs]
+    checkpoint=(root/Path(checkpoint)).resolve() if checkpoint is not None else None
+    reports=[(root/Path(path)).resolve() for path in reports]
     files=source_files(root)
     robots=set()
     for config in configs:
@@ -74,20 +79,20 @@ def build(output, configs, checkpoint=None, *, reports=()):
               'python':platform.python_version(),'packages':versions,'robots':sorted(robots),'sha256':paths,
               'configs':[str(Path(p).resolve().relative_to(root)) for p in configs],
               'checkpoint':str(Path(checkpoint).resolve().relative_to(root)) if checkpoint else None,
-              'execution':'one independent process per visible GPU; not synchronized data parallel AMP'}
+              'execution':'velocity PPO supports synchronized torchrun; AMP uses one process'}
     readme='''Gobot locomotion training overlay
 
 1. Check out RobSimulatorGroup/gobot at the base_commit in bundle.json.
 2. Extract this archive over that checkout (it contains the exact working source and assets).
 3. Install/build Gobot using uv sync --frozen and the repository build guide.
-4. Verify files: python -m examples.locomotion.package --verify bundle.json
-5. Start one independent process per GPU. Example:
+4. Verify files: python -m gobot.rl.locomotion.package --verify bundle.json
+5. Start training. Velocity PPO supports torchrun; AMP uses one process. Single-GPU example:
    CUDA_VISIBLE_DEVICES=0 uv run --no-sync python -m gobot.rl.train TASK --config CONFIG --output logs/RUN --budget-file logs/RUN-budget.json
 6. Use --resume CHECKPOINT for the same recipe, --initialize CHECKPOINT to start a new experiment from an actor.
 7. A cluster budget must be explicit in the experiment config. For concurrent independent jobs use separate ledgers; sum their GPU-hours across all runs.
 
 Logs/status.json includes PID identity, heartbeat and exit reason. Inspect via:
-   uv run --no-sync python -m examples.locomotion.status logs
+   uv run --no-sync python -m gobot.rl.locomotion.status logs
 
 Native Gobot must be built for the destination Python/platform; local build binaries are not copied.
 '''
@@ -106,13 +111,14 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',type=Path);p.add_argument('--config',type=Path,action='append');p.add_argument('--checkpoint',type=Path)
     p.add_argument('--report',type=Path,action='append',default=[])
+    p.add_argument('--source-root',type=Path,default=Path.cwd(),help='Gobot checkout to package; input paths are relative to this directory')
     p.add_argument('--verify',type=Path);a=p.parse_args()
     if a.verify:
         metadata=json.loads(a.verify.read_text());root=a.verify.parent
         for name,digest in metadata['sha256'].items():
             if hashlib.sha256((root/name).read_bytes()).hexdigest()!=digest:raise ValueError(f'checksum mismatch: {name}')
         print('All bundle checksums verified')
-    elif a.output and a.config:build(a.output,a.config,a.checkpoint,reports=a.report)
+    elif a.output and a.config:build(a.output,a.config,a.checkpoint,reports=a.report,source_root=a.source_root)
     else:p.error('provide --output and --config, or --verify')
 
 if __name__=='__main__':main()

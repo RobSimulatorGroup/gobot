@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 import torch
 
-from examples.locomotion.assessment import evaluation_scene, fixed_commands, rollout
+from gobot.rl.locomotion.assessment import evaluation_scene, fixed_commands, rollout
 from gobot.rl.locomotion import make_velocity_env
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 
 
 @pytest.mark.parametrize('robot', ['g1', 'go1'])
@@ -196,7 +196,7 @@ def test_signed_turn_bias_and_unwrapped_heading_stop_at_first_episode_end():
 
 def test_fixed_turn_commands_are_passed_without_rewriting(monkeypatch, capsys):
     from contextlib import nullcontext
-    from examples.locomotion import assessment
+    from gobot.rl.locomotion import assessment
     calls=[]
     monkeypatch.setattr(assessment,'evaluation_budget',lambda *a,**k:nullcontext())
     monkeypatch.setattr(assessment,'evaluate',lambda *a,**kw:(calls.append(kw) or {'scenarios':[]}))

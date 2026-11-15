@@ -8,7 +8,7 @@ import torch
 
 from gobot.rl.locomotion import make_velocity_env
 from gobot.rl.locomotion.command import VelocityCommandStage
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 
 BACKENDS = ['mujoco-cpu', pytest.param('mujoco-warp', marks=pytest.mark.skipif(
     os.environ.get('GOBOT_RUN_LOCOMOTION_NUMERICS_GPU_TEST') != '1', reason='requires CUDA'))]

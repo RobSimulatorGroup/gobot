@@ -92,5 +92,4 @@ def training_spec(*, robot="go1", recipe="baseline"):
     return make_spec(
         task_factory=f"{__name__}:task_config", experiment=Experiment(robot=robot, recipe=recipe),
         name=f"{robot}_{recipe}", evaluation_command=(
-            sys.executable, "-B", "-c",
-            "from gobot.rl.training.projects import example_module; example_module('locomotion.assessment').main()"))
+            sys.executable, "-B", "-m", "gobot.rl.locomotion.assessment"))

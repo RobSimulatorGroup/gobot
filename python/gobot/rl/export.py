@@ -60,3 +60,15 @@ def export_policy(checkpoint_path: Path, output_path: Path) -> None:
     sidecar = write_policy_manifest_sidecar(output_path, manifest)
     print(f"Exported {checkpoint_path} -> {output_path}")
     print(f"Policy manifest: {sidecar}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    export_policy(args.checkpoint, args.output)
+
+
+if __name__ == "__main__":
+    main()

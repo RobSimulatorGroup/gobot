@@ -14,7 +14,7 @@ from gobot.rl.locomotion.manifest import validate_policy
 from gobot.rl.checkpoint_policy import CheckpointPolicy
 from gobot.rl.policy import policy_manifest_from_checkpoint
 from .presets import Experiment, task_config
-from .budget import add_budget_arguments, evaluation_budget
+from .evaluation_budget import add_budget_arguments, evaluation_budget
 from gobot.rl.locomotion.capabilities import assess_capabilities
 
 

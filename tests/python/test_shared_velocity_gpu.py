@@ -45,7 +45,7 @@ def collect(backend):
         env.close()
 
 def standard_velocity_backends(robots=('go1', 'g1')):
-    from examples.locomotion.presets import Experiment, task_config
+    from gobot.rl.locomotion.presets import Experiment, task_config
 
     for robot in robots:
         traces=[]

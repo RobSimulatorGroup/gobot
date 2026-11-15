@@ -14,7 +14,7 @@ from gobot.rl.locomotion import make_velocity_env
 from gobot.rl.locomotion.manifest import validate_policy
 from .presets import Experiment, task_config
 from .assessment import fixed_commands, evaluation_scene
-from .budget import add_budget_arguments, evaluation_budget
+from .evaluation_budget import add_budget_arguments, evaluation_budget
 
 
 def main():

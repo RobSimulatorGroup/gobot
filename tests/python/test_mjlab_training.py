@@ -12,7 +12,7 @@ import torch
 
 from gobot.rl.locomotion.config import VELOCITY_REWARD_TERM_NAMES
 from gobot.rl.locomotion.cpu_env import CpuVelocityEnv, _TASK_PARAM
-from examples.locomotion.presets import Experiment, MJLAB_REFERENCE_REVISION, task_config
+from gobot.rl.locomotion.presets import Experiment, MJLAB_REFERENCE_REVISION, task_config
 from gobot.rl.locomotion.training import agent_config
 from gobot.rl.locomotion.warp_env import WarpVelocityEnv, _quat_apply
 

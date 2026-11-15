@@ -27,7 +27,7 @@ mjlab 从同一文件构造地形。仅相同 seed 不能保证不同地形生�
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/locomotion/configs/g1_velocity_8gpu.json
+  --config examples/g1/train/velocity_8gpu.json
 ```
 
 mjlab：

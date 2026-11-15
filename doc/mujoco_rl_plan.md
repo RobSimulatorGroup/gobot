@@ -27,13 +27,13 @@ physics world. Providers validate content digests, producer metadata,
 dimensions, topology, and the explicit control map.
 
 Robot/task presets, model selection and example evaluators live under `examples/`,
-with shipped velocity recipes in `examples/locomotion/presets.py`. Reusable task
+with shipped velocity recipes in `python/gobot/rl/locomotion/presets.py`. Reusable task
 implementations live in `gobot.rl.locomotion`. The trainer accepts `RunConfig` and
 a typed `VelocityTaskCfg`, or an importable task configuration factory; it does
 not select a robot by name. `LocomotionRobotCfg`, `VelocityTaskCfg`, and
 `make_velocity_env` share CPU/Warp observations, reward configuration, termination,
 commands and curriculum. See [G1](../examples/g1/README.md) and the
-[shared tools](../examples/locomotion/README.md). C++ supplies generic controls,
+[shared tools](gobot_training.md). C++ supplies generic controls,
 stepping, sensors, and state extraction. Task APIs use the typed batch boundary.
 
 ## Task contract

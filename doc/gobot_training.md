@@ -102,7 +102,7 @@ def training():
   --robot g1 --output logs/g1_velocity_terrain.json
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/locomotion/configs/g1_velocity_8gpu.json
+  --config examples/g1/train/velocity_8gpu.json
 ```
 
 配置为每卡 1024 环境、总计 8192 环境、18000 次更新，每 500 次保存。
@@ -112,13 +112,13 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 每张卡一个进程，使用 `seed + rank`；PPO 同步模型、梯度、归一化统计和自适应学习率。
 `--num-envs` 是每卡环境数。卡数增加不自动改变学习率、rollout 或更新次数。
 AMP 判别器目前只支持单进程；标准 PPO、步态 PPO 和 SuperMimic 支持多卡。
-Slurm 模板位于 `examples/locomotion/cluster/`。
+Slurm 模板位于 `scripts/cluster/`。
 
 恢复相同配置与相同卡数、环境数：
 
 ```bash
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/locomotion/configs/g1_velocity_8gpu.json \
+  --config examples/g1/train/velocity_8gpu.json \
   --iterations 1000 --resume logs/g1_velocity_gobot_seed42/latest.pt
 ```
 
@@ -129,19 +129,22 @@ Slurm 模板位于 `examples/locomotion/cluster/`。
 
 ## 评测、回放与导出
 
+公共工具随 Python 包安装在 `gobot.rl.locomotion`，可从任意工作目录通过
+`python -m` 调用。机器人配置分别放在 `examples/g1/train/` 和 `examples/go1/train/`。
+
 ```bash
-python -m examples.locomotion.assessment \
+python -m gobot.rl.locomotion.assessment \
   --checkpoint logs/g1_velocity_gobot_seed42/model_final.pt \
   --terrain flat --steps 1500 --num-envs 128 --final \
   --output logs/g1_velocity_gobot_seed42/flat.json
-python -m examples.locomotion.assessment \
+python -m gobot.rl.locomotion.assessment \
   --checkpoint logs/g1_velocity_gobot_seed42/model_final.pt \
   --terrain rough --steps 1000 --final \
   --output logs/g1_velocity_gobot_seed42/rough.json
-python -m examples.locomotion.record \
+python -m gobot.rl.locomotion.record \
   --checkpoint logs/g1_velocity_gobot_seed42/model_final.pt \
   --output logs/g1_velocity_gobot_seed42/walk.mp4 --continuous
-python -m examples.locomotion.verify_export \
+python -m gobot.rl.locomotion.verify_export \
   --checkpoint logs/g1_velocity_gobot_seed42/model_final.pt \
   --output logs/g1_velocity_gobot_seed42/policy.onnx
 ```
@@ -156,6 +159,21 @@ python -m examples.locomotion.verify_export \
 `admitted=false`、`stage_passed=false` 表示没有训练内验收结果。
 
 ## 日志与验证
+
+```bash
+python -m gobot.rl.locomotion.status logs
+```
+
+需要分发源码和训练资产时，用显式源码目录打包；配置、检查点和报告路径相对于该目录：
+
+```bash
+python -m gobot.rl.locomotion.package --source-root /path/to/gobot \
+  --config examples/g1/train/velocity.json --output g1-training.tar.gz
+```
+
+评估和录像的预算文件默认写入当前工作目录下的 `logs/locomotion/gpu_budget.json`，
+也可用 `--budget-file` 指定位置。仅导出 ONNX 可用 `python -m gobot.rl.export`；
+`gobot.rl.locomotion.verify_export` 还会比较真实 rollout 上的 Torch/ONNX 输出。
 
 `metrics.jsonl` 每次更新保存一行；rank 0 打印所有卡的统计。
 奖励和 episode 时长按实际结束的回合加权；奖励项为 episode 积分除以最长回合秒数。

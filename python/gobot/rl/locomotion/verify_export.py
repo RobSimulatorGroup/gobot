@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 import json
 import numpy as np
-import onnxruntime as ort
 import torch
 from gobot.rl.export import export_policy
 from gobot.rl.checkpoint_policy import CheckpointPolicy
@@ -20,6 +19,7 @@ def main():
     p.add_argument('--checkpoint', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     args = p.parse_args()
+    import onnxruntime as ort
     torch.set_num_threads(4)
     export_policy(args.checkpoint, args.output)
     payload = torch.load(args.checkpoint, map_location='cpu', weights_only=False)

@@ -6,9 +6,9 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import tempfile
 import torch
-from examples.locomotion.presets import Experiment, task_config
+from gobot.rl.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.training import run
-from examples.locomotion.assessment import evaluate
+from gobot.rl.locomotion.assessment import evaluate
 
 
 def main():

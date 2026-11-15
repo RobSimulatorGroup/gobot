@@ -10,7 +10,7 @@ import pytest
 from gobot.rl import tasks
 from gobot.rl.train import main, resolve_spec
 from gobot.rl.training import TrainingSpec, launch
-from examples.locomotion.presets import training_spec
+from gobot.rl.locomotion.presets import training_spec
 
 GO1 = "go1-velocity"
 G1 = "g1-velocity"
@@ -72,6 +72,7 @@ def test_builtin_defaults_use_existing_training_and_evaluator(monkeypatch, tmp_p
     assert captured["task_cfg"].robot_name == "go1"
     assert captured["agent_cfg"]["algorithm"]["class_name"] == "rsl_rl.algorithms.PPO"
     assert not captured["no_eval"]
+    assert captured["evaluation_command"] == (sys.executable, "-B", "-m", "gobot.rl.locomotion.assessment")
 
 
 def test_experiment_recipe_and_cli_precedence(tmp_path):
@@ -207,8 +208,8 @@ def test_python_factory_works_outside_the_checkout(tmp_path):
     import subprocess
     import sys
     source = """
-from gobot.rl.training.projects import example_module
-cfg = example_module('locomotion.presets').training_spec(robot='go1').config_factory()
+from gobot.rl.locomotion.presets import training_spec
+cfg = training_spec(robot='go1').config_factory()
 assert cfg.resolve_env().robot_name == 'go1'
 assert cfg.resolve_agent()['algorithm']['class_name'] == 'rsl_rl.algorithms.PPO'
 """
@@ -234,3 +235,78 @@ def test_custom_amp_cannot_bypass_distributed_check(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         main([G1, "--set", 'experiment.recipe="amp"', "--dry-run"])
     assert "AMP discriminator synchronization" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("module", [
+    "gobot.rl.export",
+    *(f"gobot.rl.locomotion.{name}" for name in (
+        "assessment", "record", "verify_export", "admit", "status", "package")),
+])
+def test_locomotion_cli_works_outside_checkout(tmp_path, module):
+    import os
+    import subprocess
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(str(Path(p).resolve()) for p in sys.path
+                                      if p and Path(p).resolve() != ROOT)
+    flags = ["-S"] if sys.flags.no_site else []
+    result = subprocess.run([sys.executable, *flags, "-m", module, "--help"],
+                            cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
+    assert not list(tmp_path.iterdir())
+
+
+def test_evaluation_budget_uses_caller_working_directory(tmp_path, monkeypatch):
+    import argparse
+    from gobot.rl.locomotion.evaluation_budget import add_budget_arguments, evaluation_budget
+    monkeypatch.chdir(tmp_path)
+    parser = argparse.ArgumentParser()
+    add_budget_arguments(parser)
+    args = parser.parse_args([])
+    with evaluation_budget(args, stage="test"):
+        assert (tmp_path / args.budget_file).is_file()
+    data = json.loads(args.budget_file.read_text())
+    assert data["runs"][-1]["stage"] == "test"
+    assert not data.get("active_run")
+
+
+def test_training_package_requires_an_explicit_checkout(tmp_path):
+    from gobot.rl.locomotion.package import build
+    with pytest.raises(ValueError, match="--source-root"):
+        build(tmp_path / "bundle.tar.gz", [], source_root=tmp_path)
+    assert not (tmp_path / "bundle.tar.gz").exists()
+
+
+def test_training_package_resolves_inputs_against_source_root(tmp_path, monkeypatch):
+    import tarfile
+    from gobot.rl.locomotion import package
+    root = tmp_path / "source"
+    files = {
+        ".gitignore": "logs/\n",
+        "CMakeLists.txt": "# build fixture\n",
+        "gobot_build_backend.py": "# backend fixture\n",
+        "pyproject.toml": "# project fixture\n",
+        "uv.lock": "# environment fixture\n",
+        "doc/gobot_training.md": "training\n",
+        "doc/mjlab_comparison.md": "comparison\n",
+        "python/gobot/rl/locomotion/assessment.py": "# assessment fixture\n",
+        "scripts/cluster/train_velocity.sbatch": "# launcher fixture\n",
+        "examples/g1/train/velocity.json": json.dumps({"experiment": {"robot": "g1"}}),
+    }
+    for name, content in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    monkeypatch.setattr(package.importlib.metadata, "version", lambda name: "test")
+    def revision(command, *, cwd, text):
+        assert command == ["git", "rev-parse", "HEAD"] and cwd == root and text
+        return "test-commit\n"
+    monkeypatch.setattr(package.subprocess, "check_output", revision)
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / "training.tar.gz"
+    package.build(output, ["examples/g1/train/velocity.json"], source_root=root)
+    with tarfile.open(output) as archive:
+        manifest = json.load(archive.extractfile("bundle.json"))
+        assert manifest["configs"] == ["examples/g1/train/velocity.json"]
+        for name, content in files.items():
+            assert archive.extractfile(name).read().decode() == content

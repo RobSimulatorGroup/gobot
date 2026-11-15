@@ -17,7 +17,7 @@ class Script(gobot.NodeScript):
                 f"G1 AMP policy is missing: {policy}. "
                 "This example does not bundle pretrained weights. "
                 "Export a trained g1-amp checkpoint with "
-                "python -m examples.locomotion.verify_export "
+                "python -m gobot.rl.locomotion.verify_export "
                 "--checkpoint <checkpoint.pt> --output <policy.onnx>, "
                 "then set GOBOT_G1_POLICY to that ONNX path before starting the editor."
             )
