@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 
 #include <gobot/core/math/geometry.hpp>
+#include <gobot/core/math/mesh_validation.hpp>
+#include <limits>
 #include <gobot/core/io/variant_serializer.hpp>
 
 TEST(TestGeometry, test_setter_getter) {
@@ -116,4 +118,37 @@ TEST(TestGeometry, test_affine) {
     ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).x(), euler_angle.x());
     ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).y(), euler_angle.y());
     ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).z(), euler_angle.z());
+}
+
+TEST(TestGeometry, triangle_mesh_accepts_slender_nonzero_area_faces) {
+    const std::vector<std::uint32_t> indices{0, 1, 2};
+    std::string error;
+    for (const gobot::RealType scale : {0.001f, 1.0f, 1000.0f}) {
+        const std::vector<gobot::Vector3> vertices{
+                {0.0, 0.0, 0.0}, {scale, 0.0, 0.0}, {scale, scale * 1.0e-6f, 0.0}};
+        EXPECT_TRUE(gobot::ValidateTriangleMesh(vertices, indices, &error)) << error;
+    }
+
+    // A valid narrow face from the official Newton G1 torso collision mesh.
+    const std::vector<gobot::Vector3> torso_vertices{
+            {0.030211931094527245, -0.06183788552880287, 0.010300304740667343},
+            {0.003611930413171649, -0.06184277683496475, 0.010300111025571823},
+            {0.002011930337175727, -0.06184307858347893, 0.010300134308636189}};
+    EXPECT_TRUE(gobot::ValidateTriangleMesh(torso_vertices, indices, &error)) << error;
+}
+
+TEST(TestGeometry, triangle_mesh_rejects_degenerate_and_nonfinite_faces) {
+    const std::vector<std::uint32_t> indices{0, 1, 2};
+    std::vector<gobot::Vector3> vertices{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {2.0, 0.0, 0.0}};
+    std::string error;
+    EXPECT_FALSE(gobot::ValidateTriangleMesh(vertices, indices, &error));
+    EXPECT_NE(error.find("non-degenerate"), std::string::npos);
+    vertices[2] = vertices[1];
+    EXPECT_FALSE(gobot::ValidateTriangleMesh(vertices, indices, &error));
+    for (const gobot::RealType value : {std::numeric_limits<gobot::RealType>::infinity(),
+                                       std::numeric_limits<gobot::RealType>::quiet_NaN()}) {
+        vertices[2] = {0.0, value, 0.0};
+        EXPECT_FALSE(gobot::ValidateTriangleMesh(vertices, indices, &error));
+        EXPECT_NE(error.find("not finite"), std::string::npos);
+    }
 }

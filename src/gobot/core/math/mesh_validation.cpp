@@ -245,15 +245,17 @@ bool ValidateTriangleMesh(std::span<const Vector3> vertices, std::span<const std
         if (!unique_triangles.insert(sorted).second) {
             return SetValidationError(error, "surface mesh contains a duplicate triangle");
         }
-        const Vector3& a = vertices[triangle[0]];
-        const Vector3& b = vertices[triangle[1]];
-        const Vector3& c = vertices[triangle[2]];
-        const RealType edge_scale = std::max({
+        // Validate the stored geometry in double precision. A float32 area
+        // cutoff rejects valid slender triangles in imported collision meshes.
+        const Eigen::Vector3d a = vertices[triangle[0]].cast<double>();
+        const Eigen::Vector3d b = vertices[triangle[1]].cast<double>();
+        const Eigen::Vector3d c = vertices[triangle[2]].cast<double>();
+        const double edge_scale = std::max({
                 (b - a).norm(), (c - a).norm(), (c - b).norm()});
-        const RealType area_tolerance =
-                std::numeric_limits<RealType>::epsilon() * 128.0 *
+        const double area_tolerance =
+                std::numeric_limits<double>::epsilon() * 128.0 *
                 edge_scale * edge_scale;
-        const RealType double_area = (b - a).cross(c - a).norm();
+        const double double_area = (b - a).cross(c - a).norm();
         if (!std::isfinite(double_area) || !std::isfinite(area_tolerance) ||
             edge_scale <= 0.0 || double_area <= area_tolerance) {
             return SetValidationError(
