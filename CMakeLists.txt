@@ -1255,6 +1255,11 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
 install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"
         DESTINATION "gobot/examples/go1/policies" COMPONENT python)
+install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.onnx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/g1_velocity/policies/g1_velocity.verification.json"
+        DESTINATION "gobot/examples/g1_velocity/policies" COMPONENT python)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
 

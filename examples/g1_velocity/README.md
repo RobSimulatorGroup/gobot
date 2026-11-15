@@ -1,5 +1,21 @@
 # G1 velocity training and playback
 
+A trained 29-action G1 velocity policy is bundled. Open the project and press Play:
+
+```bash
+uv run gobot_editor --path examples/g1_velocity
+```
+
+The default policy comes from the completed 18,000-update `g1_velocity_v3_gobot_seed42`
+run. Its actor weights and observation normalizer are unchanged. The ONNX metadata
+binds the authored robot and a full physical snapshot; export validation is recorded
+in `policies/g1_velocity.verification.json`. This is a demonstration policy, not a
+claim of passing the full terrain and gait admission suite.
+The local 20-second flat-ground smoke completed standing, forward motion,
+stop, backward motion and an in-place turn command without falling. Forward
+0.8 m/s measured about 0.75 m/s; backward -0.3 m/s measured about -0.25 m/s.
+In-place yaw response was weak, so the bundled policy is not a validated turning controller.
+
 G1 supports velocity PPO, motion-prior AMP, BeyondMimic tracking, and SuperMimic through
 [one training entry](../../doc/gobot_training.md). The robot and terrain are Gobot
 `.jscn` / `.jres` resources. MuJoCo CPU is the control/state reference; MuJoCo Warp
@@ -88,8 +104,9 @@ footfall metrics. A failure ends the recorded rollout; automatic reset is never
 presented as recovery. Export checks Torch/ONNX inference with the observation
 normalizer and embeds the policy metadata.
 
-No pretrained velocity weights are bundled with this project. Export a trained `g1-velocity`
-checkpoint and set `GOBOT_G1_POLICY` to its ONNX path before starting the editor.
+For a custom policy, export a trained `g1-velocity` checkpoint and set
+`GOBOT_G1_POLICY` to its ONNX path before starting the editor. Without that variable,
+Play uses the bundled `policies/g1_velocity.onnx`.
 AMP and tracking policies use different observation contracts
 and cannot be used by this velocity playback script. W/S controls forward
 velocity, Q/E strafe, A/D yaw, T running command, and R reset. Play uses a runtime

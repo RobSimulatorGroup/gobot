@@ -15,7 +15,7 @@ class Script(gobot.NodeScript):
         if not policy.is_file():
             raise FileNotFoundError(
                 f"G1 velocity policy is missing: {policy}. "
-                "This example does not bundle pretrained weights. "
+                "Restore the bundled policy from the checkout or reinstall Gobot. "
                 "Export a trained g1-velocity checkpoint with "
                 "python -m gobot.rl.locomotion.verify_export "
                 "--checkpoint <checkpoint.pt> --output <policy.onnx>, "

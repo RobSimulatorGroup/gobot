@@ -96,7 +96,10 @@ tests/fixtures/newton_g1/assets/*
 # Prepared G1 meshes are copied from the shared Unitree source by examples.g1_velocity.prepare.
 /examples/g1_velocity/assets/
 /examples/g1_velocity/logs/
-/examples/g1_velocity/policies/
+/examples/g1_velocity/policies/*
+!/examples/g1_velocity/policies/g1_velocity.onnx
+!/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json
+!/examples/g1_velocity/policies/g1_velocity.verification.json
 
 # Generated, inspectable locomotion evaluation scenes.
 /examples/go1/assets/evaluation/

@@ -1,11 +1,12 @@
 """Model information and parameter checks for velocity policies."""
 from __future__ import annotations
 from pathlib import Path
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import numpy as np
 import json
-from gobot.rl.policy import PolicyManifest, scene_bundle_digest
+from gobot.rl.policy import PolicyManifest, scene_bundle_digest, validate_physics_snapshot
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
+from .robot_model import relative_robot_snapshot
 
 def build_policy_manifest(
     env: RslRlVecEnvWrapper,
@@ -74,7 +75,16 @@ def build_policy_manifest(
 
 
 def validate_policy(manifest, env, cfg, *, allow_model_change=False):
-    if manifest.extras.get("scene_digest_kind") == "robot_physics_v1":
+    kind = manifest.extras.get("scene_digest_kind")
+    if kind == "robot_snapshot_v1":
+        resource = manifest.extras["robot_resource_path"]
+        if resource != cfg.robot_resource_path:
+            raise ValueError("policy robot resource differs from the runtime")
+        digest = scene_bundle_digest(Path(cfg.project_path), resource)
+        snapshot = env.context.compile_physics_scene_snapshot()
+        robot = next(item for item in snapshot["robots"] if item["name"] == cfg.robot_name)
+        validate_physics_snapshot(manifest.extras["robot_snapshot"], relative_robot_snapshot(robot))
+    elif kind == "robot_physics_v1":
         from .robot_model import robot_physics_digest
         digest = robot_physics_digest(env.compiled_artifact, cfg.robot_name)
     else:
@@ -105,3 +115,25 @@ def validate_policy(manifest, env, cfg, *, allow_model_change=False):
         expected = np.asarray(values, dtype=np.float32)
         if actual.shape != expected.shape or not np.allclose(actual, expected, rtol=1e-6, atol=1e-7):
             raise ValueError(f"policy control {key!r} does not match the robot profile")
+
+
+def deployment_manifest(manifest, env, cfg):
+    """Bind a verified trained actor to authored assets and physical parameters."""
+    if not cfg.robot_resource_path:
+        raise ValueError("velocity deployment requires an authored robot resource")
+    training_scene = manifest.extras.get("training_scene_digest")
+    if cfg.scene_path != manifest.scene_path or not training_scene or training_scene != scene_bundle_digest(
+            Path(cfg.project_path), cfg.scene_path):
+        raise ValueError("export requires the unchanged training scene and assets")
+    # The checkpoint's authoring hash is exact; compiled XML string hashes can
+    # vary with compiler floating-point rounding. Every other contract stays strict.
+    validate_policy(manifest, env, cfg, allow_model_change=True)
+    snapshot = env.context.compile_physics_scene_snapshot()
+    robot = next(item for item in snapshot["robots"] if item["name"] == cfg.robot_name)
+    extras = dict(manifest.extras)
+    extras.update(scene_digest_kind="robot_snapshot_v1", robot_snapshot=relative_robot_snapshot(robot),
+                  robot_resource_path=cfg.robot_resource_path,
+                  training_robot_digest=manifest.scene_digest)
+    return replace(manifest,
+                   scene_digest=scene_bundle_digest(Path(cfg.project_path), cfg.robot_resource_path),
+                   extras=extras)

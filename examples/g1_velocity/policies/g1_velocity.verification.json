@@ -1,0 +1,148 @@
+{
+  "candidate_only": true,
+  "samples": 128,
+  "maximum_absolute_action_error": 1.6689300537109375e-06,
+  "passed": true,
+  "checkpoint_iteration": 17999,
+  "source_checkpoint_sha256": "770abb2fc19b188383f810a4cb7e24ae7c7e04bdafdb2e8c675b502d62057cf0",
+  "source_scene_digest": "sha256:093cdbc9027125d1f7e04e30785fce9ae90aba4674c397066be5b70b824e86dd",
+  "actor_weights_changed": false,
+  "playback_smoke": {
+    "passed": true,
+    "steps": 1000,
+    "seconds": 20.0,
+    "phases": [
+      {
+        "name": "stand",
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "steps": 150,
+        "mean_velocity": [
+          -0.008720436269577476,
+          -0.0017342235474097833,
+          0.0008436022485875582
+        ],
+        "mean_angular_velocity": [
+          0.001821073552928283,
+          -0.004040351770581765,
+          -0.00568767108488828
+        ],
+        "minimum_clearance": 0.7634377479553223
+      },
+      {
+        "name": "forward",
+        "command": [
+          0.8,
+          0.0,
+          0.0
+        ],
+        "steps": 200,
+        "mean_velocity": [
+          0.7456939645608266,
+          0.012417475640152892,
+          -0.016362743995462854
+        ],
+        "mean_angular_velocity": [
+          0.00683414857989798,
+          -0.01006417936955889,
+          0.04709507365400593
+        ],
+        "minimum_clearance": 0.750408411026001
+      },
+      {
+        "name": "stop",
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "steps": 100,
+        "mean_velocity": [
+          7.032238878309726e-05,
+          -0.044996118545532225,
+          -0.0004312233644304797
+        ],
+        "mean_angular_velocity": [
+          0.016851807702332734,
+          -0.009704903544625268,
+          -0.01014630368037615
+        ],
+        "minimum_clearance": 0.7419811487197876
+      },
+      {
+        "name": "backward",
+        "command": [
+          -0.3,
+          0.0,
+          0.0
+        ],
+        "steps": 200,
+        "mean_velocity": [
+          -0.24913188676039377,
+          0.01645891288217778,
+          0.010028486713029755
+        ],
+        "mean_angular_velocity": [
+          -0.009008243612091368,
+          0.006821161487605423,
+          -0.09655100709603479
+        ],
+        "minimum_clearance": 0.7505486011505127
+      },
+      {
+        "name": "stop_again",
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "steps": 150,
+        "mean_velocity": [
+          0.0115838498112862,
+          -0.014439192875870503,
+          -6.14168336687726e-05
+        ],
+        "mean_angular_velocity": [
+          0.006701890226104297,
+          -0.0075641538140916965,
+          -0.00367575274372939
+        ],
+        "minimum_clearance": 0.7625443935394287
+      },
+      {
+        "name": "turn",
+        "command": [
+          0.0,
+          0.0,
+          0.3
+        ],
+        "steps": 200,
+        "mean_velocity": [
+          -0.0008123278159215866,
+          0.0007432849815086228,
+          9.108861410292471e-05
+        ],
+        "mean_angular_velocity": [
+          -0.00037596483845845794,
+          -0.00019207323821622899,
+          -0.001324546985172977
+        ],
+        "minimum_clearance": 0.7692255973815918
+      }
+    ],
+    "terminated": false
+  },
+  "limitations": [
+    "The full terrain/gait admission suite has not been passed.",
+    "In-place yaw response is weak in the 0.3 rad/s test."
+  ],
+  "editor_validation": {
+    "status": "completed",
+    "exit_code": 0,
+    "completed_physics_ticks": 502,
+    "error": ""
+  }
+}

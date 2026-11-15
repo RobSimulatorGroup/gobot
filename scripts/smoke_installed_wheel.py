@@ -93,6 +93,9 @@ def verify_payload(package_root: Path) -> None:
             *NATIVE_PAYLOAD,
             *OPENUSD_PAYLOAD,
             *GO1_POLICY_PAYLOAD,
+            "examples/g1_velocity/policies/g1_velocity.onnx",
+            "examples/g1_velocity/policies/g1_velocity.onnx.manifest.json",
+            "examples/g1_velocity/policies/g1_velocity.verification.json",
             *CARTPOLE_PAYLOAD,
         )
         if not (package_root / name).is_file()

@@ -121,20 +121,20 @@ def test_deployment_preserves_actor_and_loads_from_relocated_project(checkpoint,
 
 def test_deployment_snapshot_tolerates_only_transform_roundoff():
     from copy import deepcopy
-    from gobot.rl.tracking.inference import _validate_snapshot
+    from gobot.rl.policy import validate_physics_snapshot
     original = dict(mass=1.0, global_transform=dict(matrix=[[1.0, 0.0], [0.0, 1.0]]))
     rounded = deepcopy(original)
     rounded['global_transform']['matrix'][0][0] += float(np.finfo(np.float32).eps)
-    _validate_snapshot(original, rounded)
+    validate_physics_snapshot(original, rounded)
     for value in (0.001, float('nan'), float('inf')):
         changed = deepcopy(original)
         changed['global_transform']['matrix'][0][1] = value
         with pytest.raises(ValueError, match='deployment physics differs'):
-            _validate_snapshot(original, changed)
+            validate_physics_snapshot(original, changed)
     changed = deepcopy(original)
     changed['mass'] += 1.e-8
     with pytest.raises(ValueError, match='mass'):
-        _validate_snapshot(original, changed)
+        validate_physics_snapshot(original, changed)
 
 
 def test_g1_track_project_is_portable(checkpoint, tmp_path):

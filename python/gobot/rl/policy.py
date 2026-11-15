@@ -350,5 +350,30 @@ __all__ = [
     "policy_manifest_sidecar_path",
     "read_policy_manifest_sidecar",
     "scene_bundle_digest",
+    "validate_physics_snapshot",
     "write_policy_manifest_sidecar",
 ]
+
+
+def validate_physics_snapshot(expected, actual, path="snapshot", *, transform=False):
+    """Only derived transform values permit a few float32 rounding steps."""
+    if isinstance(actual, np.ndarray):
+        actual = actual.tolist()
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict) or expected.keys() != actual.keys():
+            raise ValueError(f"deployment physics differs at {path}")
+        for key, value in expected.items():
+            validate_physics_snapshot(value, actual[key], f"{path}/{key}",
+                               transform=transform or key in ("transform", "global_transform"))
+    elif isinstance(expected, list):
+        if not isinstance(actual, (list, tuple)) or len(expected) != len(actual):
+            raise ValueError(f"deployment physics differs at {path}")
+        for i, (left, right) in enumerate(zip(expected, actual, strict=True)):
+            validate_physics_snapshot(left, right, f"{path}/{i}", transform=transform)
+    elif transform and isinstance(expected, float):
+        tolerance = 4 * np.finfo(np.float32).eps
+        if not np.isfinite(expected) or not np.isfinite(actual) or not np.isclose(
+                expected, actual, rtol=tolerance, atol=tolerance):
+            raise ValueError(f"deployment physics differs at {path}")
+    elif expected != actual:
+        raise ValueError(f"deployment physics differs at {path}")

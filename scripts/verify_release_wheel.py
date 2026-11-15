@@ -76,6 +76,9 @@ REQUIRED_PAYLOAD = {
     "gobot/examples/gaussian_splatting/project.gobot",
     "gobot/examples/gaussian_splatting/deep_blending_playroom.gsplat",
     "gobot/examples/go1/policies/go1_velocity.onnx",
+    "gobot/examples/g1_velocity/policies/g1_velocity.onnx",
+    "gobot/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json",
+    "gobot/examples/g1_velocity/policies/g1_velocity.verification.json",
     "gobot_cli/editor.py",
 }
 GO1_POLICY_PAYLOAD = {"gobot/examples/go1/policies/go1_velocity.onnx"}
