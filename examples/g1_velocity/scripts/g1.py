@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 import gobot
-from config import g1_amp_cfg
+from gobot.rl.locomotion.presets import Experiment, task_config
 from gobot.rl.locomotion.playback import VelocityPolicyPlayback
 
 class Script(gobot.NodeScript):
@@ -14,15 +14,16 @@ class Script(gobot.NodeScript):
         policy = project / value.removeprefix('res://') if value.startswith('res://') else Path(value).expanduser()
         if not policy.is_file():
             raise FileNotFoundError(
-                f"G1 AMP policy is missing: {policy}. "
+                f"G1 velocity policy is missing: {policy}. "
                 "This example does not bundle pretrained weights. "
-                "Export a trained g1-amp checkpoint with "
+                "Export a trained g1-velocity checkpoint with "
                 "python -m gobot.rl.locomotion.verify_export "
                 "--checkpoint <checkpoint.pt> --output <policy.onnx>, "
                 "then set GOBOT_G1_POLICY to that ONNX path before starting the editor."
             )
-        self.playback = VelocityPolicyPlayback(self.context, self.get_root(),
-            g1_amp_cfg(project_path=project, stage="mixed", play=True), policy)
+        cfg = task_config(Experiment(robot="g1", recipe="baseline", stage="rough"), play=True)
+        cfg.project_path = project
+        self.playback = VelocityPolicyPlayback(self.context, self.get_root(), cfg, policy)
     def _physics_process(self, delta):
         inputs = self.context.input
         if inputs.is_key_pressed('R'):

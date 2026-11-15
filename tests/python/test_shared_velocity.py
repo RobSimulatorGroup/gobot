@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from examples.g1.config import g1_velocity_cfg
+from examples.g1_velocity.config import g1_velocity_cfg
 from gobot.rl.locomotion import make_velocity_env
 from gobot.rl.locomotion.terms import posture_std
 from gobot.sim.providers.mujoco_warp import MuJoCoWarpProvider
@@ -96,8 +96,8 @@ def main():
     parser.add_argument("--integration", action="store_true")
     args = parser.parse_args()
     if args.integration:
-        if not (Path(__file__).resolve().parents[2] / "examples/g1/g1.meshes/pelvis.ply").exists():
-            print("Prepare G1 assets with python -m examples.g1.prepare before the integration test")
+        if not (Path(__file__).resolve().parents[2] / "examples/g1_velocity/g1.meshes/pelvis.ply").exists():
+            print("Prepare G1 assets with python -m examples.g1_velocity.prepare before the integration test")
             raise SystemExit(77)
         tests = (test_g1_cpu_reset_and_terms,)
     else:

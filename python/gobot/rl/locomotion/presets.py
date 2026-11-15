@@ -18,7 +18,7 @@ class Experiment(RunConfig):
         if self.recipe == "amp" and self.robot != "g1" or self.recipe == "gait" and self.robot != "go1":
             raise ValueError("the shipped AMP preset is for G1 and the gait preset is for Go1")
         if self.recipe == "amp" and not self.motion_dataset:
-            self.motion_dataset = str(examples_root() / "g1/assets/motions/locomotion.npz")
+            self.motion_dataset = str(examples_root() / "g1_velocity/assets/motions/locomotion.npz")
         super().__post_init__()
 
 
@@ -27,7 +27,7 @@ def task_config(experiment: Experiment, *, play=False):
     from gobot.rl.training.projects import example_module, examples_root
 
     if experiment.robot == "g1":
-        module = example_module("g1.config")
+        module = example_module("g1_velocity.config")
         cfg = module.g1_amp_cfg(stage=experiment.stage, play=play) if experiment.recipe == "amp" else module.g1_velocity_cfg(play=play)
     elif experiment.robot == "go1":
         cfg = example_module("go1.train.go1_velocity_cfg").go1_velocity_cfg(

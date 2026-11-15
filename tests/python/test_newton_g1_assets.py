@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = ROOT / "examples" / "newton_g1"
+EXAMPLE = ROOT / "tests" / "fixtures" / "newton_g1"
 REVISION = "261cd1f429619d8ef4f546bd788ab9dea906b5e1"
 
 

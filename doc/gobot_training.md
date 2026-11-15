@@ -21,14 +21,14 @@ python -m gobot.rl.train go1-velocity \
 ```
 
 官方 SuperMimic 的数据、单卡/多卡命令和恢复语义见
-[操作指南](../examples/g1/supermimic/README.md)。该任务的环境数和学习 batch 默认是**全局数量**，
+[操作指南](../examples/g1_velocity/supermimic/README.md)。该任务的环境数和学习 batch 默认是**全局数量**，
 与其他任务的每卡数量口径不同；多卡均分全局 batch，学习率不缩放。
 
 这些工作流支持 `mujoco-cpu` 和 `mujoco-warp`。CPU 仿真可通过 `--device cuda:0`
 配合 CUDA learner；Warp 需要 CUDA。CPU 是语义基准，后端不能静默回退。
 
 动作模仿任务 `g1-motion-amp` 使用默认对齐配方，配置、数据与命令见
-[训练说明](../examples/g1/mimickit/README.md)。它复用 RSL-RL 的 PPO、runner 和日志，
+[训练说明](../examples/g1_velocity/mimickit/README.md)。它复用 RSL-RL 的 PPO、runner 和日志，
 使用从 MimicKit 导出的 G1 动作数据，没有额外的 Gymnasium 依赖。
 该任务的 CPU 后端使用 CPU learner，更新次数通过 `--set updates=2000` 设置。
 保留 COM-v2 观测与固定动作噪声的 SGD 配方，checkpoint 校验场景、控制和数据协议。
@@ -102,7 +102,7 @@ def training():
   --robot g1 --output logs/g1_velocity_terrain.json
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/g1/train/velocity_8gpu.json
+  --config examples/g1_velocity/train/velocity_8gpu.json
 ```
 
 配置为每卡 1024 环境、总计 8192 环境、18000 次更新，每 500 次保存。
@@ -118,7 +118,7 @@ Slurm 模板位于 `scripts/cluster/`。
 
 ```bash
 .venv/bin/torchrun --standalone --nproc-per-node=8 -m gobot.rl.train g1-velocity \
-  --config examples/g1/train/velocity_8gpu.json \
+  --config examples/g1_velocity/train/velocity_8gpu.json \
   --iterations 1000 --resume logs/g1_velocity_gobot_seed42/latest.pt
 ```
 
@@ -130,7 +130,7 @@ Slurm 模板位于 `scripts/cluster/`。
 ## 评测、回放与导出
 
 公共工具随 Python 包安装在 `gobot.rl.locomotion`，可从任意工作目录通过
-`python -m` 调用。机器人配置分别放在 `examples/g1/train/` 和 `examples/go1/train/`。
+`python -m` 调用。机器人配置分别放在 `examples/g1_velocity/train/` 和 `examples/go1/train/`。
 
 ```bash
 python -m gobot.rl.locomotion.assessment \
@@ -168,7 +168,7 @@ python -m gobot.rl.locomotion.status logs
 
 ```bash
 python -m gobot.rl.locomotion.package --source-root /path/to/gobot \
-  --config examples/g1/train/velocity.json --output g1-training.tar.gz
+  --config examples/g1_velocity/train/velocity.json --output g1-training.tar.gz
 ```
 
 评估和录像的预算文件默认写入当前工作目录下的 `logs/locomotion/gpu_budget.json`，
@@ -186,5 +186,5 @@ python -m gobot.rl.locomotion.package --source-root /path/to/gobot \
 ## 动作跟踪与 AMP
 
 SuperMimic 使用 `g1-supermimic`，数据、单卡/多卡训练、恢复和完整评估见
-[SuperMimic 指南](../examples/g1/supermimic/README.md)。G1 AMP 动作库与回放见
-[G1 指南](../examples/g1/README.md)。
+[SuperMimic 指南](../examples/g1_velocity/supermimic/README.md)。G1 AMP 动作库与回放见
+[G1 指南](../examples/g1_velocity/README.md)。

@@ -4,7 +4,7 @@
 复用 RSL-RL PPO、OnPolicyRunner 和 TensorBoard 日志。对齐配方是默认配置，
 显式配置保存在 `rsl_reference_aligned.json`。
 
-准备好的资源目录为 `examples/g1/assets/mimickit/gobot`：
+准备好的资源目录为 `examples/g1_velocity/assets/mimickit/gobot`：
 `world.jscn` 是场景来源，`motion_amp/motions.npz` 是 walk/run 动作库，
 `profile.json` 包含布局、控制参数和数据来源。部署时复制整个资源目录，保留网格和许可证。
 运行训练和回放使用 Gobot 主环境 `.venv`，无需原 MimicKit 环境。
@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.train g1-motion-amp \
 ```
 
 输出目录必须不存在。`--dry-run` 检查配置；`--set 'motion="run"'` 切换跑步数据。
-使用 `--config examples/g1/mimickit/rsl_reference_aligned.json` 可显式选择相同的对齐配置。
+使用 `--config examples/g1_velocity/mimickit/rsl_reference_aligned.json` 可显式选择相同的对齐配置。
 
 每轮 32 步，4096 环境 × 2000 次更新共 262144000 个样本。物理频率 240 Hz，控制频率 30 Hz。
 Actor/critic 为 1024/512 ReLU，actor 237 维输入、29 个绝对关节角输出；
@@ -44,7 +44,7 @@ momentum=0.9、固定学习率 1e-4。判别器使用 SGD、学习率 2.5e-4、b
 
 ```bash
 .venv/bin/python -m gobot.rl.motion_amp.evaluate \
-  --project examples/g1/assets/mimickit/gobot \
+  --project examples/g1_velocity/assets/mimickit/gobot \
   --checkpoint logs/g1-motion-amp/walk_s1_aligned_recover/actor_eval.pt \
   --backend mujoco-warp --num-envs 64 \
   --output /tmp/g1_amp_evaluation.json --video /tmp/g1_amp_walk.mp4

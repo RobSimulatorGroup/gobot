@@ -120,7 +120,7 @@ def prepare(
     layout=None,
     standing_smoke=False,
 ):
-    from examples.g1.config import g1_velocity_cfg
+    from examples.g1_velocity.config import g1_velocity_cfg
     from gobot.rl.locomotion.scene import prepare_velocity_scene
 
     if sum((csv is not None, npz is not None, standing_smoke)) != 1:

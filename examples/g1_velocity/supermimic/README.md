@@ -14,12 +14,12 @@ WM窗口8、想象长度32、Muon＋Adam、固定学习率2e-4、ReturnSampler�
 
 ```bash
 PYTHONPATH="$PWD/supermimic/src:$PWD/mjlab_research/src" \
-  .venv/bin/python -m examples.g1.supermimic.export_model \
+  .venv/bin/python -m examples.g1_velocity.supermimic.export_model \
   --output logs/supermimic/model_export
 
-.venv/bin/python -m examples.g1.supermimic.prepare_scene \
+.venv/bin/python -m examples.g1_velocity.supermimic.prepare_scene \
   --reference-export logs/supermimic/model_export \
-  --project examples/g1/assets/supermimic
+  --project examples/g1_velocity/assets/supermimic
 ```
 
 导入后核对质量、惯量、关节、执行器、碰撞体和 solver 设置。训练直接读取 Gobot 场景与 profile。
@@ -33,21 +33,21 @@ PYTHONPATH="$PWD/supermimic/src:$PWD/mjlab_research/src" \
 将已有71D紧凑动作包按原精度拆分为训练库：
 
 ```bash
-.venv/bin/python -m examples.g1.supermimic.prepare_bones prepare \
+.venv/bin/python -m examples.g1_velocity.supermimic.prepare_bones prepare \
   --source /path/to/library.pt \
-  --profile examples/g1/assets/supermimic/assets/supermimic/robot_profile.json \
+  --profile examples/g1_velocity/assets/supermimic/assets/supermimic/robot_profile.json \
   --output /path/to/bones_train
 
-.venv/bin/python -m examples.g1.supermimic.prepare_bones verify --data /path/to/bones_train
+.venv/bin/python -m examples.g1_velocity.supermimic.prepare_bones verify --data /path/to/bones_train
 ```
 
 完整评估使用原始FP32 NPZ参考，避免经过FP16转换。输入是已审计的BONES目录，包含
 `npz/`、`manifest.json`、`manifest_all.jsonl`、`train_clips.json` 和 `eval_clips.json`：
 
 ```bash
-.venv/bin/python -m examples.g1.supermimic.prepare_reference \
+.venv/bin/python -m examples.g1_velocity.supermimic.prepare_reference \
   --data /path/to/bones_dense \
-  --profile examples/g1/assets/supermimic/assets/supermimic/robot_profile.json \
+  --profile examples/g1_velocity/assets/supermimic/assets/supermimic/robot_profile.json \
   --output /path/to/bones_fp32 --workers 8
 ```
 
@@ -59,8 +59,8 @@ PYTHONPATH="$PWD/supermimic/src:$PWD/mjlab_research/src" \
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.train g1-supermimic \
-  --config examples/g1/train/supermimic_bones_2048.json \
-  --project examples/g1/assets/supermimic --library /path/to/bones_train \
+  --config examples/g1_velocity/train/supermimic_bones_2048.json \
+  --project examples/g1_velocity/assets/supermimic --library /path/to/bones_train \
   --seed 0 --steps 100000 --output logs/g1-supermimic/bones_2048_s0
 ```
 
@@ -69,8 +69,8 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m gobot.rl.train g1-supermimic \
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
 .venv/bin/torchrun --standalone --nproc_per_node=8 -m gobot.rl.train g1-supermimic \
-  --config examples/g1/train/supermimic_bones_2048.json --batch-scope per_rank \
-  --project examples/g1/assets/supermimic --library /path/to/bones_train \
+  --config examples/g1_velocity/train/supermimic_bones_2048.json --batch-scope per_rank \
+  --project examples/g1_velocity/assets/supermimic --library /path/to/bones_train \
   --seed 0 --steps 100000 --output logs/g1-supermimic/bones_2048pergpu_8gpu_s0
 ```
 
@@ -106,7 +106,7 @@ TensorBoard事件和checkpoint。非零rank有各自的状态文件。
 
 ```bash
 .venv/bin/python -m gobot.rl.supermimic.evaluate \
-  --checkpoint /path/to/latest.pt --project examples/g1/assets/supermimic \
+  --checkpoint /path/to/latest.pt --project examples/g1_velocity/assets/supermimic \
   --library /path/to/bones_fp32 --output logs/evaluation/shard0.json \
   --num-envs 512 --shard-index 0 --shard-count 1
 ```
@@ -114,9 +114,9 @@ TensorBoard事件和checkpoint。非零rank有各自的状态文件。
 八卡评估一个或多个checkpoint，各模型依次使用同八卡：
 
 ```bash
-.venv/bin/python -m examples.g1.supermimic.evaluate \
+.venv/bin/python -m examples.g1_velocity.supermimic.evaluate \
   --checkpoints /path/to/checkpoint_a.pt /path/to/checkpoint_b.pt \
-  --project examples/g1/assets/supermimic --library /path/to/bones_fp32 \
+  --project examples/g1_velocity/assets/supermimic --library /path/to/bones_fp32 \
   --output logs/evaluation/comparison --gpus 0 1 2 3 4 5 6 7 --num-envs 512
 ```
 
@@ -131,4 +131,4 @@ TensorBoard事件和checkpoint。非零rank有各自的状态文件。
 
 设置 `GOBOT_SUPERMIMIC_TEST_PROJECT` 和 `GOBOT_SUPERMIMIC_TEST_LIBRARY` 后，会执行真实CPU场景、
 训练恢复、双进程同步和完整评估测试。未设置时对应测试跳过，数学和数据格式测试仍运行。
-重建独立官方数值fixture的入口为 `examples.g1.supermimic._reference.export`，该进程不导入Gobot。
+重建独立官方数值fixture的入口为 `examples.g1_velocity.supermimic._reference.export`，该进程不导入Gobot。

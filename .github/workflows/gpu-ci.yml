@@ -113,11 +113,11 @@ jobs:
       - name: Restore pinned Newton G1 assets
         uses: actions/cache@v4
         with:
-          path: examples/newton_g1/assets
+          path: tests/fixtures/newton_g1/assets
           key: newton-g1-assets-261cd1f429619d8ef4f546bd788ab9dea906b5e1-v8
 
       - name: Prepare pinned Newton G1 scene
-        run: uv run --no-sync python examples/newton_g1/download_assets.py
+        run: uv run --no-sync python tests/fixtures/newton_g1/download_assets.py
 
       - name: Test Newton G1 admission
         env:

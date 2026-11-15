@@ -10,7 +10,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = ROOT / "examples" / "newton_g1"
+EXAMPLE = ROOT / "tests" / "fixtures" / "newton_g1"
 SCENE_PATH = "res://newton_g1.jscn"
 
 

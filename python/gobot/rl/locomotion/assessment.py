@@ -281,7 +281,7 @@ def evaluate(checkpoint, output, *, steps=None, count=None, seed=71, final=False
         reference=None
         if exp.recipe=='amp' and is_flat:
             from gobot.rl.training.projects import example_module
-            reference=example_module('g1.reference_gaits').build_reference(
+            reference=example_module('g1_velocity.reference_gaits').build_reference(
                 Path(exp.motion_dataset),split='holdout' if final else 'validation')
         results=[]
         for command in commands:

@@ -15,7 +15,7 @@
     "eval_envs": 64,
     "eval_steps": 600,
     "reference_reset_probability": 0.0,
-    "motion_dataset": "examples/g1/assets/motions/locomotion.npz",
+    "motion_dataset": "examples/g1_velocity/assets/motions/locomotion.npz",
     "style_weight": 2.0,
     "eval_seed": 71,
     "initial_action_std": 1.0

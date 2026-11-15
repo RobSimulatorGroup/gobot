@@ -12,7 +12,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE = ROOT / "examples" / "newton_g1"
+EXAMPLE = ROOT / "tests" / "fixtures" / "newton_g1"
 
 
 def benchmark(environment_counts: tuple[int, ...], ticks: int) -> dict[str, object]:

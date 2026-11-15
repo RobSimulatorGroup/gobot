@@ -1,13 +1,14 @@
-# Newton G1
+# Newton G1 regression fixture
 
 This example reproduces Newton 1.4's `robot_policy --robot g1_29dof`
 control contract while keeping Gobot responsible for scene loading and
 rendering.
 
-Open it with:
+The public G1 tracking example is `examples/g1_track`. This fixture remains
+for Newton provider and USD import regression tests. Open it for debugging with:
 
 ```sh
-uv run gobot_editor --path examples/newton_g1
+uv run gobot_editor --path tests/fixtures/newton_g1
 ```
 
 The project hook downloads and verifies the pinned official Newton assets on
@@ -26,7 +27,7 @@ The hook downloads only `g1_isaac.usd` plus the ONNX policy, YAML contract,
 and license. The USD is the exact asset used by Newton 1.4's policy demo; its
 collision model is intentionally different from the similarly named structured
 USD. Files and the versioned generated scene are cached
-under `examples/newton_g1/assets`; later opens do not access the network unless
+under `tests/fixtures/newton_g1/assets`; later opens do not access the network unless
 a file is missing or fails its size and Git blob hash check. The scene cache is
 rebuilt when Gobot's importer version changes.
 

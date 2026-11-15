@@ -32,7 +32,7 @@ implementations live in `gobot.rl.locomotion`. The trainer accepts `RunConfig` a
 a typed `VelocityTaskCfg`, or an importable task configuration factory; it does
 not select a robot by name. `LocomotionRobotCfg`, `VelocityTaskCfg`, and
 `make_velocity_env` share CPU/Warp observations, reward configuration, termination,
-commands and curriculum. See [G1](../examples/g1/README.md) and the
+commands and curriculum. See [G1](../examples/g1_velocity/README.md) and the
 [shared tools](gobot_training.md). C++ supplies generic controls,
 stepping, sensors, and state extraction. Task APIs use the typed batch boundary.
 

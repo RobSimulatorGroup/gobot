@@ -8,8 +8,8 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 from gobot.rl.locomotion.motion import MotionFeatureSpec, motion_features, MotionDataset, MotionPriorCfg
-from examples.g1.prepare_motion import resample
-from examples.g1.config import g1_amp_cfg
+from examples.g1_velocity.prepare_motion import resample
+from examples.g1_velocity.config import g1_amp_cfg
 from gobot.rl.locomotion import make_velocity_env
 
 

@@ -1,7 +1,7 @@
 {
-  "main_scene": "res://g1_scene.jscn",
+  "main_scene": "res://g1_velocity_scene.jscn",
   "editor_scene_views": {
-    "res://g1_scene.jscn": {
+    "res://g1_velocity_scene.jscn": {
       "at": [
         -2.0,
         0.0,

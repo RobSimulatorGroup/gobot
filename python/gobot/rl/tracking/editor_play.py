@@ -22,7 +22,11 @@ class Script(gobot.NodeScript):
         for name, root in self.roots.items():
             nodes = {node.name: node for node in walk(root) if node.type_name == "Link3D"}
             self.links[name] = tuple(nodes[key] for key in settings["link_names"])
-        recipe = gobot.sim.SimulationRuntimeSpec("gobot.rl.tracking.playback:create", settings["runtime"])
+        runtime = dict(settings["runtime"])
+        for key in ("checkpoint", "project_path"):
+            if str(runtime.get(key, "")).startswith("res://"):
+                runtime[key] = str(Path(self.context.project_path) / runtime[key][6:])
+        recipe = gobot.sim.SimulationRuntimeSpec("gobot.rl.tracking.playback:create", runtime)
         self.runtime = gobot.sim.AsyncSimulationSession(
             recipe, fields=("policy", "reference", "status"), environments=(0,), max_hz=50)
         self.session = gobot.sim.ProviderPlaySession(

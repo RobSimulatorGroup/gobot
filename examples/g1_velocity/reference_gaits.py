@@ -51,8 +51,8 @@ def build_reference(path, *, split="holdout"):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--dataset', type=Path, default=Path('examples/g1/assets/motions/locomotion.npz'))
-    p.add_argument('--output', type=Path, default=Path('examples/g1/assets/motions/heldout_gaits.json'))
+    p.add_argument('--dataset', type=Path, default=Path('examples/g1_velocity/assets/motions/locomotion.npz'))
+    p.add_argument('--output', type=Path, default=Path('examples/g1_velocity/assets/motions/heldout_gaits.json'))
     args = p.parse_args()
     result = build_reference(args.dataset)
     args.output.parent.mkdir(parents=True, exist_ok=True)

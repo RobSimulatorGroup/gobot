@@ -1,4 +1,4 @@
-# G1 training in Gobot
+# G1 velocity training and playback
 
 G1 supports velocity PPO, motion-prior AMP, BeyondMimic tracking, and SuperMimic through
 [one training entry](../../doc/gobot_training.md). The robot and terrain are Gobot
@@ -7,9 +7,10 @@ runs batched CUDA training. G1 assets, sensor placement and presets live in this
 example and `python/gobot/rl/locomotion/presets.py`. The shared trainer consumes a typed
 task configuration and does not select robot models.
 
-See the [reference/data tools](reproduction/README.md) for preparing and evaluating
+See the [reference/data tools](supermimic/README.md) for preparing and evaluating
 SuperMimic motion tracking.
 
+The single-motion player is [G1 tracking](../g1_track/README.md).
 BeyondMimic preparation, synchronized training and editor inference: [Tracking guide](../../doc/gobot_tracking.md).
 
 ## Locomotion model and AMP data
@@ -22,7 +23,7 @@ there are no finger actuators. No separate mesh download is needed.
 To deliberately regenerate the robot from that reference checkout:
 
 ```bash
-uv run python -m examples.g1.prepare --source mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml
+uv run python -m examples.g1_velocity.prepare --source mjlab/src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml
 ```
 
 AMP motion data records named joints and tracked links. The trainer validates
@@ -30,8 +31,8 @@ their layout, control period and robot physics identity. Standard velocity PPO
 does not need a motion dataset:
 
 ```bash
-uv run python -m examples.g1.prepare_motion
-uv run python -m examples.g1.reference_gaits
+uv run python -m examples.g1_velocity.prepare_motion
+uv run python -m examples.g1_velocity.reference_gaits
 ```
 
 Standard velocity PPO uses one observation frame; its flat task omits the terrain scan.
@@ -72,14 +73,14 @@ the training loop does not need a new robot branch.
 
 ```bash
 uv run python -m gobot.rl.locomotion.assessment \
-  --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/validation.json
+  --checkpoint logs/g1_velocity/model_final.pt --output logs/g1_velocity/validation.json
 uv run python -m gobot.rl.locomotion.record \
-  --checkpoint logs/g1_amp/best.pt --continuous --seconds 20 \
-  --output logs/g1_amp/walk.mp4
+  --checkpoint logs/g1_velocity/model_final.pt --continuous --seconds 20 \
+  --output logs/g1_velocity/walk.mp4
 uv run python -m gobot.rl.locomotion.verify_export \
-  --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/candidate.onnx
-GOBOT_G1_POLICY="$PWD/logs/g1_amp/candidate.onnx" \
-  uv run gobot_editor --path examples/g1
+  --checkpoint logs/g1_velocity/model_final.pt --output logs/g1_velocity/candidate.onnx
+GOBOT_G1_POLICY="$PWD/logs/g1_velocity/candidate.onnx" \
+  uv run gobot_editor --path examples/g1_velocity
 ```
 
 Evaluation measures physical velocity/yaw errors, traversal, clearance, contact and
@@ -87,10 +88,10 @@ footfall metrics. A failure ends the recorded rollout; automatic reset is never
 presented as recovery. Export checks Torch/ONNX inference with the observation
 normalizer and embeds the policy metadata.
 
-No pretrained AMP weights are bundled with this project. Export a trained `g1-amp`
+No pretrained velocity weights are bundled with this project. Export a trained `g1-velocity`
 checkpoint and set `GOBOT_G1_POLICY` to its ONNX path before starting the editor.
-Standard velocity PPO and tracking policies use different observation contracts
-and cannot be used by this AMP playback script. W/S controls forward
+AMP and tracking policies use different observation contracts
+and cannot be used by this velocity playback script. W/S controls forward
 velocity, Q/E strafe, A/D yaw, T running command, and R reset. Play uses a runtime
 clone and does not modify the edited scene. Running is intended for flat and gentle
 terrain. See [shared locomotion](../../doc/gobot_training.md) for full admission criteria.

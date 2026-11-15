@@ -45,7 +45,7 @@ def default_agent():
 
 @dataclass
 class Config:
-    project_path: Path = Path('examples/g1/assets/mimickit/gobot')
+    project_path: Path = Path('examples/g1_velocity/assets/mimickit/gobot')
     scene_path: str = 'res://world.jscn'
     motion: str = 'walk'
     velocity_reference: str = 'base_body_com'
@@ -88,7 +88,7 @@ class Config:
         if self.num_envs*self.agent['num_steps_per_env']<self.agent['algorithm']['num_mini_batches']:
             raise ValueError('rollout is smaller than the PPO minibatch count')
         if not (Path(self.project_path)/'motion_amp/profile.json').is_file():
-            raise ValueError('missing prepared AMP assets: copy examples/g1/assets/mimickit/gobot into the project')
+            raise ValueError('missing prepared AMP assets: copy examples/g1_velocity/assets/mimickit/gobot into the project')
 
 
 def actor_config(env, settings):

@@ -92,7 +92,7 @@ def test_supermimic_keeps_schedule_and_dispatch(monkeypatch, tmp_path):
         captured['cfg'] = cfg
         return {'control_steps': 45}
     monkeypatch.setattr(training, 'run', run)
-    main([SM, '--config', str(ROOT / 'examples/g1/train/supermimic_smoke.json'),
+    main([SM, '--config', str(ROOT / 'examples/g1_velocity/train/supermimic_smoke.json'),
           '--backend', 'mujoco-cpu', '--num-envs', '2', '--steps', '45',
           '--output', str(tmp_path / 'sm'), '--no-compile', '--no-capture-graphs'])
     cfg = captured['cfg']
@@ -291,7 +291,7 @@ def test_training_package_resolves_inputs_against_source_root(tmp_path, monkeypa
         "doc/mjlab_comparison.md": "comparison\n",
         "python/gobot/rl/locomotion/assessment.py": "# assessment fixture\n",
         "scripts/cluster/train_velocity.sbatch": "# launcher fixture\n",
-        "examples/g1/train/velocity.json": json.dumps({"experiment": {"robot": "g1"}}),
+        "examples/g1_velocity/train/velocity.json": json.dumps({"experiment": {"robot": "g1"}}),
     }
     for name, content in files.items():
         path = root / name
@@ -304,9 +304,9 @@ def test_training_package_resolves_inputs_against_source_root(tmp_path, monkeypa
     monkeypatch.setattr(package.subprocess, "check_output", revision)
     monkeypatch.chdir(tmp_path)
     output = tmp_path / "training.tar.gz"
-    package.build(output, ["examples/g1/train/velocity.json"], source_root=root)
+    package.build(output, ["examples/g1_velocity/train/velocity.json"], source_root=root)
     with tarfile.open(output) as archive:
         manifest = json.load(archive.extractfile("bundle.json"))
-        assert manifest["configs"] == ["examples/g1/train/velocity.json"]
+        assert manifest["configs"] == ["examples/g1_velocity/train/velocity.json"]
         for name, content in files.items():
             assert archive.extractfile(name).read().decode() == content

@@ -25,7 +25,7 @@ def source_files(root):
     """
     files=set()
     for name in ('python/gobot', 'python/gobot_cli', 'src/gobot', 'include/gobot', 'cmake',
-                 'tests', 'examples/g1', 'examples/go1', 'scripts/cluster'):
+                 'tests', 'examples/g1_velocity', 'examples/go1', 'scripts/cluster'):
         for path in (root/name).rglob('*'):
             if not path.is_file() or any(p in {'logs','__pycache__','policies','evaluation','.venv'}
                                          for p in path.relative_to(root).parts):

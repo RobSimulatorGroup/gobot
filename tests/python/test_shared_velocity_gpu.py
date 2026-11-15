@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from examples.g1.config import g1_velocity_cfg
+from examples.g1_velocity.config import g1_velocity_cfg
 from gobot.rl.locomotion import make_velocity_env
 
 def cfg():

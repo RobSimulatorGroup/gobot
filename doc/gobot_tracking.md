@@ -42,7 +42,7 @@ xyzw、29个关节角度，单位为米和弧度；默认30Hz。SEED CSV 使用�
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   -m gobot.rl.train g1-tracking \
-  --config examples/g1/train/tracking_dance_8gpu.json \
+  --config examples/g1_velocity/train/tracking_dance_8gpu.json \
   --set project_path='"logs/dance2-assets"' \
   --output logs/dance2-train
 ```
@@ -68,7 +68,7 @@ if __name__ == "__main__":
 ```bash
 .venv/bin/torchrun --standalone --nproc-per-node=8 \
   -m gobot.rl.train g1-tracking \
-  --config examples/g1/train/tracking_dance_8gpu.json \
+  --config examples/g1_velocity/train/tracking_dance_8gpu.json \
   --set project_path='"logs/dance2-assets"' --set updates=1000 \
   --resume logs/dance2-train/model.pt --output logs/dance2-resume
 ```
@@ -77,6 +77,25 @@ if __name__ == "__main__":
 没有旧格式转换、旧字段别名或外部框架检查点导入。
 
 ## 评估和实时播放
+
+跨机器部署先在训练机导出：
+
+```bash
+python -m gobot.rl.tracking.export logs/dance2-train/model.pt --output logs/dance2-deployment
+```
+
+导出会严格检查原训练协议，保留 actor 权重与归一化，并绑定场景资源摘要和完整物理快照。
+部署时场景资产、动作、观测和控制参数必须匹配；仅编译产生的变换允许几个 float32
+舍入间隔。部署文件用于推理，训练恢复仍使用原始 `model.pt`。
+
+复制部署目录及原动作项目到本机后：
+
+```bash
+python examples/g1_track/prepare.py logs/dance2-deployment/policy.pt --project-path logs/dance2-assets
+uv run gobot_editor --path examples/g1_track
+```
+
+同一环境下也可直接用训练检查点评估或生成独立回放项目：
 
 ```bash
 .venv/bin/python -m gobot.rl.tracking.evaluate logs/dance2-train/model.pt \
