@@ -19,7 +19,7 @@ class ArticulationBatch:
                  backend='mujoco-cpu', device=None, physics_dt=.005, decimation=4,
                  solver_settings=None, contact_links=(), capture_graphs=True, nconmax=128, njmax=500,
                  sliding_friction=None, deterministic=False, contact_scope='all',
-                 self_contact_threshold=None):
+                 self_contact_threshold=None, self_contact_reduction="none"):
         if int(num_envs) != num_envs or num_envs <= 0 or int(decimation) != decimation or decimation <= 0:
             raise ValueError('batch size and decimation must be positive integers')
         if not math.isfinite(physics_dt) or physics_dt <= 0:
@@ -41,6 +41,9 @@ class ArticulationBatch:
         self.contact_scope = contact_scope
         if self_contact_threshold is not None and (not math.isfinite(self_contact_threshold) or self_contact_threshold < 0):
             raise ValueError('self contact threshold must be finite and nonnegative')
+        if self_contact_reduction not in ("none", "maxforce"):
+            raise ValueError("self contact reduction must be none or maxforce")
+        self.self_contact_reduction = self_contact_reduction
         self.self_contact_threshold = self_contact_threshold
         self._self_contact_hits = torch.zeros(self.num_envs, self.decimation, device=self.device)
         self.contact_links = tuple(contact_links)
@@ -89,7 +92,7 @@ class ArticulationBatch:
                     sensors += (MuJoCoWarpContactSensorSpec(
                         name='articulation_self_contacts', primary_type='subtree',
                         primary_names=(prefix + spec.base_link,), secondary_type='subtree',
-                        secondary_name=prefix + spec.base_link, reduce='none', num_slots=1),)
+                        secondary_name=prefix + spec.base_link, reduce=self_contact_reduction, num_slots=1),)
                 self._provider = MuJoCoWarpProvider(self.artifact, num_envs=self.num_envs, device=self.device,
                     nconmax=nconmax, njmax=njmax, capture_graphs=capture_graphs, deterministic=deterministic, contact_sensors=sensors)
                 self._view = self._provider.create_robot_view(spec)
@@ -219,9 +222,12 @@ class ArticulationBatch:
             # Match the upstream subtree sensor: reduce=none, one contact slot.
             if valid.shape[1] == 0:
                 return
-            first = valid.argmax(axis=1)
-            hit = torch.as_tensor(valid.any(axis=1) &
-                (forces[np.arange(self.num_envs), first] > self.self_contact_threshold))
+            if self.self_contact_reduction == "maxforce":
+                hit = torch.as_tensor((valid & (forces > self.self_contact_threshold)).any(axis=1))
+            else:
+                first = valid.argmax(axis=1)
+                hit = torch.as_tensor(valid.any(axis=1) &
+                    (forces[np.arange(self.num_envs), first] > self.self_contact_threshold))
         self._self_contact_hits[:, substep] = hit
 
     def read_self_contact_substeps(self):

@@ -23,6 +23,8 @@ def evaluate(checkpoint, *, steps=None, backend="mujoco-cpu", device=None, video
         Config(), json.loads(checkpoint.with_name("config.json").read_text())
     )
     torch.set_num_threads(cfg.torch_threads)
+    torch.backends.cuda.matmul.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
+    torch.backends.cudnn.fp32_precision = "tf32" if cfg.allow_tf32 else "ieee"
     cfg = replace(
         cfg,
         num_envs=1,

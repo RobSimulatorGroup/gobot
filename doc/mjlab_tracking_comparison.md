@@ -175,3 +175,65 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 OMP_NUM_THREADS=4 \
 `--trajectory trajectory.npz`；配套 `.mjb` 只用于离线可视化。
 `render_tracking_trajectory.py` 可生成并排 MP4；`prepare_tracking_replay.py`
 可生成纯记录回放项目。记录回放与上述实时推理项目是不同的入口。
+
+## 训练流程定位与稳定对照配方（2026-11-15）
+
+旧结果是原生 `reduce=none, num_slots=1` 配方，必须保留这一实验标记。
+首次更新探针确认：初始网络权重及CPU/CUDA RNG相同，24步内采样帧、终止标记和
+RNG仍相同，但自碰撞奖励可差0.2～0.4，随后GAE、梯度和权重出现明显分歧。
+原生mjlab自身重跑也出现相同量级的奖励差异。暂时屏蔽自碰撞项的诊断消融中，
+连续奖励/return差下降到约1e-6；这不是用于正式训练的修复。
+
+用原生记录的完整rollout和外部RNG流重放，Gobot与原生RSL-RL学习循环连续两次更新的
+GAE、40个minibatch梯度、学习率、优化器、观测归一化和参数更新逐位相同。
+所以当前证据将明显分歧定位到上游单接触槽选择，不支持“Gobot PPO公式不同”的解释。
+这不证明旧单种子最终3.19mm差距的全部因果来源，也不保证长训练轨迹逐位相同。
+
+显式的新稳定对照使用 `maxforce`，让两边每个物理子步读取最大接触力，再使用原来
+10N阈值、4子步计数和-10权重。它消除任意首接触选择；由于改变了原生接触归约，
+必须两边都从头训练新目录，不能和旧baseline直接混为同一配方。
+
+```bash
+# 原生baseline的新配方；其余参数保持原对照设置。
+mjlab/.venv/bin/torchrun --standalone --nproc-per-node=8 \
+  tests/support/train_mjlab_tracking.py train \
+  --reference logs/tracking-comparison/dance2-reference \
+  --output logs/tracking-comparison/mjlab-dance2-maxforce-s42 \
+  --num-envs 1024 --iterations 30000 --seed 42 \
+  --self-contact-reduction maxforce
+```
+
+`train_gobot_tracking_comparison.py` 自动继承baseline的归约及确定性设置；检查点contract
+记录非默认归约，恢复训练和评估不能悄悄换回另一种归约。旧配方默认仍为 `none`。
+评估显式恢复训练配置中的IEEE/TF32设置。正常评估不导入mjlab。
+
+另修复MuJoCo Warp 3.17位掩码兼容：`deterministic=True`现在启用
+`CONTACTS | CONSTRAINT | ATOMICS`，而非Python布尔值1对应的CONTACTS一位。
+可用 `--deterministic-physics` 对两边显式开启全部确定性选项并记录到实验元数据。
+它不能单独消除首接触槽问题，且开销明显，不是默认训练设置。
+
+诊断入口（都只运行短更新，不修改上游源码）：
+
+```bash
+.venv/bin/python tests/support/probe_tracking_training.py \
+  --engine mjlab --num-envs 64 --updates 2 \
+  --self-contact-reduction maxforce --output logs/probe-native
+.venv/bin/python tests/support/probe_tracking_training.py \
+  --engine gobot --num-envs 64 --updates 2 \
+  --self-contact-reduction maxforce --output logs/probe-gobot
+.venv/bin/python tests/support/compare_tracking_training.py \
+  logs/probe-native/trace.pt logs/probe-gobot/trace.pt --output logs/probe-differences.json
+
+# 同输入重放专门隔离学习循环，不是物理一致性测试。
+.venv/bin/python tests/support/probe_tracking_training.py \
+  --engine gobot --num-envs 64 --updates 2 --self-contact-reduction maxforce \
+  --replay logs/probe-native/trace.pt --output logs/probe-replay
+.venv/bin/python tests/support/compare_tracking_training.py \
+  logs/probe-native/trace.pt logs/probe-replay/trace.pt \
+  --output logs/probe-replay-differences.json --require-exact-ppo
+```
+
+原生探针需要匹配的数值库及mjlab依赖；本机可显式追加
+`--extra-python-path mjlab/.venv/lib/python3.13/site-packages`。支持torchrun：
+各rank写入独立 `rankN/trace.pt`，重放参数可指向含这些子目录的共同输出目录。
+完整trace包含模型、梯度和rollout，体积较大，仅用于少量更新的验收。

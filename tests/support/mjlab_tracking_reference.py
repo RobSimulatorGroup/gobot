@@ -84,6 +84,25 @@ def reference(source):
     )
 
 
+def configure_deterministic_physics(sim_cfg, enabled):
+    """Explicit numerical override, applied before upstream CUDA graph capture.
+
+    No upstream file is edited. Native default remains unchanged unless enabled;
+    comparison.json must identify this distinct, reproducible experiment recipe.
+    """
+    if not enabled:
+        return
+    import mujoco_warp as mjw
+    flags = getattr(mjw, "DeterminismType", None)
+    if flags is None:
+        raise RuntimeError("strict tracking alignment requires MuJoCo Warp DeterminismType.ALL")
+    original = sim_cfg.apply_wp_opt
+    def apply(options):
+        original(options)
+        options.deterministic = int(flags.ALL)
+    sim_cfg.apply_wp_opt = apply
+
+
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

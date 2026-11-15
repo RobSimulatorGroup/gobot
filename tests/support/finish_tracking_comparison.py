@@ -154,6 +154,8 @@ def main():
             state="completed",
             reference_revision=cfg["reference_revision"],
             motion_sha256=cfg["motion_sha256"],
+            deterministic_physics=cfg.get("deterministic_physics", False),
+            self_contact_reduction=cfg.get("self_contact_reduction", "none"),
             settings={
                 k: cfg[k]
                 for k in (

@@ -54,6 +54,8 @@ def main():
     cfg.random_source = "torch_global"
     cfg.init_at_random_ep_len = True
     cfg.allow_tf32 = base["allow_tf32"]
+    cfg.deterministic_physics = base.get("deterministic_physics", False)
+    cfg.self_contact_reduction = base.get("self_contact_reduction", "none")
     cfg.nconmax = base["nconmax"]
     cfg.njmax = base["njmax"]
     cfg.updates = base["iterations"]

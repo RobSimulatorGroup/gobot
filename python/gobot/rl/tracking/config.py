@@ -102,6 +102,8 @@ class TrackingConfig:
     pushes: bool = True
     state_estimation: bool = True
     capture_graphs: bool = True
+    deterministic_physics: bool = False
+    self_contact_reduction: str = "none"
     nconmax: int = 35
     njmax: int = 250
     soft_joint_limit_factor: float = 0.9
@@ -119,6 +121,10 @@ class TrackingConfig:
     )
 
     def validate(self):
+        if self.self_contact_reduction not in ("none", "maxforce"):
+            raise ValueError("self_contact_reduction must be none or maxforce")
+        if not isinstance(self.deterministic_physics, bool):
+            raise ValueError("deterministic_physics must be boolean")
         for name in (
             "num_envs",
             "decimation",

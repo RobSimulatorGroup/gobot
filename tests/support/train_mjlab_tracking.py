@@ -17,6 +17,7 @@ from mjlab_tracking_reference import (
     sha256,
     write_json,
     TrackingLog,
+    configure_deterministic_physics,
 )
 
 
@@ -46,6 +47,10 @@ def main():
     train.add_argument("--nconmax", type=positive, default=128)
     train.add_argument("--njmax", type=positive, default=500)
     train.add_argument("--resume", type=Path)
+    train.add_argument("--self-contact-reduction", choices=("none", "maxforce"), default="none",
+                       help="Explicit shared sensor reduction; maxforce avoids arbitrary first-contact rewards")
+    train.add_argument("--deterministic-physics", action="store_true",
+                       help="Enable all Warp determinism bits; recorded as an explicit comparison variant")
     train.add_argument("--check", action="store_true")
     args = parser.parse_args()
     if args.mode == "prepare":
@@ -76,8 +81,10 @@ def main():
     cfg.scene.num_envs = args.num_envs
     cfg.seed = args.seed + rank
     cfg.commands["motion"].motion_file = str(motion)
+    cfg.scene.sensors[0].reduce = args.self_contact_reduction
     cfg.sim.nconmax = args.nconmax
     cfg.sim.njmax = args.njmax
+    configure_deterministic_physics(cfg.sim, args.deterministic_physics)
     agent = unitree_g1_tracking_ppo_runner_cfg()
     agent.seed = cfg.seed
     agent.max_iterations = args.iterations
@@ -94,6 +101,8 @@ def main():
         rollout_steps=agent.num_steps_per_env,
         seed=args.seed,
         allow_tf32=False,
+        deterministic_physics=args.deterministic_physics,
+        self_contact_reduction=args.self_contact_reduction,
         nconmax=args.nconmax,
         njmax=args.njmax,
         sampler="native rank-local per-control-step EMA",
@@ -109,6 +118,10 @@ def main():
     out = args.output.resolve()
     if args.resume:
         old = json.loads((args.resume.parent / "comparison.json").read_text())
+        if old.get("self_contact_reduction", "none") != args.self_contact_reduction:
+            raise ValueError("resume differs: self_contact_reduction")
+        if old.get("deterministic_physics", False) != args.deterministic_physics:
+            raise ValueError("resume differs: deterministic_physics")
         for key in (
             "reference_revision",
             "versions",

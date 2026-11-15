@@ -4,7 +4,7 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
-from mjlab_tracking_reference import reference, sha256, write_json
+from mjlab_tracking_reference import reference, sha256, write_json, configure_deterministic_physics
 
 
 def evaluate(source, checkpoint, motion, output, device="cuda:0", trajectory=None):
@@ -24,6 +24,7 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0", trajectory=Non
     cfg = unitree_g1_flat_tracking_env_cfg()
     cfg.scene.num_envs = 1
     cfg.seed = saved["seed"]
+    cfg.scene.sensors[0].reduce = saved.get("self_contact_reduction", "none")
     cfg.auto_reset = False
     cfg.sim.nconmax = saved["nconmax"]
     cfg.sim.njmax = saved["njmax"]
@@ -36,6 +37,7 @@ def evaluate(source, checkpoint, motion, output, device="cuda:0", trajectory=Non
     motion_cfg.pose_range = {}
     motion_cfg.velocity_range = {}
     motion_cfg.joint_position_range = (0.0, 0.0)
+    configure_deterministic_physics(cfg.sim, saved.get("deterministic_physics", False))
     env = ManagerBasedRlEnv(cfg, device=device)
     try:
         wrapped = RslRlVecEnvWrapper(env)

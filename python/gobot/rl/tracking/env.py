@@ -90,9 +90,11 @@ class TrackingEnv:
             decimation=cfg.decimation,
             solver_settings=cfg.solver_settings,
             capture_graphs=cfg.capture_graphs,
+            deterministic=cfg.deterministic_physics,
             nconmax=cfg.nconmax,
             njmax=cfg.njmax,
             self_contact_threshold=10.0,
+            self_contact_reduction=cfg.self_contact_reduction,
         )
         try:
             self._initialize()

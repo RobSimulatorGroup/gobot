@@ -89,7 +89,7 @@ class Config(TrackingConfig):
 
 
 def contract(env):
-    return dict(
+    metadata = dict(
         schema="gobot_mjlab_tracking_v1",
         reference_revision=REFERENCE_REVISION,
         scene_digest=env.batch.artifact.content_digest,
@@ -106,6 +106,13 @@ def contract(env):
         physics_dt=env.cfg_obj.physics_dt,
         decimation=env.cfg_obj.decimation,
     )
+    # Keep existing non-deterministic checkpoint contracts loadable, while
+    # preventing silent evaluation of the deterministic variant in another mode.
+    if env.cfg_obj.self_contact_reduction != "none":
+        metadata["self_contact_reduction"] = env.cfg_obj.self_contact_reduction
+    if env.cfg_obj.deterministic_physics:
+        metadata["deterministic_physics"] = True
+    return metadata
 
 
 class Runner(OnPolicyRunner):
@@ -358,9 +365,15 @@ def run(cfg):
         if group.world_size > 1 and cfg.sampler_sync == "rollout_global":
             env.sampler.defer()
         agent = deepcopy(cfg.agent)
-        agent["seed"] = cfg.seed
+        agent["seed"] = local.seed
         metadata = contract(env)
         semantic = config_dict(cfg)
+        # Preserve signatures of the existing native-default recipe. Explicit
+        # alignment variants remain part of the resume compatibility boundary.
+        if not cfg.deterministic_physics:
+            semantic.pop("deterministic_physics")
+        if cfg.self_contact_reduction == "none":
+            semantic.pop("self_contact_reduction")
         for name in (
             "updates",
             "output",

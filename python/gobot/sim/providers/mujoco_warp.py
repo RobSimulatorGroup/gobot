@@ -382,6 +382,13 @@ def _major_minor(version: str) -> tuple[int, int] | None:
         return None
 
 
+def _determinism_option(runtime, enabled):
+    if not enabled:
+        return False
+    flags = getattr(runtime, "DeterminismType", None)
+    return int(flags.ALL) if flags is not None else True
+
+
 class MuJoCoWarpProvider(BatchPhysicsProvider):
     """Persistent MuJoCo Warp session over CUDA-resident simulation arrays.
 
@@ -463,7 +470,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 "contact_sensor_maxmatch": contact_sensor_maxmatch,
                 "ls_parallel": ls_parallel,
                 "capture_graphs": self._capture_enabled,
-                "deterministic": bool(deterministic),
+                "deterministic": _determinism_option(self._mjw, deterministic),
                 "contact_sensors": self._contact_specs,
                 "raycast_sensors": self._raycast_specs,
             },
@@ -506,7 +513,11 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             if deterministic:
                 if not hasattr(self._model.opt, "deterministic"):
                     raise ProviderUnavailableError("this Warp runtime has no deterministic execution option")
-                self._model.opt.deterministic = True
+                # 3.17 changed this from a bool into a bitmask. True (1)
+                # enables contact sorting only, leaving atomic match order and
+                # constraint order nondeterministic. Retain bool support for
+                # older runtimes that do not expose DeterminismType.
+                self._model.opt.deterministic = _determinism_option(self._mjw, True)
             # MuJoCo 3.17 records finite solver-budget exhaustion in overflow as
             # diagnostics. These bits do not indicate discarded contacts/data.
             if hasattr(self._model.opt, "warn_overflow"):
