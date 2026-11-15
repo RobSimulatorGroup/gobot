@@ -78,7 +78,8 @@ uv run python -m examples.locomotion.record \
   --output logs/g1_amp/walk.mp4
 uv run python -m examples.locomotion.verify_export \
   --checkpoint logs/g1_amp/best.pt --output logs/g1_amp/candidate.onnx
-uv run gobot_editor --path examples/g1
+GOBOT_G1_POLICY="$PWD/logs/g1_amp/candidate.onnx" \
+  uv run gobot_editor --path examples/g1
 ```
 
 Evaluation measures physical velocity/yaw errors, traversal, clearance, contact and
@@ -86,7 +87,10 @@ footfall metrics. A failure ends the recorded rollout; automatic reset is never
 presented as recovery. Export checks Torch/ONNX inference with the observation
 normalizer and embeds the policy metadata.
 
-Set `GOBOT_G1_POLICY` to the exported ONNX for editor playback. W/S controls forward
+No pretrained AMP weights are bundled with this project. Export a trained `g1-amp`
+checkpoint and set `GOBOT_G1_POLICY` to its ONNX path before starting the editor.
+Standard velocity PPO and tracking policies use different observation contracts
+and cannot be used by this AMP playback script. W/S controls forward
 velocity, Q/E strafe, A/D yaw, T running command, and R reset. Play uses a runtime
 clone and does not modify the edited scene. Running is intended for flat and gentle
 terrain. See [shared locomotion](../locomotion/README.md) for full admission criteria.

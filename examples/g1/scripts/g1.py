@@ -11,7 +11,16 @@ class Script(gobot.NodeScript):
         self.running = False
         project = Path(self.context.project_path)
         value = os.environ.get('GOBOT_G1_POLICY', 'res://policies/g1_velocity.onnx')
-        policy = project / value.removeprefix('res://') if value.startswith('res://') else Path(value)
+        policy = project / value.removeprefix('res://') if value.startswith('res://') else Path(value).expanduser()
+        if not policy.is_file():
+            raise FileNotFoundError(
+                f"G1 AMP policy is missing: {policy}. "
+                "This example does not bundle pretrained weights. "
+                "Export a trained g1-amp checkpoint with "
+                "python -m examples.locomotion.verify_export "
+                "--checkpoint <checkpoint.pt> --output <policy.onnx>, "
+                "then set GOBOT_G1_POLICY to that ONNX path before starting the editor."
+            )
         self.playback = VelocityPolicyPlayback(self.context, self.get_root(),
             g1_amp_cfg(project_path=project, stage="mixed", play=True), policy)
     def _physics_process(self, delta):
