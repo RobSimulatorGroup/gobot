@@ -130,3 +130,35 @@ path.write_text(
 
     gobot::python::PythonScriptRunner::Shutdown();
 }
+
+
+TEST_F(TestPythonPanel, drains_async_workers_before_engine_contexts_are_destroyed) {
+    setenv("PYTHONNOUSERSITE", "1", 1);
+    setenv("PYTHONPATH", GOBOT_TEST_PYTHON_PATH, 1);
+    setenv("GOBOT_PYTHON_EXECUTABLE", GOBOT_TEST_PYTHON_EXECUTABLE, 1);
+    setenv("GOBOT_WORKER_CLOSE_RESULT", (project_path / "worker-closed.txt").string().c_str(), 1);
+    const auto result = gobot::python::PythonScriptRunner::ExecuteString(R"PY(
+import os, pathlib, sys, types, time
+from gobot.sim import AsyncSimulationSession, SimulationRuntimeSpec
+module = types.ModuleType("gobot_shutdown_fixture")
+class Provider:
+    num_envs = 1
+    fixed_time_step = 0.02
+    def close(self):
+        time.sleep(0.01)
+        pathlib.Path(os.environ["GOBOT_WORKER_CLOSE_RESULT"]).write_text("closed")
+module.create = Provider
+sys.modules[module.__name__] = module
+session = AsyncSimulationSession(SimulationRuntimeSpec("gobot_shutdown_fixture:create", {}))
+deadline = time.monotonic() + 10
+while session.poll() is None:
+    if time.monotonic() > deadline:
+        raise RuntimeError("worker did not initialize")
+    time.sleep(0.001)
+session.close()
+)PY");
+    ASSERT_TRUE(result.ok) << result.error;
+    gobot::python::PythonScriptRunner::ShutdownSimulationWorkers();
+    EXPECT_EQ(ReadText("worker-closed.txt"), "closed");
+    gobot::python::PythonScriptRunner::Shutdown();
+}

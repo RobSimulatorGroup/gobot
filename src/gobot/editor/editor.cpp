@@ -169,6 +169,7 @@ Editor::~Editor() {
     if (scene_play_session_ != nullptr) {
         scene_play_session_->Stop();
     }
+    python::PythonScriptRunner::ShutdownSimulationWorkers();
     python::PythonScriptRunner::ClearSceneScriptContext(engine_context_);
     if (python::GetActiveAppContextOrNull() == engine_context_) {
         python::SetActiveAppContext(nullptr);

@@ -8,6 +8,8 @@
 #include "gobot/core/io/resource_format_scene.hpp"
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
+#include "gobot/python/python_app_context.hpp"
+#include "gobot/scene/scene_initializer.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/rigid_body_3d.hpp"
@@ -220,4 +222,28 @@ TEST(EngineContextRuntimeTargets, ClampControlTargetsWithoutMutatingSceneOrUndoH
     context.ClearRuntimePoseTarget(id);EXPECT_FALSE(context.GetRuntimePoseTarget(id));
     EXPECT_TRUE(context.HasRuntimePoseTarget(id));
     context.ClearScene();EXPECT_FALSE(context.HasRuntimePoseTarget(id));
+}
+
+
+TEST(EngineContextRuntime, ReleasesBorrowedServicesBeforeEngineShutdown) {
+    using namespace gobot;
+    auto* project = Object::New<ProjectSettings>();
+    auto* simulation = Object::New<SimulationServer>();
+    SceneInitializer::Init();
+    auto* runtime = &python::GetActiveAppContext();
+    EXPECT_TRUE(python::IsAppContextLive(runtime));
+    python::ShutdownAppRuntime();
+    EXPECT_FALSE(python::IsAppContextLive(runtime));
+    EXPECT_EQ(ProjectSettings::GetInstance(), project);
+    EXPECT_EQ(SimulationServer::GetInstance(), simulation);
+
+    // Releasing Python's reference must leave the engine's registry intact.
+    const auto path = std::filesystem::temp_directory_path() / "gobot-runtime-shutdown.jres";
+    const auto shape = MakeRef<BoxShape3D>();
+    EXPECT_TRUE(ResourceSaver::Save(shape, path.string()));
+    EXPECT_TRUE(ResourceLoader::Load(path.string()).IsValid());
+    std::filesystem::remove(path);
+    SceneInitializer::Destroy();
+    Object::Delete(simulation);
+    Object::Delete(project);
 }

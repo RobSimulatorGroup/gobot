@@ -422,13 +422,13 @@ bool Main::Iteration()
 void Main::Cleanup() {
     WriteEditorBenchmark();
     OS::GetInstance()->DeleteMainLoop();
+    python::PythonScriptRunner::Shutdown();
 
     Object::Delete(s_simulation_server);
     Object::Delete(s_physics_server);
     Object::Delete(s_input);
     Object::Delete(s_project_settings);
 
-    python::PythonScriptRunner::Shutdown();
     SceneInitializer::Destroy();
 }
 
