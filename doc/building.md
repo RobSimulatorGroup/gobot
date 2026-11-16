@@ -25,6 +25,14 @@ The build backend initializes pinned submodules and caches the LuisaCompute,
 gsplat, and OpenUSD SDKs. The first build needs network access for uncached
 dependencies. Later builds reuse them.
 
+CUDA discovery searches standard Toolkit install locations even when `nvcc` is
+not on `PATH`. For a custom installation, select it before running `uv sync`:
+
+```bash
+export CUDACXX=/path/to/cuda/bin/nvcc
+uv sync
+```
+
 Python edits are live. The editable editor launcher runs an incremental native
 build before starting. For other Python entry points, rebuild and reinstall
 Gobot after C++ or CMake changes:
@@ -32,6 +40,18 @@ Gobot after C++ or CMake changes:
 ```bash
 uv sync --reinstall-package gobot --no-build-isolation-package gobot
 ```
+
+To launch the already installed native editor immediately, use:
+
+```bash
+uv run gobot_editor --no-rebuild
+```
+
+The normal launcher displays native build progress before opening the editor.
+
+The default editor layout places Inspector above a bottom-right Physics/Tactile
+tab group, with Physics selected first. **View → Reset Layout** restores this
+arrangement.
 
 After `uv sync`, `uv run gobot_editor` and `.venv/bin/gobot_editor` use the same
 installation. Use that environment's launcher to keep Python, `_core`,

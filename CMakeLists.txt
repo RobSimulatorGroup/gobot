@@ -1268,6 +1268,12 @@ if(GOB_BUILD_LUISA_RENDERER)
 endif()
 
 if(GOB_BUILD_LIBUIPC AND NOT GOB_LIBUIPC_PREBUILT_ROOT)
+    # libuipc enables CUDA in its nested build. Resolve nvcc through the Toolkit
+    # search first so standard CUDA installs work without modifying PATH.
+    find_package(CUDAToolkit REQUIRED)
+    if(NOT CMAKE_CUDA_COMPILER AND NOT "$ENV{CUDACXX}")
+        set(CMAKE_CUDA_COMPILER "${CUDAToolkit_NVCC_EXECUTABLE}")
+    endif()
     include(cmake/GobotLibuipcDependencies.cmake)
 
     set(UIPC_BUILD_GUI OFF CACHE BOOL "" FORCE)

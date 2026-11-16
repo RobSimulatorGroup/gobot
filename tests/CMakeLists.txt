@@ -124,6 +124,10 @@ endif()
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)
+add_executable(test_editor_dock_layout editor/test_editor_dock_layout.cpp)
+target_include_directories(test_editor_dock_layout PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(test_editor_dock_layout PRIVATE gtest_main imgui)
+gtest_discover_tests(test_editor_dock_layout)
 add_executable(test_node3d_editor_camera
         editor/test_node3d_editor_camera.cpp)
 target_compile_options(test_node3d_editor_camera PUBLIC "${GOBOT_COMPILE_OPTIONS}")

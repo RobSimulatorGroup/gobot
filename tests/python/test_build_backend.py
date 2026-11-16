@@ -709,6 +709,54 @@ def test_luisa_finds_system_compilers_without_gcc11() -> None:
         assert (root / "sdks/luisa_compute/install/lib/libcompiler_probe.a").is_file()
 
 
+def test_gsplat_finds_cuda_toolkit_without_nvcc_on_path() -> None:
+    cmake = backend._find_build_tool("cmake")
+    ninja = backend._find_build_tool("ninja")
+    nvcc = Path("/usr/local/cuda/bin/nvcc")
+    if not cmake or not ninja or not nvcc.is_file():
+        print("Skipping gsplat compiler discovery: no standard CUDA Toolkit")
+        return
+    version = subprocess.run(
+        [cmake, "--version"], check=True, capture_output=True, text=True
+    )
+    match = re.search(r"cmake version (\d+)\.(\d+)", version.stdout)
+    if not match or tuple(map(int, match.groups())) < (3, 26):
+        print("Skipping gsplat compiler discovery: CMake 3.26+ required")
+        return
+
+    environment = os.environ.copy()
+    for name in ("CUDACXX", "CUDAToolkit_ROOT", "CUDA_PATH"):
+        environment.pop(name, None)
+    environment["PATH"] = os.pathsep.join(
+        directory
+        for directory in environment.get("PATH", "").split(os.pathsep)
+        if directory and not (Path(directory) / "nvcc").is_file()
+    )
+    assert shutil.which("nvcc", path=environment["PATH"]) is None
+
+    with tempfile.TemporaryDirectory(prefix="gobot-gsplat-discovery-") as directory:
+        build = Path(directory) / "build"
+        result = subprocess.run(
+            [
+                cmake,
+                "-S", str(backend.ROOT / "3rdparty/gsplat_inference"),
+                "-B", str(build),
+                "-G", "Ninja",
+                f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja}",
+                # Reproduce the cache left behind by the failed editable build.
+                "-DCMAKE_CUDA_COMPILER:FILEPATH=CMAKE_CUDA_COMPILER-NOTFOUND",
+                "-DGOBOT_GSPLAT_CUDA_ARCHITECTURES=75-real",
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        cache = (build / "CMakeCache.txt").read_text()
+        compiler = re.search(r"^CMAKE_CUDA_COMPILER:[^=]+=(.+)$", cache, re.MULTILINE)
+        assert compiler and Path(compiler.group(1)) == nvcc, result.stdout + result.stderr
+
+
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
     test_superdex_build_defaults_include_cpu_sdk_sources()
@@ -722,6 +770,7 @@ def main() -> None:
     test_skip_environment_avoids_dependency_commands()
     test_build_tool_prefers_current_virtual_environment()
     test_luisa_finds_system_compilers_without_gcc11()
+    test_gsplat_finds_cuda_toolkit_without_nvcc_on_path()
     test_native_sdk_bootstrap_uses_dependency_only_cmake_project()
     test_checkout_submodules_are_revalidated_at_pinned_gitlinks()
     test_pinned_checkout_does_not_run_submodule_update()

@@ -6,6 +6,7 @@
  */
 
 #include "gobot/editor/editor.hpp"
+#include "imgui/default_dock_layout.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -1553,30 +1554,9 @@ void Editor::BeginDockSpace() {
 
     if(reset_layout_requested_ || !ImGui::DockBuilderGetNode(DockspaceID)) {
         reset_layout_requested_ = false;
-        ImGui::DockBuilderRemoveNode(DockspaceID); // Clear out existing layout
-        ImGui::DockBuilderAddNode(DockspaceID);    // Add empty node
-        ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize);
-
-        ImGuiID dock_main_id = DockspaceID;
-        ImGuiID dock_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.14f, nullptr, &dock_main_id);
-        ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.42f, nullptr, &dock_main_id);
-        ImGuiID dock_resources = ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.40f, nullptr, &dock_left);
-        ImGuiID dock_tactile = ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.55f, nullptr, &dock_right);
-        ImGuiID dock_python = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.35f, nullptr, &dock_main_id);
-        ImGuiID dock_console = ImGui::DockBuilderSplitNode(dock_python, ImGuiDir_Down, 0.43f, nullptr, &dock_python);
-
-        ImGui::DockBuilderDockWindow("###scene_view3d", dock_main_id);
-        ImGui::DockBuilderDockWindow("###python", dock_python);
-        ImGui::DockBuilderDockWindow("###inspector", dock_right);
-        ImGui::DockBuilderDockWindow("###tactile", dock_tactile);
-        ImGui::DockBuilderDockWindow("###physics", dock_tactile);
-        ImGui::DockBuilderDockWindow("###console", dock_console);
-        ImGui::DockBuilderDockWindow("###resources", dock_resources);
-        ImGui::DockBuilderDockWindow("###scene_editor", dock_left);
-
-        ImGui::DockBuilderFinish(DockspaceID);
+        BuildDefaultEditorDockLayout(DockspaceID, ImGui::GetIO().DisplaySize);
         for (int i=0; i<GetChildCount(); ++i) {
-            if (auto* panel=Object::PointerCastTo<TactilePanel>(GetChild(i))) panel->RequestFocus();
+            if (auto* panel=Object::PointerCastTo<PhysicsPanel>(GetChild(i))) panel->RequestFocus();
         }
     }
 

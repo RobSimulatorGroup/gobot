@@ -240,6 +240,42 @@ def test_editor_preloads_current_environment_cuda_runtime() -> None:
     ]
 
 
+def test_editor_no_rebuild_preserves_native_arguments_and_environment() -> None:
+    executable = Path("/installed/gobot_editor")
+    environment = {"GOBOT_PYTHON_LIBRARY": "/environment/libpython.so"}
+    for args, skip_rebuild in (
+        (["--no-rebuild", "--path", "/project"], True),
+        (["--", "--no-rebuild"], False),
+    ):
+        with (
+            patch.object(launcher.sys, "argv", ["gobot_editor", *args]),
+            patch.object(launcher, "_rebuild_editable_native_artifacts") as rebuild,
+            patch.object(launcher, "_register_packaged_examples"),
+            patch.object(launcher, "_find_current_python_library", return_value="/environment/libpython.so"),
+            patch.object(launcher, "_find_editor_executable", return_value=executable),
+            patch.object(launcher, "_distribution_gobot_dir", return_value=None),
+            patch.object(launcher, "_with_editor_python_environment", return_value=environment),
+            patch.object(launcher.os, "execvpe", side_effect=SystemExit(0)) as execute,
+            redirect_stderr(io.StringIO()),
+        ):
+            try:
+                launcher.editor()
+            except SystemExit as error:
+                assert error.code == 0
+            else:
+                raise AssertionError("editor did not execute the installed binary")
+
+        if skip_rebuild:
+            rebuild.assert_not_called()
+            expected_args = ["--path", "/project"]
+        else:
+            rebuild.assert_called_once_with()
+            expected_args = args
+        execute.assert_called_once_with(
+            os.fspath(executable), [os.fspath(executable), *expected_args], environment
+        )
+
+
 def test_editor_cuda_runtime_is_optional() -> None:
     with (
         patch.object(
@@ -263,6 +299,7 @@ def main() -> None:
     test_editable_install_repairs_missing_cached_ninja()
     test_editor_stops_instead_of_launching_stale_binary()
     test_editor_preloads_current_environment_cuda_runtime()
+    test_editor_no_rebuild_preserves_native_arguments_and_environment()
     test_editor_cuda_runtime_is_optional()
 
 

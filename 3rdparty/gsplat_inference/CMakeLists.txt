@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.26)
-project(gobot_gsplat_inference LANGUAGES CXX CUDA)
+project(gobot_gsplat_inference LANGUAGES CXX)
+
+# Toolkit discovery also searches standard install locations when nvcc is not
+# on PATH. Select that compiler before enabling CUDA, preserving user overrides.
+find_package(CUDAToolkit REQUIRED)
+if(NOT CMAKE_CUDA_COMPILER AND NOT "$ENV{CUDACXX}")
+    set(CMAKE_CUDA_COMPILER "${CUDAToolkit_NVCC_EXECUTABLE}")
+endif()
+enable_language(CUDA)
 
 include(GNUInstallDirs)
 

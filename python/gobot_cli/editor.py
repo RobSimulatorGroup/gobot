@@ -8,6 +8,7 @@ Python embedding environment.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -340,7 +341,7 @@ def _run_native_rebuild_command(
             command,
             cwd=cwd,
             env=environment,
-            stdout=subprocess.PIPE,
+            stdout=sys.stderr,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
@@ -348,8 +349,6 @@ def _run_native_rebuild_command(
     except OSError as error:
         raise RuntimeError(f"could not run editable native rebuild: {error}") from error
     if result.returncode != 0:
-        if result.stdout:
-            print(result.stdout, file=sys.stderr, end="")
         raise RuntimeError(
             f"editable native rebuild command exited with code {result.returncode}"
         )
@@ -450,6 +449,13 @@ def _rebuild_editable_native_artifacts() -> None:
             f"The editable Gobot build directory '{build_dir}' has no CMake cache. "
             "Reinstall it with 'uv sync --reinstall-package gobot'."
         )
+
+    print(
+        "[gobot] Preparing the editable native build; "
+        "--no-rebuild launches the installed editor directly.",
+        file=sys.stderr,
+        flush=True,
+    )
 
     environment_bin = os.fspath(Path(sys.executable).absolute().parent)
     environment = os.environ.copy()
@@ -604,11 +610,15 @@ def _register_packaged_examples() -> None:
 
 
 def editor() -> int:
-    try:
-        _rebuild_editable_native_artifacts()
-    except RuntimeError as error:
-        print(f"[gobot] {error}", file=sys.stderr)
-        return 1
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--no-rebuild", action="store_true")
+    options, editor_args = parser.parse_known_args(sys.argv[1:])
+    if not options.no_rebuild:
+        try:
+            _rebuild_editable_native_artifacts()
+        except RuntimeError as error:
+            print(f"[gobot] {error}", file=sys.stderr)
+            return 1
 
     _register_packaged_examples()
 
@@ -616,7 +626,7 @@ def editor() -> int:
     print(f"[gobot] Python library: {python_library}", file=sys.stderr, flush=True)
 
     executable = _find_editor_executable()
-    argv = [os.fspath(executable), *sys.argv[1:]]
+    argv = [os.fspath(executable), *editor_args]
     try:
         os.execvpe(
             argv[0],
