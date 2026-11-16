@@ -161,6 +161,34 @@ if(GOB_DEPENDENCY_BUILD_GSPLAT)
         "The vendored gsplat inference source is incomplete")
     string(REPLACE ";" "|" GOBOT_GSPLAT_CUDA_ARCHITECTURES_EP
            "${GOBOT_GSPLAT_CUDA_ARCHITECTURES}")
+    # An existing SDK may use a different generator than its dependency wrapper.
+    # Preserve the SDK cache instead of inheriting the wrapper's generator/tool.
+    set(GOBOT_GSPLAT_CMAKE_GENERATOR "${CMAKE_GENERATOR}")
+    set(GOBOT_GSPLAT_CMAKE_MAKE_PROGRAM "${CMAKE_MAKE_PROGRAM}")
+    if(EXISTS "${GOB_GSPLAT_BUILD_DIR}/CMakeCache.txt")
+        load_cache("${GOB_GSPLAT_BUILD_DIR}" READ_WITH_PREFIX GOBOT_GSPLAT_CACHED_
+                   CMAKE_GENERATOR CMAKE_MAKE_PROGRAM)
+        if(GOBOT_GSPLAT_CACHED_CMAKE_GENERATOR)
+            set(GOBOT_GSPLAT_CMAKE_GENERATOR "${GOBOT_GSPLAT_CACHED_CMAKE_GENERATOR}")
+            if(GOBOT_GSPLAT_CACHED_CMAKE_MAKE_PROGRAM AND
+               EXISTS "${GOBOT_GSPLAT_CACHED_CMAKE_MAKE_PROGRAM}")
+                set(GOBOT_GSPLAT_CMAKE_MAKE_PROGRAM "${GOBOT_GSPLAT_CACHED_CMAKE_MAKE_PROGRAM}")
+            else()
+                if(GOBOT_GSPLAT_CMAKE_GENERATOR MATCHES "^Ninja")
+                    set(GOBOT_GSPLAT_BUILD_TOOL_NAMES ninja)
+                elseif(GOBOT_GSPLAT_CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+                    set(GOBOT_GSPLAT_BUILD_TOOL_NAMES gmake make)
+                else()
+                    message(FATAL_ERROR
+                        "The cached gsplat SDK build tool is unavailable for generator "
+                        "'${GOBOT_GSPLAT_CMAKE_GENERATOR}'. Restore that tool or use a new SDK build directory.")
+                endif()
+                find_program(GOBOT_GSPLAT_CURRENT_BUILD_TOOL
+                    NAMES ${GOBOT_GSPLAT_BUILD_TOOL_NAMES} NO_CACHE REQUIRED)
+                set(GOBOT_GSPLAT_CMAKE_MAKE_PROGRAM "${GOBOT_GSPLAT_CURRENT_BUILD_TOOL}")
+            endif()
+        endif()
+    endif()
     ExternalProject_Add(gobot_gsplat_sdk
         SOURCE_DIR "${GOB_GSPLAT_SOURCE_DIR}"
         BINARY_DIR "${GOB_GSPLAT_BUILD_DIR}"
@@ -171,8 +199,9 @@ if(GOB_DEPENDENCY_BUILD_GSPLAT)
         BUILD_ALWAYS TRUE
         EXCLUDE_FROM_ALL TRUE
         LIST_SEPARATOR "|"
+        CMAKE_GENERATOR "${GOBOT_GSPLAT_CMAKE_GENERATOR}"
         CMAKE_ARGS
-            "-DCMAKE_MAKE_PROGRAM:FILEPATH=${CMAKE_MAKE_PROGRAM}"
+            "-DCMAKE_MAKE_PROGRAM:FILEPATH=${GOBOT_GSPLAT_CMAKE_MAKE_PROGRAM}"
             "-DCMAKE_BUILD_TYPE:STRING=Release"
             "-DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>"
             "-DCMAKE_INSTALL_MESSAGE:STRING=LAZY"

@@ -709,6 +709,70 @@ def test_luisa_finds_system_compilers_without_gcc11() -> None:
         assert (root / "sdks/luisa_compute/install/lib/libcompiler_probe.a").is_file()
 
 
+def test_gsplat_sdk_preserves_cached_generator_and_repairs_missing_tool() -> None:
+    cmake = backend._find_build_tool("cmake")
+    ninja = backend._find_build_tool("ninja")
+    make = shutil.which("gmake") or shutil.which("make")
+    assert cmake and ninja and make, "generator regression requires CMake, Ninja and Make"
+    tools = {"Ninja": ninja, "Unix Makefiles": make}
+
+    for sdk_generator, parent_generator, missing_tool in (
+        ("Ninja", "Unix Makefiles", False),
+        ("Unix Makefiles", "Ninja", False),
+        ("Ninja", "Unix Makefiles", True),
+        (None, "Ninja", False),
+    ):
+        with tempfile.TemporaryDirectory(prefix="gobot-gsplat-generator-") as directory:
+            root = Path(directory)
+            source = root / "deps/gsplat_inference"
+            source.mkdir(parents=True)
+            (source / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.16)\n"
+                "project(gsplat_generator_probe LANGUAGES CXX)\n"
+                "add_library(gobot_gsplat_inference STATIC probe.cpp)\n"
+                "install(TARGETS gobot_gsplat_inference ARCHIVE DESTINATION lib)\n"
+            )
+            (source / "probe.cpp").write_text("int generator_probe() { return 1; }\n")
+            sdk = root / "sdks/gsplat_inference/sdk-build"
+
+            def run(command: list[str]) -> None:
+                result = subprocess.run(command, capture_output=True, text=True)
+                assert result.returncode == 0, result.stdout + result.stderr
+
+            if sdk_generator:
+                run([cmake, "-S", str(source), "-B", str(sdk), "-G", sdk_generator,
+                     f"-DCMAKE_MAKE_PROGRAM:FILEPATH={tools[sdk_generator]}"])
+                if missing_tool:
+                    cache = sdk / "CMakeCache.txt"
+                    cache.write_text(re.sub(
+                        r"^CMAKE_MAKE_PROGRAM:FILEPATH=.*$",
+                        "CMAKE_MAKE_PROGRAM:FILEPATH=/deleted/build-env/ninja",
+                        cache.read_text(), flags=re.MULTILINE,
+                    ))
+
+            project = root / "project"
+            project.mkdir()
+            module = backend.ROOT / "cmake/GobotDependencies.cmake"
+            (project / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.16)\n"
+                "project(gsplat_wrapper NONE)\n"
+                f'set(GOBOT_DEPENDENCY_SOURCE_ROOT "{root / "deps"}" CACHE PATH "")\n'
+                f'set(GOBOT_DEPENDENCY_BUILD_ROOT "{root / "sdks"}" CACHE PATH "")\n'
+                'set(GOB_DEPENDENCY_BUILD_LUISA OFF CACHE BOOL "")\n'
+                'set(GOB_DEPENDENCY_BUILD_OPENUSD OFF CACHE BOOL "")\n'
+                f'include("{module}")\n'
+            )
+            wrapper = root / "wrapper"
+            run([cmake, "-S", str(project), "-B", str(wrapper), "-G", parent_generator,
+                 f"-DCMAKE_MAKE_PROGRAM:FILEPATH={tools[parent_generator]}"])
+            run([cmake, "--build", str(wrapper), "--target", "gobot_gsplat_sdk"])
+            assert (root / "sdks/gsplat_inference/install/lib/libgobot_gsplat_inference.a").is_file()
+            expected = sdk_generator or parent_generator
+            assert f"CMAKE_GENERATOR:INTERNAL={expected}\n" in (sdk / "CMakeCache.txt").read_text()
+            assert f"CMAKE_GENERATOR:INTERNAL={parent_generator}\n" in (wrapper / "CMakeCache.txt").read_text()
+            assert "/deleted/build-env/ninja" not in (sdk / "CMakeCache.txt").read_text()
+
+
 def test_gsplat_finds_cuda_toolkit_without_nvcc_on_path() -> None:
     cmake = backend._find_build_tool("cmake")
     ninja = backend._find_build_tool("ninja")
@@ -770,6 +834,7 @@ def main() -> None:
     test_skip_environment_avoids_dependency_commands()
     test_build_tool_prefers_current_virtual_environment()
     test_luisa_finds_system_compilers_without_gcc11()
+    test_gsplat_sdk_preserves_cached_generator_and_repairs_missing_tool()
     test_gsplat_finds_cuda_toolkit_without_nvcc_on_path()
     test_native_sdk_bootstrap_uses_dependency_only_cmake_project()
     test_checkout_submodules_are_revalidated_at_pinned_gitlinks()
