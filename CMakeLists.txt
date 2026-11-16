@@ -34,7 +34,7 @@ if(GOB_BUILD_LIBUIPC)
     endif()
 endif()
 
-project (gobot VERSION 0.1.18)
+project (gobot VERSION 0.1.19)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
