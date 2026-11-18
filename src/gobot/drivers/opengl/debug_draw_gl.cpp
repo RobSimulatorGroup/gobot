@@ -213,7 +213,11 @@ std::vector<ArrowBatch> BuildArrowBatches(const std::vector<DebugArrow>& arrows)
             batches.push_back({arrow.color, {}});
             iter = std::prev(batches.end());
         }
-        AppendArrow(iter->vertices, arrow.start, arrow.start + scaled_vector);
+        if (arrow.show_head) {
+            AppendArrow(iter->vertices, arrow.start, arrow.start + scaled_vector);
+        } else {
+            AppendWorldLine(iter->vertices, arrow.start, arrow.start + scaled_vector);
+        }
     }
     return batches;
 }

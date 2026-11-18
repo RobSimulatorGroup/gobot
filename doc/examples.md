@@ -10,6 +10,7 @@ uv run gobot_editor --path examples/go1
 | Project | Purpose | Guide |
 | --- | --- | --- |
 | `cartpole` | Inverted-pendulum playback and scene-authored CPU batch training | [Guide](../examples/cartpole/README.md) |
+| `panda_trajopt` | Compare a Panda arm's initial and optimized trajectories over a wall in Play Mode | [Panda TrajOpt](../examples/panda_trajopt/README.md) |
 | `go1` | Rough-terrain locomotion, CPU/CUDA training, ONNX playback | [Go1](../examples/go1/README.md) |
 | `g1_velocity` | G1 velocity PPO training and policy playback | [G1 velocity](../examples/g1_velocity/README.md) |
 | `g1_track` | BeyondMimic single-motion tracking and live reference comparison | [G1 tracking](../examples/g1_track/README.md) |

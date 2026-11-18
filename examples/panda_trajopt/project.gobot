@@ -1,0 +1,11 @@
+{
+  "main_scene": "res://world.jscn",
+  "editor_scene_views": {
+    "res://world.jscn": {
+      "at": [0.34, 0.0, 0.47],
+      "eye": [1.95, 0.58, 0.84],
+      "up": [0, 0, 1],
+      "fov_y": 39
+    }
+  }
+}

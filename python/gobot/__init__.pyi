@@ -57,7 +57,7 @@ from ._core import (
 )
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
-from . import app, ipc, physics, render, rl, scene, sim, terrain
+from . import app, ipc, physics, planning, render, rl, scene, sim, terrain
 
 __version__: str
 

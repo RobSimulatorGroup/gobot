@@ -420,6 +420,25 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
     GOB_UNUSED(height_scanner3d_class);
 
     mesh_instance_class
+            .def("create_visual_instance", [](const PyMeshInstance3DHandle& handle,
+                                              const std::string& material_path) {
+                auto* source = handle.ResolveAs<MeshInstance3D>();
+                EngineContext* context = handle.state ? handle.state->context : nullptr;
+                ProjectSettings::Scope scope((context ? *context : GetActiveAppContext()).GetProjectSettings());
+                Ref<Material> material = dynamic_pointer_cast<Material>(ResourceLoader::Load(material_path));
+                if (!material.IsValid()) {
+                    throw std::invalid_argument("cannot load mesh instance material: " + material_path);
+                }
+                auto* visual = Object::New<MeshInstance3D>();
+                visual->SetName(source->GetName());
+                visual->SetTransform(source->GetTransform());
+                visual->SetMesh(source->GetMesh());
+                visual->SetMaterial(material);
+                visual->SetVisible(source->IsVisible());
+                visual->SetVisibleInRgb(source->IsVisibleInRgb());
+                visual->SetCastShadow(source->IsCastShadow());
+                return MakeMeshInstance3DHandle(visual, PyNodeOwnership::DetachedOwned, context);
+            }, py::arg("material_path"), "Create a detached instance of this mesh with the same local transform and a material override.")
             .def_property("surface_color",
                           [](const PyMeshInstance3DHandle& handle) {
                               const Color color = handle.ResolveAs<MeshInstance3D>()->GetSurfaceColor();
