@@ -25,6 +25,7 @@ class DebugArrow:
     color: ColorLike = (1.0, 1.0, 1.0, 1.0)
     scale: float = 1.0
     label: str = ""
+    show_head: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -33,6 +34,7 @@ class DebugArrow:
             "color": tuple(float(value) for value in self.color),
             "scale": float(self.scale),
             "label": self.label,
+            "show_head": self.show_head,
         }
 
 

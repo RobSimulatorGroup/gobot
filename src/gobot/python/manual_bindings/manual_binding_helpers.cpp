@@ -1216,6 +1216,9 @@ std::vector<DebugArrow> PythonToDebugArrows(const py::handle& object) {
         if (values.contains("label")) {
             arrow.label = py::cast<std::string>(values["label"]);
         }
+        if (values.contains("show_head")) {
+            arrow.show_head = py::cast<bool>(values["show_head"]);
+        }
         arrows.push_back(std::move(arrow));
     }
     return arrows;

@@ -1,0 +1,523 @@
+{
+  "__VERSION__": 3,
+  "__TYPE__": "PackedScene",
+  "__META_TYPE__": "SCENE",
+  "__EXT_RESOURCES__": [],
+  "__SUB_RESOURCES__": [
+    {
+      "__ID__": "proxy",
+      "__TYPE__": "SphereShape3D",
+      "radius": 0.045
+    },
+    {
+      "__ID__": "panda_link0_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.333,
+      "radius": 0.052
+    },
+    {
+      "__ID__": "panda_link0_mount",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.045,
+      "radius": 0.105
+    },
+    {
+      "__ID__": "panda_link1_joint_housing",
+      "__TYPE__": "SphereMesh",
+      "radius": 0.054
+    },
+    {
+      "__ID__": "panda_link1_joint_cap",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.013,
+      "radius": 0.032
+    },
+    {
+      "__ID__": "panda_link2_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.316,
+      "radius": 0.046
+    },
+    {
+      "__ID__": "panda_link3_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.0825,
+      "radius": 0.046
+    },
+    {
+      "__ID__": "panda_link4_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.39276233271534583,
+      "radius": 0.046
+    },
+    {
+      "__ID__": "panda_link6_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.088,
+      "radius": 0.039
+    },
+    {
+      "__ID__": "panda_link6_joint_housing",
+      "__TYPE__": "SphereMesh",
+      "radius": 0.046
+    },
+    {
+      "__ID__": "panda_link7_arm_shell",
+      "__TYPE__": "CylinderMesh",
+      "height": 0.107,
+      "radius": 0.035
+    },
+    {
+      "__ID__": "panda_hand_palm",
+      "__TYPE__": "BoxMesh",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.105, 0.055, 0.035]}}
+    },
+    {
+      "__ID__": "panda_hand_left_finger",
+      "__TYPE__": "BoxMesh",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.014, 0.022, 0.038]}}
+    }
+  ],
+  "__NODES__": [
+    {
+      "name": "panda",
+      "parent": -1,
+      "type": "Robot3D",
+      "properties": {}
+    },
+    {
+      "name": "panda_link0",
+      "parent": 0,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 1,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link0_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.1665]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "mount",
+      "parent": 1,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link0_mount)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.0225]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "base_collision",
+      "parent": 1,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(proxy)",
+        "collision_layer": 2
+      }
+    },
+    {
+      "name": "panda_joint1",
+      "parent": 1,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link0",
+        "child_link": "panda_link1",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.333]}},
+        "effort_limit": 87.0,
+        "lower_limit": -2.9671,
+        "upper_limit": 2.9671,
+        "velocity_limit": 2.175
+      }
+    },
+    {
+      "name": "panda_link1",
+      "parent": 5,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "joint_housing",
+      "parent": 6,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_housing)"
+      }
+    },
+    {
+      "name": "joint_cap",
+      "parent": 6,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_cap)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.045]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "panda_joint2",
+      "parent": 6,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link1",
+        "child_link": "panda_link2",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-90.0, 0.0, 0.0]}},
+        "effort_limit": 87.0,
+        "lower_limit": -1.8326,
+        "upper_limit": 1.8326,
+        "velocity_limit": 2.175
+      }
+    },
+    {
+      "name": "panda_link2",
+      "parent": 9,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 10,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link2_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, -0.158, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [179.999998, 89.999998, 0.0]}}
+      }
+    },
+    {
+      "name": "panda_joint3",
+      "parent": 10,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link2",
+        "child_link": "panda_link3",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, -0.316, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}},
+        "effort_limit": 87.0,
+        "lower_limit": -2.9671,
+        "upper_limit": 2.9671,
+        "velocity_limit": 2.175
+      }
+    },
+    {
+      "name": "panda_link3",
+      "parent": 12,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 13,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link3_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.04125, 0.0, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 89.999998, 0.0]}}
+      }
+    },
+    {
+      "name": "joint_housing",
+      "parent": 13,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_housing)"
+      }
+    },
+    {
+      "name": "joint_cap",
+      "parent": 13,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_cap)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.045]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "panda_joint4",
+      "parent": 13,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link3",
+        "child_link": "panda_link4",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0825, 0.0, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}},
+        "effort_limit": 87.0,
+        "lower_limit": -3.1416,
+        "upper_limit": 0.0,
+        "velocity_limit": 2.175
+      }
+    },
+    {
+      "name": "panda_link4",
+      "parent": 17,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 18,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link4_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-0.04125, 0.192, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-12.125321, 89.999998, 0.0]}}
+      }
+    },
+    {
+      "name": "joint_housing",
+      "parent": 18,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_housing)"
+      }
+    },
+    {
+      "name": "joint_cap",
+      "parent": 18,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_cap)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.045]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "elbow_collision",
+      "parent": 18,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(proxy)",
+        "collision_layer": 1
+      }
+    },
+    {
+      "name": "panda_joint5",
+      "parent": 18,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link4",
+        "child_link": "panda_link5",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-0.0825, 0.384, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-90.0, 0.0, 0.0]}},
+        "effort_limit": 12.0,
+        "lower_limit": -2.9671,
+        "upper_limit": 2.9671,
+        "velocity_limit": 2.61
+      }
+    },
+    {
+      "name": "panda_link5",
+      "parent": 23,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "panda_joint6",
+      "parent": 24,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link5",
+        "child_link": "panda_link6",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}},
+        "effort_limit": 12.0,
+        "lower_limit": -0.0873,
+        "upper_limit": 3.8223,
+        "velocity_limit": 2.61
+      }
+    },
+    {
+      "name": "panda_link6",
+      "parent": 25,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 26,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link6_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.044, 0.0, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 89.999998, 0.0]}}
+      }
+    },
+    {
+      "name": "joint_housing",
+      "parent": 26,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link6_joint_housing)"
+      }
+    },
+    {
+      "name": "joint_cap",
+      "parent": 26,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_cap)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.045]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "panda_joint7",
+      "parent": 26,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link6",
+        "child_link": "panda_link7",
+        "joint_type": "Revolute",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.088, 0.0, 0.0]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}},
+        "effort_limit": 12.0,
+        "lower_limit": -2.9671,
+        "upper_limit": 2.9671,
+        "velocity_limit": 2.61
+      }
+    },
+    {
+      "name": "panda_link7",
+      "parent": 30,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "arm_shell",
+      "parent": 31,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.8, "green": 0.86, "blue": 0.9, "alpha": 1},
+        "mesh": "SubResource(panda_link7_arm_shell)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.0535]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "joint_housing",
+      "parent": 31,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_link6_joint_housing)"
+      }
+    },
+    {
+      "name": "joint_cap",
+      "parent": 31,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_link1_joint_cap)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.045]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [90.0, 0.0, 0.0]}}
+      }
+    },
+    {
+      "name": "panda_joint8",
+      "parent": 31,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link7",
+        "child_link": "panda_link8",
+        "joint_type": "Fixed",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.107]}}
+      }
+    },
+    {
+      "name": "panda_link8",
+      "parent": 35,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "panda_hand_joint",
+      "parent": 36,
+      "type": "Joint3D",
+      "properties": {
+        "parent_link": "panda_link8",
+        "child_link": "panda_hand",
+        "joint_type": "Fixed",
+        "axis": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 1]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, -45.0]}}
+      }
+    },
+    {
+      "name": "panda_hand",
+      "parent": 37,
+      "type": "Link3D",
+      "properties": {}
+    },
+    {
+      "name": "palm",
+      "parent": 38,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.18, "blue": 0.23, "alpha": 1},
+        "mesh": "SubResource(panda_hand_palm)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.0, 0.0, 0.008]}}
+      }
+    },
+    {
+      "name": "left_finger",
+      "parent": 38,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_hand_left_finger)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [-0.035, 0.0, 0.041]}}
+      }
+    },
+    {
+      "name": "right_finger",
+      "parent": 38,
+      "type": "MeshInstance3D",
+      "properties": {
+        "surface_color": {"red": 0.12, "green": 0.51, "blue": 0.59, "alpha": 1},
+        "mesh": "SubResource(panda_hand_left_finger)",
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.035, 0.0, 0.041]}}
+      }
+    },
+    {
+      "name": "hand_collision",
+      "parent": 38,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(proxy)",
+        "collision_layer": 1
+      }
+    }
+  ]
+}

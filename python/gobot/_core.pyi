@@ -557,6 +557,7 @@ class CollisionShape3D(Node3D):
 
 
 class MeshInstance3D(Node3D):
+    def create_visual_instance(self, material_path: str) -> MeshInstance3D: ...
     surface_color: tuple[float, float, float, float]
     visible_in_rgb: bool
     cast_shadow: bool
