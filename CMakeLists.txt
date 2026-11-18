@@ -48,6 +48,7 @@ set(GOBOT_VERSION "${PROJECT_VERSION}")
 set(GOBOT_VERSION_COMMIT "" CACHE STRING "Git commit or build identifier embedded in Gobot version output")
 
 option(GOB_BUILD_TESTS "build tests" OFF)
+option(GOB_BUILD_COAL "build the Coal CPU collision backend for motion planning" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer support" OFF)
 option(GOB_BUNDLE_OPENUSD_RUNTIME
        "install the OpenUSD runtime libraries and plugin resources with Gobot"
@@ -995,6 +996,10 @@ add_custom_target(gobot_python_package
         COMMENT "Copying Gobot Python package files"
 )
 add_dependencies(gobot_python gobot_python_package)
+if(GOB_BUILD_COAL)
+    add_subdirectory(modules/coal)
+    add_dependencies(gobot_python _coal_native)
+endif()
 install(TARGETS gobot_python gobot
         RUNTIME DESTINATION "gobot" COMPONENT python
         LIBRARY DESTINATION "gobot" COMPONENT python)
@@ -1114,6 +1119,9 @@ if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     endif()
 endif()
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}" "gobot")
+if(GOB_BUILD_COAL)
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/coal" "coal")
+endif()
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/assimp" "assimp")
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit" "ImGuiColorTextEdit")
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/imgui" "imgui")
@@ -1198,6 +1206,9 @@ add_library(gobot_editor_runtime SHARED
         src/gobot/platform/linux/gobot_editor_runtime.cpp
 )
 add_dependencies(gobot_editor_runtime gobot_editor_resources gobot_python_package)
+if(GOB_BUILD_COAL)
+    add_dependencies(gobot_editor_runtime _coal_native)
+endif()
 target_include_directories(gobot_editor_runtime PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
 target_compile_definitions(gobot_editor_runtime PRIVATE

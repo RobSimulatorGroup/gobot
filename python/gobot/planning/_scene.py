@@ -98,7 +98,7 @@ def _shape(value, link, body, rest, tensor) -> _Shape:
 
 
 class PlanningScene:
-    def __init__(self, snapshot, robots, ignored_link_pairs, link_capsules, dtype, device):
+    def __init__(self, snapshot, robots, ignored_link_pairs, link_capsules, dtype, device, collision_backend="torch"):
         if snapshot.get("schema_version") != 1:
             raise ValueError("unsupported physics snapshot schema")
         if dtype not in (torch.float32, torch.float64):
@@ -107,6 +107,16 @@ class PlanningScene:
             raise ValueError("select at least one robot and its base link")
         if snapshot.get("deformables"):
             raise ValueError("planning collision does not support deformable bodies")
+
+        if collision_backend not in ("torch", "coal"):
+            raise ValueError("collision_backend must be 'torch' or 'coal'")
+        use_coal = collision_backend == "coal"
+        self.coal_models = ()
+        self.validation_models = ()
+        if use_coal:
+            if device.type != "cpu":
+                raise ValueError("Coal planning requires a CPU device")
+            from . import _coal
 
         self.dtype, self.device = dtype, device
         self.kinematics = []
@@ -189,14 +199,38 @@ class PlanningScene:
                 raise ValueError(f"unknown ignored collision link pair {(a, b)!r}")
             adjacent.add(frozenset((a, b)))
 
-        shapes = []
+        shapes, convex_shapes, authored_shapes = [], [], []
+
+        def add_shape(value, key, body, rest, *, validation_only=False):
+            if use_coal:
+                p, r = _transform(value["transform"], self.tensor)
+                if rest is not None:
+                    origin, frame = rest
+                    p, r = frame.T @ (p - origin), frame.T @ r
+                item = _coal.shape(value, key, body, p, r)
+                authored_shapes.append(item)
+                if validation_only:
+                    return
+                convex_shapes.append(item)
+                # The existing chord sweep applies to moving spheres/capsules
+                # against spheres, capsules, boxes and halfspaces.
+                kinds = (_SPHERE, _CAPSULE) if body is not None else (_SPHERE, _CAPSULE, _BOX, _PLANE)
+                if value["type"] not in kinds:
+                    return
+            shapes.append(_shape(value, key, body, rest, self.tensor))
+
         for robot in snapshot["robots"]:
             for link in robot["links"]:
                 if link.get("role") == "virtual_root":
                     continue
                 key = (robot["name"], link["name"])
                 index = self.links.get(key)
+                rest = _transform(link["global_transform"], self.tensor) if index is not None else None
                 if key in link_capsules:
+                    authored = [v for v in link.get("shapes", ()) if not v["disabled"]]
+                    if use_coal:
+                        for value in authored:
+                            add_shape(value, key, index, rest, validation_only=True)
                     for capsule in link_capsules[key]:
                         a, b, radius = map(self.tensor, (capsule.start, capsule.end, capsule.radius))
                         if (
@@ -204,24 +238,29 @@ class PlanningScene:
                             or not torch.isfinite(torch.cat((a, b, radius[None]))).all() or radius < 0
                         ):
                             raise ValueError(f"invalid collision capsule on {key!r}")
+                        if use_coal:
+                            item = _coal.capsule_shape(key, index, a, b, radius, capsule.collision_layer,
+                                                       capsule.collision_mask)
+                            convex_shapes.append(item)
+                            if not authored:
+                                authored_shapes.append(item)
                         shapes.append(_Shape(_CAPSULE, key, index, (a, b, radius),
                                              capsule.collision_layer, capsule.collision_mask))
                     continue
-                rest = _transform(link["global_transform"], self.tensor) if index is not None else None
                 for shape in link.get("shapes", ()):
                     if not shape["disabled"]:
-                        shapes.append(_shape(shape, key, index, rest, self.tensor))
+                        add_shape(shape, key, index, rest)
         for shape in snapshot.get("loose_shapes", ()):
             if not shape["disabled"]:
                 key = ("", shape.get("path", shape["name"]))
-                shapes.append(_shape(shape, key, None, None, self.tensor))
+                add_shape(shape, key, None, None)
         for terrain in snapshot.get("terrains", ()):
             if terrain["heightfields"]:
                 raise ValueError("planning collision does not support terrain heightfields")
             key = ("", terrain["name"])
             for geometry in terrain["boxes"] + terrain["meshes"]:
                 value = dict(terrain, **geometry, type=_BOX if "size" in geometry else _MESH)
-                shapes.append(_shape(value, key, None, None, self.tensor))
+                add_shape(value, key, None, None)
 
         mobile = [shape for shape in shapes if shape.body is not None]
         fixed = [shape for shape in shapes if shape.body is None]
@@ -249,7 +288,15 @@ class PlanningScene:
                 data = tuple(torch.stack(values) for values in zip(*(shape.data for shape in obstacles)))
                 self._fixed_groups.append((kernel, torch.tensor(indices, device=device), data))
                 labels.extend((mobile[i].link, shape.link) for i, shape in pairs)
+        self.swept_pairs = tuple(labels[len(same):])
         self.collision_pairs = tuple(labels)
+        if use_coal:
+            model = _coal.CollisionModel(convex_shapes, enabled)
+            self.coal_models = (model,)
+            self.collision_pairs = model.labels
+            if link_capsules or model.has_mesh:
+                validation = _coal.CollisionModel(authored_shapes, enabled) if link_capsules else model
+                self.validation_models = (validation,)
 
     @property
     def has_collision_pairs(self):
@@ -267,7 +314,8 @@ class PlanningScene:
             trees = [(kin.body_names, kin.parent, kin.kinds, kin.joint_idx, kin.joint_names)
                      for kin, _, _ in scene.kinematics]
             return (scene.links, scene.joint_names, trees, scene.collision_pairs,
-                    [kernel for kernel, _, _ in scene._fixed_groups])
+                    [kernel for kernel, _, _ in scene._fixed_groups],
+                    tuple(model.topology for model in scene.coal_models))
 
         def indices(scene):
             return (scene._body_indices, scene._mobile_pairs, *(i for _, i, _ in scene._fixed_groups))
@@ -282,6 +330,9 @@ class PlanningScene:
                 raise ValueError("batched planners must share joint and collision topology")
 
         batch = copy(first)
+        batch.coal_models = tuple(m for scene in scenes for m in scene.coal_models)
+        if any(scene.validation_models for scene in scenes):
+            batch.validation_models = tuple((s.validation_models or s.coal_models)[0] for s in scenes)
         batch.kinematics = []
         for branches in zip(*(scene.kinematics for scene in scenes)):
             models, roots, slices = zip(*branches)
@@ -321,7 +372,7 @@ class PlanningScene:
 
     @property
     def self_pair_count(self):
-        return len(self._mobile_pairs)
+        return self.coal_models[0].self_count if self.coal_models else len(self._mobile_pairs)
 
     def pair_margins(self, margin, world_margin):
         margins = self.initial.new_full((len(self.collision_pairs),), world_margin)
@@ -351,6 +402,8 @@ class PlanningScene:
     def pose_distances(self, positions, rotations):
         if not self.has_collision_pairs:
             return positions.new_empty(positions.shape[:-2] + (0,))
+        if self.coal_models:
+            return self._coal_distances(self.coal_models, positions, rotations)
         a, b = self._capsule_ends(positions, rotations)
         distances = []
         if len(self._mobile_pairs):
@@ -359,3 +412,19 @@ class PlanningScene:
                                               a.index_select(-2, j), b.index_select(-2, j), self._radius[..., j]))
         distances.extend(self._world_distances(a, b))
         return torch.cat(distances, dim=-1)
+
+    @staticmethod
+    def _coal_distances(models, positions, rotations):
+        if len(models) == 1:
+            return models[0].distances(positions, rotations)
+        return torch.stack([model.distances(p, r) for model, p, r in zip(models, positions, rotations, strict=True)])
+
+    def original_queries(self, positions, rotations, margin, world_margin):
+        """Yield row slices and original distances; per-scene meshes can have different pair counts."""
+        for i, model in enumerate(self.validation_models):
+            rows = slice(None) if len(self.validation_models) == 1 else slice(i, i + 1)
+            distances = model.distances(positions[rows], rotations[rows], verify=True,
+                                        clearance=max(margin, world_margin))
+            margins = distances.new_full((len(model.labels),), world_margin)
+            margins[:model.self_count] = margin
+            yield rows, distances, margins, model.names

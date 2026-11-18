@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import torch
 
-from gobot.planning import Capsule, Planner, PoseTarget
+from gobot.planning import Capsule, PoseTarget
 from gobot.planning._trajectory import acceleration_stencil
-from panda_planning import PANDA_URDF, check_pose, panda
+from panda_planning import PANDA_URDF, check_pose, make_planner, panda
 
 
 @pytest.mark.parametrize("dt", [0.02, 0.15])
@@ -19,7 +19,7 @@ def test_five_point_acceleration(dt):
     torch.testing.assert_close(matrix @ t**4, 12 * t[2:-2]**2, atol=1e-10, rtol=1e-10)
 
 
-def test_panda_over_wall(panda):
+def test_panda_over_wall(panda, make_planner):
     snapshot = deepcopy(panda)
     root_sphere = snapshot["robots"][0]["links"][0]["shapes"][0]
     wall_center = np.array([0.5, 0., 0.2])
@@ -32,7 +32,7 @@ def test_panda_over_wall(panda):
     # The base is bolted to the ground. All moving proxies interact with the ground.
     root_sphere["collision_layer"] = 2
     snapshot["loose_shapes"] = [wall, ground]
-    planner = Planner(snapshot, {"panda": "panda_link0"})
+    planner = make_planner(snapshot, {"panda": "panda_link0"})
     link = ("panda", "panda_hand")
     down = torch.diag(torch.tensor([-1., 1., -1.], dtype=torch.float64))
     start = PoseTarget(link, [0.5, -0.35, 0.2], down)
@@ -75,12 +75,12 @@ def test_panda_over_wall(panda):
     assert (q.diff(dim=0).abs() <= dt * vmax * (1 + 1e-6)).all()
 
 
-def test_capsule_sweep_catches_obstacle_between_samples(panda):
+def test_capsule_sweep_catches_obstacle_between_samples(panda, make_planner):
     snapshot = deepcopy(panda)
     joints = torch.tensor([[0., -0.5, 0., -2., 0., 1.5, 0.8],
                            [0.9, -0.5, 0., -2., 0., 1.5, 0.8]], dtype=torch.float64)
     link = ("panda", "panda_hand")
-    base_planner = Planner(snapshot, {"panda": "panda_link0"})
+    base_planner = make_planner(snapshot, {"panda": "panda_link0"})
     origins, _ = base_planner.link_pose(joints, link)
     frame = np.eye(4)
     frame[:3, 3] = origins.mean(dim=0).numpy()
@@ -90,7 +90,7 @@ def test_capsule_sweep_catches_obstacle_between_samples(panda):
     # Only the middle of this capsule's sweep hits the post.
     proxies = {("panda", "panda_link0"): [], ("panda", "panda_link4"): [],
                link: [Capsule((0, 0, -0.2), (0, 0, 0.2), 0.01)]}
-    planner = Planner(snapshot, {"panda": "panda_link0"}, link_capsules=proxies)
+    planner = make_planner(snapshot, {"panda": "panda_link0"}, link_capsules=proxies)
     assert (planner.collision_distances(joints) > 0.02).all()
     assert not planner.validate_trajectory(joints, dt=1., collision_substeps=1)
     assert not planner.solve_trajopt(*joints, dt=1., waypoints=2, collision_substeps=1).success

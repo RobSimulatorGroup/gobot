@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import torch
 
-from panda_planning import PANDA_URDF, check_pose, panda, reference_pose
-from gobot.planning import Capsule, Planner, PlannerBatch, PoseTarget
+from panda_planning import PANDA_URDF, check_pose, make_planner, panda, reference_pose
+from gobot.planning import Capsule, PlannerBatch, PoseTarget
 
 
 BASE = {"panda": "panda_link0"}
@@ -27,10 +27,10 @@ def hand_capsule(radius):
     return Capsule((0, 0, -0.02), (0, 0, 0.02), radius)
 
 
-def test_unit_collision_batching(panda):
+def test_unit_collision_batching(panda, make_planner):
     # Two capsules and the same one active pair in all five rows.
     models = [
-        Planner(panda, BASE, link_capsules={
+        make_planner(panda, BASE, link_capsules={
             ROOT: [], ELBOW: [hand_capsule(0.10 + i * 0.01)], HAND: [hand_capsule(0.10 + i * 0.01)],
         }) for i in range(5)
     ]
@@ -41,10 +41,10 @@ def test_unit_collision_batching(panda):
     torch.testing.assert_close(d.diff(dim=0), d.new_full((4, 1), -0.02))
 
 
-def test_unit_collision_batching_topology_mismatch(panda):
+def test_unit_collision_batching_topology_mismatch(panda, make_planner):
     # Equal shapes and joint order can still encode different active pairs.
-    first = Planner(panda, BASE, ignored_link_pairs=[(ROOT, HAND)])
-    second = Planner(panda, BASE, ignored_link_pairs=[(ELBOW, HAND)])
+    first = make_planner(panda, BASE, ignored_link_pairs=[(ROOT, HAND)])
+    second = make_planner(panda, BASE, ignored_link_pairs=[(ELBOW, HAND)])
     assert len(first.collision_pairs) == len(second.collision_pairs)
     assert first.collision_pairs != second.collision_pairs
     with pytest.raises(ValueError, match="topology"):
@@ -52,8 +52,8 @@ def test_unit_collision_batching_topology_mismatch(panda):
 
 
 @pytest.mark.parametrize("wide_workspace", (False, True), ids=("nearby", "unit_cube"))
-def test_integration_ik_basic(panda, wide_workspace):
-    planner = Planner(panda, BASE, link_capsules={ROOT: [], ELBOW: [], HAND: []})
+def test_integration_ik_basic(panda, make_planner, wide_workspace):
+    planner = make_planner(panda, BASE, link_capsules={ROOT: [], ELBOW: [], HAND: []})
     positions = torch.rand(5, 3, generator=torch.Generator().manual_seed(0), dtype=SEED.dtype)
     if not wide_workspace:
         positions = SEED.new_tensor([0.5, 0.0, 0.5]) + 0.12 * (positions - 0.5)
@@ -75,9 +75,9 @@ def test_integration_ik_basic(panda, wide_workspace):
             assert q.isnan().all()
 
 
-def test_integration_ik_mixed_batching(panda):
+def test_integration_ik_mixed_batching(panda, make_planner):
     # The third hand capsule makes this otherwise reachable pose infeasible.
-    models = [Planner(panda, BASE, link_capsules={HAND: [hand_capsule(r)]}) for r in (0.03, 0.04, 1.5)]
+    models = [make_planner(panda, BASE, link_capsules={HAND: [hand_capsule(r)]}) for r in (0.03, 0.04, 1.5)]
     positions = SEED.new_tensor([0.5, 0, 0.5]).expand(3, -1)
     result = PlannerBatch(models).solve_ik([PoseTarget(HAND, positions, DOWN)], seed=SEED)
     assert result.positions.shape == (3, 7)
@@ -89,7 +89,7 @@ def test_integration_ik_mixed_batching(panda):
         assert model.collision_distances(result.positions[i]).min() >= 0.02 - 1e-6
 
 
-def test_integration_ik_fully_batched(panda):
+def test_integration_ik_fully_batched(panda, make_planner):
     models, references, positions, rotations = [], [], [], []
     links = [HAND, ("panda", "panda_link7"), HAND]
     delta = SEED.new_tensor([0.1, -0.06, 0.02, 0.04, -0.1, 0.10, -0.05])
@@ -110,7 +110,7 @@ def test_integration_ik_fully_batched(panda):
             matrix[:3, 3] += shift
             for shape in body.get("shapes", ()):
                 shape["transform"]["matrix"][:3, 3] += shift
-        model = Planner(snapshot, BASE, link_capsules={HAND: [hand_capsule(0.02 + row * 0.01)]})
+        model = make_planner(snapshot, BASE, link_capsules={HAND: [hand_capsule(0.02 + row * 0.01)]})
         models.append(model)
         references.append(reference)
         position, rotation = reference_pose(reference, model, seeds[row] + delta * 0.7, link)

@@ -71,6 +71,8 @@ class Script(gobot.NodeScript):
                 if "error" in plan:
                     print(f"Panda TrajOpt failed: {plan['error']}")
                     return
+                hits = str(plan["seed_hits"]) or "none"
+                clearance_mm = 1000 * float(plan["world_clearance"])
                 self.links = [self.links_by_name[name] for name in plan["links"]]
                 self.seed_poses, self.poses = plan["poses"]
                 self.dt = float(plan["dt"])
@@ -83,7 +85,8 @@ class Script(gobot.NodeScript):
             render.set_debug_arrows(path_segments(seed_path, SEED_COLOR)
                                     + path_segments(optimized_path, PLAN_COLOR))
             self.elapsed = 0.0
-            print(f"Panda TrajOpt: {len(optimized_path)} waypoints. Translucent pink arm and path = seed. "
+            print(f"Panda TrajOpt (Coal): {len(optimized_path)} waypoints. Seed intersections: {hits}. "
+                  f"Optimized sampled world clearance: {clearance_mm:.1f} mm. Translucent pink arm and path = seed. "
                   "Solid arm and cyan path = optimized. Playing at quarter speed.")
         if self.poses is None:
             return

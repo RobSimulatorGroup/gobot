@@ -1,5 +1,6 @@
 """Offline Panda scene and independent MuJoCo checks for motion-planning tests."""
 
+from functools import partial
 from pathlib import Path
 
 import mujoco
@@ -43,3 +44,9 @@ def check_pose(model, planner, q, link, position, rotation):
     assert torch.linalg.vector_norm(actual_position - position).item() <= 1e-4
     error = Rotation.from_matrix((rotation.T @ actual_rotation).numpy())
     assert error.magnitude() <= 1e-3
+
+@pytest.fixture(params=("torch", "coal"))
+def make_planner(request):
+    if request.param == "coal":
+        pytest.importorskip("gobot._coal_native", exc_type=ModuleNotFoundError)
+    return partial(gobot.planning.Planner, collision_backend=request.param)

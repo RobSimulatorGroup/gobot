@@ -71,6 +71,11 @@ def _world_margin(margin, world_margin):
     return world_margin
 
 
+def _clearance_mask(distances, margin):
+    minimum = (torch.as_tensor(margin, dtype=distances.dtype, device=distances.device) - _CLEARANCE_TOLERANCE).clamp_min(0)
+    return torch.isfinite(distances) & (distances >= minimum)
+
+
 class Planner:
     """Plan with one or more articulations and fixed root poses from a snapshot.
 
@@ -83,9 +88,10 @@ class Planner:
         ignored_link_pairs: Sequence[tuple[Link, Link]] = (),
         link_capsules: Mapping[Link, Sequence[Capsule]] | None = None,
         device: str | torch.device = "cpu", dtype: torch.dtype = torch.float64,
+        collision_backend: str = "torch",
     ):
         self._scene = PlanningScene(snapshot, robots, ignored_link_pairs, link_capsules or {},
-                                    dtype, torch.device(device))
+                                    dtype, torch.device(device), collision_backend)
 
     @property
     def joint_names(self) -> tuple[tuple[str, str], ...]:
@@ -122,10 +128,6 @@ class Planner:
         """Differentiable distances in metres, positive for separated shapes."""
         return self._scene.distances(self._joint_tensor(positions))
 
-    def _clear(self, distances, margin):
-        minimum = (self._scene.tensor(margin) - _CLEARANCE_TOLERANCE).clamp_min(0)
-        return bool(torch.isfinite(distances).all() and (distances >= minimum).all())
-
     def _bounded(self, q):
         return bool(((q >= self._scene.lower) & (q <= self._scene.upper)).all())
 
@@ -144,7 +146,7 @@ class Planner:
                                 margin, position_tolerance, rotation_tolerance, iterations, single=True,
                                 world_margin=world_margin)
         if not result.success.item():
-            return IKResult(None, "IK found no configuration satisfying pose, joint limits and clearance")
+            return IKResult(None, result.reasons[0])
         return IKResult(result.positions[0])
 
     @torch.no_grad()
@@ -159,15 +161,32 @@ class Planner:
         q = self._joint_tensor(positions)
         if q.ndim != 2 or q.shape[0] < 2:
             raise ValueError("a trajectory must contain at least two joint configurations")
-        speed = q.diff(dim=0).abs() / dt
-        return (
-            bool(torch.isfinite(q).all())
-            and self._speed_bounded(speed)
-            and self._bounded(q)
-            and self._clear(self.collision_distances(interpolation(q, collision_substeps)),
-                            self._scene.pair_margins(margin, world_margin))
-            and self._clear(self._scene.swept_world_distances(q[:-1], q[1:]), world_margin)
-        )
+        return self._trajectory_failure(q, dt, margin, world_margin, collision_substeps) is None
+
+    def _trajectory_failure(self, q, dt, margin, world_margin, substeps):
+        scene = self._scene
+        if not torch.isfinite(q).all() or not self._bounded(q):
+            return "trajectory violates joint limits"
+        if not self._speed_bounded(q.diff(dim=0).abs() / dt):
+            return "trajectory violates joint velocity limits"
+        samples = interpolation(q, substeps)
+
+        def collision(d, thresholds, pairs, samples_per_segment):
+            ok = _clearance_mask(d, thresholds)
+            if ok.all():
+                return None
+            sample, pair = (~ok).nonzero()[0].tolist()
+            segment = min(sample // samples_per_segment, len(q) - 2)
+            return f"collision clearance on segment {segment}, pair {pairs[pair]}"
+
+        p, r = scene.poses(samples)
+        for _, distances, margins, names in scene.original_queries(p, r, margin, world_margin):
+            failure = collision(distances, margins, names, substeps)
+            if failure:
+                return failure
+        return (collision(scene.pose_distances(p, r), scene.pair_margins(margin, world_margin),
+                          scene.coal_models[0].names if scene.coal_models else scene.collision_pairs, substeps)
+                or collision(scene.swept_world_distances(q[:-1], q[1:]), world_margin, scene.swept_pairs, 1))
 
     @torch.no_grad()
     def solve_trajopt(
@@ -186,8 +205,16 @@ class Planner:
         if not self._bounded(ends):
             return TrajectoryResult(None, dt, "start or goal violates joint limits")
         scene = self._scene
-        if not self._clear(self.collision_distances(ends), scene.pair_margins(margin, world_margin)):
-            return TrajectoryResult(None, dt, "start or goal violates collision clearance")
+        p, r = scene.poses(ends)
+        names = scene.coal_models[0].names if scene.coal_models else scene.collision_pairs
+        checks = [(scene.pose_distances(p, r), scene.pair_margins(margin, world_margin), names)]
+        checks.extend((d, m, names) for _, d, m, names in scene.original_queries(p, r, margin, world_margin))
+        for distances, margins, pairs in checks:
+            ok = _clearance_mask(distances, margins)
+            if not ok.all():
+                row, index = (~ok).nonzero()[0].tolist()
+                segment = 0 if row == 0 else waypoints - 2
+                return TrajectoryResult(None, dt, f"endpoint collision on segment {segment}, pair {pairs[index]}")
         fixed = 2 if stop_at_endpoints else 1
         if waypoints < 2 * fixed:
             raise ValueError("stopping at both endpoints requires at least four waypoints")
@@ -205,10 +232,12 @@ class Planner:
             interior = initial[fixed:-fixed].clamp(scene.lower, scene.upper)
         initial = torch.cat((start.expand(fixed, -1), interior, goal.expand(fixed, -1)))
 
+        failure = None
+
         def feasible(positions):
-            return self.validate_trajectory(
-                positions, dt=dt, margin=margin, world_margin=world_margin, collision_substeps=2 * collision_substeps,
-            )
+            nonlocal failure
+            failure = self._trajectory_failure(positions, dt, margin, world_margin, 2 * collision_substeps)
+            return failure is None
 
         if not interior.numel():
             q = initial if feasible(initial) else None
@@ -220,7 +249,7 @@ class Planner:
                 q = optimize(scene, initial, dt, margin, world_margin, 2 * collision_substeps, iterations,
                              feasible, fixed)
         if q is None:
-            return TrajectoryResult(None, dt, "trajectory optimization found no feasible path from this seed",
+            return TrajectoryResult(None, dt, failure or "trajectory optimization found no feasible path from this seed",
                                     initial_positions=initial)
         return TrajectoryResult(q, dt, initial_positions=initial)
 
@@ -298,6 +327,7 @@ class BatchedIKResult:
 
     positions: Tensor
     success: Tensor
+    reasons: tuple[str | None, ...] = ()
 
 
 class PlannerBatch:
@@ -334,12 +364,15 @@ class PlannerBatch:
     def _solve_ik(self, targets, seed, margin, position_tolerance, rotation_tolerance, iterations,
                   single=False, world_margin=None):
         _check_count(iterations, "iterations")
+        failures = {}
         q0, terms, feasible = self._prepare_ik(targets, seed, margin, position_tolerance, rotation_tolerance,
-                                               single, world_margin)
+                                               single, world_margin, failures)
         q, success = solve_rows(q0, self._scene.lower, self._scene.upper, terms, feasible, iterations)
-        return BatchedIKResult(q.masked_fill(~success[:, None], torch.nan), success)
+        generic = "IK found no configuration satisfying pose, joint limits and clearance"
+        reasons = tuple(None if ok else failures.get(i, generic) for i, ok in enumerate(success.tolist()))
+        return BatchedIKResult(q.masked_fill(~success[:, None], torch.nan), success, reasons)
 
-    def _prepare_ik(self, targets, seed, margin, position_tolerance, rotation_tolerance, single, world_margin):
+    def _prepare_ik(self, targets, seed, margin, position_tolerance, rotation_tolerance, single, world_margin, failures=None):
         world_margin = _world_margin(margin, world_margin)
         _check_scalar(position_tolerance, "position_tolerance")
         _check_scalar(rotation_tolerance, "rotation_tolerance")
@@ -413,11 +446,19 @@ class PlannerBatch:
             p, r = scene.poses(q)
             translations, angles = errors(p, r)
             distances = scene.pose_distances(p, r)
-            valid = (torch.isfinite(distances) & (distances >= (margins - _CLEARANCE_TOLERANCE).clamp_min(0))).all(-1)
+            valid = _clearance_mask(distances, margins).all(-1)
             for error in translations:
                 valid = valid & (torch.linalg.vector_norm(error, dim=-1) <= position_tolerance)
             for error in angles:
                 valid = valid & (torch.linalg.vector_norm(error, dim=-1) <= rotation_tolerance)
+            for batch, original, thresholds, names in scene.original_queries(p, r, margin, world_margin):
+                ok = _clearance_mask(original, thresholds)
+                accepted = ok.all(-1)
+                if failures is not None:
+                    for row in (valid[batch] & ~accepted).nonzero().flatten().tolist():
+                        pair = (~ok[row]).nonzero()[0].item()
+                        failures[(batch.start or 0) + row] = f"IK original collision clearance failed for pair {names[pair]}"
+                valid[batch] &= accepted
             return valid
 
         return q0, terms, feasible
