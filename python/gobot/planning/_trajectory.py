@@ -1,9 +1,18 @@
 """Least-squares terms for piecewise-linear joint trajectories."""
 
+import math
+
 import torch
 from torch.func import jacfwd, vmap
 
 from ._solver import augmented, solve
+
+
+def grid_substeps(q, minimum, max_length):
+    if max_length is None:
+        return minimum
+    longest = torch.linalg.vector_norm(q.diff(dim=0), dim=-1).max().item()
+    return max(minimum, math.ceil(longest / max_length))
 
 
 def interpolation(positions, substeps):
@@ -22,23 +31,22 @@ def collision_penalty(distance, margin):
     return torch.where(distance < 0, margin * 0.5 - distance, near)
 
 
-def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, feasible, fixed):
+def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, feasible, fixed,
+             solver="lm", targets=(), max_length=None):
     waypoints, joints = initial.shape
     free = slice(fixed, -fixed)
     eye = torch.eye(waypoints, dtype=initial.dtype, device=initial.device)
-    matrix = torch.cat((0.01 * eye, eye.diff(dim=0), 0.1 * acceleration_stencil(eye, dt)))
-    offset = torch.zeros_like(matrix @ initial)
-    offset[:waypoints] = 0.01 * scene.initial
-    joint_eye = torch.eye(joints, dtype=initial.dtype, device=initial.device)
-    smooth_jac = torch.kron(matrix[:, free].contiguous(), joint_eye)
-    smooth_hessian = smooth_jac.T @ smooth_jac
-    fractions = torch.arange(substeps, dtype=initial.dtype, device=initial.device)[:, None] / substeps
+    def fractions_for(q):
+        count = grid_substeps(q, substeps, max_length)
+        return torch.arange(count, dtype=q.dtype, device=q.device)[:, None] / count
+
+    fractions = fractions_for(initial)
     margins = scene.pair_margins(margin, world_margin)
 
     def trajectory(interior):
         return torch.cat((initial[:fixed], interior, initial[-fixed:]))
 
-    def segment_terms(pair):
+    def segment_terms(pair, fractions=fractions):
         start, end = pair.unbind(-2)
         speed = (end - start) / dt
         samples = torch.lerp(start.unsqueeze(-2), end.unsqueeze(-2), fractions)
@@ -49,6 +57,26 @@ def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, fea
             world_margin - scene.swept_world_distances(start, end),
         ), dim=-1)
         return soft, constraints
+
+    if solver == "sqp":
+        from ._sqp import optimize_sqp
+
+        def constraints_for(q):
+            grid = fractions_for(q)
+            return lambda pair: segment_terms(pair, grid)[1]
+
+        # Fixed-time zero-target JointVelEq and JointAccEq terms.
+        matrix = torch.cat((eye.diff(dim=0), 0.1 * eye.diff(n=2, dim=0) / dt**2))
+        return optimize_sqp(initial, fixed, scene.lower, scene.upper, matrix,
+                            constraints_for, targets, feasible, iterations)
+
+    matrix = torch.cat((0.01 * eye, eye.diff(dim=0), 0.1 * acceleration_stencil(eye, dt)))
+    offset = torch.zeros_like(matrix @ initial)
+    offset[:waypoints] = 0.01 * scene.initial
+
+    joint_eye = torch.eye(joints, dtype=initial.dtype, device=initial.device)
+    smooth_jac = torch.kron(matrix[:, free].contiguous(), joint_eye)
+    smooth_hessian = smooth_jac.T @ smooth_jac
 
     def segments(q):
         return torch.stack((q[:-1], q[1:]), dim=1)

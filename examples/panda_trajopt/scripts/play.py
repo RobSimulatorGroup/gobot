@@ -54,10 +54,11 @@ class Script(gobot.NodeScript):
             "snapshot": snapshot,
             "start": self.get_node("Start").position,
             "goal": self.get_node("Goal").position,
+            "inspection": self.get_node("Inspection").position,
         }, default=lambda array: array.tolist()))
         script = Path(self.context.project_path) / "scripts" / "plan.py"
         self.worker = subprocess.Popen([sys.executable, str(script), str(request), str(self.result)])
-        print("Panda TrajOpt: planning from Start to Goal...")
+        print("Panda TrajOpt: planning through Inspection to Goal...")
 
     def _process(self, delta):
         if self.worker is not None:
@@ -73,6 +74,8 @@ class Script(gobot.NodeScript):
                     return
                 hits = str(plan["seed_hits"]) or "none"
                 clearance_mm = 1000 * float(plan["world_clearance"])
+                inspection_mm = 1000 * float(plan["inspection_error"])
+                inspection_degrees = np.degrees(float(plan["inspection_angle"]))
                 self.links = [self.links_by_name[name] for name in plan["links"]]
                 self.seed_poses, self.poses = plan["poses"]
                 self.dt = float(plan["dt"])
@@ -85,7 +88,8 @@ class Script(gobot.NodeScript):
             render.set_debug_arrows(path_segments(seed_path, SEED_COLOR)
                                     + path_segments(optimized_path, PLAN_COLOR))
             self.elapsed = 0.0
-            print(f"Panda TrajOpt (Coal): {len(optimized_path)} waypoints. Seed intersections: {hits}. "
+            print(f"Panda TrajOpt (SQP / Coal): {len(optimized_path)} waypoints. Seed intersections: {hits}. "
+                  f"Inspection error: {inspection_mm:.3f} mm, {inspection_degrees:.3f} degrees. "
                   f"Optimized sampled world clearance: {clearance_mm:.1f} mm. Translucent pink arm and path = seed. "
                   "Solid arm and cyan path = optimized. Playing at quarter speed.")
         if self.poses is None:

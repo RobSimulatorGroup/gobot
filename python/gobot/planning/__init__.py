@@ -10,7 +10,7 @@ from torch import Tensor
 from ._geometry import rotation_log
 from ._scene import Capsule, PlanningScene
 from ._solver import solve_rows
-from ._trajectory import collision_penalty, interpolation, optimize
+from ._trajectory import collision_penalty, grid_substeps, interpolation, optimize
 
 __all__ = ["BatchedIKResult", "Capsule", "IKResult", "Planner", "PlannerBatch", "PoseTarget", "TrajectoryResult"]
 
@@ -74,6 +74,48 @@ def _world_margin(margin, world_margin):
 def _clearance_mask(distances, margin):
     minimum = (torch.as_tensor(margin, dtype=distances.dtype, device=distances.device) - _CLEARANCE_TOLERANCE).clamp_min(0)
     return torch.isfinite(distances) & (distances >= minimum)
+
+
+def _target_fields(target, field, scene):
+    if target.position is None and target.rotation is None:
+        raise ValueError("a pose target requires position, rotation or both")
+    position = rotation = None
+    if target.position is not None:
+        position = field(target.position, (3,), "target position")
+        if not torch.isfinite(position).all():
+            raise ValueError("a target position must be finite")
+    if target.rotation is not None:
+        rotation = field(target.rotation, (3, 3), "target rotation")
+        if (not torch.isfinite(rotation).all()
+                or not torch.allclose(rotation.mT @ rotation, scene.tensor(torch.eye(3)), atol=1e-5)
+                or not torch.allclose(torch.linalg.det(rotation), scene.tensor(1), atol=1e-5)):
+            raise ValueError("a target rotation must be a proper 3×3 rotation matrix")
+    return position, rotation
+
+
+def _waypoint_error(scene, target):
+    def field(value, shape, name):
+        value = scene.tensor(value).detach()
+        if value.shape != shape:
+            raise ValueError(f"invalid {name} shape {tuple(value.shape)}")
+        return value
+
+    try:
+        link = scene.links[target.link]
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"unknown target link {target.link!r}") from error
+    position, rotation = _target_fields(target, field, scene)
+
+    def error(q):
+        p, r = scene.poses(q)
+        components = []
+        if position is not None:
+            components.append(p[link] - position)
+        if rotation is not None:
+            components.append(rotation_log(rotation.mT @ r[link]))
+        return torch.cat(components)
+
+    return error
 
 
 class Planner:
@@ -152,7 +194,7 @@ class Planner:
     @torch.no_grad()
     def validate_trajectory(
         self, positions: Tensor, *, dt: float, margin: float = 0.02, collision_substeps: int = 16,
-        world_margin: float | None = None,
+        world_margin: float | None = None, longest_valid_segment_length: float | None = None,
     ) -> bool:
         """Check joint limits, sampled clearance and swept world clearance for every segment."""
         _check_scalar(dt, "dt")
@@ -161,14 +203,18 @@ class Planner:
         q = self._joint_tensor(positions)
         if q.ndim != 2 or q.shape[0] < 2:
             raise ValueError("a trajectory must contain at least two joint configurations")
-        return self._trajectory_failure(q, dt, margin, world_margin, collision_substeps) is None
+        if longest_valid_segment_length is not None:
+            _check_scalar(longest_valid_segment_length, "longest_valid_segment_length")
+        return self._trajectory_failure(q, dt, margin, world_margin, collision_substeps,
+                                        longest_valid_segment_length) is None
 
-    def _trajectory_failure(self, q, dt, margin, world_margin, substeps):
+    def _trajectory_failure(self, q, dt, margin, world_margin, substeps, max_length=None):
         scene = self._scene
         if not torch.isfinite(q).all() or not self._bounded(q):
             return "trajectory violates joint limits"
         if not self._speed_bounded(q.diff(dim=0).abs() / dt):
             return "trajectory violates joint velocity limits"
+        substeps = grid_substeps(q, substeps, max_length)
         samples = interpolation(q, substeps)
 
         def collision(d, thresholds, pairs, samples_per_segment):
@@ -193,13 +239,33 @@ class Planner:
         self, start: Tensor, goal: Tensor, *, dt: float, waypoints: int = 16,
         margin: float = 0.02, collision_substeps: int = 8, iterations: int = 20,
         seed: Tensor | None = None, world_margin: float | None = None, stop_at_endpoints: bool = False,
+        solver: str = "lm", waypoint_targets: Mapping[int, PoseTarget] | None = None,
+        longest_valid_segment_length: float | None = None,
     ) -> TrajectoryResult:
-        """Optimize the interior joint waypoints while keeping start and goal fixed."""
+        """Optimize a fixed-endpoint trajectory. CPU SQP supports intermediate world-space poses.
+
+        Each requested position/rotation error vector must have norm at most 1e-4 (m/rad).
+        longest_valid_segment_length bounds joint-space sampling intervals (Euclidean norm
+        in the joint vector's native units). Collision verification checks the interpolants.
+        """
         _check_scalar(dt, "dt")
         world_margin = _world_margin(margin, world_margin)
         _check_count(waypoints, "waypoints", 2)
         _check_count(collision_substeps, "collision_substeps")
         _check_count(iterations, "iterations")
+        if longest_valid_segment_length is not None:
+            _check_scalar(longest_valid_segment_length, "longest_valid_segment_length")
+        if solver not in ("lm", "sqp"):
+            raise ValueError("solver must be 'lm' or 'sqp'")
+        if solver == "sqp" and self._scene.device.type != "cpu":
+            raise ValueError("the SQP solver requires a CPU planner")
+        if waypoint_targets and solver != "sqp":
+            raise ValueError("intermediate pose targets require solver='sqp'")
+        targets = []
+        for index, target in (waypoint_targets or {}).items():
+            if type(index) is not int or not 0 <= index < waypoints:
+                raise ValueError("target waypoint index is outside the trajectory")
+            targets.append((index, _waypoint_error(self._scene, target)))
         start, goal = self._configuration(start), self._configuration(goal)
         ends = torch.stack((start, goal))
         if not self._bounded(ends):
@@ -236,18 +302,24 @@ class Planner:
 
         def feasible(positions):
             nonlocal failure
-            failure = self._trajectory_failure(positions, dt, margin, world_margin, 2 * collision_substeps)
+            for index, error in targets:
+                if torch.linalg.vector_norm(error(positions[index]).reshape(-1, 3), dim=-1).max() > 1e-4:
+                    failure = f"Cartesian pose tolerance at waypoint {index}"
+                    return False
+            failure = self._trajectory_failure(positions, dt, margin, world_margin, 2 * collision_substeps,
+                                               longest_valid_segment_length)
             return failure is None
 
         if not interior.numel():
             q = initial if feasible(initial) else None
         else:
-            q = optimize(scene, initial, dt, margin, world_margin, collision_substeps, iterations, feasible, fixed)
+            q = optimize(scene, initial, dt, margin, world_margin, collision_substeps, iterations,
+                         feasible, fixed, solver, targets, longest_valid_segment_length)
             if q is None and scene.has_collision_pairs:
                 # The finer verification grid can find a collision between the
                 # optimization samples. Optimize on that grid as a second pass.
                 q = optimize(scene, initial, dt, margin, world_margin, 2 * collision_substeps, iterations,
-                             feasible, fixed)
+                             feasible, fixed, solver, targets, longest_valid_segment_length)
         if q is None:
             return TrajectoryResult(None, dt, failure or "trajectory optimization found no feasible path from this seed",
                                     initial_positions=initial)
@@ -258,6 +330,8 @@ class Planner:
         waypoints: int = 16, margin: float | None = None, collision_substeps: int = 8,
         start_seed: Tensor | None = None, goal_seed: Tensor | None = None, seed: Tensor | None = None,
         world_margin: float | None = None, stop_at_endpoints: bool | None = None,
+        solver: str = "lm", waypoint_targets: Mapping[int, PoseTarget] | None = None,
+        longest_valid_segment_length: float | None = None,
     ) -> TrajectoryResult:
         """Solve endpoint IK and optimize a joint trajectory between the solutions."""
         _check_scalar(dt, "dt")
@@ -285,6 +359,7 @@ class Planner:
         return self.solve_trajopt(
             *endpoints, dt=dt, waypoints=waypoints, margin=margin,
             collision_substeps=collision_substeps, seed=seed, world_margin=world_margin,
+            solver=solver, waypoint_targets=waypoint_targets, longest_valid_segment_length=longest_valid_segment_length,
             stop_at_endpoints=(waypoints >= 4 if stop_at_endpoints is None else stop_at_endpoints),
         )
 
@@ -408,20 +483,11 @@ class PlannerBatch:
                 index = torch.tensor([scene.links[link] for link in links], device=scene.device)
             except (KeyError, TypeError) as error:
                 raise ValueError(f"unknown target link {target.link!r}") from error
-            if target.position is None and target.rotation is None:
-                raise ValueError("a pose target requires position, rotation or both")
-            if target.position is not None:
-                goal = field(target.position, (3,), "target position")
-                if not torch.isfinite(goal).all():
-                    raise ValueError("a target position must be finite")
-                positions.append((index, goal))
-            if target.rotation is not None:
-                goal = field(target.rotation, (3, 3), "target rotation")
-                if (not torch.isfinite(goal).all()
-                        or not torch.allclose(goal.mT @ goal, scene.tensor(torch.eye(3)), atol=1e-5)
-                        or not torch.allclose(torch.linalg.det(goal), scene.tensor(1), atol=1e-5)):
-                    raise ValueError("a target rotation must be a proper 3×3 rotation matrix")
-                rotations.append((index, goal))
+            position, rotation = _target_fields(target, field, scene)
+            if position is not None:
+                positions.append((index, position))
+            if rotation is not None:
+                rotations.append((index, rotation))
         if self._size is not None:
             sizes.add(self._size)
         if len(sizes) > 1:

@@ -1,0 +1,12 @@
+{
+  "__VERSION__": 3,
+  "__META_TYPE__": "RESOURCE",
+  "__TYPE__": "PBRMaterial3D",
+  "__EXT_RESOURCES__": [],
+  "__SUB_RESOURCES__": [],
+  "__RESOURCE__": {
+    "albedo": {"red": 1.0, "green": 0.35, "blue": 0.67, "alpha": 0.34},
+    "alpha_mode": "Blend",
+    "roughness": 0.8
+  }
+}

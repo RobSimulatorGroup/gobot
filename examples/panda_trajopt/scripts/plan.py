@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 from gobot.planning import Planner, PoseTarget
 
 
-def solve(snapshot, start, goal):
+def solve(snapshot, start, goal, inspection):
     # These shells meet at a shared joint center (links 1 and 5 have no
     # translation between their axes), or at the fixed wrist-hand mounting.
     mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"),
@@ -28,14 +28,22 @@ def solve(snapshot, start, goal):
             raise ValueError(f"{name} IK failed: {ik.reason}")
         seed = ik.positions
         endpoints.append(seed)
+    inspection_index = 8
+    inspection_rotation = Rotation.from_euler("z", 25, degrees=True).as_matrix() @ down
+    inspection_target = PoseTarget(hand, inspection, inspection_rotation)
     plan = planner.solve_trajopt(*endpoints, waypoints=16, dt=0.14, margin=0.002, world_margin=0.025,
-                                 collision_substeps=2, stop_at_endpoints=True)
+                                 collision_substeps=3, stop_at_endpoints=True, iterations=40,
+                                 solver="sqp", waypoint_targets={inspection_index: inspection_target},
+                                 longest_valid_segment_length=0.075)
     if not plan.success:
         raise ValueError(plan.reason)
     # Reserve 5 mm between the optimization target and the finer 20 mm acceptance threshold.
     if not planner.validate_trajectory(plan.positions, dt=plan.dt, collision_substeps=24,
                                        margin=0.002, world_margin=0.020):
         raise ValueError("Original geometry failed the 24-substep trajectory clearance check")
+    position, rotation = planner.link_pose(plan.positions[inspection_index], hand)
+    position_error = np.linalg.norm(position.numpy() - inspection)
+    angle_error = Rotation.from_matrix(inspection_rotation.T @ rotation.numpy()).magnitude()
     # Both tracks share the same waypoint clock. Interpolate joints before FK.
     steps = 24
     q = torch.stack((plan.initial_positions, plan.positions))
@@ -56,6 +64,7 @@ def solve(snapshot, start, goal):
     # tracks × frames × links × (xyz, xyzw)
     poses = np.stack(poses, axis=2).astype(np.float32)
     return dict(links=names, poses=poses, dt=plan.dt / steps,
+                inspection_error=position_error, inspection_angle=angle_error,
                 seed_hits=", ".join(hits), world_clearance=clearance[1].min().item(),
                 paths=poses[:, ::steps, names.index(hand[1]), :3])
 

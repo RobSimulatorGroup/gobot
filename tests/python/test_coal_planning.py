@@ -99,6 +99,8 @@ def test_fingertip_original_mesh_rejects_clear_proxy(panda):
     path = torch.stack((start, end))
     assert planner.validate_trajectory(path, dt=1, margin=0, collision_substeps=1)
     assert not planner.validate_trajectory(path, dt=1, margin=0, collision_substeps=2)
+    assert not planner.validate_trajectory(path, dt=1, margin=0, collision_substeps=1,
+                                           longest_valid_segment_length=0.2)
     result = planner.solve_trajopt(start, end, waypoints=2, dt=1, margin=0, collision_substeps=1)
     assert not result.success
     assert all(word in result.reason for word in ("segment 0", "finger", "thin_wall"))
@@ -156,6 +158,9 @@ def test_editor_workcell_optimizes_between_convex_fixtures():
     from pathlib import Path
     import runpy
     import gobot
+    from scipy.spatial.transform import Rotation
+
+    pytest.importorskip("osqp")
 
     project = Path(__file__).resolve().parents[2] / "examples" / "panda_trajopt"
     context = gobot.app.context()
@@ -167,6 +172,7 @@ def test_editor_workcell_optimizes_between_convex_fixtures():
         root = context.root
         start = root.find("Start").position
         goal = root.find("Goal").position
+        inspection = root.find("Inspection").position
     finally:
         context.clear_scene()
         if previous:
@@ -177,7 +183,60 @@ def test_editor_workcell_optimizes_between_convex_fixtures():
     assert len(parts) == 11 and all(shape["type"] == 5 and shape["convex"] for shape in parts)
     assert len(fixtures) == 9 and all(shape["convex"] for shape in fixtures)
     solve = runpy.run_path(str(project / "scripts" / "plan.py"))["solve"]
-    output = solve(snapshot, start, goal)
-    assert set(output["seed_hits"].split(", ")) == {"CenterFixture", "EntryWedge", "ExitWedge"}
+    output = solve(snapshot, start, goal, inspection)
+    assert set(output["seed_hits"].split(", ")) == {"CenterFixture", "EntryWedge", "ExitWedge", "LowerJaw"}
+    inspection_frame = 8 * 24
+    tip = output["links"].index("panda_hand")
+    seed, optimized = output["poses"][:, inspection_frame, tip]
+    assert np.linalg.norm(seed[:3] - inspection) > 0.05
+    np.testing.assert_allclose(optimized[:3], inspection, rtol=0, atol=1e-4)
+    expected = Rotation.from_euler("z", 25, degrees=True).as_matrix() @ np.diag([-1., 1., -1.])
+    assert Rotation.from_matrix(expected.T @ Rotation.from_quat(optimized[3:]).as_matrix()).magnitude() < 1e-4
     assert output["world_clearance"] >= 0.02
     assert output["poses"].shape[:2] == (2, 361)
+
+
+def test_container_unloading_retracts_the_payload_before_turning():
+    from pathlib import Path
+    import runpy
+    import gobot
+    from scipy.spatial.transform import Rotation
+
+    pytest.importorskip("osqp")
+    project = Path(__file__).resolve().parents[2] / "examples" / "container_unloading"
+    context = gobot.app.context()
+    previous = context.project_path
+    try:
+        context.set_project_path(str(project))
+        context.load_scene("res://world.jscn")
+        snapshot = context.compile_physics_scene_snapshot()
+        pick, drop = (context.root.find(name) for name in ("Pick", "Drop"))
+        targets = [(node.position, node.rotation_degrees) for node in (pick, drop)]
+    finally:
+        context.clear_scene()
+        if previous:
+            context.set_project_path(previous)
+
+    output = runpy.run_path(str(project / "plan.py"))["solve"](snapshot, *targets)
+    seed, optimized = output["poses"][:, :, output["names"].index("Parcel")]
+    seed_distance, optimized_distance = output["carton_clearance"]
+    assert seed_distance < -0.20 and "/Port3/" in output["nearest"][0]
+    assert optimized_distance >= 0.008
+    np.testing.assert_allclose(seed[[0, -1]], optimized[[0, -1]], atol=1e-6)
+    for pose, (position, angles) in zip(optimized[[0, -1]], targets, strict=True):
+        np.testing.assert_allclose(pose[:3], position, atol=1e-4)
+        expected = Rotation.from_euler("xyz", angles, degrees=True)
+        assert (expected.inv() * Rotation.from_quat(pose[3:])).magnitude() < 1e-4
+    # At the first 50 mm of lateral travel the carton center has left the rack.
+    first_turn = np.flatnonzero(np.abs(optimized[:, 1] - optimized[0, 1]) > 0.05)[0]
+    assert optimized[0, 0] - optimized[first_turn, 0] > 0.35
+    settle, carry = output["handoff"]
+    np.testing.assert_allclose(settle, [0, 0, -0.017], atol=1e-4)
+    # The rollers take the released box through the doorway, toward world -X.
+    np.testing.assert_allclose(carry, [-2.46, 0, 0], atol=1e-4)
+    shapes = {s["name"]: s for s in snapshot["loose_shapes"]}
+    assert {"PortWall_LiningCollider", "StarboardWall_LiningCollider", "ShippingContainer_RoofCollider",
+            "LeftDoor_LeafCollider", "RightDoor_LeafCollider"} <= shapes.keys()
+    threshold_x = np.asarray(shapes["DoorFrame_SillCollider"]["transform"]["matrix"])[0, 3]
+    release_x = optimized[-1, 0]
+    assert release_x + carry[0] < threshold_x < release_x

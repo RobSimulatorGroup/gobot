@@ -1,0 +1,12 @@
+{
+  "__VERSION__": 3, "__TYPE__": "PackedScene", "__META_TYPE__": "SCENE",
+  "__EXT_RESOURCES__": [
+    {"__ID__": "robot", "__TYPE__": "PackedScene", "__PATH__": "res://generated/pr2.urdf"},
+    {"__ID__": "play", "__TYPE__": "PythonScript", "__PATH__": "res://play.py"}
+  ],
+  "__SUB_RESOURCES__": [],
+  "__NODES__": [
+    {"name":"ArmAroundTable","type":"Node3D","parent":-1,"properties":{"script":"ExtResource(play)"}},
+    {"name":"pr2","type":"Robot3D","parent":0,"instance":"ExtResource(robot)","properties":{}}
+  ]
+}

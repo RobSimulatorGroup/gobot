@@ -100,6 +100,43 @@ def test_trajopt_detours_and_preserves_endpoints(snapshot):
     assert planner.validate_trajectory(via_ik.positions, dt=via_ik.dt, collision_substeps=64)
 
 
+def test_sqp_recovers_fixed_time_joint_cost_minimum(snapshot):
+    pytest.importorskip("osqp")
+    planner = gobot.planning.Planner(snapshot, {"planning": "base"})
+    start = torch.tensor([-0.6, 0.35, 0.], dtype=torch.float64)
+    goal = torch.tensor([0.6, 0.35, 0.], dtype=torch.float64)
+    # Equal increments minimize the upstream zero-target JointVelEq sum with
+    # fixed endpoints, and simultaneously drive the JointAccEq cost to zero.
+    optimum = torch.lerp(start, goal, torch.linspace(0, 1, 7, dtype=start.dtype)[:, None])
+    seed = optimum.clone()
+    seed[2:5, 1] += 0.12
+    assert planner.validate_trajectory(seed, dt=0.5)
+    path = planner.solve_trajopt(start, goal, dt=0.5, waypoints=7, seed=seed, solver="sqp")
+    assert path.success, path.reason
+    torch.testing.assert_close(path.positions, optimum, atol=1e-5, rtol=0)
+
+
+def test_sqp_intermediate_pose_and_unreachable_target(snapshot):
+    pytest.importorskip("osqp")
+    planner = gobot.planning.Planner(snapshot, {"planning": "base"})
+    start = torch.tensor([-0.75, 0.35, 0.], dtype=torch.float64)
+    goal = torch.tensor([0.75, 0.35, 0.], dtype=torch.float64)
+    link = ("planning", "left_tip")
+    target = gobot.planning.PoseTarget(link, [0.12, 0.48, 0.5])
+    options = dict(dt=0.4, waypoints=7, solver="sqp", collision_substeps=2)
+    path = planner.solve_trajopt(start, goal, waypoint_targets={3: target}, **options)
+    assert path.success, path.reason
+    torch.testing.assert_close(path.positions[[0, -1]], torch.stack((start, goal)), atol=0, rtol=0)
+    # The two slides are aligned with the world x and y axes.
+    torch.testing.assert_close(path.positions[3, :2], start.new_tensor(target.position[:2]),
+                               atol=1e-4, rtol=0)
+    assert planner.validate_trajectory(path.positions, dt=0.4)
+
+    impossible = gobot.planning.PoseTarget(link, [0.12, 0.48, 1.5])
+    path = planner.solve_trajopt(start, goal, waypoint_targets={3: impossible}, **options)
+    assert not path.success and "waypoint 3" in path.reason
+
+
 def test_inter_arm_and_cross_robot_collision(snapshot):
     planner = gobot.planning.Planner(snapshot, {"planning": "base"})
     q = torch.tensor([0.25, 0.7, 0.0], dtype=torch.float64)
