@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from itertools import product
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -217,6 +218,21 @@ def test_container_unloading_retracts_the_payload_before_turning():
         if previous:
             context.set_project_path(previous)
 
+    # Check rotated links, the payload hull, and the original container meshes
+    # against exhaustive narrow phase over a batch with both clear and colliding pairs.
+    from gobot.planning._geometry import clearance_mask
+
+    scene = Planner(snapshot, {"M10iA": "base_link"}, collision_backend="coal")._scene
+    q = scene.initial + torch.randn((64, len(scene.initial)), dtype=scene.dtype,
+                                    generator=torch.Generator().manual_seed(17)) * 0.65
+    poses = scene.poses(q)
+    margins = scene.pair_margins(0.001, 0.014)
+    for original, models in ((False, scene.distance_models), (True, scene.validation_models)):
+        model, = models
+        exhaustive = clearance_mask(model.distances(*poses, verify=original), margins)
+        assert exhaustive.any() and not exhaustive.all()
+        assert torch.equal(model.clearance_mask(*poses, margins, original), exhaustive)
+
     output = runpy.run_path(str(project / "plan.py"))["solve"](snapshot, *targets)
     seed, optimized = output["poses"][:, :, output["names"].index("Parcel")]
     seed_distance, optimized_distance = output["carton_clearance"]
@@ -240,3 +256,62 @@ def test_container_unloading_retracts_the_payload_before_turning():
     threshold_x = np.asarray(shapes["DoorFrame_SillCollider"]["transform"]["matrix"])[0, 3]
     release_x = optimized[-1, 0]
     assert release_x + carry[0] < threshold_x < release_x
+
+
+def test_mujoco_warp_convex_distance_and_rotation_jacobian():
+    pytest.importorskip("mujoco_warp")
+    from gobot.planning._coal import shape
+    from gobot.planning._mujoco_warp import WarpPairs
+
+    # Offset mesh origin and an off-axis rotating sphere exercise both witness frames.
+    hull = np.asarray(list(product([-0.2, 0.2], [-0.3, 0.3], [-0.4, 0.4])))
+    common = dict(collision_layer=1, collision_mask=1)
+    box = shape(dict(common, type=5, vertices=hull + [0.05, 0, 0],
+                     indices=[0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1,
+                              2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3]),
+                ("robot", "hull"), 0, torch.zeros(3, dtype=DTYPE), torch.eye(3, dtype=DTYPE))
+    ball = shape(dict(common, type=2, radius=0.18), ("robot", "sphere"), 1,
+                 torch.zeros(3, dtype=DTYPE), torch.eye(3, dtype=DTYPE))
+    cpu = native.Pairs([(box.geometry, ball.geometry), (ball.geometry, box.geometry)])
+    warp = WarpPairs([box, ball], [(0, 1), (1, 0)])
+
+    def distance(q, pairs):
+        axis = q.new_tensor([0, 0, 1])
+        rot = torch.stack((axis_rotation(axis, q[0]), axis_rotation(axis, q[1])))
+        origin = torch.stack((q.new_tensor([0, 0.03, 0]), rot[1] @ q.new_tensor([0, 0.08, 0])
+                              + torch.stack((q[2], q[2] * 0, q[2] * 0))))
+        frames = torch.cat((rot, origin.unsqueeze(-1)), dim=-1)
+        return _Distance.apply(torch.stack((frames, frames.flip(0))), pairs)[0]
+
+    q = torch.tensor([[0.12, -0.07, 0.38], [-0.1, 0.18, 0.58]], dtype=DTYPE)
+    value = vmap(lambda x: distance(x, warp))(q)
+    assert value[0, 0] < 0 < value[1, 0]
+    torch.testing.assert_close(value, vmap(lambda x: distance(x, cpu))(q), atol=2e-6, rtol=0)
+    expected = vmap(jacfwd(lambda x: distance(x, cpu)))(q)
+    torch.testing.assert_close(vmap(jacfwd(lambda x: distance(x, warp)))(q), expected, atol=2e-4, rtol=0)
+    x = q[0].requires_grad_()
+    gradient, = torch.autograd.grad(distance(x, warp)[0], x)
+    torch.testing.assert_close(gradient, expected[0, 0], atol=2e-4, rtol=0)
+
+
+def test_warp_distance_on_long_container_door_jamb():
+    pytest.importorskip("mujoco_warp")
+    import gobot
+
+    context = gobot.app.context()
+    previous = context.project_path
+    try:
+        context.set_project_path(str(Path(__file__).resolve().parents[2] / "examples/container_unloading"))
+        context.load_scene("res://world.jscn")
+        snapshot = context.compile_physics_scene_snapshot()
+    finally:
+        context.clear_scene()
+        if previous:
+            context.set_project_path(previous)
+    coal, warp = [Planner(snapshot, {"M10iA": "base_link"}, collision_backend=backend)
+                  for backend in ("coal", "mujoco_warp")]
+    q = coal.initial_positions
+    q[0] += 0.4
+    q[1] += 0.2
+    # A finite float32 simplex witness used to miss the link_4 / right jamb gap by 95 mm.
+    torch.testing.assert_close(warp.collision_distances(q), coal.collision_distances(q), atol=1e-4, rtol=0)

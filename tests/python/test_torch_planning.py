@@ -116,6 +116,34 @@ def test_sqp_recovers_fixed_time_joint_cost_minimum(snapshot):
     torch.testing.assert_close(path.positions, optimum, atol=1e-5, rtol=0)
 
 
+def test_sqp_skips_qp_only_for_valid_linear_trajectory(snapshot, monkeypatch):
+    pytest.importorskip("osqp")
+    from gobot.planning import _sqp
+
+    planner = gobot.planning.Planner(snapshot, {"planning": "base"})
+    start = torch.tensor([-0.6, 0.35, 0.], dtype=torch.float64)
+    goal = torch.tensor([0.6, 0.35, 0.], dtype=torch.float64)
+    settings = dict(dt=0.5, waypoints=7, solver="sqp")
+    qp_calls = []
+    solve_qp = _sqp._qp_step
+
+    def counted_step(*args):
+        qp_calls.append(1)
+        return solve_qp(*args)
+
+    monkeypatch.setattr(_sqp, "_qp_step", counted_step)
+    clear = planner.solve_trajopt(start, goal, **settings)
+    assert clear.success and torch.equal(clear.positions, clear.initial_positions)
+    assert not qp_calls
+
+    # Keep both endpoints clear but move the joint-space line through the box.
+    start[1] = goal[1] = 0.0
+    detour = planner.solve_trajopt(start, goal, **settings)
+    assert qp_calls
+    assert detour.success, detour.reason
+    assert planner.validate_trajectory(detour.positions, dt=0.5, collision_substeps=32)
+
+
 def test_sqp_intermediate_pose_and_unreachable_target(snapshot):
     pytest.importorskip("osqp")
     planner = gobot.planning.Planner(snapshot, {"planning": "base"})
@@ -211,3 +239,90 @@ def test_rotation_residual_has_finite_forward_jacobian():
         expected = math.remainder(angle, 2 * math.pi)
         torch.testing.assert_close(residual(value), axis * expected)
         torch.testing.assert_close(torch.func.jacfwd(residual)(value), axis)
+
+
+@pytest.mark.parametrize("backend", ["coal", "mujoco_warp"])
+def test_batch_trajopt_independent_waypoints_and_failures(snapshot, backend):
+    pytest.importorskip("osqp")
+    pytest.importorskip("gobot._coal_native")
+    if backend == "mujoco_warp":
+        pytest.importorskip("mujoco_warp")
+    planner = gobot.planning.Planner(snapshot, {"planning": "base"}, collision_backend=backend)
+    start = torch.tensor([[-0.75, 0.35, 0.], [-0.65, 0.42, 0.], [-0.6, 0.32, 0.], [0., 0., 0.]],
+                         dtype=torch.float64)
+    goal = start.clone()
+    goal[:, 0] = torch.tensor([0.75, 0.68, 0.8, 0.7])
+    link = ("planning", "left_tip")
+    targets = [{2: start.new_tensor([-0.18, 0.49, 0.1])},
+               {4: gobot.planning.PoseTarget(link, [0.1, 0.4, 0.5])},
+               {3: gobot.planning.PoseTarget(link, [0.1, 0.4, 1.5])}, {}]
+    settings = dict(dt=0.45, waypoints=7, collision_substeps=2, iterations=12)
+    result = gobot.planning.PlannerBatch(planner).solve_trajopt(start, goal, waypoint_targets=targets, **settings)
+    assert result.success.tolist() == [True, True, False, False], result.reasons
+    assert "waypoint 3" in result.reasons[2] and "collision" in result.reasons[3]
+    assert result.positions[2:].isnan().all()
+    assert result.initial_positions[2].isfinite().all() and result.initial_positions[3].isnan().all()
+    for i in range(2):
+        solo = planner.solve_trajopt(start[i], goal[i], solver="sqp", waypoint_targets=targets[i], **settings)
+        assert solo.success, solo.reason
+        torch.testing.assert_close(result.positions[i], solo.positions, atol=1e-5, rtol=0)
+        assert planner.validate_trajectory(result.positions[i], dt=result.dt, collision_substeps=16)
+    torch.testing.assert_close(result.positions[0, 2], targets[0][2], atol=1e-4, rtol=0)
+    torch.testing.assert_close(planner.link_pose(result.positions[1, 4], link)[0],
+                               start.new_tensor(targets[1][4].position), atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32])
+def test_coal_broadphase_matches_exhaustive_clearance(snapshot, dtype):
+    pytest.importorskip("gobot._coal_native")
+    from gobot.planning._geometry import clearance_mask
+
+    scene = gobot.planning.Planner(snapshot, {"planning": "base"}, dtype=dtype,
+                                  collision_backend="coal")._scene
+    model, = scene.distance_models
+    # Inter-arm penetration, box penetration, a box clearance at the threshold,
+    # and well-separated configurations. The halfspace is unbounded.
+    q = scene.tensor([[0.25, 0.7, 0.0], [0, 0, 0], [0.225, -0.06, 0.3], [-0.8, 0.4, -1.0]])
+    p, r = scene.poses(q)
+    for margin in (0.0, 0.02, 0.020002):
+        margins = scene.pair_margins(0.001, margin)
+        for original in (True, False):
+            distances = model.distances(p, r, verify=original)
+            exact = clearance_mask(distances, margins)
+            assert exact.any() and not exact.all()
+            assert torch.equal(model.clearance_mask(p, r, margins, original), exact)
+    rows, ids, data = model.nearby(model.world_frames(p, r), margins)
+    assert 0 < len(ids) < len(q) * len(margins)
+    torch.testing.assert_close(data[:, 0], scene.distances(q)[rows, ids])
+
+
+@pytest.mark.parametrize("backend", ["coal", "mujoco_warp"])
+def test_sparse_segment_rows_match_dense_jacobian(snapshot, backend):
+    pytest.importorskip("gobot._coal_native")
+    pytest.importorskip("osqp")
+    if backend == "mujoco_warp":
+        pytest.importorskip("mujoco_warp")
+    from torch.func import jacfwd, vmap
+    from gobot.planning._trajectory import make_segment_constraints, sqp_segment_rows
+
+    scene = gobot.planning.Planner(snapshot, {"planning": "base"}, collision_backend=backend)._scene
+    margin, world_margin, dt = 0.001, 0.014, 0.5
+    margins = scene.pair_margins(margin, world_margin)
+    constraints = make_segment_constraints(scene, dt, margin, world_margin)
+    q = scene.tensor([[-0.6, -0.06, 0.2], [0.19, -0.07, 0.42], [0.24, 0.71, 0.18], [0.5, 0.6, 0.4]])
+    segments = torch.stack((q[:-1], q[1:]), dim=1)
+    fractions = scene.tensor([[0.0], [0.5]])
+    dense = constraints(segments, fractions)[0]
+    jac = vmap(jacfwd(lambda pair: constraints(pair, fractions)[0]))(segments)
+    for linearize in (True, False):
+        selected = dense > (-0.05 if linearize else 0)
+        selected[:, :2 * q.size(-1)] = torch.isfinite(dense[:, :2 * q.size(-1)])
+        segment, component = selected.nonzero(as_tuple=True)
+        packed = sqp_segment_rows(scene, dt, margins, world_margin, constraints, segments, fractions, linearize)
+        assert torch.equal(packed.segment, segment)
+        torch.testing.assert_close(packed.value, dense[segment, component])
+        if linearize:
+            torch.testing.assert_close(packed.jacobian, jac[segment, component], atol=1e-7, rtol=1e-6)
+        else:
+            assert packed.jacobian is None
+            torch.testing.assert_close(packed.value.clamp_min(0).sum(), dense.clamp_min(0).sum())

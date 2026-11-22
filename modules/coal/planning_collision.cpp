@@ -22,6 +22,7 @@ namespace {
 using Geometry = std::shared_ptr<coal::CollisionGeometry>;
 using Frame = Eigen::Matrix<double, 3, 4, Eigen::RowMajor>;
 using Input = py::array_t<double, py::array::c_style | py::array::forcecast>;
+using Indices = py::array_t<int64_t, py::array::c_style | py::array::forcecast>;
 
 struct Shape {
     std::string label;
@@ -80,16 +81,23 @@ class Pairs {
 public:
     explicit Pairs(std::vector<Pair> pairs) : pairs_(std::move(pairs)) {}
 
-    py::array_t<double> query(const Input& frames, bool verify, double clearance) const {
+    py::array_t<double> query(const Input& frames, bool verify, double clearance, const py::object& ids) const {
         const py::ssize_t count = static_cast<py::ssize_t>(pairs_.size());
-        if (frames.ndim() != 5 || frames.shape(1) != count || frames.shape(2) != 2 ||
+        const bool selected = !ids.is_none();
+        Indices indices;
+        if (selected) indices = ids.cast<Indices>();
+        if (frames.ndim() != 5 || frames.shape(1) != (selected ? 1 : count) || frames.shape(2) != 2 ||
             frames.shape(3) != 3 || frames.shape(4) != 4) throw std::invalid_argument("expected batch × pairs × 2 × 3 × 4 frames");
+        if (selected && (indices.ndim() != 1 || indices.size() != frames.shape(0)))
+            throw std::invalid_argument("expected one pair index per frame row");
         const py::ssize_t width = verify ? 1 : 10;
-        py::array_t<double> output({frames.shape(0), count, width});
+        py::array_t<double> output({frames.shape(0), frames.shape(1), width});
         py::gil_scoped_release release;
         for (py::ssize_t row = 0; row < frames.shape(0); ++row) {
-            for (py::ssize_t i = 0; i < count; ++i) {
-                const auto& [a, b] = pairs_[i];
+            for (py::ssize_t i = 0; i < frames.shape(1); ++i) {
+                const auto id = selected ? *indices.data(row) : i;
+                if (id < 0 || id >= count) throw std::out_of_range("invalid collision pair index");
+                const auto& [a, b] = pairs_[id];
                 double* out = output.mutable_data(row, i, 0);
                 try {
                     const auto ta = transform(frames.data(row, i, 0, 0, 0));
@@ -98,7 +106,7 @@ public:
                     const auto& gb = verify ? b->original : b->convex;
                     // During final validation a bounding-box gap above the requested
                     // clearance already proves that the original shapes pass this pair.
-                    if (verify && ga->getNodeType() != coal::GEOM_HALFSPACE && gb->getNodeType() != coal::GEOM_HALFSPACE) {
+                    if (verify && std::isfinite(clearance) && ga->getNodeType() != coal::GEOM_HALFSPACE && gb->getNodeType() != coal::GEOM_HALFSPACE) {
                         const auto world_bounds = [](const Geometry& geometry, const coal::Transform3s& pose) {
                             const auto& local = geometry->aabb_local;
                             const coal::Vec3s center = pose.transform(local.center());
@@ -147,7 +155,12 @@ private:
 }
 
 PYBIND11_MODULE(_coal_native, module) {
-    py::class_<Shape, std::shared_ptr<Shape>>(module, "Shape").def(py::init<const std::string&, const py::dict&>());
+    py::class_<Shape, std::shared_ptr<Shape>>(module, "Shape").def(py::init<const std::string&, const py::dict&>())
+        .def("bounds", [](const Shape& shape, bool original) {
+            const auto& box = (original ? shape.original : shape.convex)->aabb_local;
+            return std::make_pair(box.min_, box.max_);
+        });
     py::class_<Pairs>(module, "Pairs").def(py::init<std::vector<Pair>>()).def("query", &Pairs::query,
-        py::arg("frames"), py::arg("verify"), py::arg("clearance") = std::numeric_limits<double>::infinity());
+        py::arg("frames"), py::arg("verify"), py::arg("clearance") = std::numeric_limits<double>::infinity(),
+        py::arg("pair_indices") = py::none());
 }

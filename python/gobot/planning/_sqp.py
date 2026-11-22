@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 from scipy import sparse
-from torch.func import jacfwd, vmap
+from torch.func import jacfwd
 
 try:
     import osqp
@@ -53,57 +53,54 @@ def _waypoint_rows(derivatives, starts, fixed, waypoints):
     return sparse.csr_matrix((data[valid], (row_ids[valid], columns[valid])), shape=(rows, size))
 
 
-def optimize_sqp(initial, fixed, lower, upper, matrix, constraints_for, targets,
+def optimize_sqp(initial, fixed, lower, upper, dt, substeps_for, targets,
                  feasible, iterations):
     """Convexify segment and Cartesian terms, shrink or expand a box on joint increments."""
     free = slice(fixed, -fixed)
     q = initial.clone()
-    joints = q.shape[1]
+    waypoints, joints = q.shape
+    initial_feasible = feasible(q)
+    if initial_feasible and fixed == 1:
+        # With fixed endpoints, equal increments minimize sum(|dq|²) and give zero acceleration.
+        fractions = torch.linspace(0, 1, waypoints, dtype=q.dtype, device=q.device)[1:-1, None]
+        if torch.equal(q[free], torch.lerp(q[0], q[-1], fractions)):
+            return q
+
+    eye = torch.eye(waypoints, dtype=q.dtype, device=q.device)
+    matrix = torch.cat((eye.diff(dim=0), 0.1 * eye.diff(n=2, dim=0) / dt**2))
     smooth_jac = sparse.kron(sparse.csr_matrix(matrix[:, free].double().numpy()),
                              sparse.eye(joints), format="csr")
     hessian = smooth_jac.T @ smooth_jac
     best = None
     best_cost = float("inf")
 
-    def evaluate(path, segment_constraints):
+    def evaluate(path, substeps, linearize=False):
         pairs = torch.stack((path[:-1], path[1:]), dim=1)
-        segment = segment_constraints(pairs)
+        segment = yield substeps, linearize, pairs
         cart = [error(path[index]) for index, error in targets]
-        return pairs, segment, cart
+        return segment, cart
 
     def violation(segment, cart):
-        return segment.clamp_min(0).sum() + sum(error.abs().sum() for error in cart)
+        return segment.value.clamp_min(0).sum() + sum(error.abs().sum() for error in cart)
 
-    def rows(pairs, segment, cart, segment_constraints):
-        speed, clearance = segment.tensor_split((2 * joints,), dim=-1)
-        # Clearance rows hold d_safe - d. Include rows with d < d_safe + buffer
-        # in the local model. Trial merit still evaluates every collision pair.
-        active = torch.cat((torch.isfinite(speed), clearance > -_COLLISION_LINEARIZATION_BUFFER_M), dim=-1)
-        indices = active.any(dim=-1).nonzero().flatten()
-        blocks, values = [], []
-        if len(indices):
-            local = vmap(jacfwd(segment_constraints))(pairs[indices])
-            selected, component = active[indices].nonzero(as_tuple=True)
-            segment_ids = indices[selected]
-            blocks.append(_waypoint_rows(local[selected, component], segment_ids, fixed, len(q)))
-            values.append(segment[segment_ids, component])
+    def rows(segment, cart):
+        blocks = [_waypoint_rows(segment.jacobian, segment.segment, fixed, len(q))]
+        values = [segment.value]
         for (index, error), value in zip(targets, cart, strict=True):
             jac = jacfwd(error)(q[index])
             block = _waypoint_rows(jac[:, None, :], torch.full((len(value),), index), fixed, len(q))
             blocks.extend((block, -block))
             values.extend((value, -value))
-        if not values:
-            return np.empty(0), sparse.csr_matrix((0, q[free].numel()))
         return torch.cat(values).double().numpy(), sparse.vstack(blocks, format="csr")
 
-    if feasible(q):
+    if initial_feasible:
         best, best_cost = q.clone(), float(0.5 * (matrix @ q).square().sum())
     radius, penalty = 0.1, 10.0
     for _ in range(iterations):
         # Compare the exact merit and local model on the same sampling grid.
-        segment_constraints = constraints_for(q)
-        pairs, segment, cart = evaluate(q, segment_constraints)
-        value, jac = rows(pairs, segment, cart, segment_constraints)
+        substeps = substeps_for(q)
+        segment, cart = yield from evaluate(q, substeps, linearize=True)
+        value, jac = rows(segment, cart)
         residual = matrix @ q
         cost = float(0.5 * residual.square().sum())
         gradient = smooth_jac.T @ residual.flatten().double().numpy()
@@ -122,9 +119,10 @@ def optimize_sqp(initial, fixed, lower, upper, matrix, constraints_for, targets,
             trial = q.clone()
             trial[free] += torch.as_tensor(step, dtype=q.dtype).reshape_as(q[free])
             trial[free] = trial[free].clamp(lower, upper)
-            _, trial_segment, trial_cart = evaluate(trial, segment_constraints)
+            trial_segment, trial_cart = yield from evaluate(trial, substeps)
             trial_cost = float(0.5 * (matrix @ trial).square().sum())
-            actual = cost - trial_cost + penalty * (current_violation - float(violation(trial_segment, trial_cart)))
+            trial_violation = float(violation(trial_segment, trial_cart))
+            actual = cost - trial_cost + penalty * (current_violation - trial_violation)
             if actual >= 0.25 * predicted:
                 q = trial
                 radius *= 1.5

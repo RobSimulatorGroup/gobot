@@ -6,7 +6,10 @@ import math
 
 import numpy as np
 import torch
+from torch.func import jacfwd, vmap
 from scipy.spatial import ConvexHull
+
+from ._geometry import clearance_mask
 
 try:
     from gobot import _coal_native as native
@@ -22,17 +25,20 @@ def _query(frames, pairs, verify, clearance=math.inf):
     return values.reshape(*frames.shape[:-4], frames.shape[-4], values.size(-1))
 
 
+def witness_coefficients(data):
+    a, b, normal = data[..., 1:].split(3, dim=-1)
+    points = torch.stack((a, b), dim=-2)
+    homogeneous = torch.cat((points, torch.ones_like(points[..., :1])), dim=-1)
+    directions = torch.stack((normal, -normal), dim=-2)
+    # For a rigid frame [R|t], dp = d[R|t] @ [witness_local, 1].
+    return directions.unsqueeze(-1) * homogeneous.unsqueeze(-2)
+
+
 class _Distance(torch.autograd.Function):
     @staticmethod
     def forward(frames, pairs):
         data = _query(frames, pairs, False)
-        a, b, normal = data[..., 1:].split(3, dim=-1)
-        points = torch.stack((a, b), dim=-2)
-        homogeneous = torch.cat((points, torch.ones_like(points[..., :1])), dim=-1)
-        directions = torch.stack((normal, -normal), dim=-2)
-        # For a rigid frame [R|t], dp = d[R|t] @ [witness_local, 1].
-        coefficients = directions.unsqueeze(-1) * homogeneous.unsqueeze(-2)
-        return data[..., 0], coefficients
+        return data[..., 0], witness_coefficients(data)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -66,6 +72,7 @@ class Shape:
     label: str
     layer: int
     mask: int
+    spec: dict
 
 
 def _mesh_geometry(spec, label):
@@ -117,7 +124,7 @@ def shape(spec, link, body, position, rotation):
     except (ValueError, RuntimeError) as error:
         raise ValueError(f"invalid collision geometry {label}: {error}") from error
     frame = torch.cat((rotation, position[:, None]), -1)
-    return Shape(link, body, kind, frame, geometry, label, spec['collision_layer'], spec['collision_mask'])
+    return Shape(link, body, kind, frame, geometry, label, spec['collision_layer'], spec['collision_mask'], spec)
 
 
 def capsule_shape(link, body, a, b, radius, layer, mask):
@@ -134,8 +141,39 @@ def capsule_shape(link, body, a, b, radius, layer, mask):
     return shape(spec, link, body, (a + b) / 2, rotation)
 
 
+class _Bounds:
+    """Cache fixed world bounds and transform each moving local AABB once per pose."""
+    def __init__(self, shapes, frames, moving, original):
+        # Halfspaces are always candidates. Avoid transforming their infinite bounds.
+        limits = np.array([s.geometry.bounds(original) if s.kind != 6 else np.zeros((2, 3))
+                           for s in shapes], dtype=np.float64)
+        self.center = (limits[:, 1] + limits[:, 0]) * 0.5
+        self.half = (limits[:, 1] - limits[:, 0]) * 0.5
+        self.fixed_bounds = self.transform(frames.double().numpy(), self.center, self.half)
+        self.center, self.half = self.center[moving], self.half[moving]
+
+    @staticmethod
+    def transform(frames, centers, half):
+        rotation = frames[..., :3]
+        center = (rotation @ centers[..., None])[..., 0] + frames[..., 3]
+        extent = (np.abs(rotation) @ half[..., None])[..., 0]
+        # Round outwards, including cancellation in an offset local center.
+        scale = np.abs(frames[..., 3]) + (np.abs(rotation) @ np.abs(centers[..., None]))[..., 0] + extent
+        extent += 16 * np.finfo(np.float64).eps * (1 + scale)
+        return center - extent, center + extent
+
+    def candidates(self, frames, moving, endpoints, planes, thresholds):
+        shape = (len(frames), len(self.fixed_bounds[0]), 3)
+        lo, hi = (np.broadcast_to(x, shape).copy() for x in self.fixed_bounds)
+        lo[:, moving], hi[:, moving] = self.transform(frames[:, moving], self.center, self.half)
+        i, j = endpoints.T
+        # Any separating axis with a gap above the threshold certifies clearance.
+        gap = np.maximum(lo[:, i] - hi[:, j], lo[:, j] - hi[:, i])
+        return np.nonzero(planes | ~(gap > thresholds[:, None]).any(axis=-1))
+
+
 class CollisionModel:
-    def __init__(self, shapes, enabled):
+    def __init__(self, shapes, enabled, query_factory=None):
         mobile = [i for i, s in enumerate(shapes) if s.body is not None]
         fixed = [i for i, s in enumerate(shapes) if s.body is None]
 
@@ -151,21 +189,84 @@ class CollisionModel:
         self.names = tuple((shapes[i].label, shapes[j].label) for i, j in pairs)
         self.topology = (tuple((s.body, s.kind) for s in shapes), tuple(pairs))
         self.has_mesh = any(shapes[k].kind == 5 for pair in pairs for k in pair)
-        self.pairs = native.Pairs([(shapes[i].geometry, shapes[j].geometry) for i, j in pairs])
+        if query_factory is None:
+            self.pairs = native.Pairs([(shapes[i].geometry, shapes[j].geometry) for i, j in pairs])
+        elif pairs:
+            self.pairs = query_factory(shapes, pairs)
         if pairs:
-            self.indices = torch.tensor(pairs).flatten()
+            self.endpoints = torch.tensor(pairs)
+            self.indices = self.endpoints.flatten()
+            self.moving = np.asarray(mobile, dtype=np.intp)
+            self.planes = np.array([shapes[i].kind == 6 or shapes[j].kind == 6 for i, j in pairs])
             self.frames = torch.stack([s.frame for s in shapes])
-            # The final, identity FK frame represents the static world.
-            self.bodies = torch.tensor([s.body if s.body is not None else -1 for s in shapes])
+            self.mobile_ids = torch.from_numpy(self.moving)
+            self.bodies = torch.tensor([shapes[i].body for i in mobile])
+            self.mobile_frames = self.frames[self.mobile_ids]
+            # The final entry in the frame Jacobian is zero for static obstacles.
+            mobile_index = torch.full((len(shapes),), len(mobile))
+            mobile_index[self.mobile_ids] = torch.arange(len(mobile))
+            self.pair_mobile_indices = mobile_index[self.endpoints]
+
+            self.bounds = {original: _Bounds(shapes, self.frames, self.moving, original)
+                           for original in (False, True)}
+
+    def moving_frames(self, positions, rotations):
+        rotation = rotations.index_select(-3, self.bodies)
+        origin = positions.index_select(-2, self.bodies)
+        transformed = rotation @ self.mobile_frames
+        return torch.cat((transformed[..., :3], transformed[..., 3:] + origin.unsqueeze(-1)), -1)
+
+    def world_frames(self, positions, rotations):
+        moving = self.moving_frames(positions, rotations)
+        world = self.frames.expand(*positions.shape[:-2], *self.frames.shape)
+        return world.index_copy(-3, self.mobile_ids, moving)
+
+    def nearby(self, frames, thresholds, original=False):
+        """Return packed (sample, pair, query result) for conservative AABB candidates."""
+        array = frames.detach().numpy()
+        rows, pairs = self.bounds[original].candidates(array, self.moving, self.endpoints.numpy(),
+                                                       self.planes, thresholds.detach().numpy())
+        if len(rows):
+            packed = array[rows[:, None], self.endpoints.numpy()[pairs]]
+            data = self.pairs.query(packed[:, None], original, math.inf, pairs)[:, 0]
+            values = torch.from_numpy(data).to(frames.dtype)
+        else:
+            values = frames.new_empty((0, 1 if original else 10))
+        return torch.from_numpy(rows), torch.from_numpy(pairs), values
+
+    def constraint_rows(self, poses, samples, margins, buffer, linearize):
+        """Sparse d_safe - d and joint derivatives, in sample then pair order."""
+        frames = self.world_frames(*poses(samples))
+        rows, ids, data = self.nearby(frames, margins + buffer)
+        residual = margins[ids] - data[:, 0]
+        near = residual > -buffer
+        rows, ids, residual = rows[near], ids[near], residual[near]
+        gradient = None
+        if linearize and len(rows):
+            # Share one FK Jacobian per active configuration. Contract the selected
+            # frames with the witnesses from the same narrow-phase query.
+            unique, inverse = torch.unique_consecutive(rows, return_inverse=True)
+            def moving_frames(q):
+                return self.moving_frames(*poses(q))
+
+            pose_jac = vmap(jacfwd(moving_frames))(samples[unique])
+            pose_jac = torch.cat((pose_jac, torch.zeros_like(pose_jac[:, :1])), dim=1)
+            pair_jac = pose_jac[inverse[:, None], self.pair_mobile_indices[ids]]
+            gradient = -torch.einsum("nkij,nkijq->nq", witness_coefficients(data[near]), pair_jac)
+        return rows, residual, gradient
+
+    def clearance_mask(self, positions, rotations, margins, original=False):
+        ok = torch.ones((*positions.shape[:-2], len(self.labels)), dtype=torch.bool)
+        if self.labels:
+            frames = self.world_frames(positions, rotations).reshape(-1, len(self.frames), 3, 4)
+            rows, pairs, data = self.nearby(frames, margins, original)
+            ok.view(-1, len(self.labels))[rows, pairs] = clearance_mask(data[:, 0], margins[pairs])
+        return ok
 
     def distances(self, positions, rotations, verify=False, clearance=math.inf):
         if not self.labels:
             return positions[..., 0, :0]
-        world = torch.eye(3, dtype=positions.dtype).expand(*rotations.shape[:-3], 1, 3, 3)
-        rotation = torch.cat((rotations, world), -3)[..., self.bodies, :, :]
-        origin = torch.cat((positions, torch.zeros_like(positions[..., :1, :])), -2)[..., self.bodies, :]
-        transformed = rotation @ self.frames
-        frames = torch.cat((transformed[..., :3], transformed[..., 3:] + origin.unsqueeze(-1)), -1)
+        frames = self.world_frames(positions, rotations)
         paired = frames.index_select(-3, self.indices).unflatten(-3, (-1, 2))
         if verify:
             return _query(paired, self.pairs, True, clearance)[..., 0]

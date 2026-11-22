@@ -1,9 +1,11 @@
 """Least-squares terms for piecewise-linear joint trajectories."""
 
 import math
+from collections import defaultdict
+from dataclasses import dataclass
 
 import torch
-from torch.func import jacfwd, vmap
+from torch.func import jacfwd, jacrev, vmap
 
 from ._solver import augmented, solve
 
@@ -34,10 +36,8 @@ def collision_penalty(distance, margin):
     return torch.where(distance < 0, margin * 0.5 - distance, near)
 
 
-def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, feasible, fixed,
-             solver="lm", targets=(), max_length=None):
-    waypoints, joints = initial.shape
-    eye = torch.eye(waypoints, dtype=initial.dtype, device=initial.device)
+def make_segment_constraints(scene, dt, margin, world_margin):
+    """Shared segment kernel for trajectories in the same scene."""
     margins = scene.pair_margins(margin, world_margin)
 
     def segment_inequalities(pair, fractions):
@@ -51,18 +51,133 @@ def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, fea
         ), dim=-1)
         return constraints, distances
 
+    return segment_inequalities
+
+
+@dataclass
+class SegmentRows:
+    segment: torch.Tensor
+    value: torch.Tensor
+    jacobian: torch.Tensor | None
+
+    def slice(self, first, count):
+        take = (self.segment >= first) & (self.segment < first + count)
+        jac = None if self.jacobian is None else self.jacobian[take]
+        return SegmentRows(self.segment[take] - first, self.value[take], jac)
+
+
+def _selected_derivatives(function, pairs, active):
+    """Different segments can select different sweep or primitive constraints."""
+    lengths = active.sum(-1)
+    blocks, segment_ids = [], []
+    for count in lengths[lengths > 0].unique().tolist():
+        rows = (lengths == count).nonzero().flatten()
+        columns = active[rows].nonzero()[:, 1].reshape(-1, count)
+
+        def selected(pair, indices):
+            return function(pair).index_select(-1, indices)
+
+        jac = vmap(jacrev(selected))(pairs[rows], columns)
+        blocks.append(jac.flatten(0, 1))
+        segment_ids.append(rows.repeat_interleave(count))
+    if not blocks:
+        return pairs.new_empty((0, *pairs.shape[1:]))
+    return torch.cat(blocks)[torch.argsort(torch.cat(segment_ids), stable=True)]
+
+
+def sqp_segment_rows(scene, dt, margins, world_margin, segment_inequalities, pairs, fractions, linearize):
+    from ._sqp import _COLLISION_LINEARIZATION_BUFFER_M
+
+    # Rows outside this window have zero contribution to the L1 violation.
+    buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
+    joints = pairs.size(-1)
+    if not scene.distance_models:
+        def constraints(pair):
+            return segment_inequalities(pair, fractions)[0]
+
+        values = constraints(pairs)
+        active = values > -buffer
+        active[:, :2 * joints] = torch.isfinite(values[:, :2 * joints])
+        rows, cols = active.nonzero(as_tuple=True)
+        jac = _selected_derivatives(constraints, pairs, active) if linearize else None
+        return SegmentRows(rows, values[rows, cols], jac)
+
+    speed = (pairs[:, 1] - pairs[:, 0]) / dt
+    speed_values = torch.cat((speed - scene.speed, -speed - scene.speed), dim=-1)
+    rows, cols = torch.isfinite(speed_values).nonzero(as_tuple=True)
+    segments, values = [rows], [speed_values[rows, cols]]
+    derivatives = []
+    if linearize:
+        eye = torch.eye(joints, dtype=pairs.dtype) / dt
+        speed_jac = torch.stack((-eye, eye), dim=1)
+        derivatives.append(torch.cat((speed_jac, -speed_jac))[cols])
+
+    model, = scene.distance_models
+    if model.labels:
+        samples = torch.lerp(pairs[:, :1], pairs[:, 1:], fractions).flatten(0, 1)
+        rows, residual, gradient = model.constraint_rows(scene.poses, samples, margins, buffer, linearize)
+        segments.append(rows // len(fractions))
+        values.append(residual)
+        if gradient is not None:
+            t = fractions[rows % len(fractions)]
+            derivatives.append(torch.stack(((1 - t) * gradient, t * gradient), dim=1))
+
+    if scene.swept_pairs:
+        def swept(pair):
+            return world_margin - scene.swept_world_distances(pair[..., 0, :], pair[..., 1, :])
+
+        sweep = swept(pairs)
+        active = sweep > -buffer
+        rows, cols = active.nonzero(as_tuple=True)
+        segments.append(rows)
+        values.append(sweep[rows, cols])
+        if linearize:
+            derivatives.append(_selected_derivatives(swept, pairs, active))
+    # Match the segment-major order of the dense constraints, including ties.
+    segments = torch.cat(segments)
+    order = torch.argsort(segments, stable=True)
+    jac = torch.cat(derivatives)[order] if linearize else None
+    return SegmentRows(segments[order], torch.cat(values)[order], jac)
+
+
+def run_trajectories(jobs, evaluate):
+    """Advance independent SQP jobs together at their segment evaluation requests."""
+    results = [None] * len(jobs)
+    replies = dict.fromkeys(range(len(jobs)))
+    while replies:
+        groups = defaultdict(list)
+        for row, reply in replies.items():
+            try:
+                substeps, derivative, pairs = jobs[row].send(reply)
+            except StopIteration as done:
+                results[row] = done.value
+            else:
+                groups[substeps, derivative].append((row, pairs))
+        replies = {}
+        for (substeps, derivative), requests in groups.items():
+            pairs = [group for _, group in requests]
+            merged = torch.cat(pairs) if len(pairs) > 1 else pairs[0]
+            fractions = _sample_fractions(merged, substeps)
+
+            values = evaluate(merged, fractions, derivative)
+            offset = 0
+            for row, group in requests:
+                replies[row] = values.slice(offset, len(group)) if len(requests) > 1 else values
+                offset += len(group)
+    return results
+
+
+def optimize(scene, initial, dt, margin, substeps, iterations, feasible, fixed, solver,
+             targets, max_length, segment_inequalities):
     if solver == "sqp":
         from ._sqp import optimize_sqp
 
-        def constraints_for(q):
-            fractions = _sample_fractions(q, grid_substeps(q, substeps, max_length))
-            return lambda pair: segment_inequalities(pair, fractions)[0]
+        return (yield from optimize_sqp(initial, fixed, scene.lower, scene.upper, dt,
+                                        lambda q: grid_substeps(q, substeps, max_length),
+                                        targets, feasible, iterations))
 
-        # Fixed-time zero-target JointVelEq and JointAccEq terms.
-        matrix = torch.cat((eye.diff(dim=0), 0.1 * eye.diff(n=2, dim=0) / dt**2))
-        return optimize_sqp(initial, fixed, scene.lower, scene.upper, matrix,
-                            constraints_for, targets, feasible, iterations)
-
+    waypoints, joints = initial.shape
+    eye = torch.eye(waypoints, dtype=initial.dtype, device=initial.device)
     free = slice(fixed, -fixed)
     fractions = _sample_fractions(initial, grid_substeps(initial, substeps, max_length))
 

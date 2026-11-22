@@ -4,6 +4,11 @@ import torch
 from torch import Tensor
 
 
+def clearance_mask(distances, margin):
+    minimum = (torch.as_tensor(margin, dtype=distances.dtype, device=distances.device) - 1e-6).clamp_min(0)
+    return torch.isfinite(distances) & (distances >= minimum)
+
+
 def _dot(left: Tensor, right: Tensor) -> Tensor:
     return (left * right).sum(dim=-1)
 

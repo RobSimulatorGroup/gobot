@@ -12,7 +12,7 @@ import torch
 from torch import Tensor
 
 from .._kinematics import SceneKinematics
-from ._geometry import box_distance, capsule_distance, plane_distance
+from ._geometry import box_distance, capsule_distance, clearance_mask, plane_distance
 
 # PhysicsShapeType in the version 1 snapshot.
 _BOX, _SPHERE, _CYLINDER, _CAPSULE, _MESH, _PLANE = range(1, 7)
@@ -108,14 +108,14 @@ class PlanningScene:
         if snapshot.get("deformables"):
             raise ValueError("planning collision does not support deformable bodies")
 
-        if collision_backend not in ("torch", "coal"):
-            raise ValueError("collision_backend must be 'torch' or 'coal'")
-        use_coal = collision_backend == "coal"
-        self.coal_models = ()
+        if collision_backend not in ("torch", "coal", "mujoco_warp"):
+            raise ValueError("collision_backend must be 'torch', 'coal' or 'mujoco_warp'")
+        use_convex = collision_backend != "torch"
+        self.distance_models = ()
         self.validation_models = ()
-        if use_coal:
+        if use_convex:
             if device.type != "cpu":
-                raise ValueError("Coal planning requires a CPU device")
+                raise ValueError("Coal validation and CPU SQP require CPU planner tensors")
             from . import _coal
 
         self.dtype, self.device = dtype, device
@@ -202,7 +202,7 @@ class PlanningScene:
         shapes, convex_shapes, authored_shapes = [], [], []
 
         def add_shape(value, key, body, rest, *, validation_only=False):
-            if use_coal:
+            if use_convex:
                 p, r = _transform(value["transform"], self.tensor)
                 if rest is not None:
                     origin, frame = rest
@@ -228,7 +228,7 @@ class PlanningScene:
                 rest = _transform(link["global_transform"], self.tensor) if index is not None else None
                 if key in link_capsules:
                     authored = [v for v in link.get("shapes", ()) if not v["disabled"]]
-                    if use_coal:
+                    if use_convex:
                         for value in authored:
                             add_shape(value, key, index, rest, validation_only=True)
                     for capsule in link_capsules[key]:
@@ -238,7 +238,7 @@ class PlanningScene:
                             or not torch.isfinite(torch.cat((a, b, radius[None]))).all() or radius < 0
                         ):
                             raise ValueError(f"invalid collision capsule on {key!r}")
-                        if use_coal:
+                        if use_convex:
                             item = _coal.capsule_shape(key, index, a, b, radius, capsule.collision_layer,
                                                        capsule.collision_mask)
                             convex_shapes.append(item)
@@ -290,12 +290,16 @@ class PlanningScene:
                 labels.extend((mobile[i].link, shape.link) for i, shape in pairs)
         self.swept_pairs = tuple(labels[len(same):])
         self.collision_pairs = tuple(labels)
-        if use_coal:
-            model = _coal.CollisionModel(convex_shapes, enabled)
-            self.coal_models = (model,)
+        if use_convex:
+            query_factory = None
+            if collision_backend == "mujoco_warp":
+                from ._mujoco_warp import WarpPairs
+                query_factory = WarpPairs
+            model = _coal.CollisionModel(convex_shapes, enabled, query_factory)
+            self.distance_models = (model,)
             self.collision_pairs = model.labels
-            if link_capsules or model.has_mesh:
-                validation = _coal.CollisionModel(authored_shapes, enabled) if link_capsules else model
+            if link_capsules or model.has_mesh or query_factory is not None:
+                validation = _coal.CollisionModel(authored_shapes, enabled) if link_capsules or query_factory else model
                 self.validation_models = (validation,)
 
     @property
@@ -315,7 +319,7 @@ class PlanningScene:
                      for kin, _, _ in scene.kinematics]
             return (scene.links, scene.joint_names, trees, scene.collision_pairs,
                     [kernel for kernel, _, _ in scene._fixed_groups],
-                    tuple(model.topology for model in scene.coal_models))
+                    tuple(model.topology for model in scene.distance_models))
 
         def indices(scene):
             return (scene._body_indices, scene._mobile_pairs, *(i for _, i, _ in scene._fixed_groups))
@@ -330,9 +334,9 @@ class PlanningScene:
                 raise ValueError("batched planners must share joint and collision topology")
 
         batch = copy(first)
-        batch.coal_models = tuple(m for scene in scenes for m in scene.coal_models)
+        batch.distance_models = tuple(m for scene in scenes for m in scene.distance_models)
         if any(scene.validation_models for scene in scenes):
-            batch.validation_models = tuple((s.validation_models or s.coal_models)[0] for s in scenes)
+            batch.validation_models = tuple((s.validation_models or s.distance_models)[0] for s in scenes)
         batch.kinematics = []
         for branches in zip(*(scene.kinematics for scene in scenes)):
             models, roots, slices = zip(*branches)
@@ -372,7 +376,7 @@ class PlanningScene:
 
     @property
     def self_pair_count(self):
-        return self.coal_models[0].self_count if self.coal_models else len(self._mobile_pairs)
+        return self.distance_models[0].self_count if self.distance_models else len(self._mobile_pairs)
 
     def pair_margins(self, margin, world_margin):
         margins = self.initial.new_full((len(self.collision_pairs),), world_margin)
@@ -402,8 +406,8 @@ class PlanningScene:
     def pose_distances(self, positions, rotations):
         if not self.has_collision_pairs:
             return positions.new_empty(positions.shape[:-2] + (0,))
-        if self.coal_models:
-            return self._coal_distances(self.coal_models, positions, rotations)
+        if self.distance_models:
+            return self._model_distances(self.distance_models, positions, rotations)
         a, b = self._capsule_ends(positions, rotations)
         distances = []
         if len(self._mobile_pairs):
@@ -414,17 +418,23 @@ class PlanningScene:
         return torch.cat(distances, dim=-1)
 
     @staticmethod
-    def _coal_distances(models, positions, rotations):
+    def _model_distances(models, positions, rotations):
         if len(models) == 1:
             return models[0].distances(positions, rotations)
         return torch.stack([model.distances(p, r) for model, p, r in zip(models, positions, rotations, strict=True)])
 
-    def original_queries(self, positions, rotations, margin, world_margin):
-        """Yield row slices and original distances; per-scene meshes can have different pair counts."""
+    def convex_clearance(self, positions, rotations, margins):
+        if not self.distance_models:
+            return clearance_mask(self.pose_distances(positions, rotations), margins)
+        if len(self.distance_models) == 1:
+            return self.distance_models[0].clearance_mask(positions, rotations, margins)
+        return torch.stack([model.clearance_mask(p, r, margins)
+                            for model, p, r in zip(self.distance_models, positions, rotations, strict=True)])
+
+    def original_checks(self, positions, rotations, margin, world_margin):
+        """Per-scene authored geometries can have different pair counts."""
         for i, model in enumerate(self.validation_models):
             rows = slice(None) if len(self.validation_models) == 1 else slice(i, i + 1)
-            distances = model.distances(positions[rows], rotations[rows], verify=True,
-                                        clearance=max(margin, world_margin))
-            margins = distances.new_full((len(model.labels),), world_margin)
+            margins = positions.new_full((len(model.labels),), world_margin)
             margins[:model.self_count] = margin
-            yield rows, distances, margins, model.names
+            yield rows, model.clearance_mask(positions[rows], rotations[rows], margins, original=True), model.names
