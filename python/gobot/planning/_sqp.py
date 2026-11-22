@@ -54,12 +54,14 @@ def _waypoint_rows(derivatives, starts, fixed, waypoints):
 
 
 def optimize_sqp(initial, fixed, lower, upper, dt, substeps_for, targets,
-                 feasible, iterations):
+                 feasible, iterations, *, first_feasible=False, segment_minimum=False):
     """Convexify segment and Cartesian terms, shrink or expand a box on joint increments."""
     free = slice(fixed, -fixed)
     q = initial.clone()
     waypoints, joints = q.shape
     initial_feasible = feasible(q)
+    if first_feasible and initial_feasible:
+        return q
     if initial_feasible and fixed == 1:
         # With fixed endpoints, equal increments minimize sum(|dq|²) and give zero acceleration.
         fractions = torch.linspace(0, 1, waypoints, dtype=q.dtype, device=q.device)[1:-1, None]
@@ -76,7 +78,7 @@ def optimize_sqp(initial, fixed, lower, upper, dt, substeps_for, targets,
 
     def evaluate(path, substeps, linearize=False):
         pairs = torch.stack((path[:-1], path[1:]), dim=1)
-        segment = yield substeps, linearize, pairs
+        segment = yield substeps, linearize, segment_minimum, pairs
         cart = [error(path[index]) for index, error in targets]
         return segment, cart
 
@@ -127,13 +129,19 @@ def optimize_sqp(initial, fixed, lower, upper, dt, substeps_for, targets,
                 q = trial
                 radius *= 1.5
                 if trial_cost < best_cost and feasible(q):
+                    if first_feasible:
+                        return q
                     best, best_cost = q.clone(), trial_cost
                 break
             radius *= 0.25
         else:
             predicted = 0.0
         if predicted <= 1e-9:
-            if feasible(q) or penalty >= 1e5:
+            if feasible(q):
+                if first_feasible:
+                    return q
+                break
+            if penalty >= 1e5:
                 break
             penalty *= 10
             radius = 0.1

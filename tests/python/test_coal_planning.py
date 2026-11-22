@@ -30,6 +30,43 @@ def test_signed_sphere_witnesses(separation):
     np.testing.assert_allclose(reverse, np.r_[forward[0], forward[4:7], forward[1:4], -forward[7:]])
 
 
+@pytest.mark.parametrize("original", [False, True])
+def test_segment_screening_and_rechecking_a_previous_collision(original):
+    from gobot.planning._coal import CollisionModel, shape
+
+    def sphere(name, body, x):
+        spec = dict(type=2, radius=0.1, collision_layer=1, collision_mask=1)
+        return shape(spec, ("", name), body, torch.tensor([x, 0, 0], dtype=DTYPE), torch.eye(3, dtype=DTYPE))
+
+    plane = shape(dict(type=6, collision_layer=1, collision_mask=1), ("", "floor"), None,
+                  torch.tensor([0, 0, -20], dtype=DTYPE), torch.eye(3, dtype=DTYPE))
+    model = CollisionModel([sphere("tip", 0, 0), sphere("left", None, -2), sphere("right", None, 2), plane],
+                           lambda a, b: True)
+    margins = torch.tensor([0, 0.25, 0], dtype=DTYPE)
+    p = torch.zeros((9, 1, 3), dtype=DTYPE)
+    r = torch.eye(3, dtype=DTYPE).expand(9, 1, 3, 3)
+    p[1, 0, 0], p[-1, 0, 0] = -2.0, 2.4
+    frames = model.world_frames(p, r)
+    for samples in (frames[:-1], frames):
+        flat = model.nearby(samples, margins, original)
+        grouped = model.nearby(samples, margins, original, group_size=4)
+        for found, expected in zip(grouped, flat, strict=True):
+            torch.testing.assert_close(found, expected)
+        # The far halfspace stays a candidate at every pose.
+        assert int((grouped[1] == 2).sum()) == len(samples)
+
+    check = model.trajectory_check(margins, original)
+    assert check(p, r, 4) == (1, model.names[0])
+    assert check(p, r, 4) == (1, model.names[0])
+    p[1, 0, 0] = 0
+    assert check(p, r, 4) == (8, model.names[1])
+    # After changing the grid, only the interior of the shorter path collides.
+    p[2, 0, 0] = -2.05
+    assert check(p[:5], r[:5], 2) == (2, model.names[0])
+    p[2, 0, 0] = 0
+    assert check(p[:5], r[:5], 2) is None
+
+
 @pytest.mark.parametrize("bx", [0.9, 0.46])
 def test_two_rotating_bodies_forward_reverse_and_batched_queries(bx):
     box = native.Shape("offset box", dict(type=1, size=np.array([0.4, 0.6, 0.8])))
@@ -237,7 +274,7 @@ def test_container_unloading_retracts_the_payload_before_turning():
     seed, optimized = output["poses"][:, :, output["names"].index("Parcel")]
     seed_distance, optimized_distance = output["carton_clearance"]
     assert seed_distance < -0.20 and "/Port3/" in output["nearest"][0]
-    assert optimized_distance >= 0.008
+    assert optimized_distance >= 0.014 - 1e-6
     np.testing.assert_allclose(seed[[0, -1]], optimized[[0, -1]], atol=1e-6)
     for pose, (position, angles) in zip(optimized[[0, -1]], targets, strict=True):
         np.testing.assert_allclose(pose[:3], position, atol=1e-4)

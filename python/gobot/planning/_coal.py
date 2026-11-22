@@ -162,14 +162,32 @@ class _Bounds:
         extent += 16 * np.finfo(np.float64).eps * (1 + scale)
         return center - extent, center + extent
 
-    def candidates(self, frames, moving, endpoints, planes, thresholds):
+    @staticmethod
+    def overlaps(lo, hi, endpoints, planes, thresholds):
+        i, j = endpoints.T
+        gap = np.maximum(lo[:, i] - hi[:, j], lo[:, j] - hi[:, i])
+        return planes | ~(gap > thresholds[:, None]).any(axis=-1)
+
+    def candidates(self, frames, moving, endpoints, planes, thresholds, group_size=1):
         shape = (len(frames), len(self.fixed_bounds[0]), 3)
         lo, hi = (np.broadcast_to(x, shape).copy() for x in self.fixed_bounds)
         lo[:, moving], hi[:, moving] = self.transform(frames[:, moving], self.center, self.half)
-        i, j = endpoints.T
-        # Any separating axis with a gap above the threshold certifies clearance.
-        gap = np.maximum(lo[:, i] - hi[:, j], lo[:, j] - hi[:, i])
-        return np.nonzero(planes | ~(gap > thresholds[:, None]).any(axis=-1))
+        if group_size == 1 or len(frames) < 2:
+            return np.nonzero(self.overlaps(lo, hi, endpoints, planes, thresholds))
+
+        # Include every sampled pose in its segment's bounds. When validation
+        # appends the final waypoint, fold it into the last segment.
+        starts = np.arange(0, len(frames) - 1, group_size)
+        possible = self.overlaps(np.minimum.reduceat(lo, starts), np.maximum.reduceat(hi, starts),
+                                 endpoints, planes, thresholds)
+        rows, pairs = [], []
+        for start, stop, mask in zip(starts, [*starts[1:], len(frames)], possible):
+            selected = np.flatnonzero(mask)
+            hit, col = np.nonzero(self.overlaps(lo[start:stop], hi[start:stop], endpoints[selected],
+                                                planes[selected], thresholds[selected]))
+            rows.append(start + hit)
+            pairs.append(selected[col])
+        return np.concatenate(rows), np.concatenate(pairs)
 
 
 class CollisionModel:
@@ -221,25 +239,35 @@ class CollisionModel:
         world = self.frames.expand(*positions.shape[:-2], *self.frames.shape)
         return world.index_copy(-3, self.mobile_ids, moving)
 
-    def nearby(self, frames, thresholds, original=False):
+    def _selected_query(self, frames, rows, pairs, original):
+        packed = frames[rows[:, None], self.endpoints.numpy()[pairs]]
+        return self.pairs.query(packed[:, None], original, math.inf, pairs)[:, 0]
+
+    def nearby(self, frames, thresholds, original=False, group_size=1):
         """Return packed (sample, pair, query result) for conservative AABB candidates."""
         array = frames.detach().numpy()
         rows, pairs = self.bounds[original].candidates(array, self.moving, self.endpoints.numpy(),
-                                                       self.planes, thresholds.detach().numpy())
+                                                       self.planes, thresholds.detach().numpy(), group_size)
         if len(rows):
-            packed = array[rows[:, None], self.endpoints.numpy()[pairs]]
-            data = self.pairs.query(packed[:, None], original, math.inf, pairs)[:, 0]
+            data = self._selected_query(array, rows, pairs, original)
             values = torch.from_numpy(data).to(frames.dtype)
         else:
             values = frames.new_empty((0, 1 if original else 10))
         return torch.from_numpy(rows), torch.from_numpy(pairs), values
 
-    def constraint_rows(self, poses, samples, margins, buffer, linearize):
+    def constraint_rows(self, poses, samples, margins, buffer, linearize, group_size, segment_minimum=False):
         """Sparse d_safe - d and joint derivatives, in sample then pair order."""
         frames = self.world_frames(*poses(samples))
-        rows, ids, data = self.nearby(frames, margins + buffer)
+        rows, ids, data = self.nearby(frames, margins + buffer, group_size=group_size)
         residual = margins[ids] - data[:, 0]
-        near = residual > -buffer
+        near = (residual > -buffer).nonzero().flatten()
+        if segment_minimum and len(near):
+            # Keep the worst sampled clearance per segment and shape pair. Stable
+            # ties pick the earliest sample. Restore sample order for FK reuse.
+            group = ((rows[near] // group_size) * len(margins) + ids[near]).numpy()
+            order = np.lexsort((-residual[near].numpy(), group))
+            first = np.r_[True, np.diff(group[order]) != 0]
+            near = near[np.sort(order[first])]
         rows, ids, residual = rows[near], ids[near], residual[near]
         gradient = None
         if linearize and len(rows):
@@ -254,6 +282,35 @@ class CollisionModel:
             pair_jac = pose_jac[inverse[:, None], self.pair_mobile_indices[ids]]
             gradient = -torch.einsum("nkij,nkijq->nq", witness_coefficients(data[near]), pair_jac)
         return rows, residual, gradient
+
+    def trajectory_check(self, margins, original=False):
+        """Make a sampled clearance check for one trajectory and geometry model."""
+        previous = None
+
+        def check(positions, rotations, substeps):
+            nonlocal previous
+            if not self.labels:
+                return None
+            frames = self.world_frames(positions, rotations)
+            if previous is not None:
+                sample, pair, last_substeps = previous
+                if last_substeps == substeps and sample < len(frames):
+                    data = self._selected_query(frames.detach().numpy(), np.array([sample]), np.array([pair]), original)
+                    distance = frames.new_tensor(data[0, 0])
+                    if not clearance_mask(distance, margins[pair]):
+                        return sample, self.names[pair]
+                previous = None
+
+            rows, pairs, data = self.nearby(frames, margins, original, substeps)
+            failed = (~clearance_mask(data[:, 0], margins[pairs])).nonzero()
+            if len(failed):
+                index = failed[0, 0]
+                sample, pair = int(rows[index]), int(pairs[index])
+                previous = sample, pair, substeps
+                return sample, self.names[pair]
+            return None
+
+        return check
 
     def clearance_mask(self, positions, rotations, margins, original=False):
         ok = torch.ones((*positions.shape[:-2], len(self.labels)), dtype=torch.bool)

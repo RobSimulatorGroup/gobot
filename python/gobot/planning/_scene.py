@@ -378,9 +378,11 @@ class PlanningScene:
     def self_pair_count(self):
         return self.distance_models[0].self_count if self.distance_models else len(self._mobile_pairs)
 
-    def pair_margins(self, margin, world_margin):
-        margins = self.initial.new_full((len(self.collision_pairs),), world_margin)
-        margins[:self.self_pair_count] = margin
+    def pair_margins(self, margin, world_margin, model=None):
+        pairs = self.collision_pairs if model is None else model.labels
+        self_count = self.self_pair_count if model is None else model.self_count
+        margins = self.initial.new_full((len(pairs),), world_margin)
+        margins[:self_count] = margin
         return margins
 
     def _capsule_ends(self, positions, rotations):
@@ -435,6 +437,24 @@ class PlanningScene:
         """Per-scene authored geometries can have different pair counts."""
         for i, model in enumerate(self.validation_models):
             rows = slice(None) if len(self.validation_models) == 1 else slice(i, i + 1)
-            margins = positions.new_full((len(model.labels),), world_margin)
-            margins[:model.self_count] = margin
+            margins = self.pair_margins(margin, world_margin, model)
             yield rows, model.clearance_mask(positions[rows], rotations[rows], margins, original=True), model.names
+
+    def trajectory_checks(self, margin, world_margin):
+        """Create independent, convex-first checks for a single trajectory job."""
+        margins = self.pair_margins(margin, world_margin)
+        if self.distance_models:
+            convex, = self.distance_models
+            yield convex.trajectory_check(margins)
+            for model in self.validation_models:
+                original_margins = self.pair_margins(margin, world_margin, model)
+                yield model.trajectory_check(original_margins, original=True)
+        else:
+            def check(positions, rotations, substeps):
+                ok = self.convex_clearance(positions, rotations, margins)
+                if not ok.all():
+                    sample, pair = (~ok).nonzero()[0].tolist()
+                    return sample, self.collision_pairs[pair]
+                return None
+
+            yield check

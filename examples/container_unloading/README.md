@@ -13,13 +13,13 @@ The translucent pink robot and carton follow the straight joint interpolation. T
 | Loaded trajectory | Minimum sampled carton-to-environment signed distance | Closest obstacle |
 | --- | ---: | --- |
 | Straight joint interpolation | −345.3 mm | Third carton in the port stack |
-| Optimized | +14.0 mm | Long carton above the slot |
+| Optimized | +15.3 mm | Third carton in the starboard stack |
 
 ## Planning and playback
 
-The worker computes both endpoint configurations with IK, then calls Gobot's CPU trust-region SQP solver with 14 joint waypoints spaced 0.23 s apart. Only the endpoints are specified. Coal queries signed distances between the robot hulls, the attached carton and the environment. Scene poses and the joint trajectory are recomputed on each Play.
+The worker computes both endpoint configurations with IK, then calls Gobot's CPU trust-region SQP solver with 14 joint waypoints spaced 0.23 s apart. The example uses `solver="sqp_fast"` to return the first verified path. Only the endpoints are specified. Coal queries signed distances between the robot hulls, the attached carton and the environment. Scene poses and the joint trajectory are recomputed on each Play.
 
-Before playback the planner checks joint and velocity limits and validates collision geometry at 313 joint configurations, including segment interiors. The acceptance thresholds are 8 mm for the environment and 1 mm for self-collision. The table reports the minimum for the *carton* over those samples. Continuous-time clearance between samples is unverified.
+Before playback the planner checks joint and velocity limits and validates collision geometry at 313 joint configurations, including segment interiors. The acceptance thresholds are 14 mm for the environment and 1 mm for self-collision. The table reports the minimum for the *carton* over those samples. Continuous-time clearance between samples is unverified.
 
 At the end of the planned motion, the carton is 17 mm above the rollers. The robot holds its release pose while the carton settles and moves 2.46 m along the rollers and out through the doorway in a kinematic animation. The animation uses the roller envelope and carton dimensions to stop while the carton is still fully supported. Moving the drop outside the handoff area ends the replay at the loaded pose.
 
@@ -40,7 +40,7 @@ batch = PlannerBatch(planner)
 result = batch.solve_trajopt(
     starts, goals, dt=0.23, waypoints=14,
     waypoint_targets=[{6: joint_via_0}, {8: PoseTarget(("M10iA", "Parcel"), xyz_1)}],
-    margin=0.001, world_margin=0.014, collision_substeps=12,
+    margin=0.001, world_margin=0.014, collision_substeps=12, solver="sqp_fast",
 )
 ```
 
@@ -58,7 +58,7 @@ planners verify the authored mesh geometry with Coal.
 Run the headless comparison from the repository root.
 
 ```sh
-.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 --repeats 3
+.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 --repeats 3 --solver sqp_fast
 ```
 
 The benchmark derives slightly different pickups, midpoints and drops from the
@@ -70,32 +70,60 @@ timer. The benchmark also checks each solution on 313 configurations with Coal
 at 1 mm self clearance and 14 mm environment clearance.
 
 The planner caches static world AABBs and updates each moving shape's bounds
-at each sampled configuration. Pairs whose AABB gap exceeds their clearance
-pass validation immediately. Halfspaces and overlapping bounds go to narrow
-phase. SQP linearization screens at each pair's clearance plus 50 mm, then
-forms derivatives only for exact distances inside that window. Trial steps
+at each sampled configuration. For each trajectory segment it takes the union
+of the sampled bounds, including the final waypoint on the last segment during
+validation. A pair with sufficient clearance between these bounds passes for
+every sample in the segment. Remaining pairs get per-sample AABB checks.
+Halfspaces always reach narrow phase. SQP linearization uses a 50 mm buffer
+above each clearance to select exact distances for derivatives. Trial steps
 recompute candidates. `collision_distances()` queries every enabled pair.
 
-On a Ryzen 7 3700X and RTX 4070 with one Torch CPU thread, the medians of
-two warm planner calls for 350 shape pairs were as follows.
+Validation checks the convex model before the authored geometry. Each trajectory
+remembers the last failing sample and pair for each model. A fresh distance at
+that sample can reject the next trial immediately. If the pair clears or the
+sampling grid changes, the planner screens the full grid again.
 
-| Trajectories | Coal before | Coal with screening | Warp before | Warp with screening | Verified per backend |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 32.28 s | 12.64 s | 31.26 s | 12.43 s | 1/1 |
-| 4 | 131.63 s | 51.47 s | 124.17 s | 49.76 s | 4/4 |
+With `sqp_fast`, each trajectory can finish as soon as its seed or an accepted
+step passes the waypoint, motion-limit and collision checks. The first Coal or
+Warp attempt starts on the verification grid. For each segment and shape pair
+it linearizes the closest sampled configuration within the check distance.
+Trial steps recompute the closest sample. A 0.1 mm extra optimization margin
+helps clear the requested threshold. If needed, the planner retries with all
+nearby sample rows and the requested margins. The standard `sqp` solver
+continues minimizing the velocity and acceleration costs after finding a path.
 
-The one-trajectory Coal solve linearized 15 times at 12 samples per segment
+On a Ryzen 7 3700X and RTX 4070 with one Torch CPU thread, median planner times
+for 350 shape pairs were as follows. The fast mode uses three warm repetitions,
+and the earlier comparisons use two.
+
+| Trajectories | Backend | Before AABB screening | Per-sample screening | Segment screening (`sqp`) | `sqp_fast` | Verified |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Coal | 32.28 s | 12.64 s | 5.21 s | 0.95 s | 1/1 |
+| 1 | MuJoCo Warp | 31.26 s | 12.43 s | 5.47 s | 1.43 s | 1/1 |
+| 4 | Coal | 131.63 s | 51.47 s | 20.65 s | 2.32 s | 4/4 |
+| 4 | MuJoCo Warp | 124.17 s | 49.76 s | 20.70 s | 2.86 s | 4/4 |
+
+The one-trajectory standard Coal solve linearized 15 times at 12 samples per segment
 and 10 times on the retry at 24 samples per segment. Across both grids,
 41,433 of 1,911,000 sample-pairs needed exact distances at linearization.
 25,461 rows needed collision gradients. In the four-trajectory benchmark
 the largest public distance discrepancy across 1,252 configurations was
 0.058 mm. Both backends achieved 14.00 mm minimum sampled carton clearance.
 
+On the identical single task, `sqp_fast` linearized 854 collision rows and
+solved 25 QPs, compared with 56 QPs for `sqp`. The joint smoothness objective
+was 0.36435 for the first feasible path and 0.36322 after standard optimization.
+
+In a separate single-trajectory Coal profile, 5 of 27 validation calls reached
+the authored model. Authored AABB comparisons fell from 2,957,850 to 30,344.
+Convex validation used another 74,066 comparisons. These counts cover the
+internal trajectory validation calls only.
+
 The benchmark also times a straight, 11.7 cm move from the drop configuration.
 This path passes its first validation and requires zero QP steps. In an
-11-run warm Coal measurement the median planner call took 8.65 ms, down
-from 120 ms before AABB screening. The long container transfers in the table
-require iterative optimization.
+11-run warm Coal measurement the median planner call took 5.09 ms, compared
+with 8.65 ms with per-sample screening and 120 ms before screening. The long
+container transfers in the table require iterative optimization.
 
 ## Requirements and assets
 

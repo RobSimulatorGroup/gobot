@@ -114,6 +114,8 @@ def test_sqp_recovers_fixed_time_joint_cost_minimum(snapshot):
     path = planner.solve_trajopt(start, goal, dt=0.5, waypoints=7, seed=seed, solver="sqp")
     assert path.success, path.reason
     torch.testing.assert_close(path.positions, optimum, atol=1e-5, rtol=0)
+    first = planner.solve_trajopt(start, goal, dt=0.5, waypoints=7, seed=seed, solver="sqp_fast")
+    assert first.success and torch.equal(first.positions, seed)
 
 
 def test_sqp_skips_qp_only_for_valid_linear_trajectory(snapshot, monkeypatch):
@@ -242,7 +244,8 @@ def test_rotation_residual_has_finite_forward_jacobian():
 
 
 @pytest.mark.parametrize("backend", ["coal", "mujoco_warp"])
-def test_batch_trajopt_independent_waypoints_and_failures(snapshot, backend):
+@pytest.mark.parametrize("solver", ["sqp", "sqp_fast"])
+def test_batch_trajopt_independent_waypoints_and_failures(snapshot, backend, solver):
     pytest.importorskip("osqp")
     pytest.importorskip("gobot._coal_native")
     if backend == "mujoco_warp":
@@ -256,14 +259,14 @@ def test_batch_trajopt_independent_waypoints_and_failures(snapshot, backend):
     targets = [{2: start.new_tensor([-0.18, 0.49, 0.1])},
                {4: gobot.planning.PoseTarget(link, [0.1, 0.4, 0.5])},
                {3: gobot.planning.PoseTarget(link, [0.1, 0.4, 1.5])}, {}]
-    settings = dict(dt=0.45, waypoints=7, collision_substeps=2, iterations=12)
+    settings = dict(dt=0.45, waypoints=7, collision_substeps=2, iterations=12, solver=solver)
     result = gobot.planning.PlannerBatch(planner).solve_trajopt(start, goal, waypoint_targets=targets, **settings)
     assert result.success.tolist() == [True, True, False, False], result.reasons
     assert "waypoint 3" in result.reasons[2] and "collision" in result.reasons[3]
     assert result.positions[2:].isnan().all()
     assert result.initial_positions[2].isfinite().all() and result.initial_positions[3].isnan().all()
     for i in range(2):
-        solo = planner.solve_trajopt(start[i], goal[i], solver="sqp", waypoint_targets=targets[i], **settings)
+        solo = planner.solve_trajopt(start[i], goal[i], waypoint_targets=targets[i], **settings)
         assert solo.success, solo.reason
         torch.testing.assert_close(result.positions[i], solo.positions, atol=1e-5, rtol=0)
         assert planner.validate_trajectory(result.positions[i], dt=result.dt, collision_substeps=16)
@@ -326,3 +329,52 @@ def test_sparse_segment_rows_match_dense_jacobian(snapshot, backend):
         else:
             assert packed.jacobian is None
             torch.testing.assert_close(packed.value.clamp_min(0).sum(), dense.clamp_min(0).sum())
+
+
+def test_sqp_fast_uses_closest_sample_per_pair_and_segment(snapshot):
+    pytest.importorskip("gobot._coal_native")
+    from torch.func import jacfwd, vmap
+
+    scene = gobot.planning.Planner(snapshot, {"planning": "base"}, collision_backend="coal")._scene
+    model, = scene.distance_models
+    margins = scene.pair_margins(0.001, 0.014)
+    q = scene.tensor([[-0.6, -0.06, 0.2], [0.19, -0.07, 0.42], [0.24, 0.71, 0.18]])
+    fractions = torch.arange(6, dtype=q.dtype)[:, None] / 6
+    samples = torch.lerp(q[:-1, None], q[1:, None], fractions).flatten(0, 1)
+    maximum, closest = (margins - scene.distances(samples)).unflatten(0, (2, 6)).max(dim=1)
+    jac = -vmap(jacfwd(scene.distances))(samples)
+    for linearize in (False, True):
+        buffer = 0.05 if linearize else 0.0
+        segment, pair = (maximum > -buffer).nonzero(as_tuple=True)
+        sample = 6 * segment + closest[segment, pair]
+        order = (sample * len(margins) + pair).argsort()
+        sample, pair, segment = sample[order], pair[order], segment[order]
+        rows, values, gradient = model.constraint_rows(scene.poses, samples, margins, buffer, linearize,
+                                                       group_size=6, segment_minimum=True)
+        assert len(sample) and torch.equal(rows, sample)
+        torch.testing.assert_close(values, maximum[segment, pair])
+        if linearize:
+            torch.testing.assert_close(gradient, jac[sample, pair])
+
+
+def test_sqp_fast_retries_with_full_rows(snapshot, monkeypatch):
+    pytest.importorskip("gobot._coal_native")
+    pytest.importorskip("osqp")
+    from gobot import planning
+
+    planner = planning.Planner(snapshot, {"planning": "base"}, collision_backend="coal")
+    start, goal = planner._scene.tensor([[-0.6, 0.0, 0.0], [0.6, 0.0, 0.0]])
+    states = []
+    optimize = planning.optimize
+
+    def exhaust_first_attempt(*args):
+        states.append((args[4], args[-1]))
+        if args[-1]:
+            return None
+        return (yield from optimize(*args))
+
+    monkeypatch.setattr(planning, "optimize", exhaust_first_attempt)
+    path = planner.solve_trajopt(start, goal, waypoints=7, dt=0.5, collision_substeps=4, solver="sqp_fast")
+    assert states[:2] == [(8, True), (4, False)]
+    assert path.success, path.reason
+    assert planner.validate_trajectory(path.positions, dt=0.5, collision_substeps=8)

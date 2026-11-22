@@ -43,10 +43,10 @@ def verify(coal, path, samples, payload_pairs):
     return valid, float(distances[:, payload_pairs].min()) * 1000
 
 
-def short_transfer(planner, start):
+def short_transfer(planner, start, solver):
     goal = start.clone()
     goal[0] -= 0.1
-    options = dict(dt=DT, waypoints=14, solver="sqp", margin=0.001, world_margin=0.014,
+    options = dict(dt=DT, waypoints=14, solver=solver, margin=0.001, world_margin=0.014,
                    collision_substeps=5, iterations=50)
     times = []
     for _ in range(12):
@@ -58,7 +58,7 @@ def short_transfer(planner, start):
     print(f"Short transfer: {1000 * median(times[1:]):.2f} ms median (11 warm runs)", flush=True)
 
 
-def run(sizes, repeats, substeps):
+def run(sizes, repeats, substeps, solver):
     torch.set_num_threads(1)
     context = gobot.app.context()
     context.set_project_path(str(Path(__file__).resolve().parent))
@@ -70,12 +70,13 @@ def run(sizes, repeats, substeps):
     start, goal = [endpoint(coal, context.root.find(name)) for name in ("Pick", "Drop")]
     context.clear_scene()
     options = dict(dt=DT, waypoints=14, margin=0.001, world_margin=0.014, collision_substeps=5, iterations=50)
-    short_transfer(coal, goal)
+    short_transfer(coal, goal, solver)
     reference = coal.solve_trajopt(start, goal, solver="sqp", **options)
     if not reference.success:
         raise RuntimeError(reference.reason)
     options["collision_substeps"] = substeps
-    print(f"{len(coal.collision_pairs)} shape pairs, {substeps} substeps, Warp device {wp.get_device()}, "
+    options["solver"] = solver
+    print(f"{solver}, {len(coal.collision_pairs)} shape pairs, {substeps} substeps, Warp device {wp.get_device()}, "
           f"{repeats} timed runs", flush=True)
     payload_pairs = [i for i, (a, b) in enumerate(coal.collision_pairs) if a == PAYLOAD and not b[0]]
     fractions = torch.arange(SAMPLES_PER_SEGMENT, dtype=start.dtype)[:, None] / SAMPLES_PER_SEGMENT
@@ -132,7 +133,8 @@ if __name__ == "__main__":
     parser.add_argument("--sizes", type=int, nargs="+", default=[1, 4])
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--collision-substeps", type=int, default=SAMPLES_PER_SEGMENT // 2)
+    parser.add_argument("--solver", choices=("sqp", "sqp_fast"), default="sqp")
     args = parser.parse_args()
     if min(args.sizes) < 1 or args.repeats < 1 or args.collision_substeps < 1:
         parser.error("sizes, repeats and collision substeps must be positive")
-    run(args.sizes, args.repeats, args.collision_substeps)
+    run(args.sizes, args.repeats, args.collision_substeps, args.solver)

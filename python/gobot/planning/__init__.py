@@ -205,10 +205,11 @@ class Planner:
             raise ValueError("a trajectory must contain at least two joint configurations")
         if longest_valid_segment_length is not None:
             _check_scalar(longest_valid_segment_length, "longest_valid_segment_length")
-        return self._trajectory_failure(q, dt, margin, world_margin, collision_substeps,
-                                        longest_valid_segment_length) is None
+        checks = tuple(self._scene.trajectory_checks(margin, world_margin))
+        return self._trajectory_failure(q, dt, world_margin, collision_substeps,
+                                        longest_valid_segment_length, checks) is None
 
-    def _trajectory_failure(self, q, dt, margin, world_margin, substeps, max_length=None):
+    def _trajectory_failure(self, q, dt, world_margin, substeps, max_length, checks):
         scene = self._scene
         if not torch.isfinite(q).all() or not self._bounded(q):
             return "trajectory violates joint limits"
@@ -217,22 +218,19 @@ class Planner:
         substeps = grid_substeps(q, substeps, max_length)
         samples = interpolation(q, substeps)
 
-        def collision(ok, pairs, samples_per_segment):
-            if ok.all():
-                return None
-            sample, pair = (~ok).nonzero()[0].tolist()
-            segment = min(sample // samples_per_segment, len(q) - 2)
-            return f"collision clearance on segment {segment}, pair {pairs[pair]}"
-
         p, r = scene.poses(samples)
-        for _, ok, names in scene.original_checks(p, r, margin, world_margin):
-            failure = collision(ok, names, substeps)
-            if failure:
-                return failure
-        return (collision(scene.convex_clearance(p, r, scene.pair_margins(margin, world_margin)),
-                          scene.distance_models[0].names if scene.distance_models else scene.collision_pairs, substeps)
-                or collision(_clearance_mask(scene.swept_world_distances(q[:-1], q[1:]), world_margin),
-                             scene.swept_pairs, 1))
+        for check in checks:
+            hit = check(p, r, substeps)
+            if hit is not None:
+                sample, pair = hit
+                segment = min(sample // substeps, len(q) - 2)
+                return f"collision clearance on segment {segment}, pair {pair}"
+        if scene.swept_pairs:
+            ok = _clearance_mask(scene.swept_world_distances(q[:-1], q[1:]), world_margin)
+            if not ok.all():
+                segment, pair = (~ok).nonzero()[0].tolist()
+                return f"collision clearance on segment {segment}, pair {scene.swept_pairs[pair]}"
+        return None
 
     @torch.no_grad()
     def solve_trajopt(
@@ -248,6 +246,9 @@ class Planner:
         environment clearance and defaults to margin. SQP considers collision
         rows within 0.05 m of their clearance threshold for the local QP.
         Trial evaluation and trajectory validation check all enabled pairs.
+        "sqp_fast" returns the first verified path, including a feasible seed.
+        For convex backends it first uses the worst sampled clearance per pair and
+        segment on the verification grid, then retries with full rows if needed.
 
         Each requested position/rotation error vector must have norm at most 1e-4 (m/rad).
         longest_valid_segment_length bounds joint-space sampling intervals (Euclidean norm
@@ -266,9 +267,9 @@ class Planner:
         _check_count(iterations, "iterations")
         if longest_valid_segment_length is not None:
             _check_scalar(longest_valid_segment_length, "longest_valid_segment_length")
-        if solver not in ("lm", "sqp"):
-            raise ValueError("solver must be 'lm' or 'sqp'")
-        if solver == "sqp" and self._scene.device.type != "cpu":
+        if solver not in ("lm", "sqp", "sqp_fast"):
+            raise ValueError("solver must be 'lm', 'sqp' or 'sqp_fast'")
+        if solver != "lm" and self._scene.device.type != "cpu":
             raise ValueError("the SQP solver requires a CPU planner")
         fixed = 2 if stop_at_endpoints else 1
         if waypoints < 2 * fixed:
@@ -283,8 +284,8 @@ class Planner:
 
     def _trajectory_job(self, start, goal, seed, waypoint_targets, dt, waypoints, margin, world_margin,
                         collision_substeps, iterations, fixed, solver, longest_valid_segment_length, constraints):
-        if waypoint_targets and solver != "sqp":
-            raise ValueError("intermediate waypoint targets require solver='sqp'")
+        if waypoint_targets and solver == "lm":
+            raise ValueError("intermediate waypoint targets require an SQP solver")
         targets = []
         joint_anchors = {}
         for index, target in (waypoint_targets or {}).items():
@@ -306,14 +307,13 @@ class Planner:
             return TrajectoryResult(None, dt, "start or goal violates joint limits")
         scene = self._scene
         p, r = scene.poses(ends)
-        names = scene.distance_models[0].names if scene.distance_models else scene.collision_pairs
-        checks = [(scene.convex_clearance(p, r, scene.pair_margins(margin, world_margin)), names)]
-        checks.extend((ok, names) for _, ok, names in scene.original_checks(p, r, margin, world_margin))
-        for ok, pairs in checks:
-            if not ok.all():
-                row, index = (~ok).nonzero()[0].tolist()
+        checks = tuple(scene.trajectory_checks(margin, world_margin))
+        for check in checks:
+            hit = check(p, r, 1)
+            if hit is not None:
+                row, pair = hit
                 segment = 0 if row == 0 else waypoints - 2
-                return TrajectoryResult(None, dt, f"endpoint collision on segment {segment}, pair {pairs[index]}")
+                return TrajectoryResult(None, dt, f"endpoint collision on segment {segment}, pair {pair}")
         moving_segments = waypoints - 2 * fixed + 1
         if not self._speed_bounded((goal - start).abs() / (moving_segments * dt)):
             return TrajectoryResult(None, dt, "joint velocity limits require a longer duration")
@@ -345,17 +345,21 @@ class Planner:
                     kind = "Cartesian pose" if cartesian else "joint position"
                     failure = f"{kind} tolerance at waypoint {index}"
                     return False
-            failure = self._trajectory_failure(positions, dt, margin, world_margin, validation_substeps,
-                                               longest_valid_segment_length)
+            failure = self._trajectory_failure(positions, dt, world_margin, validation_substeps,
+                                               longest_valid_segment_length, checks)
             return failure is None
 
         if not interior.numel():
             q = initial if feasible(initial) else None
         else:
             # A failure between optimization samples gets one retry on the verification grid.
-            for substeps in (collision_substeps, validation_substeps):
+            attempts = [(collision_substeps, False), (validation_substeps, False)]
+            if solver == "sqp_fast" and scene.distance_models and scene.has_collision_pairs:
+                attempts.insert(0, (validation_substeps, True))
+            for substeps, segment_minimum in attempts:
                 q = yield from optimize(scene, initial, dt, margin, substeps, iterations, feasible,
-                                        fixed, solver, targets, longest_valid_segment_length, constraints)
+                                        fixed, solver, targets, longest_valid_segment_length, constraints,
+                                        segment_minimum)
                 if q is not None or not scene.has_collision_pairs:
                     break
         if q is None:
@@ -486,7 +490,7 @@ class PlannerBatch:
         waypoint_targets: Sequence[WaypointTargets] | None = None, seed: Tensor | None = None,
         margin: float = 0.02, world_margin: float | None = None, collision_substeps: int = 8,
         iterations: int = 20, stop_at_endpoints: bool = False,
-        longest_valid_segment_length: float | None = None, chunk_size: int = 8,
+        longest_valid_segment_length: float | None = None, chunk_size: int = 8, solver: str = "sqp",
     ) -> BatchedTrajectoryResult:
         """Plan independent CPU SQP trajectories using one shared Planner.
 
@@ -494,10 +498,13 @@ class PlannerBatch:
         specify its own mapping from waypoint indices to joint vectors or world-space
         PoseTargets. The maximum joint error or position/rotation norm is 1e-4 in
         joint units or metres/radians. chunk_size bounds the number of concurrent paths.
+        solver="sqp_fast" returns the first verified path for each job.
         """
         planner = self._shared_planner
         if planner is None:
             raise ValueError("batch trajectory optimization requires PlannerBatch(shared_planner)")
+        if solver not in ("sqp", "sqp_fast"):
+            raise ValueError("batch trajectory solver must be 'sqp' or 'sqp_fast'")
         _check_count(chunk_size, "chunk_size")
         _check_count(waypoints, "waypoints", 2)
         start, goal = planner._joint_tensor(start), planner._joint_tensor(goal)
@@ -517,7 +524,7 @@ class PlannerBatch:
                       None if waypoint_targets is None else waypoint_targets[i])
                      for i in range(offset, min(offset + chunk_size, size))]
             results.extend(planner._solve_trajectories(group, dt, waypoints, margin, collision_substeps,
-                                                       iterations, world_margin, stop_at_endpoints, "sqp",
+                                                       iterations, world_margin, stop_at_endpoints, solver,
                                                        longest_valid_segment_length))
         empty = start.new_full((waypoints, joints), torch.nan)
         return BatchedTrajectoryResult(

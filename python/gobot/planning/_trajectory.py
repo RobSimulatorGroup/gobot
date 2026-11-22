@@ -85,7 +85,8 @@ def _selected_derivatives(function, pairs, active):
     return torch.cat(blocks)[torch.argsort(torch.cat(segment_ids), stable=True)]
 
 
-def sqp_segment_rows(scene, dt, margins, world_margin, segment_inequalities, pairs, fractions, linearize):
+def sqp_segment_rows(scene, dt, margins, world_margin, segment_inequalities, pairs, fractions, linearize,
+                     segment_minimum=False):
     from ._sqp import _COLLISION_LINEARIZATION_BUFFER_M
 
     # Rows outside this window have zero contribution to the L1 violation.
@@ -115,7 +116,12 @@ def sqp_segment_rows(scene, dt, margins, world_margin, segment_inequalities, pai
     model, = scene.distance_models
     if model.labels:
         samples = torch.lerp(pairs[:, :1], pairs[:, 1:], fractions).flatten(0, 1)
-        rows, residual, gradient = model.constraint_rows(scene.poses, samples, margins, buffer, linearize)
+        # Aim slightly inside the feasible region on the first low-latency attempt.
+        # Full-row retries and final validation use the requested clearances.
+        if segment_minimum:
+            margins = margins + 1e-4
+        rows, residual, gradient = model.constraint_rows(scene.poses, samples, margins, buffer, linearize,
+                                                         group_size=len(fractions), segment_minimum=segment_minimum)
         segments.append(rows // len(fractions))
         values.append(residual)
         if gradient is not None:
@@ -148,18 +154,18 @@ def run_trajectories(jobs, evaluate):
         groups = defaultdict(list)
         for row, reply in replies.items():
             try:
-                substeps, derivative, pairs = jobs[row].send(reply)
+                substeps, derivative, segment_minimum, pairs = jobs[row].send(reply)
             except StopIteration as done:
                 results[row] = done.value
             else:
-                groups[substeps, derivative].append((row, pairs))
+                groups[substeps, derivative, segment_minimum].append((row, pairs))
         replies = {}
-        for (substeps, derivative), requests in groups.items():
+        for (substeps, derivative, segment_minimum), requests in groups.items():
             pairs = [group for _, group in requests]
             merged = torch.cat(pairs) if len(pairs) > 1 else pairs[0]
             fractions = _sample_fractions(merged, substeps)
 
-            values = evaluate(merged, fractions, derivative)
+            values = evaluate(merged, fractions, derivative, segment_minimum)
             offset = 0
             for row, group in requests:
                 replies[row] = values.slice(offset, len(group)) if len(requests) > 1 else values
@@ -168,13 +174,14 @@ def run_trajectories(jobs, evaluate):
 
 
 def optimize(scene, initial, dt, margin, substeps, iterations, feasible, fixed, solver,
-             targets, max_length, segment_inequalities):
-    if solver == "sqp":
+             targets, max_length, segment_inequalities, segment_minimum=False):
+    if solver in ("sqp", "sqp_fast"):
         from ._sqp import optimize_sqp
 
         return (yield from optimize_sqp(initial, fixed, scene.lower, scene.upper, dt,
                                         lambda q: grid_substeps(q, substeps, max_length),
-                                        targets, feasible, iterations))
+                                        targets, feasible, iterations,
+                                        first_feasible=solver == "sqp_fast", segment_minimum=segment_minimum))
 
     waypoints, joints = initial.shape
     eye = torch.eye(waypoints, dtype=initial.dtype, device=initial.device)
