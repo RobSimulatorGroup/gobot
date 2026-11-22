@@ -244,6 +244,11 @@ class Planner:
     ) -> TrajectoryResult:
         """Optimize a fixed-endpoint trajectory. CPU SQP supports intermediate world-space poses.
 
+        margin is the self-collision clearance in metres. world_margin sets the
+        environment clearance and defaults to margin. SQP considers collision
+        rows within 0.05 m of their clearance threshold for the local QP.
+        Trial evaluation and trajectory validation check all enabled pairs.
+
         Each requested position/rotation error vector must have norm at most 1e-4 (m/rad).
         longest_valid_segment_length bounds joint-space sampling intervals (Euclidean norm
         in the joint vector's native units). Collision verification checks the interpolants.
@@ -298,6 +303,7 @@ class Planner:
             interior = initial[fixed:-fixed].clamp(scene.lower, scene.upper)
         initial = torch.cat((start.expand(fixed, -1), interior, goal.expand(fixed, -1)))
 
+        validation_substeps = 2 * collision_substeps
         failure = None
 
         def feasible(positions):
@@ -306,20 +312,19 @@ class Planner:
                 if torch.linalg.vector_norm(error(positions[index]).reshape(-1, 3), dim=-1).max() > 1e-4:
                     failure = f"Cartesian pose tolerance at waypoint {index}"
                     return False
-            failure = self._trajectory_failure(positions, dt, margin, world_margin, 2 * collision_substeps,
+            failure = self._trajectory_failure(positions, dt, margin, world_margin, validation_substeps,
                                                longest_valid_segment_length)
             return failure is None
 
         if not interior.numel():
             q = initial if feasible(initial) else None
         else:
-            q = optimize(scene, initial, dt, margin, world_margin, collision_substeps, iterations,
-                         feasible, fixed, solver, targets, longest_valid_segment_length)
-            if q is None and scene.has_collision_pairs:
-                # The finer verification grid can find a collision between the
-                # optimization samples. Optimize on that grid as a second pass.
-                q = optimize(scene, initial, dt, margin, world_margin, 2 * collision_substeps, iterations,
+            # A failure between optimization samples gets one retry on the verification grid.
+            for substeps in (collision_substeps, validation_substeps):
+                q = optimize(scene, initial, dt, margin, world_margin, substeps, iterations,
                              feasible, fixed, solver, targets, longest_valid_segment_length)
+                if q is not None or not scene.has_collision_pairs:
+                    break
         if q is None:
             return TrajectoryResult(None, dt, failure or "trajectory optimization found no feasible path from this seed",
                                     initial_positions=initial)

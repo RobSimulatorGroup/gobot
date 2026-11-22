@@ -15,9 +15,12 @@ def grid_substeps(q, minimum, max_length):
     return max(minimum, math.ceil(longest / max_length))
 
 
+def _sample_fractions(positions, count):
+    return torch.arange(count, dtype=positions.dtype, device=positions.device)[:, None] / count
+
+
 def interpolation(positions, substeps):
-    fraction = torch.arange(substeps, dtype=positions.dtype, device=positions.device) / substeps
-    samples = torch.lerp(positions[:-1, None, :], positions[1:, None, :], fraction[:, None])
+    samples = torch.lerp(positions[:-1, None, :], positions[1:, None, :], _sample_fractions(positions, substeps))
     return torch.cat((samples.flatten(0, 1), positions[-1:]))
 
 
@@ -34,41 +37,42 @@ def collision_penalty(distance, margin):
 def optimize(scene, initial, dt, margin, world_margin, substeps, iterations, feasible, fixed,
              solver="lm", targets=(), max_length=None):
     waypoints, joints = initial.shape
-    free = slice(fixed, -fixed)
     eye = torch.eye(waypoints, dtype=initial.dtype, device=initial.device)
-    def fractions_for(q):
-        count = grid_substeps(q, substeps, max_length)
-        return torch.arange(count, dtype=q.dtype, device=q.device)[:, None] / count
-
-    fractions = fractions_for(initial)
     margins = scene.pair_margins(margin, world_margin)
 
-    def trajectory(interior):
-        return torch.cat((initial[:fixed], interior, initial[-fixed:]))
-
-    def segment_terms(pair, fractions=fractions):
+    def segment_inequalities(pair, fractions):
         start, end = pair.unbind(-2)
         speed = (end - start) / dt
         samples = torch.lerp(start.unsqueeze(-2), end.unsqueeze(-2), fractions)
         distances = scene.distances(samples)
-        soft = 5 * collision_penalty(distances[..., 0, :scene.self_pair_count], margin)
         constraints = torch.cat((
             speed - scene.speed, -speed - scene.speed, (margins - distances).flatten(-2),
             world_margin - scene.swept_world_distances(start, end),
         ), dim=-1)
-        return soft, constraints
+        return constraints, distances
 
     if solver == "sqp":
         from ._sqp import optimize_sqp
 
         def constraints_for(q):
-            grid = fractions_for(q)
-            return lambda pair: segment_terms(pair, grid)[1]
+            fractions = _sample_fractions(q, grid_substeps(q, substeps, max_length))
+            return lambda pair: segment_inequalities(pair, fractions)[0]
 
         # Fixed-time zero-target JointVelEq and JointAccEq terms.
         matrix = torch.cat((eye.diff(dim=0), 0.1 * eye.diff(n=2, dim=0) / dt**2))
         return optimize_sqp(initial, fixed, scene.lower, scene.upper, matrix,
                             constraints_for, targets, feasible, iterations)
+
+    free = slice(fixed, -fixed)
+    fractions = _sample_fractions(initial, grid_substeps(initial, substeps, max_length))
+
+    def trajectory(interior):
+        return torch.cat((initial[:fixed], interior, initial[-fixed:]))
+
+    def segment_terms(pair):
+        constraints, distances = segment_inequalities(pair, fractions)
+        soft = 5 * collision_penalty(distances[..., 0, :scene.self_pair_count], margin)
+        return soft, constraints
 
     matrix = torch.cat((0.01 * eye, eye.diff(dim=0), 0.1 * acceleration_stencil(eye, dt)))
     offset = torch.zeros_like(matrix @ initial)

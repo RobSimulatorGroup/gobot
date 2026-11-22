@@ -11,6 +11,9 @@ except ImportError as error:
     raise ImportError("CPU SQP requires the gobot[planning-sqp] extra") from error
 
 
+_COLLISION_LINEARIZATION_BUFFER_M = 0.05
+
+
 def _qp_step(hessian, gradient, values, jacobian, lower, upper, penalty):
     """Minimize the quadratic model plus an L1 cost on linearized violations."""
     size = gradient.size
@@ -72,15 +75,15 @@ def optimize_sqp(initial, fixed, lower, upper, matrix, constraints_for, targets,
         return segment.clamp_min(0).sum() + sum(error.abs().sum() for error in cart)
 
     def rows(pairs, segment, cart, segment_constraints):
-        # Components far from the contact/velocity threshold contribute zero merit.
-        # Trial evaluation still includes all pairs, including newly active ones.
-        near = segment > -0.05
-        near[:, :2 * joints] = torch.isfinite(segment[:, :2 * joints])
-        indices = near.any(dim=-1).nonzero().flatten()
+        speed, clearance = segment.tensor_split((2 * joints,), dim=-1)
+        # Clearance rows hold d_safe - d. Include rows with d < d_safe + buffer
+        # in the local model. Trial merit still evaluates every collision pair.
+        active = torch.cat((torch.isfinite(speed), clearance > -_COLLISION_LINEARIZATION_BUFFER_M), dim=-1)
+        indices = active.any(dim=-1).nonzero().flatten()
         blocks, values = [], []
         if len(indices):
             local = vmap(jacfwd(segment_constraints))(pairs[indices])
-            selected, component = near[indices].nonzero(as_tuple=True)
+            selected, component = active[indices].nonzero(as_tuple=True)
             segment_ids = indices[selected]
             blocks.append(_waypoint_rows(local[selected, component], segment_ids, fixed, len(q)))
             values.append(segment[segment_ids, component])
