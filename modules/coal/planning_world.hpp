@@ -184,11 +184,15 @@ public:
         const int bid = link_id(link_key);
         auto& ws = shapes_[static_cast<size_t>(it->second)];
         ws.body_id = bid;
-        ws.link_key = link_key;
+        ws.is_attached = true;
+        // Keep the attached object's own link_key ("::" + name) so touch_links only
+        // exempt pairs involving this attached object without mutating global link ACM.
+        ws.link_key = "::" + ws.name;
         ws.local_frame = local_frame;
-        // Allow collision between the attached object and explicitly specified touch links.
+        ws.attached_touch_links.clear();
+        ws.attached_touch_links.insert(link_key);
         for (const auto& tl : touch_links) {
-            disabled_pairs_.insert(canonical_pair_key(link_key, tl));
+            ws.attached_touch_links.insert(tl);
         }
         pairs_dirty_ = true;
         ++version_;
@@ -199,7 +203,7 @@ public:
         auto it = shape_index_.find(name);
         if (it == shape_index_.end()) throw std::invalid_argument("unknown object to detach: " + name);
         auto& ws = shapes_[static_cast<size_t>(it->second)];
-        if (ws.body_id < 0) throw std::invalid_argument("object is not attached: " + name);
+        if (!ws.is_attached || ws.body_id < 0) throw std::invalid_argument("object is not attached: " + name);
         const int B = kin.num_bodies();
         std::vector<Vec3> bpos(static_cast<size_t>(B));
         std::vector<Mat3> brot(static_cast<size_t>(B));
@@ -210,6 +214,8 @@ public:
         world_f.leftCols<3>() = R * ws.local_frame.leftCols<3>();
         world_f.col(3) = R * ws.local_frame.col(3) + p;
         ws.body_id = -1;
+        ws.is_attached = false;
+        ws.attached_touch_links.clear();
         ws.link_key = "::" + ws.name;
         ws.local_frame = world_f;
         ws.update_fixed_bounds();
@@ -252,6 +258,8 @@ public:
             const auto& a = shapes_[static_cast<size_t>(i)];
             const auto& b = shapes_[static_cast<size_t>(j)];
             if (a.link_key == b.link_key) return false;
+            if (a.is_attached && a.attached_touch_links.count(b.link_key)) return false;
+            if (b.is_attached && b.attached_touch_links.count(a.link_key)) return false;
             if (disabled_pairs_.count(canonical_pair_key(a.link_key, b.link_key))) return false;
             return ((a.layer & b.mask) != 0) || ((b.layer & a.mask) != 0);
         };

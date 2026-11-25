@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace gobot::planning {
@@ -278,6 +279,8 @@ struct WorldShape {
     Frame local_frame = Frame::Zero();  // link-local if mobile, world if static
     int layer = 1;
     int mask = 1;
+    bool is_attached = false;
+    std::unordered_set<std::string> attached_touch_links;
     std::shared_ptr<CollisionShape> shape;
     // Cached static world AABBs (only used when body_id < 0).
     Vec3 fixed_lo_convex = Vec3::Zero();

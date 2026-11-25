@@ -488,7 +488,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
         u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
         samples = ((1.0 - u)[None, :, :] * pairs[:, :1, :] + u[None, :, :] * pairs[:, 1:, :]).reshape(-1, pairs.shape[-1])
-        opt_m = margins + 1e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if seg_min else margins
         ev = backend.eval_rows(samples, opt_m, margins, buffer, linearize, substeps, seg_min)
         return {
             row: _assemble_segment_eval(
@@ -528,7 +528,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     c_off = 0
     for row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale, off, cnt in meta:
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
-        opt_m = margins + 1e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if seg_min else margins
         if world.num_pairs > 0:
             r_loc, p_loc = nat.screen_aabbs(all_frames[off:off + cnt], opt_m + buffer, False, substeps)
         else:
@@ -551,7 +551,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     replies: dict[int, _SegmentEval] = {}
     for (row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale, off, cnt), (co, cc) in zip(meta, spans):
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
-        opt_m = margins + 1e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if seg_min else margins
         n_segs = len(pairs)
         seg_ok = np.ones(n_segs, dtype=np.bool_)
         c_rows_n = np.empty(0, dtype=np.int64)

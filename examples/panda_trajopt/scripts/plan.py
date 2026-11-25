@@ -85,24 +85,36 @@ def solve(
         raise ValueError(result.reason)
 
     valid, reason = world.validate_trajectory(
-        result.positions,
+        result.trajectory,
         collision_substeps=24,
         margin=0.002,
         world_margin=0.020,
+        velocity_scale=0.6,
+        acceleration_scale=0.5,
+        check_acceleration=True,
     )
     if not valid:
-        raise ValueError(f"Original geometry failed 24-substep check: {reason}")
+        raise ValueError(f"Original geometry failed 24-substep curve check: {reason}")
 
     position, rotation = world.link_pose(result.positions[INSPECTION_INDEX], HAND)
     position_error = float(np.linalg.norm(position - np.asarray(inspection, dtype=np.float64)))
     angle_error = float(Rotation.from_matrix(inspection_rotation.T @ rotation).magnitude())
 
-    # Evaluate densely sampled clearance for seed vs. optimized trajectory.
+    # Evaluate densely sampled clearance on seed polyline vs. actual retimed Hermite curve.
     steps = 24
-    q_pair = np.stack((result.initial_positions, result.positions), axis=0)
     frac = (np.arange(steps, dtype=np.float64) / steps)[:, None]
-    between = (1.0 - frac)[None, None, :, :] * q_pair[:, :-1, None, :] + frac[None, None, :, :] * q_pair[:, 1:, None, :]
-    samples = np.concatenate((between.reshape(2, -1, world.num_joints), q_pair[:, -1:]), axis=1)
+    q_init = result.initial_positions
+    seed_samples = np.concatenate(
+        (((1.0 - frac)[None, :, :] * q_init[:-1, None, :] + frac[None, :, :] * q_init[1:, None, :]).reshape(-1, world.num_joints),
+         q_init[-1:]),
+        axis=0,
+    )
+    t_grid = np.concatenate(
+        ((result.trajectory.times[:-1, None] + (np.arange(steps) / steps)[None, :] * np.diff(result.trajectory.times)[:, None]).reshape(-1),
+         result.trajectory.times[-1:])
+    )
+    opt_samples, _, _ = result.trajectory.sample(t_grid)
+    samples = np.stack((seed_samples, opt_samples), axis=0)
     world_pairs = [i for i, (_, other) in enumerate(world.collision_pairs) if not other.startswith(f"{ROBOT}/")]
     clearance = world.collision_distances(samples)[:, :, world_pairs].min(axis=1)
     hits = sorted({world.collision_pairs[world_pairs[i]][1].split("/")[-2]

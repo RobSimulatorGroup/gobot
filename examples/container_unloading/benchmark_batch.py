@@ -36,8 +36,11 @@ def endpoint_ik(planner: MotionPlanner, marker) -> np.ndarray:
     return result.positions
 
 
-def verify(world: PlanningWorld, path: np.ndarray, samples: np.ndarray, payload_pairs: list[int]) -> tuple[bool, float]:
-    """Independently query every convex and authored pair, outside the planner timer."""
+def verify(world: PlanningWorld, traj, payload_pairs: list[int]) -> tuple[bool, float]:
+    """Independently query every convex and authored pair on the actual Hermite curve."""
+    u = np.arange(SAMPLES_PER_SEGMENT, dtype=np.float64) / SAMPLES_PER_SEGMENT
+    ts = np.concatenate(((traj.times[:-1, None] + u[None, :] * np.diff(traj.times)[:, None]).reshape(-1), traj.times[-1:]))
+    samples, _, _ = traj.sample(ts)
     distances = world.collision_distances(samples, verify_original=False)
     margins = world.pair_margins(0.001, 0.014)
     valid = bool((distances >= np.maximum(0.0, margins - 1e-6)).all())
@@ -45,7 +48,7 @@ def verify(world: PlanningWorld, path: np.ndarray, samples: np.ndarray, payload_
         original = world.collision_distances(samples, verify_original=True)
         valid &= bool((original >= np.maximum(0.0, margins - 1e-6)).all())
     ok_val, _ = world.validate_trajectory(
-        path, dt=DT, margin=0.001, world_margin=0.014, collision_substeps=SAMPLES_PER_SEGMENT,
+        traj, margin=0.001, world_margin=0.014, collision_substeps=SAMPLES_PER_SEGMENT, check_acceleration=True,
     )
     return valid and ok_val, float(distances[:, payload_pairs].min()) * 1000.0
 
@@ -115,7 +118,7 @@ def run(sizes: list[int], repeats: int, substeps: int, first_feasible: bool) -> 
     benchmark_short_transfer(coal, goal, first_feasible)
 
     ref_cfg = SolverConfig(
-        waypoints=14, dt=DT, margin=0.001, world_margin=0.014,
+        waypoints=14, dt=None, retime=True, margin=0.001, world_margin=0.014,
         collision_substeps=5, iterations=50, first_feasible=False,
     )
     reference = coal.plan(MotionPlanRequest(start=start, goal=goal, config=ref_cfg))
@@ -123,14 +126,13 @@ def run(sizes: list[int], repeats: int, substeps: int, first_feasible: bool) -> 
         raise RuntimeError(reference.reason)
 
     cfg = SolverConfig(
-        waypoints=14, dt=DT, margin=0.001, world_margin=0.014,
+        waypoints=14, dt=None, retime=True, margin=0.001, world_margin=0.014,
         collision_substeps=substeps, iterations=50, first_feasible=first_feasible,
     )
     payload_pairs = [
         i for i, (a, b) in enumerate(world.collision_pairs)
         if a.startswith(f"{ROBOT}/{PAYLOAD[1]}/") and not b.startswith(f"{ROBOT}/")
     ]
-    u = (np.arange(SAMPLES_PER_SEGMENT, dtype=np.float64) / SAMPLES_PER_SEGMENT)[:, None]
 
     # Warmup Warp kernels outside timed loop.
     planners["mujoco_warp"].plan(
@@ -156,13 +158,11 @@ def run(sizes: list[int], repeats: int, substeps: int, first_feasible: bool) -> 
                 result = planner.plan_batch(requests)
                 times.append(perf_counter() - begin)
             clearances, verified = [], 0
-            for row, path in enumerate(result.positions):
-                if not result.success[row]:
-                    print(f"  row {row}: {result.reasons[row]}")
+            for row, res_item in enumerate(result.results):
+                if not res_item.success:
+                    print(f"  row {row}: {res_item.reason}")
                     continue
-                between = (1.0 - u)[None, :, :] * path[:-1, None, :] + u[None, :, :] * path[1:, None, :]
-                samples = np.concatenate((between.reshape(-1, world.num_joints), path[-1:]), axis=0)
-                valid, clearance = verify(world, path, samples, payload_pairs)
+                valid, clearance = verify(world, res_item.trajectory, payload_pairs)
                 clearances.append(clearance)
                 verified += valid
             avg_qp = float(np.mean([r.diagnostics.qp_calls for r in result.results]))

@@ -8,7 +8,7 @@ from time import perf_counter
 import numpy as np
 
 from .backends import CollisionBackend, make_backend
-from .retime import retime_trajectory
+from .retime import check_trajectory_bounds, retime_trajectory
 from .sqp import SQPJobSpec, run_sqp_batch
 from .types import (
     BatchIKResult,
@@ -321,27 +321,101 @@ class MotionPlanner:
 
         return specs, (perf_counter() - t_seed) * 1000.0
 
-    def _finalize_trajectory(self, positions: np.ndarray, cfg: SolverConfig) -> tuple[object, float]:
+    def _finalize_trajectory(self, positions: np.ndarray, cfg: SolverConfig) -> tuple[object | None, float, str | None]:
         t0 = perf_counter()
-        if cfg.dt is not None:
+        vmax = self.world.velocity_limits * cfg.velocity_scale
+        amax = self.world.acceleration_limits * cfg.acceleration_scale
+        dt_arg = cfg.dt if cfg.dt is not None else (None if cfg.retime else 0.1)
+
+        T = len(positions)
+        substeps = max(int(cfg.collision_substeps), 4)
+        if cfg.max_segment_length is not None:
+            longest = float(np.linalg.norm(np.diff(positions, axis=0), axis=-1).max())
+            substeps = max(substeps, int(np.ceil(longest / cfg.max_segment_length)))
+        u = np.arange(substeps, dtype=np.float64) / substeps
+        margins = self.world.pair_margins(cfg.margin, cfg.effective_world_margin) if self.world.num_pairs > 0 else None
+
+        knot_scales = np.ones(T, dtype=np.float64)
+        last_error: str | None = None
+        for attempt in range(8):
             traj = retime_trajectory(
-                positions, self.world.velocity_limits * cfg.velocity_scale,
-                self.world.acceleration_limits * cfg.acceleration_scale,
-                stop_at_endpoints=cfg.stop_at_endpoints, dt=cfg.dt,
+                positions, vmax, amax,
+                stop_at_endpoints=cfg.stop_at_endpoints,
+                dt=dt_arg,
+                knot_velocity_scales=knot_scales,
             )
-        elif cfg.retime:
-            traj = retime_trajectory(
-                positions, self.world.velocity_limits * cfg.velocity_scale,
-                self.world.acceleration_limits * cfg.acceleration_scale,
-                stop_at_endpoints=cfg.stop_at_endpoints, dt=None,
+            # 1. Exact continuous cubic Hermite velocity & acceleration limit verification.
+            ok_bounds, bound_err, bound_bad_segs = check_trajectory_bounds(
+                traj, vmax, amax, check_velocity=True, check_acceleration=True,
             )
-        else:
-            traj = retime_trajectory(
-                positions, self.world.velocity_limits * cfg.velocity_scale,
-                self.world.acceleration_limits * cfg.acceleration_scale,
-                stop_at_endpoints=cfg.stop_at_endpoints, dt=0.1,
-            )
-        return traj, (perf_counter() - t0) * 1000.0
+            if not ok_bounds:
+                last_error = bound_err
+                # For fixed dt, damping knot velocities toward zero generally increases peak
+                # acceleration (up to 6*|dq|/dt^2), so reject immediately once infeasible.
+                if dt_arg is not None:
+                    return None, (perf_counter() - t0) * 1000.0, last_error
+
+            # 2. Sample the actual continuous cubic Hermite curve per segment and verify limits + clearance.
+            t_seg0 = traj.times[:-1, None]
+            t_seg1 = traj.times[1:, None]
+            ts = np.concatenate(((t_seg0 + u[None, :] * (t_seg1 - t_seg0)).reshape(-1), traj.times[-1:]))
+            samples, _, _ = traj.sample(ts)
+
+            bad_segs: set[int] = set(bound_bad_segs)
+            lim_bad = (
+                (samples < self.world.lower_limits - 1e-6) | (samples > self.world.upper_limits + 1e-6)
+            ).any(axis=-1)
+            if lim_bad.any():
+                for idx in np.flatnonzero(lim_bad):
+                    bad_segs.add(min(int(idx) // substeps, T - 2))
+                last_error = "retimed Hermite curve violates joint limits"
+
+            if not bad_segs and margins is not None:
+                (frames,) = self.world._native.compute_frames(np.ascontiguousarray(samples), False)
+                for verify in ((False, True) if self.world.has_mesh else (False,)):
+                    rows, pids = self.world._native.screen_aabbs(frames, margins, verify, substeps)
+                    if len(rows):
+                        hit = self.backend.first_violation(frames, rows, pids, margins, verify)
+                        if hit is not None:
+                            kind = "mesh" if verify else "convex"
+                            seg0 = min(int(hit[0]) // substeps, T - 2)
+                            last_error = (
+                                f"retimed Hermite {kind} clearance failed on segment {seg0}, "
+                                f"pair {self.world.collision_pairs[int(hit[1])]}"
+                            )
+                            # Identify all violating segments in one pass so multi-corner paths
+                            # converge in at most 2 damping rounds instead of one segment per round.
+                            dists = self.world._native.query_distances_indexed(frames, rows, pids, verify)[:, 0]
+                            viol = dists < np.maximum(0.0, margins[pids] - 1e-6)
+                            for r_idx in rows[viol]:
+                                bad_segs.add(min(int(r_idx) // substeps, T - 2))
+                            bad_segs.add(seg0)
+                            break
+
+            if not bad_segs:
+                return traj, (perf_counter() - t0) * 1000.0, None
+
+            # Damp knot velocities around offending segments; at zero knot velocity the cubic
+            # Hermite segment collapses geometrically onto the verified straight segment p_i -> p_{i+1}.
+            changed = False
+            for seg in bad_segs:
+                knots = (seg, seg + 1)
+                if dt_arg is not None and not cfg.stop_at_endpoints:
+                    # Endpoint velocities on fixed-dt open endpoints are already collinear with
+                    # their adjacent segment; avoid zeroing them needlessly.
+                    knots = tuple(k for k in knots if 0 < k < T - 1) or knots
+                for knot in knots:
+                    old = knot_scales[knot]
+                    if old > 0.0:
+                        knot_scales[knot] = 0.0 if (attempt >= 2 or old <= 0.25) else old * 0.5
+                        changed = True
+            if not changed:
+                if dt_arg is None and np.any(knot_scales > 0.0):
+                    knot_scales[:] = 0.0
+                else:
+                    return None, (perf_counter() - t0) * 1000.0, last_error
+
+        return None, (perf_counter() - t0) * 1000.0, last_error
 
     def plan(self, request: MotionPlanRequest) -> PlanResult:
         """Plan a trajectory for a single declarative MotionPlanRequest."""
@@ -409,7 +483,7 @@ class MotionPlanner:
             )
 
         winner = min(succeeded, key=lambda r: r.cost)
-        traj, retime_ms = self._finalize_trajectory(winner.positions, cfg)
+        traj, retime_ms, retime_err = self._finalize_trajectory(winner.positions, cfg)
         diag = PlanDiagnostics(
             total_ms=(perf_counter() - t_start) * 1000.0,
             ik_ms=ik_ms, seed_ms=seed_ms, sqp_ms=winner.sqp_ms,
@@ -417,6 +491,8 @@ class MotionPlanner:
             qp_calls=winner.qp_calls, sqp_iterations=winner.sqp_iterations,
             seed_strategy=winner.seed_strategy, witnesses=winner.witnesses,
         )
+        if traj is None:
+            return PlanResult(None, winner.initial_positions, winner.goal_index, retime_err, diag)
         return PlanResult(traj, winner.initial_positions, winner.goal_index, None, diag)
 
     def plan_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int = 8) -> BatchPlanResult:
@@ -486,9 +562,9 @@ class MotionPlanner:
                             ),
                         )
                     else:
-                        traj, retime_ms = self._finalize_trajectory(sqp_res.positions, cfg)
+                        traj, retime_ms, retime_err = self._finalize_trajectory(sqp_res.positions, cfg)
                         all_results[row_i] = PlanResult(
-                            traj, sqp_res.initial_positions, sqp_res.goal_index, None,
+                            traj, sqp_res.initial_positions, sqp_res.goal_index, retime_err,
                             PlanDiagnostics(
                                 total_ms=(perf_counter() - chunk_t0) * 1000.0, ik_ms=ik_ms, seed_ms=seed_ms,
                                 sqp_ms=sqp_res.sqp_ms, validate_ms=sqp_res.validate_ms, retime_ms=retime_ms,

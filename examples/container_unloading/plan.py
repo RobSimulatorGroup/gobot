@@ -91,11 +91,22 @@ def solve(
     if not result.success:
         raise ValueError(result.reason)
 
-    # Evaluate carton clearance on dense segment samples for seed vs. optimized trajectory.
-    paths = np.stack((result.initial_positions, result.positions), axis=0)
+    # Evaluate carton clearance on dense segment samples: seed polyline vs. actual retimed Hermite curve.
     u = (np.arange(SAMPLES_PER_SEGMENT, dtype=np.float64) / SAMPLES_PER_SEGMENT)[:, None]
-    between = (1.0 - u)[None, None, :, :] * paths[:, :-1, None, :] + u[None, None, :, :] * paths[:, 1:, None, :]
-    samples = np.concatenate((between.reshape(2, -1, world.num_joints), paths[:, -1:]), axis=1)
+    q_init = result.initial_positions
+    seed_samples = np.concatenate(
+        (((1.0 - u)[None, :, :] * q_init[:-1, None, :] + u[None, :, :] * q_init[1:, None, :]).reshape(-1, world.num_joints),
+         q_init[-1:]),
+        axis=0,
+    )
+    t_grid = np.concatenate(
+        ((result.trajectory.times[:-1, None]
+          + (np.arange(SAMPLES_PER_SEGMENT) / SAMPLES_PER_SEGMENT)[None, :]
+          * np.diff(result.trajectory.times)[:, None]).reshape(-1),
+         result.trajectory.times[-1:])
+    )
+    opt_samples, _, _ = result.trajectory.sample(t_grid)
+    samples = np.stack((seed_samples, opt_samples), axis=0)
     payload_pairs = [
         i for i, (a, b) in enumerate(world.collision_pairs)
         if a.startswith(f"{ROBOT}/{PAYLOAD[1]}/") and not b.startswith(f"{ROBOT}/")

@@ -227,6 +227,16 @@ def test_birrt_global_seeding_and_batch_racing(simple_snapshot):
 
 
 def test_retime_trajectory_respects_velocity_and_acceleration_limits():
+    # Minimal single-segment exact bound test: q=[0, 1], vmax=1, amax=1.
+    simple = retime_trajectory(np.array([[0.0], [1.0]]), np.array([1.0]), np.array([1.0]), stop_at_endpoints=True)
+    ts_simple = np.linspace(0.0, simple.duration, 1001)
+    ps, vs, as_ = simple.sample(ts_simple)
+    assert np.max(np.abs(vs)) <= 1.0 + 1e-6
+    assert np.max(np.abs(as_)) <= 1.0 + 1e-6
+    np.testing.assert_allclose(ps[0], [0.0], atol=1e-12)
+    np.testing.assert_allclose(ps[-1], [1.0], atol=1e-12)
+
+    # Multi-waypoint path with sharp corner.
     q = np.linspace([0.0, -1.0, 0.5], [1.5, 0.8, -0.5], 12)
     q[4:8, 1] += 0.35
     vmax = np.array([1.2, 1.5, 1.0])
@@ -236,12 +246,153 @@ def test_retime_trajectory_respects_velocity_and_acceleration_limits():
     np.testing.assert_allclose(traj.velocities[0], 0.0, atol=1e-12)
     np.testing.assert_allclose(traj.velocities[-1], 0.0, atol=1e-12)
     assert (np.abs(traj.velocities) <= vmax * (1.0 + 1e-6)).all()
-    # Continuous Hermite sampling matches knot positions and velocities.
-    p_mid, v_mid, a_mid = traj.sample(np.linspace(0.0, traj.duration, 50))
-    assert p_mid.shape == (50, 3) and v_mid.shape == (50, 3) and a_mid.shape == (50, 3)
+    # Continuous Hermite sampling strictly satisfies velocity and acceleration limits everywhere.
+    p_mid, v_mid, a_mid = traj.sample(np.linspace(0.0, traj.duration, 2001))
+    assert p_mid.shape == (2001, 3) and v_mid.shape == (2001, 3) and a_mid.shape == (2001, 3)
     assert np.isfinite(p_mid).all() and np.isfinite(v_mid).all() and np.isfinite(a_mid).all()
+    assert (np.abs(v_mid) <= vmax * (1.0 + 1e-5)).all(), np.max(np.abs(v_mid) / vmax)
+    assert (np.abs(a_mid) <= amax * (1.0 + 1e-5)).all(), np.max(np.abs(a_mid) / amax)
     np.testing.assert_allclose(p_mid[0], q[0], atol=1e-10)
     np.testing.assert_allclose(p_mid[-1], q[-1], atol=1e-10)
+
+
+def test_touch_links_does_not_disable_robot_self_collision_and_restores_on_detach(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Configuration where left_tip (sphere r=0.045) and right_tip (capsule r=0.035) penetrate deeply (~80 mm).
+    q_penetrate = np.array([0.25, 0.70, 0.0])
+    d_before = float(world.collision_distances(q_penetrate).min())
+    assert d_before < -0.05
+
+    # Attach an object to left_tip with touch_links=[right_tip]:
+    # Only the attached object <-> right_tip pair may be ignored, NOT left_tip <-> right_tip!
+    tip_pos, _ = world.link_pose(q_penetrate, ("planning", "left_tip"))
+    world.add_box("held_part", (0.04, 0.04, 0.04), tip_pos)
+    world.attach_object("held_part", ("planning", "left_tip"), touch_links=[("planning", "right_tip")])
+
+    # Attached object itself should have no pair with left_tip or right_tip.
+    pair_names = world.collision_pairs
+    assert not any("held_part" in a and ("left_tip" in b or "right_tip" in b) for a, b in pair_names)
+    assert not any("held_part" in b and ("left_tip" in a or "right_tip" in a) for a, b in pair_names)
+    # Robot self-collision between left_tip and right_tip must still be detected!
+    d_attached = float(world.collision_distances(q_penetrate).min())
+    assert d_attached < -0.05
+    ok_attached, _ = world.validate_trajectory(np.stack((q_penetrate, q_penetrate)), margin=0.005, world_margin=0.005)
+    assert not ok_attached
+
+    # Detach and remove: self-collision detection remains intact.
+    world.detach_object("held_part", q_penetrate)
+    world.remove_obstacle("held_part")
+    d_after = float(world.collision_distances(q_penetrate).min())
+    assert d_after < -0.05
+    ok_after, _ = world.validate_trajectory(np.stack((q_penetrate, q_penetrate)), margin=0.005, world_margin=0.005)
+    assert not ok_after
+
+
+def test_hermite_curve_clearance_and_corner_overshoot_guard(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    # Plan around the central box with a tight corridor; verify the ACTUAL continuous Hermite curve.
+    cfg = SolverConfig(
+        waypoints=10, dt=None, retime=True, margin=0.01, world_margin=0.02,
+        collision_substeps=8, stop_at_endpoints=True, first_feasible=True,
+    )
+    res = planner.plan(MotionPlanRequest(
+        start=np.array([-0.55, 0.0, 0.0]),
+        goal=np.array([0.55, 0.0, 0.0]),
+        config=cfg,
+    ))
+    assert res.success, res.reason
+    ok, reason = world.validate_trajectory(
+        res.trajectory, margin=0.01, world_margin=0.02, collision_substeps=16, check_acceleration=True,
+    )
+    assert ok, reason
+    ts = np.linspace(0.0, res.trajectory.duration, 401)
+    q_s, v_s, a_s = res.trajectory.sample(ts)
+    margins = world.pair_margins(0.01, 0.02)
+    dists = world.collision_distances(q_s)
+    assert (dists >= margins[None, :] - 1e-4).all(), float((dists - margins[None, :]).min())
+    assert (np.abs(v_s) <= world.velocity_limits * (1.0 + 1e-5)).all()
+    assert (np.abs(a_s) <= world.acceleration_limits * (1.0 + 1e-5)).all()
+
+
+def test_fixed_dt_rejects_infeasible_velocity_or_acceleration_bounds(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    # Reproduces dt=0.4 on a 0.8 m slide with vmax=2.0, amax=10.0, stop_at_endpoints=True:
+    # polyline average speed is 2.0 (passes polyline check), but cubic Hermite reaches v=3.0, a=30.0.
+    start = np.array([-0.4, 0.35, 0.0])
+    goal = np.array([0.4, 0.35, 0.0])
+    infeasible = planner.plan(MotionPlanRequest(
+        start=start, goal=goal,
+        config=SolverConfig(
+            waypoints=4, dt=0.4, stop_at_endpoints=True,
+            margin=0.01, world_margin=0.01, use_global_seeding=False,
+        ),
+    ))
+    assert not infeasible.success
+    assert infeasible.reason is not None and ("velocity" in infeasible.reason or "acceleration" in infeasible.reason)
+
+    # With sufficient fixed dt (or open endpoints with smooth travel), the Hermite curve passes all limits.
+    feasible = planner.plan(MotionPlanRequest(
+        start=start, goal=goal,
+        config=SolverConfig(
+            waypoints=4, dt=0.8, stop_at_endpoints=True,
+            margin=0.01, world_margin=0.01, use_global_seeding=False,
+        ),
+    ))
+    assert feasible.success, feasible.reason
+    ok, reason = world.validate_trajectory(feasible.trajectory, margin=0.01, world_margin=0.01, check_acceleration=True)
+    assert ok, reason
+    ts = np.linspace(0.0, feasible.trajectory.duration, 401)
+    _, vf, af = feasible.trajectory.sample(ts)
+    assert (np.abs(vf) <= world.velocity_limits * (1.0 + 1e-5)).all()
+    assert (np.abs(af) <= world.acceleration_limits * (1.0 + 1e-5)).all()
+
+
+def test_analytic_collision_and_pose_jacobians_match_finite_differences(panda_snapshot):
+    snap, (start_xyz, _, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    world = PlanningWorld.from_snapshot(
+        snap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    q = np.array([0.1, -0.45, 0.15, -1.85, 0.1, 1.45, -1.9], dtype=np.float64)
+    eps = 1e-6
+
+    # 1. Check C++ analytic collision residual gradients vs. central finite differences.
+    margins = world.pair_margins(0.002, 0.025)
+    rows, pids, _, grads, _, _, _ = world._native.eval_collision_rows(
+        q[None, :], margins, margins, 0.08, True, 1, False,
+    )
+    assert len(rows) > 0
+    for k in range(min(len(rows), 8)):
+        pid = int(pids[k])
+        g_ana = grads[k]  # gradient of residual = margin - distance
+        g_fd = np.zeros_like(q)
+        for j in range(world.num_joints):
+            dq = np.zeros_like(q)
+            dq[j] = eps
+            dp = float(world.collision_distances(q + dq)[pid])
+            dm = float(world.collision_distances(q - dq)[pid])
+            g_fd[j] = -(dp - dm) / (2.0 * eps)
+        np.testing.assert_allclose(g_ana, g_fd, atol=2e-3, rtol=2e-2)
+
+    # 2. Check C++ analytic pose constraint Jacobians (full 6D and free-Z) vs. central finite differences.
+    hand = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    specs = [
+        world.compile_pose_constraint(PoseConstraint(hand, start_xyz, down)),
+        world.compile_pose_constraint(PoseConstraint(hand, start_xyz, down, rotation_tolerance=(1e-3, 1e-3, math.inf))),
+    ]
+    _, J_ana, _ = world._native.eval_pose_constraints(q, specs, True)
+    J_fd = np.zeros_like(J_ana)
+    for j in range(world.num_joints):
+        dq = np.zeros_like(q)
+        dq[j] = eps
+        rp, _, _ = world._native.eval_pose_constraints(q + dq, specs, False)
+        rm, _, _ = world._native.eval_pose_constraints(q - dq, specs, False)
+        J_fd[:, j] = (rp - rm) / (2.0 * eps)
+    np.testing.assert_allclose(J_ana, J_fd, atol=1e-5, rtol=1e-4)
 
 
 @pytest.mark.parametrize("backend", ["coal", "mujoco_warp"])
@@ -295,8 +446,10 @@ def test_real_examples_panda_and_container_unloading():
     assert out["inspection_angle"] < 1e-4
     assert out["world_clearance"] >= 0.02
     assert out["result"].trajectory.duration > 0.0
-    q_mid, _, _ = out["result"].trajectory.sample(0.5 * out["result"].trajectory.duration)
-    assert q_mid.shape == (out["world"].num_joints,)
+    ts_p = np.linspace(0.0, out["result"].trajectory.duration, 401)
+    _, vp, ap = out["result"].trajectory.sample(ts_p)
+    assert (np.abs(vp) <= out["world"].velocity_limits * 0.6 * (1.0 + 1e-5)).all()
+    assert (np.abs(ap) <= out["world"].acceleration_limits * 0.5 * (1.0 + 1e-5)).all()
 
     # 2. Container unloading FANUC M-10iA task.
     cont_dir = Path(__file__).resolve().parents[2] / "examples" / "container_unloading"
@@ -314,6 +467,20 @@ def test_real_examples_panda_and_container_unloading():
     assert out_c["carton_clearance"][1] >= 0.014 - 1e-6
     assert out_c["result"].trajectory.duration > 0.0
     assert len(out_c["handoff"]) == 2
+    # Verify actual continuous Hermite playback curve passes convex, original mesh, velocity & acceleration limits.
+    ok_c, reason_c = out_c["world"].validate_trajectory(
+        out_c["result"].trajectory, margin=0.001, world_margin=0.014,
+        collision_substeps=24, velocity_scale=0.65, acceleration_scale=0.6, check_acceleration=True,
+    )
+    assert ok_c, reason_c
+    ts_c = np.linspace(0.0, out_c["result"].trajectory.duration, 313)
+    qc, vc, ac = out_c["result"].trajectory.sample(ts_c)
+    payload_pairs = [i for i, (a, b) in enumerate(out_c["world"].collision_pairs)
+                     if a.startswith("M10iA/Parcel/") and not b.startswith("M10iA/")]
+    assert float(out_c["world"].collision_distances(qc)[..., payload_pairs].min()) >= 0.014 - 1e-5
+    assert float(out_c["world"].collision_distances(qc, verify_original=True)[..., payload_pairs].min()) >= 0.014 - 1e-5
+    assert (np.abs(vc) <= out_c["world"].velocity_limits * 0.65 * (1.0 + 1e-5)).all()
+    assert (np.abs(ac) <= out_c["world"].acceleration_limits * 0.6 * (1.0 + 1e-5)).all()
 
 
 def test_debug_draw_helper(simple_snapshot):

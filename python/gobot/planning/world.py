@@ -9,7 +9,8 @@ import math
 import numpy as np
 from scipy.spatial import ConvexHull
 
-from .types import JointName, Link, PlanningGroup, PoseConstraint, _normalize_tol
+from .retime import check_trajectory_bounds
+from .types import JointName, Link, PlanningGroup, PoseConstraint, Trajectory, _normalize_tol
 
 try:
     from gobot import _coal_native as _native
@@ -525,7 +526,7 @@ class PlanningWorld:
 
     def validate_trajectory(
         self,
-        positions: np.ndarray,
+        positions_or_trajectory: np.ndarray | Trajectory,
         *,
         dt: float | None = None,
         margin: float = 0.002,
@@ -533,25 +534,61 @@ class PlanningWorld:
         collision_substeps: int = 16,
         max_segment_length: float | None = None,
         verify_original: bool = True,
+        velocity_scale: float = 1.0,
+        acceleration_scale: float = 1.0,
+        check_acceleration: bool = True,
     ) -> tuple[bool, str | None]:
-        q = np.asarray(positions, dtype=np.float64)
-        if q.ndim != 2 or q.shape[0] < 2 or q.shape[1] != self.num_joints:
-            return False, "trajectory must have shape [T>=2, J]"
-        if not np.isfinite(q).all() or (q < self.lower_limits).any() or (q > self.upper_limits).any():
-            return False, "trajectory violates joint limits"
-        if dt is not None:
-            speed = np.abs(np.diff(q, axis=0)) / dt
-            if (speed > self.velocity_limits * (1.0 + 1e-6)).any():
-                return False, "trajectory violates joint velocity limits"
-        substeps = int(collision_substeps)
-        if max_segment_length is not None:
-            longest = float(np.linalg.norm(np.diff(q, axis=0), axis=-1).max())
-            substeps = max(substeps, math.ceil(longest / max_segment_length))
+        """Validate either a waypoint polyline ``[T, J]`` or a continuous ``Trajectory`` curve."""
+        if isinstance(positions_or_trajectory, Trajectory):
+            traj = positions_or_trajectory
+            q = np.asarray(traj.positions, dtype=np.float64)
+            if q.ndim != 2 or q.shape[0] < 2 or q.shape[1] != self.num_joints:
+                return False, "trajectory must have shape [T>=2, J]"
+            ok_bounds, bound_err, _ = check_trajectory_bounds(
+                traj,
+                self.velocity_limits * velocity_scale,
+                self.acceleration_limits * acceleration_scale,
+                check_velocity=True,
+                check_acceleration=check_acceleration,
+            )
+            if not ok_bounds:
+                return False, bound_err
+            substeps = int(collision_substeps)
+            if max_segment_length is not None:
+                longest = float(np.linalg.norm(np.diff(q, axis=0), axis=-1).max())
+                substeps = max(substeps, math.ceil(longest / max_segment_length))
+            substeps = max(substeps, 1)
+            # Sample along the actual continuous cubic Hermite curve per segment.
+            u = np.arange(substeps, dtype=np.float64) / substeps
+            t0 = traj.times[:-1, None]
+            t1 = traj.times[1:, None]
+            ts = np.concatenate(((t0 + u[None, :] * (t1 - t0)).reshape(-1), traj.times[-1:]))
+            samples, _, _ = traj.sample(ts)
+            if (not np.isfinite(samples).all()
+                    or (samples < self.lower_limits - 1e-6).any()
+                    or (samples > self.upper_limits + 1e-6).any()):
+                return False, "trajectory violates joint limits"
+        else:
+            q = np.asarray(positions_or_trajectory, dtype=np.float64)
+            if q.ndim != 2 or q.shape[0] < 2 or q.shape[1] != self.num_joints:
+                return False, "trajectory must have shape [T>=2, J]"
+            if not np.isfinite(q).all() or (q < self.lower_limits).any() or (q > self.upper_limits).any():
+                return False, "trajectory violates joint limits"
+            if dt is not None:
+                speed = np.abs(np.diff(q, axis=0)) / dt
+                if (speed > self.velocity_limits * velocity_scale * (1.0 + 1e-6)).any():
+                    return False, "trajectory violates joint velocity limits"
+            substeps = int(collision_substeps)
+            if max_segment_length is not None:
+                longest = float(np.linalg.norm(np.diff(q, axis=0), axis=-1).max())
+                substeps = max(substeps, math.ceil(longest / max_segment_length))
+            substeps = max(substeps, 1)
+            u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
+            between = (1.0 - u)[None, :, :] * q[:-1, None, :] + u[None, :, :] * q[1:, None, :]
+            samples = np.concatenate((between.reshape(-1, self.num_joints), q[-1:]), axis=0)
+
         if self.num_pairs == 0:
             return True, None
-        u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
-        between = (1.0 - u)[None, :, :] * q[:-1, None, :] + u[None, :, :] * q[1:, None, :]
-        samples = np.concatenate((between.reshape(-1, self.num_joints), q[-1:]), axis=0)
         (frames,) = self._native.compute_frames(np.ascontiguousarray(samples), False)
         margins = self.pair_margins(margin, world_margin)
         rows, pids = self._native.screen_aabbs(frames, margins, False, substeps)
