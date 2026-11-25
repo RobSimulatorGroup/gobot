@@ -261,9 +261,10 @@ class MotionPlanner:
         )
         return BatchIKResult(q_out, ok_out, tuple(reasons))
 
-    def _finalize_trajectory(self, positions: np.ndarray, cfg: SolverConfig) -> tuple[Trajectory | None, float, str | None]:
+    def _finalize_trajectory(self, positions: np.ndarray, cfg: SolverConfig, *, snap=None) -> tuple[Trajectory | None, float, str | None]:
         """Single unified C++ Hermite retiming & continuous CCD verification path."""
-        traj_dict, retime_ms, err = self.world._native.finalize_trajectory(
+        target = self.world._native if snap is None else snap
+        traj_dict, retime_ms, err = target.finalize_trajectory(
             np.ascontiguousarray(positions, dtype=np.float64), _config_to_native_dict(cfg),
         )
         return _trajectory_from_native(traj_dict), float(retime_ms), err
@@ -301,13 +302,35 @@ class MotionPlanner:
 
     # --- Experimental MuJoCo Warp path (shares C++ IK, BiRRT, QP, and unified C++ finalize_trajectory) ---
 
-    def _resolve_endpoints(self, req: MotionPlanRequest, mask: np.ndarray):
+    def _resolve_endpoints(self, req: MotionPlanRequest, mask: np.ndarray, *, snap=None):
         cfg = req.config
         wm = cfg.effective_world_margin
         t0 = perf_counter()
+        target = self.world._native if snap is None else snap
+
+        def solve_single_ik(targets, seed_val, num_seeds):
+            compiled = [self.world.compile_pose_constraint(t) for t in targets]
+            base_seed = self.world.initial_positions.copy() if seed_val is None else self.world.configuration(seed_val)
+            seeds = [base_seed]
+            if num_seeds > 1:
+                rng = np.random.default_rng(0)
+                lo = np.where(np.isfinite(self.world.lower_limits), self.world.lower_limits, base_seed - np.pi)
+                hi = np.where(np.isfinite(self.world.upper_limits), self.world.upper_limits, base_seed + np.pi)
+                for _ in range(num_seeds - 1):
+                    s = base_seed.copy()
+                    s[mask] = rng.uniform(lo[mask], hi[mask])
+                    seeds.append(s)
+            q_out, ok_out, reasons = target.solve_ik_batch(
+                [(compiled, s) for s in seeds], mask, float(cfg.margin), float(wm), 40, True,
+            )
+            valid = np.flatnonzero(ok_out)
+            if not len(valid):
+                return IKResult(None, reasons[0] if reasons else "IK failed")
+            best = valid[int(np.argmin(np.linalg.norm(q_out[valid] - base_seed[None, :], axis=-1)))]
+            return IKResult(q_out[best].copy(), None)
+
         if _is_pose_sequence(req.start):
-            s_ik = self.solve_ik(req.start, seed=req.start_seed, group=req.group,
-                                 margin=cfg.margin, world_margin=wm, num_seeds=max(1, cfg.num_seeds))
+            s_ik = solve_single_ik(req.start, req.start_seed, max(1, cfg.num_seeds))
             if not s_ik.success:
                 return None, None, f"start IK failed: {s_ik.reason}", (perf_counter() - t0) * 1000.0
             start_q = s_ik.positions
@@ -317,21 +340,21 @@ class MotionPlanner:
         goal_candidates: list[tuple[int, np.ndarray]] = []
         if _is_pose_sequence(req.goal):
             g_seed = start_q if req.goal_seed is None else self.world.configuration(req.goal_seed)
-            g_ik = self.solve_ik(req.goal, seed=g_seed, group=req.group,
-                                 margin=cfg.margin, world_margin=wm, num_seeds=max(1, cfg.num_seeds))
+            g_ik = solve_single_ik(req.goal, g_seed, max(1, cfg.num_seeds))
             if not g_ik.success:
                 return start_q, None, f"goal IK failed: {g_ik.reason}", (perf_counter() - t0) * 1000.0
             goal_candidates.append((0, g_ik.positions))
         elif (isinstance(req.goal, Sequence) and not isinstance(req.goal, (str, bytes, np.ndarray))
               and len(req.goal) > 0 and _is_pose_sequence(req.goal[0])):
             g_seed = start_q if req.goal_seed is None else self.world.configuration(req.goal_seed)
-            ik_batch = self.solve_ik_batch(req.goal, seeds=g_seed, group=req.group, margin=cfg.margin, world_margin=wm)
-            valid = np.flatnonzero(ik_batch.success)
+            problems = [([self.world.compile_pose_constraint(t) for t in ts], g_seed) for ts in req.goal]
+            q_out, ok_out, _ = target.solve_ik_batch(problems, mask, float(cfg.margin), float(wm), 40, True)
+            valid = np.flatnonzero(ok_out)
             if not len(valid):
                 return start_q, None, f"all {len(req.goal)} GoalSet candidates failed IK", (perf_counter() - t0) * 1000.0
-            dists = np.linalg.norm(ik_batch.positions[valid] - start_q[None, :], axis=-1)
+            dists = np.linalg.norm(q_out[valid] - start_q[None, :], axis=-1)
             for idx in valid[np.argsort(dists)]:
-                goal_candidates.append((int(idx), ik_batch.positions[int(idx)].copy()))
+                goal_candidates.append((int(idx), q_out[int(idx)].copy()))
         elif (isinstance(req.goal, Sequence) and not isinstance(req.goal, (str, bytes, np.ndarray))
               and len(req.goal) > 0 and not isinstance(req.goal[0], (int, float, np.number))):
             for idx, gq in enumerate(req.goal):
@@ -348,7 +371,7 @@ class MotionPlanner:
                 goal_candidates[i] = (gid, gq_fixed)
         return start_q, goal_candidates, None, ik_ms
 
-    def _validate_endpoints(self, start_q: np.ndarray, goal_q: np.ndarray, cfg: SolverConfig, fixed: int) -> str | None:
+    def _validate_endpoints(self, start_q: np.ndarray, goal_q: np.ndarray, cfg: SolverConfig, fixed: int, *, snap) -> str | None:
         ends = np.stack((start_q, goal_q), axis=0)
         if (ends < self.world.lower_limits).any() or (ends > self.world.upper_limits).any():
             return "start or goal violates joint limits"
@@ -357,19 +380,20 @@ class MotionPlanner:
             vmax = self.world.velocity_limits * cfg.velocity_scale
             if (np.abs(goal_q - start_q) / (moving * cfg.dt) > vmax * (1.0 + 1e-6)).any():
                 return "joint velocity limits require a longer duration"
-        if self.world.num_pairs > 0:
-            margins = self.world.pair_margins(cfg.margin, cfg.effective_world_margin)
-            (frames,) = self.world._native.compute_frames(np.ascontiguousarray(ends), False)
-            for verify in ((False, True) if self.world.has_mesh else (False,)):
-                rows, pids = self.world._native.screen_aabbs(frames, margins, verify, 1)
+        if snap.num_pairs > 0:
+            margins = snap.pair_margins(float(cfg.margin), float(cfg.effective_world_margin))
+            pair_names = tuple(snap.pair_shape_names())
+            (frames,) = snap.compute_frames(np.ascontiguousarray(ends), False)
+            for verify in ((False, True) if snap.has_mesh else (False,)):
+                rows, pids = snap.screen_aabbs(frames, margins, verify, 1)
                 if len(rows):
-                    hit = self.backend.first_violation(frames, rows, pids, margins, verify)
+                    hit = self.backend.first_violation(frames, rows, pids, margins, verify, snap=snap)
                     if hit is not None:
                         seg = 0 if int(hit[0]) == 0 else cfg.waypoints - 2
-                        return f"endpoint collision on segment {seg}, pair {self.world.collision_pairs[int(hit[1])]}"
+                        return f"endpoint collision on segment {seg}, pair {pair_names[int(hit[1])]}"
         return None
 
-    def _build_seed_jobs(self, start_q, goal_candidates, req, mask, pose_map, joint_map, *, force_rrt=False):
+    def _build_seed_jobs(self, start_q, goal_candidates, req, mask, pose_map, joint_map, *, snap, force_rrt=False):
         cfg = req.config
         fixed = 2 if cfg.stop_at_endpoints else 1
         dt_smooth = cfg.dt if cfg.dt is not None else 0.25
@@ -412,10 +436,10 @@ class MotionPlanner:
             rrt_gids = [goal_candidates[i % len(goal_candidates)][0] for i in range(n_rrt)]
             rrt_seeds = [1001 + i * 7919 for i in range(n_rrt)]
             inner_wp = cfg.waypoints - 2 * (fixed - 1)
-            paths, ok = self.world._native.plan_birrt_batch(
+            paths, ok = snap.plan_birrt_batch(
                 rrt_starts, rrt_goals, mask, float(cfg.margin), float(cfg.effective_world_margin),
                 float(cfg.rrt_step_size), int(cfg.rrt_max_iterations), float(cfg.rrt_timeout_s),
-                rrt_seeds, bool(self.world.has_mesh), int(cfg.rrt_shortcut_iters), int(inner_wp),
+                rrt_seeds, bool(snap.has_mesh), int(cfg.rrt_shortcut_iters), int(inner_wp),
             )
             for i in range(n_rrt):
                 if ok[i]:
@@ -436,8 +460,9 @@ class MotionPlanner:
                 specs.append(make_spec(_linear_seed(start_q, gq, cfg.waypoints, fixed, {mid_idx: mid}), "perturbed", gid))
         return specs, (perf_counter() - t_seed) * 1000.0
 
-    def _plan_warp_single(self, request: MotionPlanRequest) -> PlanResult:
+    def _plan_warp_single(self, request: MotionPlanRequest, *, snap=None) -> PlanResult:
         t_start = perf_counter()
+        pinned = self.world._native.snapshot() if snap is None else snap
         cfg = request.config
         fixed = 2 if cfg.stop_at_endpoints else 1
         if cfg.waypoints < 2 * fixed:
@@ -446,13 +471,13 @@ class MotionPlanner:
         pose_map, joint_map = _expand_path_constraints(
             self.world, cfg.waypoints, fixed, request.waypoint_targets, request.path_constraints,
         )
-        start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(request, mask)
+        start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(request, mask, snap=pinned)
         if ep_err is not None or goal_candidates is None:
             return PlanResult(None, None, 0, ep_err, PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms))
         valid_goals = []
         last_ep_err = None
         for gid, gq in goal_candidates:
-            err = self._validate_endpoints(start_q, gq, cfg, fixed)
+            err = self._validate_endpoints(start_q, gq, cfg, fixed, snap=pinned)
             if err is None:
                 valid_goals.append((gid, gq))
             else:
@@ -460,14 +485,14 @@ class MotionPlanner:
         if not valid_goals:
             return PlanResult(None, None, 0, last_ep_err, PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms))
 
-        specs, seed_ms = self._build_seed_jobs(start_q, valid_goals, request, mask, pose_map, joint_map)
-        raw_results = run_sqp_batch(self.world, self.backend, specs, race=(len(specs) > 1 and cfg.first_feasible))
+        specs, seed_ms = self._build_seed_jobs(start_q, valid_goals, request, mask, pose_map, joint_map, snap=pinned)
+        raw_results = run_sqp_batch(self.world, self.backend, specs, race=(len(specs) > 1 and cfg.first_feasible), snap=pinned)
         succeeded = [r for r in raw_results if r is not None and r.positions is not None]
         if not succeeded and cfg.use_global_seeding and cfg.num_seeds == 1 and request.seed is None:
-            rrt_specs, rrt_seed_ms = self._build_seed_jobs(start_q, valid_goals, request, mask, pose_map, joint_map, force_rrt=True)
+            rrt_specs, rrt_seed_ms = self._build_seed_jobs(start_q, valid_goals, request, mask, pose_map, joint_map, snap=pinned, force_rrt=True)
             seed_ms += rrt_seed_ms
             if rrt_specs:
-                rrt_results = run_sqp_batch(self.world, self.backend, rrt_specs, race=cfg.first_feasible)
+                rrt_results = run_sqp_batch(self.world, self.backend, rrt_specs, race=cfg.first_feasible, snap=pinned)
                 succeeded = [r for r in rrt_results if r is not None and r.positions is not None]
                 if succeeded:
                     raw_results = rrt_results
@@ -486,7 +511,7 @@ class MotionPlanner:
                               "trajectory optimization failed" if first is None else first.reason, diag)
 
         winner = min(succeeded, key=lambda r: r.cost)
-        traj, retime_ms, retime_err = self._finalize_trajectory(winner.positions, cfg)
+        traj, retime_ms, retime_err = self._finalize_trajectory(winner.positions, cfg, snap=pinned)
         diag = PlanDiagnostics(
             total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms, seed_ms=seed_ms,
             sqp_ms=winner.sqp_ms, validate_ms=winner.validate_ms, retime_ms=retime_ms,
@@ -497,6 +522,7 @@ class MotionPlanner:
 
     def _plan_warp_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int) -> tuple[PlanResult, ...]:
         B = len(requests)
+        pinned = self.world._native.snapshot()
         all_results: list[PlanResult | None] = [None] * B
         for offset in range(0, B, chunk_size):
             chunk = requests[offset:min(offset + chunk_size, B)]
@@ -514,29 +540,29 @@ class MotionPlanner:
                 pose_map, joint_map = _expand_path_constraints(
                     self.world, cfg.waypoints, fixed, req.waypoint_targets, req.path_constraints,
                 )
-                start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(req, mask)
+                start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(req, mask, snap=pinned)
                 if ep_err is not None or goal_candidates is None:
                     all_results[row_i] = PlanResult(None, None, 0, ep_err, PlanDiagnostics(ik_ms=ik_ms))
                     continue
                 valid_goals = [(gid, gq) for gid, gq in goal_candidates
-                               if self._validate_endpoints(start_q, gq, cfg, fixed) is None]
+                               if self._validate_endpoints(start_q, gq, cfg, fixed, snap=pinned) is None]
                 if not valid_goals:
-                    err = self._validate_endpoints(start_q, goal_candidates[0][1], cfg, fixed)
+                    err = self._validate_endpoints(start_q, goal_candidates[0][1], cfg, fixed, snap=pinned)
                     all_results[row_i] = PlanResult(None, None, 0, err, PlanDiagnostics(ik_ms=ik_ms))
                     continue
-                specs, seed_ms = self._build_seed_jobs(start_q, valid_goals[:1], req, mask, pose_map, joint_map)
+                specs, seed_ms = self._build_seed_jobs(start_q, valid_goals[:1], req, mask, pose_map, joint_map, snap=pinned)
                 active_indices.append(row_i)
                 active_specs.append(specs[0])
                 active_ik_ms.append(ik_ms)
                 active_seed_ms.append(seed_ms)
 
             if active_specs:
-                sqp_out = run_sqp_batch(self.world, self.backend, active_specs, race=False)
+                sqp_out = run_sqp_batch(self.world, self.backend, active_specs, race=False, snap=pinned)
                 for row_i, sqp_res, ik_ms, seed_ms in zip(active_indices, sqp_out, active_ik_ms, active_seed_ms):
                     req = requests[row_i]
                     cfg = req.config
                     if (sqp_res is None or sqp_res.positions is None) and cfg.use_global_seeding and req.seed is None:
-                        all_results[row_i] = self._plan_warp_single(req)
+                        all_results[row_i] = self._plan_warp_single(req, snap=pinned)
                         continue
                     if sqp_res is None or sqp_res.positions is None:
                         all_results[row_i] = PlanResult(
@@ -552,7 +578,7 @@ class MotionPlanner:
                             ),
                         )
                     else:
-                        traj, retime_ms, retime_err = self._finalize_trajectory(sqp_res.positions, cfg)
+                        traj, retime_ms, retime_err = self._finalize_trajectory(sqp_res.positions, cfg, snap=pinned)
                         all_results[row_i] = PlanResult(
                             traj, sqp_res.initial_positions, sqp_res.goal_index, retime_err,
                             PlanDiagnostics(

@@ -211,3 +211,76 @@ TEST(MotionPlanningCpp, ConcurrentWorldMutationDuringPlanningIsThreadSafe) {
     mutator.join();
     EXPECT_GT(mutations.load(), 0);
 }
+
+TEST(MotionPlanningCpp, RevolutePlusUnboundedPrismaticHermiteCCDCatchesMidSegmentExtension) {
+    // 2-DOF robot: Joint 0 = revolute Z (unbounded), Joint 1 = prismatic X (unbounded).
+    // Link 2 carries a 5 cm sphere at local origin.
+    auto world = std::make_shared<gp::PlanningWorld>();
+    std::vector<int> parent = {-1, 0, 1};
+    std::vector<int> kinds = {4, 1, 3};  // root base, revolute, prismatic
+    std::vector<int> joint_idx = {-1, 0, 1};
+    std::vector<gp::Mat3> a_rot(3, gp::Mat3::Identity()), b_rot(3, gp::Mat3::Identity());
+    std::vector<gp::Vec3> a_pos(3, gp::Vec3::Zero()), b_pos(3, gp::Vec3::Zero());
+    std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitZ(), gp::Vec3::UnitX()};
+    std::vector<gp::KinematicsModel::Branch> branches = {{"arm", 0, gp::Vec3::Zero(), gp::Mat3::Identity()}};
+    std::vector<std::string> body_names = {"base", "link1", "tip"};
+    std::vector<std::string> joint_names = {"j_rev", "j_pris"};
+    const double inf = std::numeric_limits<double>::infinity();
+    Eigen::VectorXd lower(2), upper(2), vel(2), acc(2), init_q(2);
+    lower << -inf, -inf;
+    upper << inf, inf;
+    vel << 10.0, 10.0;
+    acc << 50.0, 50.0;
+    init_q << 0.0, 0.0;
+    std::unordered_map<std::string, int> link_index = {{"arm::base", 0}, {"arm::link1", 1}, {"arm::tip", 2}};
+    world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes, branches,
+                           body_names, joint_names, lower, upper, vel, acc, init_q, link_index);
+
+    auto tip_shape = std::make_shared<gp::CollisionShape>();
+    tip_shape->label = "tip_ball";
+    tip_shape->kind = 2;
+    tip_shape->radius = 0.05;
+    tip_shape->convex = std::make_shared<coal::Sphere>(0.05);
+    tip_shape->finalize_bounds();
+
+    gp::WorldShape tip;
+    tip.name = "tip_ball";
+    tip.link_key = "arm::tip";
+    tip.body_id = 2;
+    tip.local_frame.setZero();
+    tip.local_frame.leftCols<3>() = gp::Mat3::Identity();
+    tip.shape = tip_shape;
+    world->add_shape(std::move(tip));
+
+    // At u = 0.5: q_rev = pi/2, q_pris = 1.0 m -> tip center at (0, 1.0, 0), radius 0.05.
+    // Box centered at (0, 1.06, 0) with size (0.04, 0.04, 0.20) -> y in [1.04, 1.08] -> 10 mm penetration!
+    add_box_obstacle(*world, "post", gp::Vec3(0.04, 0.04, 0.20), gp::Vec3(0.0, 1.06, 0.0));
+    auto snap = world->snapshot();
+
+    gp::RowMatrixXd q_wp(2, 2), v_wp(2, 2);
+    q_wp << 0.0, 0.0,
+            M_PI, 0.0;
+    v_wp << 0.0, 4.0,
+            0.0, -4.0;
+    const double times[2] = {0.0, 1.0};
+
+    // Must catch the 10 mm mid-segment Hermite penetration for every collision_substeps value!
+    for (int substeps : {1, 2, 4, 8, 16, 24}) {
+        const int64_t S = substeps + 1;
+        gp::RowMatrixXd samples(S, 2);
+        for (int s = 0; s < S; ++s) {
+            const double u = static_cast<double>(s) / static_cast<double>(substeps);
+            const double u2 = u * u, u3 = u2 * u;
+            const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+            const double h10 = u3 - 2.0 * u2 + u;
+            const double h01 = -2.0 * u3 + 3.0 * u2;
+            const double h11 = u3 - u2;
+            for (int j = 0; j < 2; ++j) {
+                samples(s, j) = h00 * q_wp(0, j) + h10 * v_wp(0, j) + h01 * q_wp(1, j) + h11 * v_wp(1, j);
+            }
+        }
+        auto val = snap->validate_trajectory_collision(
+            q_wp.data(), 2, samples.data(), S, substeps, 0.0, 0.0, true, 5e-4, times, v_wp.data(), false);
+        EXPECT_FALSE(val.valid) << "Missed 10 mm Hermite prismatic+revolute collision at substeps=" << substeps;
+    }
+}

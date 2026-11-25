@@ -11,7 +11,7 @@ All work follows the repository architecture boundaries in [`AGENTS.md`](../AGEN
 
 ## Baseline (Before Phase 1)
 
-Measured on Ryzen 7 3700X (8C/16T) + RTX 4070 (`cuda:0`) with strict continuous Hermite velocity, acceleration, convex, and original triangle-mesh verification:
+Measured on Ryzen 7 3700X (8C/16T) + RTX 4070 (`cuda:0`) with exact Hermite velocity/acceleration bounds and convex + original triangle-mesh collision verification:
 
 - **Panda TrajOpt** (`16` waypoints, `7` DOF): `~233 ms` total (`216 ms` SQP across `13` OSQP calls = `16.6 ms/QP`, `14 ms` retime).
 - **Container Unloading** (`14` waypoints, `6` DOF, `350` shape pairs, no via): `~655 ms` total (`458 ms` in `_qp_step` across `133` OSQP calls = `3.45 ms/QP`, `121 ms` collision eval, `42 ms` retime).
@@ -23,9 +23,9 @@ Key bottleneck finding: **70–90% of total planning latency is in Python/SciPy 
 
 ## Phase 1: Extreme Performance (Completed)
 
-Goal: cut single-trajectory planning latency and scale batched planning to `B = 32, 64, 128` while keeping 100% of strict continuous Hermite collision, velocity, and acceleration guarantees.
+Goal: cut single-trajectory planning latency and scale batched planning to `B = 32, 64, 128` while preserving exact Hermite velocity/acceleration bounds and tolerance-bounded continuous CCD (`< 0.5 * disp_tol`, with optional `strict_ccd=True` verification) across convex hulls and original triangle meshes.
 
-### Phase 1 Measured Results (Ryzen 7 3700X + RTX 4070, Strict Continuous Hermite + Mesh Verification)
+### Phase 1 Measured Results (Ryzen 7 3700X + RTX 4070, Hermite + Mesh CCD Verification)
 - **Panda TrajOpt** (`16` waypoints, `7` DOF): `233.4 ms` → **`50.0 ms`** (**4.7× faster**).
 - **Container Unloading (no via)**: `666.1 ms` → **`179.8 ms`** (**3.7× faster**, duration `3.17 s` → `2.86 s`).
 - **Container Batch (`sqp_fast`, `dt=None` TOPP, 100% solved & independently verified)**:
@@ -70,11 +70,11 @@ Goal: resolve foundational soundness, thread-safety, layering, and CPU utilizati
    - Added standalone C++ GoogleTest target `test_motion_planning_cpp`.
 2. **Thread-Safe Immutable Copy-on-Write World Snapshots (`WorldSnapshot`)**:
    - All mutations on [`PlanningWorld`](../modules/coal/planning_world.hpp) clone lightweight metadata (sharing immutable `CollisionShape` pointers) and atomically swap the active `std::shared_ptr<const WorldSnapshot>`.
-   - Queries and planners grab one immutable snapshot and execute lock-free, eliminating data races during concurrent scene updates.
+   - Native planners, atomic `validate_trajectory_collision(...)`, and Python-pinned `WorldSnapshot` handles (used across the entire `MuJoCoWarpBackend` solve path) execute lock-free against a single immutable snapshot, with explicit `frames`/`margins` dimension guards preventing OOB reads.
 3. **Sound Kinematic-Chain Continuous Collision Checking (Linear + Hermite, Convex + Mesh)**:
-   - Replaced chord-distance displacement estimates with rotation-invariant kinematic-chain Lipschitz upper bounds (`KinematicsModel::body_lipschitz_weights`) and exact closed-form cubic Hermite joint total variation (`hermite_scalar_total_variation`).
+   - Replaced chord-distance displacement estimates with rotation-invariant kinematic-chain Lipschitz upper bounds (`KinematicsModel::body_lipschitz_weights`), exact closed-form cubic Hermite joint total variation (`hermite_scalar_total_variation`), and exact analytical per-segment prismatic extremum bounds (`hermite_scalar_abs_max`, sound even without finite joint limits).
    - Added halfspace-plane AABB pruning and exact convex lower-bound pruning (`d_orig >= d_convex`) for original triangle meshes.
-   - Covers both SQP linear segments and the actual played Hermite curves; any unresolved inter-sample dip below margin is strictly bounded by `< 0.5 * disp_tol` (`< 0.5 mm` at `disp_tol = 1e-3` in solver / `< 0.25 mm` at `disp_tol = 5e-4` in `validate_trajectory`).
+   - Covers both SQP linear segments and the actual played Hermite curves. By default (`strict_ccd=False`), any unresolved inter-sample dip below margin is bounded strictly by `< 0.5 * disp_tol` (`< 0.5 mm` at `disp_tol = 1e-3` in solver / `< 0.25 mm` at `disp_tol = 5e-4` in `validate_trajectory`); setting `strict_ccd=True` conservatively rejects any interval not proven safe within `disp_tol`.
 4. **TBB Nested Work-Stealing Parallelism**:
    - Switched `ThreadPool` to `TBB::tbb` (`tbb::parallel_for`) when available, raising small-batch CPU utilization from `2–5 / 16` cores to `8.6–15.6 / 16` cores across `B = 1..32`.
    - `MuJoCoWarpBackend` is marked experimental; `PlanningWorld.from_snapshot` warns explicitly when joints omit `acceleration_limit`.

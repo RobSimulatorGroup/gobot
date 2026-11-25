@@ -35,15 +35,16 @@ class CollisionBackend(Protocol):
         linearize: bool,
         group_size: int,
         segment_minimum: bool,
+        snap=None,
     ) -> CollisionBatchEval: ...
 
     def query_indexed_convex(
-        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
+        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray, snap=None,
     ) -> np.ndarray: ...
 
     def first_violation(
         self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
-        margins: np.ndarray, verify_original: bool,
+        margins: np.ndarray, verify_original: bool, snap=None,
     ) -> tuple[int, int] | None: ...
 
 
@@ -64,8 +65,10 @@ class CoalBackend:
         linearize: bool,
         group_size: int,
         segment_minimum: bool,
+        snap=None,
     ) -> CollisionBatchEval:
-        rows, pids, res, grad, frames, seg_ok, wit = self.world._native.eval_collision_rows(
+        s = self.world._native.snapshot() if snap is None else snap
+        rows, pids, res, grad, frames, seg_ok, wit = s.eval_collision_rows(
             np.ascontiguousarray(samples, dtype=np.float64),
             opt_margins, check_margins, float(buffer), bool(linearize),
             int(group_size), bool(segment_minimum),
@@ -73,15 +76,17 @@ class CoalBackend:
         return CollisionBatchEval(rows, pids, res, grad, frames, seg_ok, wit)
 
     def query_indexed_convex(
-        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
+        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray, snap=None,
     ) -> np.ndarray:
-        return self.world._native.query_distances_indexed(frames, rows, pair_ids, False)
+        s = self.world._native.snapshot() if snap is None else snap
+        return s.query_distances_indexed(frames, rows, pair_ids, False)
 
     def first_violation(
         self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
-        margins: np.ndarray, verify_original: bool,
+        margins: np.ndarray, verify_original: bool, snap=None,
     ) -> tuple[int, int] | None:
-        return self.world._native.first_violation_indexed(frames, rows, pair_ids, margins, verify_original)
+        s = self.world._native.snapshot() if snap is None else snap
+        return s.first_violation_indexed(frames, rows, pair_ids, margins, verify_original)
 
 
 _WARP_LOCK = threading.Lock()
@@ -119,12 +124,13 @@ class MuJoCoWarpBackend:
         self._pairs_buf = None
         self._sync_geometry()
 
-    def _sync_geometry(self) -> None:
-        topo = self.world.topology_version
+    def _sync_geometry(self, snap=None) -> None:
+        s = self.world._native.snapshot() if snap is None else snap
+        topo = s.topology_version
         if topo == self._synced_topology:
             return
         wp = self._wp
-        kinds_raw, sizes_np, spans_np, verts_np, pairs_np = self.world._native.export_warp_geometry()
+        kinds_raw, sizes_np, spans_np, verts_np, pairs_np = s.export_warp_geometry()
         with wp.ScopedDevice(self._device):
             self._kinds = wp.array([int(self._types_map[k]) for k in kinds_raw], dtype=int)
             self._sizes = wp.array(np.asarray(sizes_np, dtype=np.float32), dtype=wp.vec3)
@@ -149,16 +155,17 @@ class MuJoCoWarpBackend:
             self._output = wp.empty((alloc, 10), dtype=float, device=self._device)
 
     def query_indexed_convex(
-        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
+        self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray, snap=None,
     ) -> np.ndarray:
+        s = self.world._native.snapshot() if snap is None else snap
         count = len(rows)
         if not count:
             return np.empty((0, 10), dtype=np.float64)
         if count < _WARP_GPU_MIN_COUNT:
-            return self.world._native.query_distances_indexed(frames, rows, pair_ids, False)
+            return s.query_distances_indexed(frames, rows, pair_ids, False)
         wp = self._wp
         with _WARP_LOCK:
-            self._sync_geometry()
+            self._sync_geometry(s)
             with wp.ScopedDevice(self._device):
                 slots = min(count, self._tile)
                 self._ensure_workspace(slots, count)
@@ -191,16 +198,17 @@ class MuJoCoWarpBackend:
         invalid = ~np.isfinite(values).all(axis=-1)
         bad = np.flatnonzero(invalid)
         if len(bad):
-            values[bad] = self.world._native.query_distances_indexed(frames, rows[bad], pair_ids[bad], False)
+            values[bad] = s.query_distances_indexed(frames, rows[bad], pair_ids[bad], False)
         return values
 
     def first_violation(
         self, frames: np.ndarray, rows: np.ndarray, pair_ids: np.ndarray,
-        margins: np.ndarray, verify_original: bool,
+        margins: np.ndarray, verify_original: bool, snap=None,
     ) -> tuple[int, int] | None:
+        s = self.world._native.snapshot() if snap is None else snap
         if verify_original or len(rows) < _WARP_GPU_MIN_COUNT:
-            return self.world._native.first_violation_indexed(frames, rows, pair_ids, margins, verify_original)
-        data = self.query_indexed_convex(frames, rows, pair_ids)
+            return s.first_violation_indexed(frames, rows, pair_ids, margins, verify_original)
+        data = self.query_indexed_convex(frames, rows, pair_ids, snap=s)
         minimum = np.maximum(0.0, margins[pair_ids] - 1e-6)
         failed = np.flatnonzero(~(np.isfinite(data[:, 0]) & (data[:, 0] >= minimum)))
         if len(failed):
@@ -217,9 +225,10 @@ class MuJoCoWarpBackend:
         linearize: bool,
         group_size: int,
         segment_minimum: bool,
+        snap=None,
     ) -> CollisionBatchEval:
-        nat = self.world._native
-        out = nat.compute_frames(np.ascontiguousarray(samples, dtype=np.float64), linearize)
+        s = self.world._native.snapshot() if snap is None else snap
+        out = s.compute_frames(np.ascontiguousarray(samples, dtype=np.float64), linearize)
         if linearize:
             frames, jorig, jaxis = out
         else:
@@ -227,22 +236,22 @@ class MuJoCoWarpBackend:
             jorig = jaxis = None
         n_segs = len(samples) // group_size if group_size > 0 else len(samples)
         seg_ok = np.ones(n_segs, dtype=np.bool_)
-        if self.world.num_pairs == 0:
+        if s.num_pairs == 0:
             empty_i = np.empty(0, dtype=np.int64)
             empty_d = np.empty(0, dtype=np.float64)
-            empty_g = np.empty((0, self.world.num_joints), dtype=np.float64) if linearize else None
+            empty_g = np.empty((0, s.num_joints), dtype=np.float64) if linearize else None
             empty_w = np.empty((0, 6), dtype=np.float64) if linearize else None
             return CollisionBatchEval(empty_i, empty_i, empty_d, empty_g, frames, seg_ok, empty_w)
 
-        c_rows, c_pairs = nat.screen_aabbs(frames, opt_margins + buffer, False, group_size)
+        c_rows, c_pairs = s.screen_aabbs(frames, opt_margins + buffer, False, group_size)
         if not len(c_rows):
             empty_i = np.empty(0, dtype=np.int64)
             empty_d = np.empty(0, dtype=np.float64)
-            empty_g = np.empty((0, self.world.num_joints), dtype=np.float64) if linearize else None
+            empty_g = np.empty((0, s.num_joints), dtype=np.float64) if linearize else None
             empty_w = np.empty((0, 6), dtype=np.float64) if linearize else None
             return CollisionBatchEval(empty_i, empty_i, empty_d, empty_g, frames, seg_ok, empty_w)
 
-        data = self.query_indexed_convex(frames, c_rows, c_pairs)
+        data = self.query_indexed_convex(frames, c_rows, c_pairs, snap=s)
         req_min = np.maximum(0.0, check_margins[c_pairs] - 1e-6)
         failed = ~(np.isfinite(data[:, 0]) & (data[:, 0] >= req_min))
         if failed.any() and group_size > 0:
@@ -258,9 +267,9 @@ class MuJoCoWarpBackend:
         grad = wit = None
         if linearize:
             if len(rows_n):
-                grad, wit = nat.compute_analytic_gradients(frames, jorig, jaxis, rows_n, pairs_n, data[near])
+                grad, wit = s.compute_analytic_gradients(frames, jorig, jaxis, rows_n, pairs_n, data[near])
             else:
-                grad = np.empty((0, self.world.num_joints), dtype=np.float64)
+                grad = np.empty((0, s.num_joints), dtype=np.float64)
                 wit = np.empty((0, 6), dtype=np.float64)
         return CollisionBatchEval(rows_n, pairs_n, res_n, grad, frames, seg_ok, wit)
 

@@ -550,8 +550,14 @@ class PlanningWorld:
         velocity_scale: float = 1.0,
         acceleration_scale: float = 1.0,
         check_acceleration: bool = True,
+        disp_tol: float = 5e-4,
+        strict_ccd: bool = False,
     ) -> tuple[bool, str | None]:
-        """Validate either a waypoint polyline ``[T, J]`` or a continuous ``Trajectory`` curve."""
+        """Validate either a waypoint polyline ``[T, J]`` or a continuous ``Trajectory`` curve.
+
+        All collision checks (FK, AABB screening, discrete distance, and continuous CCD for convex
+        and original triangle meshes) execute atomically against a single immutable C++ WorldSnapshot.
+        """
         if isinstance(positions_or_trajectory, Trajectory):
             traj = positions_or_trajectory
             q = np.asarray(traj.positions, dtype=np.float64)
@@ -600,32 +606,20 @@ class PlanningWorld:
             between = (1.0 - u)[None, :, :] * q[:-1, None, :] + u[None, :, :] * q[1:, None, :]
             samples = np.concatenate((between.reshape(-1, self.num_joints), q[-1:]), axis=0)
 
-        if self.num_pairs == 0:
-            return True, None
-        (frames,) = self._native.compute_frames(np.ascontiguousarray(samples), False)
-        margins = self.pair_margins(margin, world_margin)
         is_traj = isinstance(positions_or_trajectory, Trajectory)
         t_arg = np.ascontiguousarray(positions_or_trajectory.times, dtype=np.float64) if is_traj else None
         v_arg = np.ascontiguousarray(positions_or_trajectory.velocities, dtype=np.float64) if is_traj else None
-        q_c = np.ascontiguousarray(q, dtype=np.float64)
-
-        rows, pids = self._native.screen_aabbs(frames, margins, False, substeps)
-        if len(rows):
-            hit = self._native.first_violation_indexed(frames, rows, pids, margins, False)
-            if hit is not None:
-                seg = min(int(hit[0]) // substeps, len(q) - 2)
-                return False, f"convex clearance failed on segment {seg}, pair {self.collision_pairs[int(hit[1])]}"
-        ccd = self._native.first_violation_continuous(q_c, substeps, frames, margins, False, 5e-4, t_arg, v_arg)
-        if ccd is not None:
-            return False, f"continuous convex clearance failed on segment {int(ccd[0])}, pair {self.collision_pairs[int(ccd[2])]}"
-        if verify_original and self.has_mesh:
-            rows, pids = self._native.screen_aabbs(frames, margins, True, substeps)
-            if len(rows):
-                hit = self._native.first_violation_indexed(frames, rows, pids, margins, True)
-                if hit is not None:
-                    seg = min(int(hit[0]) // substeps, len(q) - 2)
-                    return False, f"mesh clearance failed on segment {seg}, pair {self.collision_pairs[int(hit[1])]}"
-            ccd_m = self._native.first_violation_continuous(q_c, substeps, frames, margins, True, 5e-4, t_arg, v_arg)
-            if ccd_m is not None:
-                return False, f"continuous mesh clearance failed on segment {int(ccd_m[0])}, pair {self.collision_pairs[int(ccd_m[2])]}"
-        return True, None
+        wm = margin if world_margin is None else world_margin
+        ok, err = self._native.validate_trajectory_collision(
+            np.ascontiguousarray(q, dtype=np.float64),
+            np.ascontiguousarray(samples, dtype=np.float64),
+            int(substeps),
+            float(margin),
+            float(wm),
+            bool(verify_original),
+            float(disp_tol),
+            t_arg,
+            v_arg,
+            bool(strict_ccd),
+        )
+        return bool(ok), err

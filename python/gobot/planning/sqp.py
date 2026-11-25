@@ -162,22 +162,23 @@ def _assemble_segment_eval(
     return _SegmentEval(seg, val, jac, frames, substeps, bool(seg_ok.all()), witnesses)
 
 
-def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
-    """Generator driving one trajectory job, yielding collision batch requests."""
+def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec, snap):
+    """Generator driving one trajectory job against a single immutable WorldSnapshot."""
     t_job_start = perf_counter()
-    nat = world._native
+    nat = snap
+    pair_names = tuple(nat.pair_shape_names())
     q_init = spec.initial.copy()
     waypoints, joints = q_init.shape
     fixed = spec.fixed
     free = slice(fixed, waypoints - fixed)
     lower, upper = world.lower_limits, world.upper_limits
-    margins = world.pair_margins(spec.margin, spec.world_margin)
+    margins = nat.pair_margins(float(spec.margin), float(spec.world_margin))
     vmax = world.velocity_limits * spec.velocity_scale
 
     # Precompute fixed goal frame once for fast validation reuse.
     (goal_frame,) = nat.compute_frames(np.ascontiguousarray(q_init[-1:]), False)
 
-    # Per-job failure caches for convex and original mesh checks.
+    # Per-job failure caches for convex and original mesh checks (bound to this immutable snap).
     prev_convex: tuple[int, int, int] | None = None
     prev_orig: tuple[int, int, int] | None = None
     failure: str | None = None
@@ -194,12 +195,12 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
             if last_sub == substeps and s < len(frames):
                 hit = backend.first_violation(
                     frames, np.array([s], dtype=np.int64), np.array([p], dtype=np.int64),
-                    margins, verify_original,
+                    margins, verify_original, snap=nat,
                 )
                 if hit is not None:
                     return hit
         rows, pids = nat.screen_aabbs(frames, margins, verify_original, substeps)
-        hit = backend.first_violation(frames, rows, pids, margins, verify_original) if len(rows) else None
+        hit = backend.first_violation(frames, rows, pids, margins, verify_original, snap=nat) if len(rows) else None
         if verify_original:
             prev_orig = (int(hit[0]), int(hit[1]), substeps) if hit is not None else None
         else:
@@ -234,7 +235,7 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
             if not t_ok:
                 failure = t_reason
                 return False
-            if world.num_pairs == 0:
+            if nat.num_pairs == 0:
                 failure = None
                 return True
             substeps = _grid_substeps(positions, validation_substeps, spec.max_segment_length)
@@ -251,23 +252,23 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                 hit = check_frames(frames, substeps, False)
                 if hit is not None:
                     seg = min(int(hit[0]) // substeps, waypoints - 2)
-                    failure = f"collision clearance on segment {seg}, pair {world.collision_pairs[int(hit[1])]}"
+                    failure = f"collision clearance on segment {seg}, pair {pair_names[int(hit[1])]}"
                     return False
             ccd_hit = nat.first_violation_continuous(
                 np.ascontiguousarray(positions, dtype=np.float64), substeps, frames, margins, False, 1e-3,
             )
             if ccd_hit is not None:
                 seg_h, u_h, pid_h = int(ccd_hit[0]), float(ccd_hit[1]), int(ccd_hit[2])
-                failure = f"continuous collision clearance on segment {seg_h}, pair {world.collision_pairs[pid_h]}"
+                failure = f"continuous collision clearance on segment {seg_h}, pair {pair_names[pid_h]}"
                 if extra_samples is not None and len(extra_samples) < 32:
                     if not any(es == seg_h and abs(eu - u_h) < 0.005 for es, eu in extra_samples):
                         extra_samples.append((seg_h, u_h))
                 return False
-            if world.has_mesh:
+            if nat.has_mesh:
                 hit = check_frames(frames, substeps, True)
                 if hit is not None:
                     seg = min(int(hit[0]) // substeps, waypoints - 2)
-                    failure = f"original mesh clearance on segment {seg}, pair {world.collision_pairs[int(hit[1])]}"
+                    failure = f"original mesh clearance on segment {seg}, pair {pair_names[int(hit[1])]}"
                     return False
             failure = None
             return True
@@ -344,12 +345,12 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
         radius, penalty = 0.1, 10.0
 
         def eval_extra_ccd(path: np.ndarray, linearize: bool):
-            if not extra_samples or world.num_pairs == 0:
+            if not extra_samples or nat.num_pairs == 0:
                 return np.empty(0, dtype=np.float64), np.empty((0, n_free_wp * joints), dtype=np.float64), True
             ex_q = np.array([(1.0 - eu) * path[es] + eu * path[es + 1] for es, eu in extra_samples], dtype=np.float64)
             ex_opt = margins + (8e-4 if use_cushion else 5e-4)
             buf = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
-            ev = backend.eval_rows(ex_q, ex_opt, margins, buf, linearize, 1, False)
+            ev = backend.eval_rows(ex_q, ex_opt, margins, buf, linearize, 1, False, snap=nat)
             ok = bool(ev.seg_ok.all())
             if not linearize or not len(ev.rows):
                 return ev.residuals, np.empty((len(ev.rows), n_free_wp * joints), dtype=np.float64), ok
@@ -466,7 +467,7 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
         return best, best_cost, warm
 
     attempts = [(spec.collision_substeps, False, True), (validation_substeps, False, False)]
-    if spec.first_feasible and world.num_pairs > 0:
+    if spec.first_feasible and nat.num_pairs > 0:
         attempts.insert(0, (validation_substeps, True, True))
 
     seed_cur = q_init
@@ -474,7 +475,7 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
     sol_cost = math.inf
     for substeps, seg_min, use_cushion in attempts:
         sol, sol_cost, warm = yield from run_attempt(seed_cur, substeps, seg_min, use_cushion)
-        if sol is not None or world.num_pairs == 0:
+        if sol is not None or nat.num_pairs == 0:
             break
         if seg_min:
             seed_cur = q_init
@@ -489,15 +490,15 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
     )
 
 
-def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, requests: list) -> dict[int, _SegmentEval]:
-    """Merge heterogeneous SQP requests into ONE FK + ONE narrow-phase collision call."""
+def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, requests: list, snap) -> dict[int, _SegmentEval]:
+    """Merge heterogeneous SQP requests into ONE FK + ONE narrow-phase collision call on a single WorldSnapshot."""
     if len(requests) == 1:
         row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale = requests[0]
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
         u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
         samples = ((1.0 - u)[None, :, :] * pairs[:, :1, :] + u[None, :, :] * pairs[:, 1:, :]).reshape(-1, pairs.shape[-1])
         opt_m = margins + 5e-4 if use_cushion else margins
-        ev = backend.eval_rows(samples, opt_m, margins, buffer, linearize, substeps, seg_min)
+        ev = backend.eval_rows(samples, opt_m, margins, buffer, linearize, substeps, seg_min, snap=snap)
         return {
             row: _assemble_segment_eval(
                 world, pairs, substeps, dt_vel, vel_scale, linearize,
@@ -505,8 +506,8 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
             )
         }
 
-    nat = world._native
-    joints = world.num_joints
+    nat = snap
+    joints = nat.num_joints
     need_joints = any(req[2] for req in requests)
     u_cache: dict[int, np.ndarray] = {}
     sample_blocks = []
@@ -537,7 +538,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     for row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale, off, cnt in meta:
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
         opt_m = margins + 5e-4 if use_cushion else margins
-        if world.num_pairs > 0:
+        if nat.num_pairs > 0:
             r_loc, p_loc = nat.screen_aabbs(all_frames[off:off + cnt], opt_m + buffer, False, substeps)
         else:
             r_loc = p_loc = np.empty(0, dtype=np.int64)
@@ -551,7 +552,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     if c_off:
         m_rows = np.concatenate(cand_rows) if len(cand_rows) > 1 else cand_rows[0]
         m_pairs = np.concatenate(cand_pairs) if len(cand_pairs) > 1 else cand_pairs[0]
-        m_data = backend.query_indexed_convex(all_frames, m_rows, m_pairs)
+        m_data = backend.query_indexed_convex(all_frames, m_rows, m_pairs, snap=nat)
     else:
         m_rows = m_pairs = np.empty(0, dtype=np.int64)
         m_data = np.empty((0, 10), dtype=np.float64)
@@ -603,6 +604,7 @@ def run_sqp_batch(
     specs: list[SQPJobSpec],
     *,
     race: bool = False,
+    snap=None,
 ) -> list[SQPJobResult | None]:
     """Execute SQP jobs with native C++ SQP (Coal) or merged GPU collision + C++ QP (Warp).
 
@@ -652,7 +654,8 @@ def run_sqp_batch(
             for sp, item in zip(specs, raw)
         ]
 
-    jobs = [_sqp_job(world, backend, spec) for spec in specs]
+    pinned = world._native.snapshot() if snap is None else snap
+    jobs = [_sqp_job(world, backend, spec, pinned) for spec in specs]
     results: list[SQPJobResult | None] = [None] * n
     replies: dict[int, object] = dict.fromkeys(range(n))
     workers = min(n, max(1, os.cpu_count() or 1))
@@ -687,7 +690,7 @@ def run_sqp_batch(
                 break
             if not requests:
                 break
-            replies = _eval_merged_requests(world, backend, requests)
+            replies = _eval_merged_requests(world, backend, requests, pinned)
     finally:
         if pool is not None:
             pool.shutdown(wait=True)

@@ -728,4 +728,34 @@ inline double hermite_scalar_total_variation(double d, double v0, double v1, dou
     return tv;
 }
 
+// Exact maximum of |p(u)| for a scalar cubic Hermite segment p(u) over u in [0, 1]
+// with endpoints p0, p1, endpoint velocities v0, v1, and duration h.
+inline double hermite_scalar_abs_max(double p0, double p1, double v0, double v1, double h) {
+    const double d = p1 - p0;
+    auto eval = [&](double u) {
+        const double u2 = u * u;
+        const double u3 = u2 * u;
+        return p0 + (3.0 * u2 - 2.0 * u3) * d + (u3 - 2.0 * u2 + u) * (h * v0) + (u3 - u2) * (h * v1);
+    };
+    double best = std::max(std::abs(p0), std::abs(p1));
+    const double inv_h = 1.0 / std::max(h, 1e-12);
+    const double six_d_h = 6.0 * d * inv_h;
+    const double c1 = six_d_h - 4.0 * v0 - 2.0 * v1;
+    const double c2 = -six_d_h + 3.0 * (v0 + v1);
+    if (std::abs(c2) > 1e-12) {
+        const double disc = c1 * c1 - 4.0 * c2 * v0;
+        if (disc > 0.0) {
+            const double sq = std::sqrt(disc);
+            const double r1 = (-c1 - sq) / (2.0 * c2);
+            const double r2 = (-c1 + sq) / (2.0 * c2);
+            if (r1 > 0.0 && r1 < 1.0) best = std::max(best, std::abs(eval(r1)));
+            if (r2 > 0.0 && r2 < 1.0) best = std::max(best, std::abs(eval(r2)));
+        }
+    } else if (std::abs(c1) > 1e-12) {
+        const double r = -v0 / c1;
+        if (r > 0.0 && r < 1.0) best = std::max(best, std::abs(eval(r)));
+    }
+    return best;
+}
+
 }  // namespace gobot::planning

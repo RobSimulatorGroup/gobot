@@ -18,6 +18,7 @@ from gobot.planning import (
     PlanningWorld,
     PoseConstraint,
     SolverConfig,
+    Trajectory,
     retime_trajectory,
 )
 
@@ -661,6 +662,114 @@ def test_concurrent_world_mutation_during_planning(simple_snapshot):
         for _ in range(4):
             batch = planner.plan_batch(reqs)
             assert batch.success.all(), batch.reasons
+    finally:
+        stop.set()
+        t.join(timeout=2.0)
+    assert not errors, f"mutator thread raised: {errors}"
+
+
+def test_unbounded_prismatic_hermite_ccd_catches_mid_extension(tmp_path):
+    """Unbounded prismatic joint extending mid-segment on a Hermite curve must not underestimate CCD bound."""
+    source = tmp_path / "rp_arm.xml"
+    source.write_text("""
+    <mujoco model="rp_arm">
+      <compiler angle="radian"/>
+      <worldbody>
+        <body name="base" pos="0 0 0">
+          <body name="link1">
+            <inertial pos="0 0 0" mass="0.1" diaginertia="0.01 0.01 0.01"/>
+            <joint name="j_rev" type="hinge" axis="0 0 1" limited="false"/>
+            <body name="tip">
+              <inertial pos="0 0 0" mass="0.1" diaginertia="0.01 0.01 0.01"/>
+              <joint name="j_pris" type="slide" axis="1 0 0" limited="false"/>
+              <geom type="sphere" size="0.05"/>
+            </body>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+    """)
+    gobot.set_project_path(str(tmp_path))
+    gobot.import_mjcf_scene(str(source), "res://rp_arm.jscn", name="rp_arm")
+    ctx = gobot.app.context()
+    ctx.set_project_path(str(tmp_path))
+    ctx.load_scene("res://rp_arm.jscn")
+    try:
+        snap = ctx.compile_physics_scene_snapshot()
+    finally:
+        ctx.clear_scene()
+    for robot in snap["robots"]:
+        for joint in robot["joints"]:
+            joint["velocity_limit"] = 10.0
+            joint["acceleration_limit"] = 50.0
+    world = PlanningWorld.from_snapshot(snap, {"rp_arm": "base"})
+    assert not np.isfinite(world.lower_limits).any() and not np.isfinite(world.upper_limits).any()
+    # At u = 0.5: q_rev = pi/2, q_pris = 1.0 m -> tip at (0, 1.0, 0), r = 0.05 -> 10 mm penetration into box at y=1.06.
+    world.add_box("post", (0.04, 0.04, 0.20), (0.0, 1.06, 0.0))
+
+    traj = Trajectory(
+        times=np.array([0.0, 1.0], dtype=np.float64),
+        positions=np.array([[0.0, 0.0], [math.pi, 0.0]], dtype=np.float64),
+        velocities=np.array([[0.0, 4.0], [0.0, -4.0]], dtype=np.float64),
+        accelerations=np.zeros((2, 2), dtype=np.float64),
+    )
+    for sub in (1, 2, 4, 8, 16, 24):
+        ok, err = world.validate_trajectory(traj, margin=0.0, world_margin=0.0, collision_substeps=sub)
+        assert not ok, f"CCD missed 10 mm mid-segment Hermite penetration at substeps={sub}"
+        assert err is not None and "clearance" in err
+
+
+def test_validate_trajectory_snapshot_isolation_and_frame_shape_guard(simple_snapshot):
+    """validate_trajectory must pin one immutable snapshot and reject mismatched frames shapes safely."""
+    import threading
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Trajectory along x in [-0.5, 0.5], y = 0.35, z = 0.5 (tip sphere r=0.05).
+    q_path = np.array([[-0.5, 0.35, 0.0], [0.5, 0.35, 0.0]], dtype=np.float64)
+
+    # State A: obs_a blocks left half (x=-0.25), obs_b parked far away.
+    # State B: obs_a parked far away, obs_b blocks right half (x=+0.25).
+    # In EVERY valid snapshot (A or B), penetration is ~65 mm, so validate_trajectory must NEVER pass!
+    world.add_box("obs_a", (0.14, 0.14, 0.20), (-0.25, 0.35, 0.5))
+    world.add_box("obs_b", (0.14, 0.14, 0.20), (2.50, 2.50, 0.5))
+
+    # Defense-in-depth: frames built before adding a shape must fail shape check on newer world,
+    # while remaining valid on the pinned WorldSnapshot.
+    pinned = world._native.snapshot()
+    (old_frames,) = pinned.compute_frames(q_path, False)
+    world.add_sphere("extra_obs", 0.05, (2.0, -2.0, 0.5))
+    with pytest.raises(ValueError, match="frames shape mismatch"):
+        world._native.screen_aabbs(old_frames, world.pair_margins(0.0, 0.0), False, 1)
+    # Same frames still work cleanly against the pinned snapshot:
+    pinned.screen_aabbs(old_frames, pinned.pair_margins(0.0, 0.0), False, 1)
+    world.remove_obstacle("extra_obs")
+
+    stop = threading.Event()
+    errors: list[Exception] = []
+
+    def mutator():
+        toggle = False
+        try:
+            while not stop.is_set():
+                toggle = not toggle
+                if toggle:
+                    world.update_obstacle_pose("obs_b", (0.25, 0.35, 0.5))
+                    world.update_obstacle_pose("obs_a", (2.50, 2.50, 0.5))
+                    world.add_sphere("dyn_tmp", 0.03, (2.0, 2.0, 0.5))
+                else:
+                    world.update_obstacle_pose("obs_a", (-0.25, 0.35, 0.5))
+                    world.update_obstacle_pose("obs_b", (2.50, 2.50, 0.5))
+                    world.remove_obstacle("dyn_tmp")
+        except Exception as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=mutator, daemon=True)
+    t.start()
+    try:
+        for _ in range(150):
+            ok, err = world.validate_trajectory(q_path, margin=0.0, world_margin=0.0, collision_substeps=4)
+            assert not ok, "validate_trajectory falsely passed due to torn snapshot read!"
+            assert err is not None
     finally:
         stop.set()
         t.join(timeout=2.0)

@@ -509,12 +509,15 @@ public:
     // Lipschitz upper bounds (Schwarzer-Saha-Latombe) on point arc-length displacement.
     // Supports BOTH linear joint interpolation (velocities == nullptr) and cubic Hermite
     // curves (times != nullptr && velocities != nullptr), and BOTH convex and original meshes.
-    // Any undetected inter-sample dip below `margin` is bounded strictly by `< 0.5 * disp_tol`.
+    // When strict == false (default), any undetected inter-sample dip below `margin` is bounded
+    // strictly by `< 0.5 * disp_tol`. When strict == true, any interval that cannot be proven
+    // safe within `disp_tol` is conservatively reported as a violation.
     std::optional<ContinuousViolation> first_violation_continuous(
         const double* q_waypoints, int T, int substeps,
         const double* frames, const double* margins,
         bool verify_original = false, double disp_tol = 5e-4,
-        const double* times = nullptr, const double* velocities = nullptr) const {
+        const double* times = nullptr, const double* velocities = nullptr,
+        bool strict = false) const {
         const int64_t P = static_cast<int64_t>(pairs.size());
         const int64_t M = static_cast<int64_t>(mobile_shapes.size());
         const int64_t N = static_cast<int64_t>(shapes.size());
@@ -525,7 +528,8 @@ public:
         if (n_segs <= 0 || P == 0 || M == 0) return std::nullopt;
         const bool is_hermite = (times != nullptr && velocities != nullptr);
 
-        // Compute conservative max |q_j| over the trajectory for any downstream prismatic joints.
+        // Compute exact conservative max |q_j(u)| over the trajectory for any downstream prismatic joints
+        // (exact analytical extremum on every cubic Hermite segment, independent of finite joint limits).
         std::vector<double> q_abs_max(static_cast<size_t>(J), 0.0);
         for (int t = 0; t < T; ++t) {
             for (int j = 0; j < J; ++j) {
@@ -534,10 +538,19 @@ public:
             }
         }
         if (is_hermite) {
-            // Account for possible Hermite overshoot on prismatic joints via upper/lower limits if finite.
-            for (int j = 0; j < J; ++j) {
-                const double lim_b = std::max(std::abs(kin.lower()(j)), std::abs(kin.upper()(j)));
-                if (std::isfinite(lim_b)) q_abs_max[static_cast<size_t>(j)] = std::max(q_abs_max[static_cast<size_t>(j)], lim_b);
+            const auto& is_pris = kin.joint_prismatic();
+            for (int seg = 0; seg < n_segs; ++seg) {
+                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+                const double* qa = q_waypoints + seg * J;
+                const double* qb = q_waypoints + (seg + 1) * J;
+                const double* va = velocities + seg * J;
+                const double* vb = velocities + (seg + 1) * J;
+                for (int j = 0; j < J; ++j) {
+                    if (is_pris[static_cast<size_t>(j)]) {
+                        const double seg_max = hermite_scalar_abs_max(qa[j], qb[j], va[j], vb[j], h);
+                        q_abs_max[static_cast<size_t>(j)] = std::max(q_abs_max[static_cast<size_t>(j)], seg_max);
+                    }
+                }
             }
         }
 
@@ -760,7 +773,19 @@ public:
                         }
                         break;
                     }
-                    if ((d0 - req) + (d1 - req) > delta_ab || delta_ab <= disp_tol) continue;
+                    if ((d0 - req) + (d1 - req) > delta_ab) continue;
+                    if (delta_ab <= disp_tol) {
+                        if (strict) {
+                            std::lock_guard<std::mutex> lk(hit_mutex);
+                            if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                earliest_s.store(s, std::memory_order_relaxed);
+                                best_hit = ContinuousViolation{seg, 0.5 * (u_start + u_end), p,
+                                                               0.5 * (d0 + d1 - delta_ab)};
+                            }
+                            break;
+                        }
+                        continue;
+                    }
 
                     // Recursive Conservative Advancement bisection along the exact curve.
                     stack.clear();
@@ -787,12 +812,34 @@ public:
                             break;
                         }
                         const double dL = pair_disp_bound(seg, cur.u0, um, sa, sb);
-                        if (dL > disp_tol && (cur.d0 - req) + (dm - req) <= dL) {
-                            stack.push_back({cur.u0, um, cur.d0, dm});
+                        if ((cur.d0 - req) + (dm - req) <= dL) {
+                            if (dL > disp_tol) {
+                                stack.push_back({cur.u0, um, cur.d0, dm});
+                            } else if (strict) {
+                                std::lock_guard<std::mutex> lk(hit_mutex);
+                                if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                    earliest_s.store(s, std::memory_order_relaxed);
+                                    best_hit = ContinuousViolation{seg, 0.5 * (cur.u0 + um), p,
+                                                                   0.5 * (cur.d0 + dm - dL)};
+                                }
+                                stack.clear();
+                                break;
+                            }
                         }
                         const double dR = pair_disp_bound(seg, um, cur.u1, sa, sb);
-                        if (dR > disp_tol && (dm - req) + (cur.d1 - req) <= dR) {
-                            stack.push_back({um, cur.u1, dm, cur.d1});
+                        if ((dm - req) + (cur.d1 - req) <= dR) {
+                            if (dR > disp_tol) {
+                                stack.push_back({um, cur.u1, dm, cur.d1});
+                            } else if (strict) {
+                                std::lock_guard<std::mutex> lk(hit_mutex);
+                                if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                    earliest_s.store(s, std::memory_order_relaxed);
+                                    best_hit = ContinuousViolation{seg, 0.5 * (um + cur.u1), p,
+                                                                   0.5 * (dm + cur.d1 - dR)};
+                                }
+                                stack.clear();
+                                break;
+                            }
                         }
                     }
                 }
@@ -1441,6 +1488,68 @@ public:
         }
         out.push_back(path.back());
         return out;
+    }
+
+    // Atomic collision validation (FK + AABB screen + discrete check + continuous CCD for convex
+    // and optional original mesh) executed entirely on this immutable WorldSnapshot.
+    struct ValidationResult {
+        bool valid = true;
+        std::string reason;
+    };
+
+    ValidationResult validate_trajectory_collision(
+        const double* q_waypoints, int T,
+        const double* samples, int64_t S, int substeps,
+        double margin, double world_margin,
+        bool verify_original = true, double disp_tol = 5e-4,
+        const double* times = nullptr, const double* velocities = nullptr,
+        bool strict_ccd = false) const {
+        if (pairs.empty() || T < 2 || S <= 0) return {true, ""};
+        const int64_t N = static_cast<int64_t>(shapes.size());
+        const auto margins = pair_margins(margin, world_margin);
+        std::vector<double> frames(static_cast<size_t>(S * N * 12));
+        compute_frames(samples, S, frames.data());
+
+        std::vector<int64_t> rows, pids;
+        screen_aabbs(frames.data(), S, margins.data(), false, substeps, rows, pids);
+        if (!rows.empty()) {
+            auto hit = first_violation_indexed(frames.data(), S, rows.data(), pids.data(),
+                                               static_cast<int64_t>(rows.size()), margins.data(), false);
+            if (hit.has_value()) {
+                const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
+                return {false, "convex clearance failed on segment " + std::to_string(seg)
+                               + ", pair " + pair_display_name(hit->second)};
+            }
+        }
+        auto ccd = first_violation_continuous(
+            q_waypoints, T, substeps, frames.data(), margins.data(),
+            false, disp_tol, times, velocities, strict_ccd);
+        if (ccd.has_value()) {
+            return {false, "continuous convex clearance failed on segment " + std::to_string(ccd->seg)
+                           + ", pair " + pair_display_name(ccd->pair_id)};
+        }
+        if (verify_original && has_mesh) {
+            rows.clear();
+            pids.clear();
+            screen_aabbs(frames.data(), S, margins.data(), true, substeps, rows, pids);
+            if (!rows.empty()) {
+                auto hit = first_violation_indexed(frames.data(), S, rows.data(), pids.data(),
+                                                   static_cast<int64_t>(rows.size()), margins.data(), true);
+                if (hit.has_value()) {
+                    const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
+                    return {false, "mesh clearance failed on segment " + std::to_string(seg)
+                                   + ", pair " + pair_display_name(hit->second)};
+                }
+            }
+            auto ccd_m = first_violation_continuous(
+                q_waypoints, T, substeps, frames.data(), margins.data(),
+                true, disp_tol, times, velocities, strict_ccd);
+            if (ccd_m.has_value()) {
+                return {false, "continuous mesh clearance failed on segment " + std::to_string(ccd_m->seg)
+                               + ", pair " + pair_display_name(ccd_m->pair_id)};
+            }
+        }
+        return {true, ""};
     }
 };
 
