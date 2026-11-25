@@ -180,6 +180,16 @@ class PlanningScene:
         if len(set(self.joint_names)) != len(self.joint_names):
             raise ValueError("joint names must be unique within each robot")
         self.joint_names = tuple(self.joint_names)
+        num_bodies = len(self.links)
+        num_joints = len(self.joint_names)
+        self.body_ancestor = torch.zeros((num_bodies, num_joints), dtype=torch.bool, device=device)
+        self.joint_is_prismatic = torch.zeros((num_joints,), dtype=torch.bool, device=device)
+        body_offset = 0
+        for kin, _, joint_slice in self.kinematics:
+            n_b = len(kin.body_names)
+            self.body_ancestor[body_offset:body_offset + n_b, joint_slice] = kin.body_ancestor
+            self.joint_is_prismatic[joint_slice] = kin.joint_is_prismatic
+            body_offset += n_b
         self.lower, self.upper = torch.cat(lower), torch.cat(upper)
         self.speed = self.tensor(speeds)
         # Continuous joints are unbounded regardless of imported placeholder ranges.
@@ -361,6 +371,10 @@ class PlanningScene:
         return batch
 
     def poses(self, q):
+        if len(self.kinematics) == 1:
+            kin, (position, rotation), joint_slice = self.kinematics[0]
+            return kin.poses(position.expand(q.shape[:-1] + (3,)),
+                             rotation.expand(q.shape[:-1] + (3, 3)), q[..., joint_slice])
         all_positions, all_rotations = [], []
         for kin, (position, rotation), joint_slice in self.kinematics:
             p, r = kin.poses(position.expand(q.shape[:-1] + (3,)),
@@ -368,6 +382,22 @@ class PlanningScene:
             all_positions.append(p)
             all_rotations.append(r)
         return torch.cat(all_positions, dim=-2), torch.cat(all_rotations, dim=-3)
+
+    def poses_and_joints(self, q):
+        if len(self.kinematics) == 1:
+            kin, (position, rotation), joint_slice = self.kinematics[0]
+            return kin.poses_and_joints(position.expand(q.shape[:-1] + (3,)),
+                                        rotation.expand(q.shape[:-1] + (3, 3)), q[..., joint_slice])
+        all_positions, all_rotations, all_origins, all_axes = [], [], [], []
+        for kin, (position, rotation), joint_slice in self.kinematics:
+            p, r, o, a = kin.poses_and_joints(position.expand(q.shape[:-1] + (3,)),
+                                              rotation.expand(q.shape[:-1] + (3, 3)), q[..., joint_slice])
+            all_positions.append(p)
+            all_rotations.append(r)
+            all_origins.append(o)
+            all_axes.append(a)
+        return (torch.cat(all_positions, dim=-2), torch.cat(all_rotations, dim=-3),
+                torch.cat(all_origins, dim=-2), torch.cat(all_axes, dim=-2))
 
     def distances(self, q):
         if not self.has_collision_pairs:

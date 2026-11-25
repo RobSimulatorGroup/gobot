@@ -147,10 +147,14 @@ class _Bounds:
         # Halfspaces are always candidates. Avoid transforming their infinite bounds.
         limits = np.array([s.geometry.bounds(original) if s.kind != 6 else np.zeros((2, 3))
                            for s in shapes], dtype=np.float64)
-        self.center = (limits[:, 1] + limits[:, 0]) * 0.5
-        self.half = (limits[:, 1] - limits[:, 0]) * 0.5
-        self.fixed_bounds = self.transform(frames.double().numpy(), self.center, self.half)
-        self.center, self.half = self.center[moving], self.half[moving]
+        center = (limits[:, 1] + limits[:, 0]) * 0.5
+        half = (limits[:, 1] - limits[:, 0]) * 0.5
+        fixed_lo, fixed_hi = self.transform(frames.double().numpy(), center, half)
+        self.fixed_lo = np.ascontiguousarray(fixed_lo, dtype=np.float64)
+        self.fixed_hi = np.ascontiguousarray(fixed_hi, dtype=np.float64)
+        self.fixed_bounds = (self.fixed_lo, self.fixed_hi)
+        self.center = np.ascontiguousarray(center[moving], dtype=np.float64)
+        self.half = np.ascontiguousarray(half[moving], dtype=np.float64)
 
     @staticmethod
     def transform(frames, centers, half):
@@ -162,32 +166,11 @@ class _Bounds:
         extent += 16 * np.finfo(np.float64).eps * (1 + scale)
         return center - extent, center + extent
 
-    @staticmethod
-    def overlaps(lo, hi, endpoints, planes, thresholds):
-        i, j = endpoints.T
-        gap = np.maximum(lo[:, i] - hi[:, j], lo[:, j] - hi[:, i])
-        return planes | ~(gap > thresholds[:, None]).any(axis=-1)
-
     def candidates(self, frames, moving, endpoints, planes, thresholds, group_size=1):
-        shape = (len(frames), len(self.fixed_bounds[0]), 3)
-        lo, hi = (np.broadcast_to(x, shape).copy() for x in self.fixed_bounds)
-        lo[:, moving], hi[:, moving] = self.transform(frames[:, moving], self.center, self.half)
-        if group_size == 1 or len(frames) < 2:
-            return np.nonzero(self.overlaps(lo, hi, endpoints, planes, thresholds))
-
-        # Include every sampled pose in its segment's bounds. When validation
-        # appends the final waypoint, fold it into the last segment.
-        starts = np.arange(0, len(frames) - 1, group_size)
-        possible = self.overlaps(np.minimum.reduceat(lo, starts), np.maximum.reduceat(hi, starts),
-                                 endpoints, planes, thresholds)
-        rows, pairs = [], []
-        for start, stop, mask in zip(starts, [*starts[1:], len(frames)], possible):
-            selected = np.flatnonzero(mask)
-            hit, col = np.nonzero(self.overlaps(lo[start:stop], hi[start:stop], endpoints[selected],
-                                                planes[selected], thresholds[selected]))
-            rows.append(start + hit)
-            pairs.append(selected[col])
-        return np.concatenate(rows), np.concatenate(pairs)
+        return native.screen_aabbs(
+            frames, endpoints, planes, moving, self.center, self.half,
+            self.fixed_lo, self.fixed_hi, thresholds, group_size,
+        )
 
 
 class CollisionModel:
@@ -213,13 +196,18 @@ class CollisionModel:
             self.pairs = query_factory(shapes, pairs)
         if pairs:
             self.endpoints = torch.tensor(pairs)
+            self._endpoints_np = np.ascontiguousarray(self.endpoints.numpy(), dtype=np.int64)
             self.indices = self.endpoints.flatten()
-            self.moving = np.asarray(mobile, dtype=np.intp)
-            self.planes = np.array([shapes[i].kind == 6 or shapes[j].kind == 6 for i, j in pairs])
+            self.moving = np.asarray(mobile, dtype=np.int64)
+            self.planes = np.ascontiguousarray([shapes[i].kind == 6 or shapes[j].kind == 6 for i, j in pairs],
+                                               dtype=np.bool_)
             self.frames = torch.stack([s.frame for s in shapes])
             self.mobile_ids = torch.from_numpy(self.moving)
             self.bodies = torch.tensor([shapes[i].body for i in mobile])
             self.mobile_frames = self.frames[self.mobile_ids]
+            shape_bodies = torch.tensor([-1 if s.body is None else s.body for s in shapes], dtype=torch.long)
+            self._pair_body_a = shape_bodies[self.endpoints[:, 0]]
+            self._pair_body_b = shape_bodies[self.endpoints[:, 1]]
             # The final entry in the frame Jacobian is zero for static obstacles.
             mobile_index = torch.full((len(shapes),), len(mobile))
             mobile_index[self.mobile_ids] = torch.arange(len(mobile))
@@ -240,14 +228,14 @@ class CollisionModel:
         return world.index_copy(-3, self.mobile_ids, moving)
 
     def _selected_query(self, frames, rows, pairs, original):
-        packed = frames[rows[:, None], self.endpoints.numpy()[pairs]]
-        return self.pairs.query(packed[:, None], original, math.inf, pairs)[:, 0]
+        return self.pairs.query_indexed(frames, self._endpoints_np, rows, pairs, original)
 
     def nearby(self, frames, thresholds, original=False, group_size=1):
         """Return packed (sample, pair, query result) for conservative AABB candidates."""
-        array = frames.detach().numpy()
-        rows, pairs = self.bounds[original].candidates(array, self.moving, self.endpoints.numpy(),
-                                                       self.planes, thresholds.detach().numpy(), group_size)
+        array = np.ascontiguousarray(frames.detach().numpy(), dtype=np.float64)
+        thr = np.ascontiguousarray(thresholds.detach().numpy(), dtype=np.float64)
+        rows, pairs = self.bounds[original].candidates(array, self.moving, self._endpoints_np,
+                                                       self.planes, thr, group_size)
         if len(rows):
             data = self._selected_query(array, rows, pairs, original)
             values = torch.from_numpy(data).to(frames.dtype)
@@ -255,10 +243,61 @@ class CollisionModel:
             values = frames.new_empty((0, 1 if original else 10))
         return torch.from_numpy(rows), torch.from_numpy(pairs), values
 
-    def constraint_rows(self, poses, samples, margins, buffer, linearize, group_size, segment_minimum=False):
+    def _analytic_gradient(self, scene, frames, rows, ids, data, joint_origins, joint_axes):
+        """Exact geometric Jacobian of (margin - signed_distance) using already-computed FK."""
+        local_a, local_b, normal = data[:, 1:4], data[:, 4:7], data[:, 7:10]
+        ep = self.endpoints[ids]
+        fa = frames[rows, ep[:, 0]]
+        wa = (fa[:, :, :3] @ local_a.unsqueeze(-1)).squeeze(-1) + fa[:, :, 3]
+        o = joint_origins[rows]
+        a = joint_axes[rows]
+        n = normal[:, None, :]
+        is_pris = scene.joint_is_prismatic
+        mask_a = scene.body_ancestor[self._pair_body_a[ids]]
+        rev_a = (torch.linalg.cross(a, wa[:, None, :] - o, dim=-1) * n).sum(dim=-1)
+        pris_a = (a * n).sum(dim=-1)
+        da = torch.where(is_pris, pris_a, rev_a)
+        gradient = -torch.where(mask_a, da, 0.0)
+        if self.self_count:
+            self_mask = ids < self.self_count
+            if self_mask.any():
+                s_rows = rows[self_mask]
+                s_ids = ids[self_mask]
+                fb = frames[s_rows, ep[self_mask, 1]]
+                wb = (fb[:, :, :3] @ local_b[self_mask].unsqueeze(-1)).squeeze(-1) + fb[:, :, 3]
+                os_ = joint_origins[s_rows]
+                as_ = joint_axes[s_rows]
+                ns_ = normal[self_mask, None, :]
+                mask_b = scene.body_ancestor[self._pair_body_b[s_ids]]
+                rev_b = (torch.linalg.cross(as_, wb[:, None, :] - os_, dim=-1) * ns_).sum(dim=-1)
+                pris_b = (as_ * ns_).sum(dim=-1)
+                db = torch.where(is_pris, pris_b, rev_b)
+                gradient[self_mask] += torch.where(mask_b, db, 0.0)
+        return gradient
+
+    def constraint_rows(self, poses, samples, margins, buffer, linearize, group_size, segment_minimum=False,
+                        *, scene=None, precomputed=None, return_extra=False, check_margins=None):
         """Sparse d_safe - d and joint derivatives, in sample then pair order."""
-        frames = self.world_frames(*poses(samples))
+        if scene is None:
+            scene = getattr(poses, "__self__", None)
+        joint_origins = joint_axes = None
+        if precomputed is not None:
+            p, r, joint_origins, joint_axes = precomputed
+        elif linearize and scene is not None and hasattr(scene, "poses_and_joints"):
+            p, r, joint_origins, joint_axes = scene.poses_and_joints(samples)
+        else:
+            p, r = poses(samples)
+        frames = self.world_frames(p, r)
         rows, ids, data = self.nearby(frames, margins + buffer, group_size=group_size)
+        seg_ok = None
+        if return_extra:
+            n_segs = len(samples) // group_size
+            seg_ok = torch.ones((n_segs,), dtype=torch.bool, device=samples.device)
+            if len(rows):
+                raw_margins = margins if check_margins is None else check_margins
+                failed = ~clearance_mask(data[:, 0], raw_margins[ids])
+                if failed.any():
+                    seg_ok[rows[failed] // group_size] = False
         residual = margins[ids] - data[:, 0]
         near = (residual > -buffer).nonzero().flatten()
         if segment_minimum and len(near):
@@ -271,43 +310,54 @@ class CollisionModel:
         rows, ids, residual = rows[near], ids[near], residual[near]
         gradient = None
         if linearize and len(rows):
-            # Share one FK Jacobian per active configuration. Contract the selected
-            # frames with the witnesses from the same narrow-phase query.
-            unique, inverse = torch.unique_consecutive(rows, return_inverse=True)
-            def moving_frames(q):
-                return self.moving_frames(*poses(q))
+            if joint_origins is not None and scene is not None:
+                gradient = self._analytic_gradient(scene, frames, rows, ids, data[near], joint_origins, joint_axes)
+            else:
+                # Fallback for custom pose callables without analytic joint axes.
+                unique, inverse = torch.unique_consecutive(rows, return_inverse=True)
 
-            pose_jac = vmap(jacfwd(moving_frames))(samples[unique])
-            pose_jac = torch.cat((pose_jac, torch.zeros_like(pose_jac[:, :1])), dim=1)
-            pair_jac = pose_jac[inverse[:, None], self.pair_mobile_indices[ids]]
-            gradient = -torch.einsum("nkij,nkijq->nq", witness_coefficients(data[near]), pair_jac)
+                def moving_frames(q):
+                    return self.moving_frames(*poses(q))
+
+                pose_jac = vmap(jacfwd(moving_frames))(samples[unique])
+                pose_jac = torch.cat((pose_jac, torch.zeros_like(pose_jac[:, :1])), dim=1)
+                pair_jac = pose_jac[inverse[:, None], self.pair_mobile_indices[ids]]
+                gradient = -torch.einsum("nkij,nkijq->nq", witness_coefficients(data[near]), pair_jac)
+        if return_extra:
+            return rows, residual, gradient, (p, r), seg_ok
         return rows, residual, gradient
 
     def trajectory_check(self, margins, original=False):
         """Make a sampled clearance check for one trajectory and geometry model."""
         previous = None
+        margins_np = np.ascontiguousarray(margins.detach().numpy(), dtype=np.float64)
 
         def check(positions, rotations, substeps):
             nonlocal previous
             if not self.labels:
                 return None
             frames = self.world_frames(positions, rotations)
+            array = np.ascontiguousarray(frames.detach().numpy(), dtype=np.float64)
             if previous is not None:
                 sample, pair, last_substeps = previous
                 if last_substeps == substeps and sample < len(frames):
-                    data = self._selected_query(frames.detach().numpy(), np.array([sample]), np.array([pair]), original)
-                    distance = frames.new_tensor(data[0, 0])
-                    if not clearance_mask(distance, margins[pair]):
+                    hit = self.pairs.first_violation(
+                        array, self._endpoints_np, np.array([sample], dtype=np.int64),
+                        np.array([pair], dtype=np.int64), margins_np, original,
+                    )
+                    if hit is not None:
                         return sample, self.names[pair]
                 previous = None
 
-            rows, pairs, data = self.nearby(frames, margins, original, substeps)
-            failed = (~clearance_mask(data[:, 0], margins[pairs])).nonzero()
-            if len(failed):
-                index = failed[0, 0]
-                sample, pair = int(rows[index]), int(pairs[index])
-                previous = sample, pair, substeps
-                return sample, self.names[pair]
+            rows, pairs = self.bounds[original].candidates(
+                array, self.moving, self._endpoints_np, self.planes, margins_np, substeps,
+            )
+            if len(rows):
+                hit = self.pairs.first_violation(array, self._endpoints_np, rows, pairs, margins_np, original)
+                if hit is not None:
+                    sample, pair = int(hit[0]), int(hit[1])
+                    previous = sample, pair, substeps
+                    return sample, self.names[pair]
             return None
 
         return check
@@ -316,8 +366,16 @@ class CollisionModel:
         ok = torch.ones((*positions.shape[:-2], len(self.labels)), dtype=torch.bool)
         if self.labels:
             frames = self.world_frames(positions, rotations).reshape(-1, len(self.frames), 3, 4)
-            rows, pairs, data = self.nearby(frames, margins, original)
-            ok.view(-1, len(self.labels))[rows, pairs] = clearance_mask(data[:, 0], margins[pairs])
+            array = np.ascontiguousarray(frames.detach().numpy(), dtype=np.float64)
+            margins_np = np.ascontiguousarray(margins.detach().numpy(), dtype=np.float64)
+            rows, pairs = self.bounds[original].candidates(
+                array, self.moving, self._endpoints_np, self.planes, margins_np, 1,
+            )
+            if len(rows):
+                passed = self.pairs.clearance_mask_indexed(
+                    array, self._endpoints_np, rows, pairs, margins_np, original,
+                )
+                ok.view(-1, len(self.labels))[torch.from_numpy(rows), torch.from_numpy(pairs)] = torch.from_numpy(passed)
         return ok
 
     def distances(self, positions, rotations, verify=False, clearance=math.inf):

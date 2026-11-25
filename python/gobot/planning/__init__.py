@@ -12,7 +12,7 @@ from ._geometry import clearance_mask as _clearance_mask, rotation_log
 from ._scene import Capsule, PlanningScene
 from ._solver import solve_rows
 from ._trajectory import (collision_penalty, grid_substeps, interpolation, make_segment_constraints,
-                          optimize, run_trajectories, sqp_segment_rows)
+                          optimize, run_trajectories, sqp_segment_rows, sqp_segment_rows_merged)
 
 __all__ = ["BatchedIKResult", "BatchedTrajectoryResult", "Capsule", "IKResult", "Planner", "PlannerBatch",
            "PoseTarget", "TrajectoryResult"]
@@ -209,23 +209,27 @@ class Planner:
         return self._trajectory_failure(q, dt, world_margin, collision_substeps,
                                         longest_valid_segment_length, checks) is None
 
-    def _trajectory_failure(self, q, dt, world_margin, substeps, max_length, checks):
+    def _trajectory_failure(self, q, dt, world_margin, substeps, max_length, checks,
+                            *, precomputed_poses=None, skip_convex=False):
         scene = self._scene
         if not torch.isfinite(q).all() or not self._bounded(q):
             return "trajectory violates joint limits"
         if not self._speed_bounded(q.diff(dim=0).abs() / dt):
             return "trajectory violates joint velocity limits"
         substeps = grid_substeps(q, substeps, max_length)
-        samples = interpolation(q, substeps)
-
-        p, r = scene.poses(samples)
-        for check in checks:
+        if precomputed_poses is not None:
+            p, r = precomputed_poses
+        else:
+            samples = interpolation(q, substeps)
+            p, r = scene.poses(samples)
+        active_checks = checks[1:] if (skip_convex and scene.distance_models) else checks
+        for check in active_checks:
             hit = check(p, r, substeps)
             if hit is not None:
                 sample, pair = hit
                 segment = min(sample // substeps, len(q) - 2)
                 return f"collision clearance on segment {segment}, pair {pair}"
-        if scene.swept_pairs:
+        if scene.swept_pairs and not skip_convex:
             ok = _clearance_mask(scene.swept_world_distances(q[:-1], q[1:]), world_margin)
             if not ok.all():
                 segment, pair = (~ok).nonzero()[0].tolist()
@@ -278,9 +282,10 @@ class Planner:
         jobs = [self._trajectory_job(*request, dt, waypoints, margin, world_margin, collision_substeps,
                                      iterations, fixed, solver, longest_valid_segment_length, constraints)
                 for request in requests]
-        evaluate = partial(sqp_segment_rows, self._scene, dt, self._scene.pair_margins(margin, world_margin),
-                           world_margin, constraints)
-        return run_trajectories(jobs, evaluate)
+        pair_margins = self._scene.pair_margins(margin, world_margin)
+        evaluate = partial(sqp_segment_rows, self._scene, dt, pair_margins, world_margin, constraints)
+        merged_evaluate = partial(sqp_segment_rows_merged, self._scene, dt, pair_margins, world_margin, constraints)
+        return run_trajectories(jobs, evaluate, merged_evaluate=merged_evaluate)
 
     def _trajectory_job(self, start, goal, seed, waypoint_targets, dt, waypoints, margin, world_margin,
                         collision_substeps, iterations, fixed, solver, longest_valid_segment_length, constraints):
@@ -332,10 +337,11 @@ class Planner:
             interior = initial[fixed:-fixed].clamp(scene.lower, scene.upper)
         initial = torch.cat((start.expand(fixed, -1), interior, goal.expand(fixed, -1)))
 
+        goal_p, goal_r = p[1:], r[1:]
         validation_substeps = 2 * collision_substeps
         failure = None
 
-        def feasible(positions):
+        def feasible(positions, segment_eval=None):
             nonlocal failure
             for index, error in targets:
                 residual = error(positions[index])
@@ -345,9 +351,20 @@ class Planner:
                     kind = "Cartesian pose" if cartesian else "joint position"
                     failure = f"{kind} tolerance at waypoint {index}"
                     return False
+            precomputed = None
+            skip_convex = False
+            if (segment_eval is not None and segment_eval.poses is not None
+                    and segment_eval.substeps == grid_substeps(positions, validation_substeps,
+                                                               longest_valid_segment_length)):
+                seg_p, seg_r = segment_eval.poses
+                precomputed = (torch.cat((seg_p, goal_p), dim=0), torch.cat((seg_r, goal_r), dim=0))
+                skip_convex = bool(segment_eval.convex_ok)
             failure = self._trajectory_failure(positions, dt, world_margin, validation_substeps,
-                                               longest_valid_segment_length, checks)
+                                               longest_valid_segment_length, checks,
+                                               precomputed_poses=precomputed, skip_convex=skip_convex)
             return failure is None
+
+        feasible.accepts_segment = True
 
         if not interior.numel():
             q = initial if feasible(initial) else None
@@ -356,12 +373,17 @@ class Planner:
             attempts = [(collision_substeps, False), (validation_substeps, False)]
             if solver == "sqp_fast" and scene.distance_models and scene.has_collision_pairs:
                 attempts.insert(0, (validation_substeps, True))
+            attempt_seed = initial
             for substeps, segment_minimum in attempts:
-                q = yield from optimize(scene, initial, dt, margin, substeps, iterations, feasible,
+                q = yield from optimize(scene, attempt_seed, dt, margin, substeps, iterations, feasible,
                                         fixed, solver, targets, longest_valid_segment_length, constraints,
                                         segment_minimum)
                 if q is not None or not scene.has_collision_pairs:
                     break
+                warm = getattr(feasible, "warm_start", None)
+                if warm is not None:
+                    attempt_seed = warm
+                    feasible.warm_start = None
         if q is None:
             return TrajectoryResult(None, dt, failure or "trajectory optimization found no feasible path from this seed",
                                     initial_positions=initial)
