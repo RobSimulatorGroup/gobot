@@ -515,11 +515,12 @@ class MotionPlanner:
         link: Link | None = None,
         samples: int = 64,
         draw_witnesses: bool = True,
+        max_witnesses: int = 6,
         seed_color: tuple[float, float, float, float] = (1.0, 0.35, 0.67, 1.0),
         plan_color: tuple[float, float, float, float] = (0.10, 0.95, 0.90, 1.0),
         witness_color: tuple[float, float, float, float] = (1.0, 0.25, 0.15, 1.0),
     ) -> list:
-        """Render seed path, smooth optimized trajectory, and active collision witnesses.
+        """Render seed path, smooth optimized trajectory, and closest collision witnesses.
 
         Works with both ``gobot.render`` (``DebugArrow`` + ``set_debug_arrows``) and any
         debug-draw object exposing ``draw_line(start, end, color)``.
@@ -541,11 +542,22 @@ class MotionPlanner:
             for a, b in zip(pts[:-1], pts[1:]):
                 if np.any(a != b):
                     segments.append((a, b, plan_color, False))
-        if draw_witnesses and result.diagnostics.witnesses is not None:
-            for row in result.diagnostics.witnesses:
-                a, b = row[:3], row[3:6]
-                if np.any(a != b):
-                    segments.append((a, b, witness_color, True))
+        if draw_witnesses and max_witnesses > 0 and result.diagnostics.witnesses is not None:
+            rows = np.asarray(result.diagnostics.witnesses, dtype=np.float64)
+            if rows.ndim == 2 and len(rows) > 0:
+                dists = np.linalg.norm(rows[:, 3:6] - rows[:, :3], axis=-1)
+                order = np.argsort(dists)
+                picked: list[np.ndarray] = []
+                for idx in order:
+                    if dists[idx] <= 1e-6:
+                        continue
+                    mid = 0.5 * (rows[idx, :3] + rows[idx, 3:6])
+                    if any(np.linalg.norm(mid - p) < 0.06 for p in picked):
+                        continue
+                    picked.append(mid)
+                    segments.append((rows[idx, :3], rows[idx, 3:6], witness_color, False))
+                    if len(picked) >= max_witnesses:
+                        break
 
         if hasattr(debug_draw, "set_debug_arrows") and hasattr(debug_draw, "DebugArrow"):
             arrows = [
