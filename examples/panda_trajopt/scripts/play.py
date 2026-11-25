@@ -1,24 +1,22 @@
-"""Solve from the live scene and replay the validated joint trajectory in Play."""
+"""Solve from the live scene in a background thread and replay the retimed trajectory in Play."""
 
-import json
+from __future__ import annotations
+
 from pathlib import Path
-import subprocess
 import sys
-import tempfile
+import threading
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 import gobot
 from gobot import render
 
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 
-SEED_COLOR = (1.0, 0.35, 0.67, 1.0)
-PLAN_COLOR = (0.10, 0.95, 0.90, 1.0)
-
-
-def path_segments(points, color):
-    return [render.DebugArrow(a, b - a, color=color, show_head=False)
-            for a, b in zip(points, points[1:]) if np.any(a != b)]
+from plan import HAND, solve  # noqa: E402
 
 
 def create_seed_visuals(parent, links):
@@ -35,11 +33,30 @@ def create_seed_visuals(parent, links):
     return frames
 
 
+def sample_piecewise_linear(waypoints: np.ndarray, fraction: float) -> np.ndarray:
+    u = float(np.clip(fraction, 0.0, 1.0)) * (len(waypoints) - 1)
+    idx = min(int(u), len(waypoints) - 2)
+    alpha = u - idx
+    return (1.0 - alpha) * waypoints[idx] + alpha * waypoints[idx + 1]
+
+
+def fk_poses_xyzw(world, q_batch: np.ndarray, link_ids: list[int]) -> np.ndarray:
+    pos, rot = world.forward_kinematics(q_batch)
+    pos_sel = pos[:, link_ids, :]
+    rot_sel = rot[:, link_ids, :, :]
+    quat = Rotation.from_matrix(rot_sel.reshape(-1, 3, 3)).as_quat().reshape(*pos_sel.shape[:-1], 4)
+    return np.concatenate((pos_sel, quat), axis=-1).astype(np.float32)
+
+
 class Script(gobot.NodeScript):
     def _ready(self):
-        self.worker = None
-        self.folder = tempfile.TemporaryDirectory(prefix="gobot-panda-")
-        self.poses = None
+        self.plan_out = None
+        self.plan_error = None
+        self.plan_ready = threading.Event()
+        self.seed_frames = None
+        self.link_ids = []
+        self.links = []
+
         snapshot = self.context.compile_physics_scene_snapshot()
         robot = next(robot for robot in snapshot["robots"] if robot["name"] == "panda")
         self.links_by_name = {
@@ -48,72 +65,84 @@ class Script(gobot.NodeScript):
         }
         self.previous_backend = self.context.backend_type
         self.context.backend_type = gobot.PhysicsBackendType.Null
-        request = Path(self.folder.name) / "request.json"
-        self.result = request.with_name("result.npz")
-        request.write_text(json.dumps({
-            "snapshot": snapshot,
-            "start": self.get_node("Start").position,
-            "goal": self.get_node("Goal").position,
-            "inspection": self.get_node("Inspection").position,
-        }, default=lambda array: array.tolist()))
-        script = Path(self.context.project_path) / "scripts" / "plan.py"
-        self.worker = subprocess.Popen([sys.executable, str(script), str(request), str(self.result)])
-        print("Panda TrajOpt: planning through Inspection to Goal...")
+
+        start = np.asarray(self.get_node("Start").position, dtype=np.float64)
+        goal = np.asarray(self.get_node("Goal").position, dtype=np.float64)
+        inspection = np.asarray(self.get_node("Inspection").position, dtype=np.float64)
+
+        def _worker():
+            try:
+                self.plan_out = solve(snapshot, start, goal, inspection, backend="coal")
+            except Exception as error:
+                self.plan_error = str(error)
+            finally:
+                self.plan_ready.set()
+
+        self.worker = threading.Thread(target=_worker, daemon=True)
+        self.worker.start()
+        print("Panda TrajOpt: planning through Inspection to Goal in background thread...")
+
+    def _finish_planning(self):
+        if self.plan_error is not None:
+            print(f"Panda TrajOpt failed: {self.plan_error}")
+            self.plan_error = None
+            return
+        out = self.plan_out
+        world = out["world"]
+        planner = out["planner"]
+        result = out["result"]
+        diag = result.diagnostics
+
+        self.world = world
+        self.result = result
+        self.links = [self.links_by_name[name] for name in out["links"]]
+        self.link_ids = [world.links[("panda", name)] for name in out["links"]]
+        self.seed_frames = create_seed_visuals(self.node, self.links)
+        planner.debug_draw(render, result, link=HAND, samples=96, draw_witnesses=True)
+        self.elapsed = 0.0
+
+        hits = out["seed_hits"] or "none"
+        clearance_mm = 1000.0 * out["world_clearance"]
+        inspection_mm = 1000.0 * out["inspection_error"]
+        inspection_deg = np.degrees(out["inspection_angle"])
+        print(
+            f"Panda TrajOpt (C++ SQP / Coal, {diag.total_ms:.1f} ms, {diag.qp_calls} QPs, "
+            f"strategy={diag.seed_strategy}): duration={result.trajectory.duration:.2f} s. "
+            f"Seed hits: {hits}. Inspection error: {inspection_mm:.3f} mm, {inspection_deg:.3f} deg. "
+            f"World clearance: {clearance_mm:.1f} mm. "
+            "Pink = seed, Cyan = retimed trajectory, Red = collision witnesses."
+        )
 
     def _process(self, delta):
-        if self.worker is not None:
-            status = self.worker.poll()
-            if status is None:
+        if self.seed_frames is None:
+            if not self.plan_ready.is_set():
                 return
-            self.worker = None
-            if status:
-                raise RuntimeError(f"Panda planner exited with status {status}")
-            with np.load(self.result) as plan:
-                if "error" in plan:
-                    print(f"Panda TrajOpt failed: {plan['error']}")
-                    return
-                hits = str(plan["seed_hits"]) or "none"
-                clearance_mm = 1000 * float(plan["world_clearance"])
-                inspection_mm = 1000 * float(plan["inspection_error"])
-                inspection_degrees = np.degrees(float(plan["inspection_angle"]))
-                self.links = [self.links_by_name[name] for name in plan["links"]]
-                self.seed_poses, self.poses = plan["poses"]
-                self.dt = float(plan["dt"])
-                seed_path, optimized_path = plan["paths"]
-            self.seed_frames = create_seed_visuals(self.node, self.links)
-            # Hide coincident surfaces, including at the common start and goal.
-            separation = np.linalg.norm(self.seed_poses[..., :3] - self.poses[..., :3], axis=-1)
-            alignment = np.abs((self.seed_poses[..., 3:] * self.poses[..., 3:]).sum(axis=-1))
-            self.seed_visible = (separation > 1e-5) | (alignment < 1 - 1e-6)
-            render.set_debug_arrows(path_segments(seed_path, SEED_COLOR)
-                                    + path_segments(optimized_path, PLAN_COLOR))
-            self.elapsed = 0.0
-            print(f"Panda TrajOpt (SQP / Coal): {len(optimized_path)} waypoints. Seed intersections: {hits}. "
-                  f"Inspection error: {inspection_mm:.3f} mm, {inspection_degrees:.3f} degrees. "
-                  f"Optimized sampled world clearance: {clearance_mm:.1f} mm. Translucent pink arm and path = seed. "
-                  "Solid arm and cyan path = optimized. Playing at quarter speed.")
-        if self.poses is None:
-            return
-        # Hold at each endpoint before following the same path in reverse.
-        last = len(self.poses) - 1
-        duration = last * self.dt
-        hold = 0.30
-        phase = self.elapsed % (2 * (duration + hold))
-        time = min(duration, max(0.0, min(phase, 2 * duration + hold - phase)))
-        frame = round(time / self.dt)
-        self.context.apply_link_poses(self.links, self.poses[frame])
-        for node, pose, visible in zip(self.seed_frames, self.seed_poses[frame],
-                                       self.seed_visible[frame], strict=True):
-            node.visible = bool(visible)
-            if visible:
+            self._finish_planning()
+            if self.seed_frames is None:
+                return
+
+        traj = self.result.trajectory
+        duration = max(traj.duration, 1e-6)
+        hold = 0.35
+        phase = self.elapsed % (2.0 * (duration + hold))
+        time = min(duration, max(0.0, min(phase, 2.0 * duration + hold - phase)))
+
+        q_opt, _, _ = traj.sample(time)
+        q_seed = sample_piecewise_linear(self.result.initial_positions, time / duration)
+        seed_poses, opt_poses = fk_poses_xyzw(self.world, np.stack((q_seed, q_opt), axis=0), self.link_ids)
+
+        self.context.apply_link_poses(self.links, opt_poses)
+        sep = np.linalg.norm(seed_poses[:, :3] - opt_poses[:, :3], axis=-1)
+        align = np.abs((seed_poses[:, 3:] * opt_poses[:, 3:]).sum(axis=-1))
+        visible = (sep > 1e-5) | (align < 1.0 - 1e-6)
+        for node, pose, show in zip(self.seed_frames, seed_poses, visible, strict=True):
+            node.visible = bool(show)
+            if show:
                 node.set_global_transform(pose[:3], (pose[6], *pose[3:6]))
-        self.elapsed += 0.25 * delta
+
+        self.elapsed += 0.5 * delta
 
     def _exit_tree(self):
-        if self.worker is not None:
-            self.worker.kill()
-            self.worker.wait()
-        self.folder.cleanup()
         render.clear_debug_arrows()
         if hasattr(self, "previous_backend"):
             self.context.backend_type = self.previous_backend

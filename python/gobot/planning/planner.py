@@ -507,17 +507,54 @@ class MotionPlanner:
         reasons = tuple(r.reason for r in final_results)
         return BatchPlanResult(final_results, positions, success, reasons, init_pos)
 
-    def debug_draw(self, debug_draw, result: PlanResult, *, link: Link | None = None,
-                   draw_witnesses: bool = True) -> None:
-        """Render seed path, optimized path, and active collision witnesses via RendererDebugDraw."""
+    def debug_draw(
+        self,
+        debug_draw,
+        result: PlanResult,
+        *,
+        link: Link | None = None,
+        samples: int = 64,
+        draw_witnesses: bool = True,
+        seed_color: tuple[float, float, float, float] = (1.0, 0.35, 0.67, 1.0),
+        plan_color: tuple[float, float, float, float] = (0.10, 0.95, 0.90, 1.0),
+        witness_color: tuple[float, float, float, float] = (1.0, 0.25, 0.15, 1.0),
+    ) -> list:
+        """Render seed path, smooth optimized trajectory, and active collision witnesses.
+
+        Works with both ``gobot.render`` (``DebugArrow`` + ``set_debug_arrows``) and any
+        debug-draw object exposing ``draw_line(start, end, color)``.
+        """
+        segments: list[tuple[np.ndarray, np.ndarray, tuple[float, float, float, float], bool]] = []
         if link is not None and result.initial_positions is not None:
             pts, _ = self.world.link_pose(result.initial_positions, link)
             for a, b in zip(pts[:-1], pts[1:]):
-                debug_draw.draw_line(a.tolist(), b.tolist(), (0.95, 0.35, 0.65, 1.0))
-        if link is not None and result.positions is not None:
-            pts, _ = self.world.link_pose(result.positions, link)
+                if np.any(a != b):
+                    segments.append((a, b, seed_color, False))
+        if link is not None and result.trajectory is not None:
+            traj = result.trajectory
+            if samples > traj.num_waypoints and traj.duration > 0.0:
+                ts = np.linspace(traj.times[0], traj.times[-1], samples)
+                q_vis, _, _ = traj.sample(ts)
+            else:
+                q_vis = traj.positions
+            pts, _ = self.world.link_pose(q_vis, link)
             for a, b in zip(pts[:-1], pts[1:]):
-                debug_draw.draw_line(a.tolist(), b.tolist(), (0.15, 0.85, 0.95, 1.0))
+                if np.any(a != b):
+                    segments.append((a, b, plan_color, False))
         if draw_witnesses and result.diagnostics.witnesses is not None:
             for row in result.diagnostics.witnesses:
-                debug_draw.draw_line(row[:3].tolist(), row[3:6].tolist(), (1.0, 0.25, 0.15, 1.0))
+                a, b = row[:3], row[3:6]
+                if np.any(a != b):
+                    segments.append((a, b, witness_color, True))
+
+        if hasattr(debug_draw, "set_debug_arrows") and hasattr(debug_draw, "DebugArrow"):
+            arrows = [
+                debug_draw.DebugArrow(a.tolist(), (b - a).tolist(), color=color, show_head=head)
+                for a, b, color, head in segments
+            ]
+            debug_draw.set_debug_arrows(arrows)
+            return arrows
+
+        for a, b, color, _ in segments:
+            debug_draw.draw_line(a.tolist(), b.tolist(), color)
+        return segments

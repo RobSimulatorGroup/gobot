@@ -1,87 +1,162 @@
-"""Plan the Panda motion from a Gobot snapshot in a separate CPU process."""
+"""Plan the Panda inspection motion with the C++-backed gobot.planning pipeline."""
 
-import json
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from gobot.planning import MotionPlanner, MotionPlanRequest, PlanningWorld, PoseConstraint, SolverConfig
+from gobot.planning import (
+    MotionPlanner,
+    MotionPlanRequest,
+    PlanningWorld,
+    PoseConstraint,
+    SolverConfig,
+)
+
+ROBOT = "panda"
+HAND = (ROBOT, "panda_hand")
+LINK_NAMES = [f"panda_link{i}" for i in range(9)] + [HAND[1]]
+IGNORED_MOUNTS = (
+    ("panda_link0", "panda_link2"),
+    ("panda_link4", "panda_link6"),
+    ("panda_link7", "panda_hand"),
+)
+DOWN = np.array([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]], dtype=np.float64)
+START_SEED = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+INSPECTION_INDEX = 8
 
 
-def solve(snapshot, start, goal, inspection):
-    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"),
-              ("panda_link7", "panda_hand"))
-    world = PlanningWorld.from_snapshot(
-        snapshot, {"panda": "panda_link0"},
-        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+def build_world(snapshot: dict) -> PlanningWorld:
+    return PlanningWorld.from_snapshot(
+        snapshot,
+        {ROBOT: "panda_link0"},
+        ignored_link_pairs=[((ROBOT, a), (ROBOT, b)) for a, b in IGNORED_MOUNTS],
     )
-    planner = MotionPlanner(world, backend="coal")
-    hand = ("panda", "panda_hand")
-    down = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=np.float64)
-    seed = np.array([0, -0.5, 0, -2, 0, 1.5, -2.3], dtype=np.float64)
-    endpoints = []
-    for name, position in (("Start", start), ("Goal", goal)):
-        ik = planner.solve_ik(
-            [PoseConstraint(hand, position, down)],
-            seed=seed, margin=0.002, world_margin=0.025,
-        )
-        if not ik.success:
-            raise ValueError(f"{name} IK failed: {ik.reason}")
-        seed = ik.positions
-        endpoints.append(seed)
 
-    inspection_index = 8
-    inspection_rotation = Rotation.from_euler("z", 25, degrees=True).as_matrix() @ down
-    inspection_target = PoseConstraint(hand, inspection, inspection_rotation,
-                                       position_tolerance=1e-4, rotation_tolerance=1e-4)
-    cfg = SolverConfig(
-        waypoints=16, dt=0.14, margin=0.002, world_margin=0.025,
-        collision_substeps=3, max_segment_length=0.075,
-        stop_at_endpoints=True, iterations=40, first_feasible=False,
+
+def solve(
+    snapshot: dict,
+    start,
+    goal,
+    inspection,
+    *,
+    backend: str = "coal",
+    first_feasible: bool = False,
+) -> dict:
+    """Solve Panda start -> inspection -> goal declaratively with TOPP retiming."""
+    world = build_world(snapshot)
+    planner = MotionPlanner(world, backend=backend)
+
+    inspection_rotation = Rotation.from_euler("z", 25.0, degrees=True).as_matrix() @ DOWN
+    request = MotionPlanRequest(
+        start=[PoseConstraint(HAND, start, DOWN)],
+        goal=[PoseConstraint(HAND, goal, DOWN)],
+        start_seed=START_SEED,
+        waypoint_targets={
+            INSPECTION_INDEX: PoseConstraint(
+                HAND,
+                inspection,
+                inspection_rotation,
+                position_tolerance=1e-4,
+                rotation_tolerance=1e-4,
+            ),
+        },
+        config=SolverConfig(
+            waypoints=16,
+            dt=None,
+            retime=True,
+            velocity_scale=0.6,
+            acceleration_scale=0.5,
+            margin=0.002,
+            world_margin=0.025,
+            collision_substeps=3,
+            max_segment_length=0.075,
+            stop_at_endpoints=True,
+            iterations=40,
+            first_feasible=first_feasible,
+        ),
     )
-    plan = planner.plan(MotionPlanRequest(
-        start=endpoints[0], goal=endpoints[1],
-        waypoint_targets={inspection_index: inspection_target}, config=cfg,
-    ))
-    if not plan.success:
-        raise ValueError(plan.reason)
+
+    result = planner.plan(request)
+    if not result.success:
+        raise ValueError(result.reason)
+
     valid, reason = world.validate_trajectory(
-        plan.positions, dt=plan.dt, collision_substeps=24, margin=0.002, world_margin=0.020,
+        result.positions,
+        collision_substeps=24,
+        margin=0.002,
+        world_margin=0.020,
     )
     if not valid:
         raise ValueError(f"Original geometry failed 24-substep check: {reason}")
-    position, rotation = world.link_pose(plan.positions[inspection_index], hand)
-    position_error = float(np.linalg.norm(position - inspection))
+
+    position, rotation = world.link_pose(result.positions[INSPECTION_INDEX], HAND)
+    position_error = float(np.linalg.norm(position - np.asarray(inspection, dtype=np.float64)))
     angle_error = float(Rotation.from_matrix(inspection_rotation.T @ rotation).magnitude())
 
+    # Evaluate densely sampled clearance for seed vs. optimized trajectory.
     steps = 24
-    q = np.stack((plan.initial_positions, plan.positions), axis=0)
-    fraction = (np.arange(steps, dtype=np.float64) / steps)[:, None]
-    between = (1.0 - fraction)[None, None, :, :] * q[:, :-1, None, :] + fraction[None, None, :, :] * q[:, 1:, None, :]
-    samples = np.concatenate((between.reshape(2, -1, world.num_joints), q[:, -1:]), axis=1)
-    world_pairs = [i for i, (_, other) in enumerate(world.collision_pairs) if not other.startswith("panda/")]
+    q_pair = np.stack((result.initial_positions, result.positions), axis=0)
+    frac = (np.arange(steps, dtype=np.float64) / steps)[:, None]
+    between = (1.0 - frac)[None, None, :, :] * q_pair[:, :-1, None, :] + frac[None, None, :, :] * q_pair[:, 1:, None, :]
+    samples = np.concatenate((between.reshape(2, -1, world.num_joints), q_pair[:, -1:]), axis=1)
+    world_pairs = [i for i, (_, other) in enumerate(world.collision_pairs) if not other.startswith(f"{ROBOT}/")]
     clearance = world.collision_distances(samples)[:, :, world_pairs].min(axis=1)
     hits = sorted({world.collision_pairs[world_pairs[i]][1].split("/")[-2]
-                   for i in np.flatnonzero(clearance[0] < 0)})
-    names = [f"panda_link{i}" for i in range(9)] + [hand[1]]
-    poses = []
-    for name in names:
-        pos, rot = world.link_pose(samples, ("panda", name))
-        quat = Rotation.from_matrix(rot.reshape(-1, 3, 3)).as_quat().reshape(*pos.shape[:-1], 4)
-        poses.append(np.concatenate((pos, quat), axis=-1))
-    poses = np.stack(poses, axis=2).astype(np.float32)
-    return dict(links=names, poses=poses, dt=plan.dt / steps,
-                inspection_error=position_error, inspection_angle=angle_error,
-                seed_hits=", ".join(hits), world_clearance=float(clearance[1].min()),
-                paths=poses[:, ::steps, names.index(hand[1]), :3])
+                   for i in np.flatnonzero(clearance[0] < 0.0)})
+
+    return {
+        "world": world,
+        "planner": planner,
+        "result": result,
+        "links": LINK_NAMES,
+        "inspection_error": position_error,
+        "inspection_angle": angle_error,
+        "seed_hits": ", ".join(hits),
+        "world_clearance": float(clearance[1].min()),
+    }
+
+
+def _main() -> None:
+    import gobot
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("coal", "mujoco_warp"), default="coal")
+    parser.add_argument("--fast", action="store_true", help="Return first feasible trajectory")
+    args = parser.parse_args()
+
+    project_dir = Path(__file__).resolve().parents[1]
+    ctx = gobot.app.context()
+    ctx.set_project_path(str(project_dir))
+    ctx.load_scene("res://world.jscn")
+    try:
+        snapshot = ctx.compile_physics_scene_snapshot()
+        start = ctx.root.find("Start").position
+        goal = ctx.root.find("Goal").position
+        inspection = ctx.root.find("Inspection").position
+    finally:
+        ctx.clear_scene()
+
+    out = solve(snapshot, start, goal, inspection, backend=args.backend, first_feasible=args.fast)
+    res = out["result"]
+    diag = res.diagnostics
+    print(
+        f"Panda TrajOpt ({args.backend}, strategy={diag.seed_strategy}): "
+        f"{diag.total_ms:.1f} ms total "
+        f"(ik={diag.ik_ms:.1f}, seed={diag.seed_ms:.1f}, sqp={diag.sqp_ms:.1f}, "
+        f"val={diag.validate_ms:.1f}, retime={diag.retime_ms:.1f} ms, qp={diag.qp_calls})"
+    )
+    print(
+        f"  duration={res.trajectory.duration:.2f} s, "
+        f"inspection_err={1000.0 * out['inspection_error']:.3f} mm / "
+        f"{np.degrees(out['inspection_angle']):.3f} deg, "
+        f"world_clearance={1000.0 * out['world_clearance']:.2f} mm, "
+        f"seed_hits=[{out['seed_hits']}]"
+    )
 
 
 if __name__ == "__main__":
-    request, result = map(Path, sys.argv[1:])
-    try:
-        response = solve(**json.loads(request.read_text()))
-    except Exception as error:
-        response = {"error": str(error)}
-    np.savez(result, **response)
+    _main()

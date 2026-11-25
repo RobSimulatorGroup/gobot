@@ -294,6 +294,9 @@ def test_real_examples_panda_and_container_unloading():
     assert out["inspection_error"] < 1e-4
     assert out["inspection_angle"] < 1e-4
     assert out["world_clearance"] >= 0.02
+    assert out["result"].trajectory.duration > 0.0
+    q_mid, _, _ = out["result"].trajectory.sample(0.5 * out["result"].trajectory.duration)
+    assert q_mid.shape == (out["world"].num_joints,)
 
     # 2. Container unloading FANUC M-10iA task.
     cont_dir = Path(__file__).resolve().parents[2] / "examples" / "container_unloading"
@@ -309,6 +312,8 @@ def test_real_examples_panda_and_container_unloading():
     out_c = runpy.run_path(str(cont_dir / "plan.py"))["solve"](snap_c, *targets)
     assert out_c["carton_clearance"][0] < -0.20
     assert out_c["carton_clearance"][1] >= 0.014 - 1e-6
+    assert out_c["result"].trajectory.duration > 0.0
+    assert len(out_c["handoff"]) == 2
 
 
 def test_debug_draw_helper(simple_snapshot):
@@ -325,5 +330,18 @@ def test_debug_draw_helper(simple_snapshot):
         def draw_line(self, a, b, color):
             drawn.append((a, b, color))
 
-    planner.debug_draw(DummyDraw(), res, link=("planning", "left_tip"))
+    planner.debug_draw(DummyDraw(), res, link=("planning", "left_tip"), samples=10)
     assert len(drawn) >= 18
+
+    arrows_out = []
+
+    class DummyRender:
+        class DebugArrow:
+            def __init__(self, start, vector, color=(1, 1, 1, 1), show_head=True):
+                self.start, self.vector, self.color, self.show_head = start, vector, color, show_head
+
+        def set_debug_arrows(self, arrows):
+            arrows_out.extend(arrows)
+
+    planner.debug_draw(DummyRender(), res, link=("planning", "left_tip"), samples=32)
+    assert len(arrows_out) >= 40
