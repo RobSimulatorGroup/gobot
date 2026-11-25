@@ -1,4 +1,6 @@
+#include "planning_planner.hpp"
 #include "planning_qp.hpp"
+#include "planning_retime.hpp"
 #include "planning_sqp.hpp"
 #include "planning_world.hpp"
 
@@ -9,6 +11,11 @@
 
 namespace py = pybind11;
 namespace gp = gobot::planning;
+
+namespace gobot::planning {
+int gobot_planning_abi_version() noexcept;
+bool gobot_planning_has_tbb() noexcept;
+}  // namespace gobot::planning
 
 namespace {
 using Input = py::array_t<double, py::array::c_style | py::array::forcecast>;
@@ -87,6 +94,145 @@ gp::Frame frame_from_array(const Input& arr) {
     gp::Frame f;
     std::copy(arr.data(), arr.data() + 12, f.data());
     return f;
+}
+
+gp::SolverConfigNative parse_solver_config(const py::dict& d) {
+    gp::SolverConfigNative cfg;
+    cfg.waypoints = d["waypoints"].cast<int>();
+    cfg.margin = d["margin"].cast<double>();
+    if (d.contains("world_margin") && !d["world_margin"].is_none()) {
+        cfg.has_world_margin = true;
+        cfg.world_margin = d["world_margin"].cast<double>();
+    }
+    cfg.collision_substeps = d["collision_substeps"].cast<int>();
+    if (d.contains("max_segment_length") && !d["max_segment_length"].is_none()) {
+        cfg.max_segment_length = d["max_segment_length"].cast<double>();
+    }
+    cfg.iterations = d["iterations"].cast<int>();
+    cfg.stop_at_endpoints = d["stop_at_endpoints"].cast<bool>();
+    cfg.first_feasible = d["first_feasible"].cast<bool>();
+    cfg.use_global_seeding = d["use_global_seeding"].cast<bool>();
+    cfg.num_seeds = d["num_seeds"].cast<int>();
+    cfg.rrt_timeout_s = d["rrt_timeout_s"].cast<double>();
+    cfg.rrt_step_size = d["rrt_step_size"].cast<double>();
+    cfg.rrt_max_iterations = d["rrt_max_iterations"].cast<int>();
+    cfg.rrt_shortcut_iters = d["rrt_shortcut_iters"].cast<int>();
+    cfg.velocity_scale = d["velocity_scale"].cast<double>();
+    cfg.acceleration_scale = d["acceleration_scale"].cast<double>();
+    if (d.contains("dt") && !d["dt"].is_none()) {
+        cfg.has_dt = true;
+        cfg.dt = d["dt"].cast<double>();
+    }
+    cfg.retime = d["retime"].cast<bool>();
+    return cfg;
+}
+
+gp::MotionPlanRequestNative parse_plan_request(const py::dict& d, int J) {
+    gp::MotionPlanRequestNative req;
+    req.config = parse_solver_config(d["config"].cast<py::dict>());
+    req.start_is_pose = d["start_is_pose"].cast<bool>();
+    if (req.start_is_pose) {
+        req.start_poses = d["start_poses"].cast<std::vector<gp::PoseConstraintSpec>>();
+    } else {
+        req.start_q = d["start_q"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("start_seed") && !d["start_seed"].is_none()) {
+        req.has_start_seed = true;
+        req.start_seed = d["start_seed"].cast<Eigen::VectorXd>();
+    }
+    req.goal_is_pose = d["goal_is_pose"].cast<bool>();
+    if (req.goal_is_pose) {
+        req.goal_pose_sets = d["goal_pose_sets"].cast<std::vector<std::vector<gp::PoseConstraintSpec>>>();
+    } else {
+        req.goal_qs = d["goal_qs"].cast<std::vector<Eigen::VectorXd>>();
+    }
+    if (d.contains("goal_seed") && !d["goal_seed"].is_none()) {
+        req.has_goal_seed = true;
+        req.goal_seed = d["goal_seed"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("pose_constraints") && !d["pose_constraints"].is_none()) {
+        const py::dict pc_dict = d["pose_constraints"].cast<py::dict>();
+        for (const auto& kv : pc_dict) {
+            auto vec = kv.second.cast<std::vector<gp::PoseConstraintSpec>>();
+            if (!vec.empty()) req.pose_constraints.emplace_back(kv.first.cast<int>(), std::move(vec));
+        }
+    }
+    if (d.contains("joint_targets") && !d["joint_targets"].is_none()) {
+        const py::dict jt_dict = d["joint_targets"].cast<py::dict>();
+        for (const auto& kv : jt_dict) {
+            req.joint_targets.emplace_back(kv.first.cast<int>(), kv.second.cast<Eigen::VectorXd>());
+        }
+    }
+    if (d.contains("seed") && !d["seed"].is_none()) {
+        const Input s_arr = d["seed"].cast<Input>();
+        if (s_arr.ndim() != 2 || s_arr.shape(1) != J)
+            throw std::invalid_argument("seed must have shape [T, J]");
+        req.has_seed = true;
+        req.seed.resize(s_arr.shape(0), J);
+        std::copy(s_arr.data(), s_arr.data() + s_arr.shape(0) * J, req.seed.data());
+    }
+    if (d.contains("active_mask") && !d["active_mask"].is_none()) {
+        const MaskInput m_in = d["active_mask"].cast<MaskInput>();
+        req.active_mask.assign(static_cast<size_t>(J), 1);
+        if (m_in.size() == J) {
+            for (int j = 0; j < J; ++j) req.active_mask[static_cast<size_t>(j)] = m_in.data()[j] ? 1 : 0;
+        }
+    }
+    return req;
+}
+
+py::dict trajectory_to_dict(const gp::TrajectoryNative& traj) {
+    const py::ssize_t T = traj.num_waypoints();
+    const py::ssize_t J = traj.num_joints();
+    py::array_t<double> times(T), pos({T, J}), vel({T, J}), acc({T, J});
+    std::copy(traj.times.data(), traj.times.data() + T, times.mutable_data());
+    std::copy(traj.positions.data(), traj.positions.data() + T * J, pos.mutable_data());
+    std::copy(traj.velocities.data(), traj.velocities.data() + T * J, vel.mutable_data());
+    std::copy(traj.accelerations.data(), traj.accelerations.data() + T * J, acc.mutable_data());
+    py::dict d;
+    d["times"] = std::move(times);
+    d["positions"] = std::move(pos);
+    d["velocities"] = std::move(vel);
+    d["accelerations"] = std::move(acc);
+    d["dt"] = traj.has_dt ? py::cast(traj.dt) : py::none();
+    return d;
+}
+
+py::dict plan_result_to_dict(const gp::PlanResultNative& r) {
+    py::dict d;
+    d["success"] = r.success;
+    d["trajectory"] = r.success ? py::object(trajectory_to_dict(r.trajectory)) : py::none();
+    if (r.has_initial_positions) {
+        const py::ssize_t T = r.initial_positions.rows();
+        const py::ssize_t J = r.initial_positions.cols();
+        py::array_t<double> init_arr({T, J});
+        std::copy(r.initial_positions.data(), r.initial_positions.data() + T * J, init_arr.mutable_data());
+        d["initial_positions"] = std::move(init_arr);
+    } else {
+        d["initial_positions"] = py::none();
+    }
+    d["goal_index"] = r.goal_index;
+    d["reason"] = r.success ? py::none() : py::object(py::str(r.reason));
+    py::dict diag;
+    diag["total_ms"] = r.diagnostics.total_ms;
+    diag["ik_ms"] = r.diagnostics.ik_ms;
+    diag["seed_ms"] = r.diagnostics.seed_ms;
+    diag["sqp_ms"] = r.diagnostics.sqp_ms;
+    diag["validate_ms"] = r.diagnostics.validate_ms;
+    diag["retime_ms"] = r.diagnostics.retime_ms;
+    diag["qp_calls"] = r.diagnostics.qp_calls;
+    diag["sqp_iterations"] = r.diagnostics.sqp_iterations;
+    diag["seed_strategy"] = r.diagnostics.seed_strategy;
+    if (!r.diagnostics.witnesses.empty()) {
+        const py::ssize_t K = static_cast<py::ssize_t>(r.diagnostics.witnesses.size() / 6);
+        py::array_t<double> wit_arr({K, py::ssize_t(6)});
+        std::copy(r.diagnostics.witnesses.begin(), r.diagnostics.witnesses.end(), wit_arr.mutable_data());
+        diag["witnesses"] = std::move(wit_arr);
+    } else {
+        diag["witnesses"] = py::none();
+    }
+    d["diagnostics"] = std::move(diag);
+    return d;
 }
 
 // Standalone forward_kinematics kept for gobot._kinematics.SceneKinematics CPU acceleration.
@@ -183,6 +329,8 @@ py::tuple forward_kinematics(const Indices& parent, const Indices& kinds, const 
 }  // namespace
 
 PYBIND11_MODULE(_coal_native, module) {
+    module.def("has_tbb", &gp::gobot_planning_has_tbb);
+    module.def("abi_version", &gp::gobot_planning_abi_version);
     module.def("forward_kinematics", &forward_kinematics,
                py::arg("parent"), py::arg("kinds"), py::arg("joint_idx"),
                py::arg("parent_joint"), py::arg("joint_child"), py::arg("axes"),
@@ -258,12 +406,12 @@ PYBIND11_MODULE(_coal_native, module) {
         .def(py::init<>())
         .def_property_readonly("version", &gp::PlanningWorld::version)
         .def_property_readonly("topology_version", &gp::PlanningWorld::topology_version)
-        .def_property_readonly("num_bodies", [](const gp::PlanningWorld& w) { return w.kin.num_bodies(); })
-        .def_property_readonly("num_joints", [](const gp::PlanningWorld& w) { return w.kin.num_joints(); })
+        .def_property_readonly("num_bodies", &gp::PlanningWorld::num_bodies)
+        .def_property_readonly("num_joints", &gp::PlanningWorld::num_joints)
         .def_property_readonly("self_pair_count", &gp::PlanningWorld::self_pair_count)
         .def_property_readonly("has_mesh", &gp::PlanningWorld::has_mesh)
-        .def_property_readonly("num_shapes", [](const gp::PlanningWorld& w) { return static_cast<int>(w.shapes().size()); })
-        .def_property_readonly("num_pairs", [](const gp::PlanningWorld& w) { return static_cast<int>(w.active_pairs().size()); })
+        .def_property_readonly("num_shapes", &gp::PlanningWorld::num_shapes)
+        .def_property_readonly("num_pairs", &gp::PlanningWorld::num_pairs)
         .def("init_kinematics", [](gp::PlanningWorld& w,
                                    std::vector<int> parent, std::vector<int> kinds, std::vector<int> joint_idx,
                                    const Input& parent_joint, const Input& joint_child, const Input& axes,
@@ -292,11 +440,10 @@ PYBIND11_MODULE(_coal_native, module) {
             for (auto& [rname, rbody, rpos, rrot] : branches_in) {
                 branches.push_back({std::move(rname), rbody, rpos, rrot});
             }
-            w.kin.initialize(std::move(parent), std::move(kinds), std::move(joint_idx),
-                             std::move(a_rot), std::move(a_pos), std::move(b_rot), std::move(b_pos),
-                             std::move(ax), std::move(branches), std::move(body_names), std::move(joint_names),
-                             lower, upper, vel, acc, init_q);
-            w.set_link_index(std::move(link_index));
+            w.init_kinematics(std::move(parent), std::move(kinds), std::move(joint_idx),
+                              std::move(a_rot), std::move(a_pos), std::move(b_rot), std::move(b_pos),
+                              std::move(ax), std::move(branches), std::move(body_names), std::move(joint_names),
+                              lower, upper, vel, acc, init_q, std::move(link_index));
         })
         .def("add_shape", [](gp::PlanningWorld& w, const std::string& name, const std::string& link_key,
                              int body_id, const Input& local_frame, int layer, int mask,
@@ -325,29 +472,29 @@ PYBIND11_MODULE(_coal_native, module) {
             w.set_robot_base_pose(branch_idx, pos, rot);
         })
         .def("pair_labels", [](const gp::PlanningWorld& w) {
-            const auto& shapes = w.shapes();
-            const auto& pairs = w.active_pairs();
+            auto snap = w.snapshot();
             std::vector<std::pair<std::string, std::string>> out;
-            out.reserve(pairs.size());
-            for (const auto& pr : pairs) {
-                out.emplace_back(shapes[pr.shape_a].link_key, shapes[pr.shape_b].link_key);
+            out.reserve(snap->pairs.size());
+            for (const auto& pr : snap->pairs) {
+                out.emplace_back(snap->shapes[static_cast<size_t>(pr.shape_a)].link_key,
+                                 snap->shapes[static_cast<size_t>(pr.shape_b)].link_key);
             }
             return out;
         })
         .def("pair_shape_names", [](const gp::PlanningWorld& w) {
-            const auto& shapes = w.shapes();
-            const auto& pairs = w.active_pairs();
+            auto snap = w.snapshot();
             std::vector<std::pair<std::string, std::string>> out;
-            out.reserve(pairs.size());
-            for (const auto& pr : pairs) {
-                out.emplace_back(shapes[pr.shape_a].name, shapes[pr.shape_b].name);
+            out.reserve(snap->pairs.size());
+            for (const auto& pr : snap->pairs) {
+                out.emplace_back(snap->shapes[static_cast<size_t>(pr.shape_a)].name,
+                                 snap->shapes[static_cast<size_t>(pr.shape_b)].name);
             }
             return out;
         })
         .def("export_warp_geometry", [](const gp::PlanningWorld& w) {
-            // Export compact geometry metadata for MuJoCo Warp GPU backend.
-            const auto& shapes = w.shapes();
-            const auto& pairs = w.active_pairs();
+            auto snap = w.snapshot();
+            const auto& shapes = snap->shapes;
+            const auto& pairs = snap->pairs;
             const size_t N = shapes.size();
             const size_t P = pairs.size();
             std::vector<int> kinds(N);
@@ -382,11 +529,12 @@ PYBIND11_MODULE(_coal_native, module) {
             return py::make_tuple(kinds, sizes, spans, vert_arr, pair_arr);
         })
         .def("forward_kinematics", [](const gp::PlanningWorld& w, const Input& q_arr) {
-            if (q_arr.ndim() != 2 || q_arr.shape(1) != w.kin.num_joints())
+            auto snap = w.snapshot();
+            if (q_arr.ndim() != 2 || q_arr.shape(1) != snap->kin.num_joints())
                 throw std::invalid_argument("expected [S, J] joint array");
             const int64_t S = q_arr.shape(0);
-            const int B = w.kin.num_bodies();
-            const int J = w.kin.num_joints();
+            const int B = snap->kin.num_bodies();
+            const int J = snap->kin.num_joints();
             py::array_t<double> pos({S, static_cast<py::ssize_t>(B), py::ssize_t(3)});
             py::array_t<double> rot({S, static_cast<py::ssize_t>(B), py::ssize_t(3), py::ssize_t(3)});
             const double* qp = q_arr.data();
@@ -398,7 +546,7 @@ PYBIND11_MODULE(_coal_native, module) {
                     std::vector<gp::Vec3> bp(static_cast<size_t>(B));
                     std::vector<gp::Mat3> br(static_cast<size_t>(B));
                     for (int64_t s = b; s < e; ++s) {
-                        w.kin.fk_single(qp + s * J, bp.data(), br.data());
+                        snap->kin.fk_single(qp + s * J, bp.data(), br.data());
                         for (int i = 0; i < B; ++i) {
                             Eigen::Map<gp::Vec3>(pp + (s * B + i) * 3) = bp[static_cast<size_t>(i)];
                             Eigen::Map<gp::Mat3>(rp + (s * B + i) * 9) = br[static_cast<size_t>(i)];
@@ -409,29 +557,31 @@ PYBIND11_MODULE(_coal_native, module) {
             return py::make_tuple(pos, rot);
         })
         .def("compute_frames", [](const gp::PlanningWorld& w, const Input& q_arr, bool return_joints) {
-            if (q_arr.ndim() != 2 || q_arr.shape(1) != w.kin.num_joints())
+            auto snap = w.snapshot();
+            if (q_arr.ndim() != 2 || q_arr.shape(1) != snap->kin.num_joints())
                 throw std::invalid_argument("expected [S, J] joint array");
             const int64_t S = q_arr.shape(0);
-            const int N = static_cast<int>(w.shapes().size());
-            const int J = w.kin.num_joints();
+            const int N = static_cast<int>(snap->shapes.size());
+            const int J = snap->kin.num_joints();
             py::array_t<double> frames({S, static_cast<py::ssize_t>(N), py::ssize_t(3), py::ssize_t(4)});
             py::array_t<double> jorig = return_joints ? py::array_t<double>({S, static_cast<py::ssize_t>(J), py::ssize_t(3)}) : py::array_t<double>(0);
             py::array_t<double> jaxis = return_joints ? py::array_t<double>({S, static_cast<py::ssize_t>(J), py::ssize_t(3)}) : py::array_t<double>(0);
             {
                 py::gil_scoped_release release;
-                w.compute_frames(q_arr.data(), S, frames.mutable_data(),
-                                 return_joints ? jorig.mutable_data() : nullptr,
-                                 return_joints ? jaxis.mutable_data() : nullptr);
+                snap->compute_frames(q_arr.data(), S, frames.mutable_data(),
+                                     return_joints ? jorig.mutable_data() : nullptr,
+                                     return_joints ? jaxis.mutable_data() : nullptr);
             }
             if (return_joints) return py::make_tuple(frames, jorig, jaxis);
             return py::make_tuple(frames);
         }, py::arg("q"), py::arg("return_joints") = false)
         .def("screen_aabbs", [](const gp::PlanningWorld& w, const Input& frames, const Input& thresholds,
                                 bool verify_original, int64_t group_size) {
+            auto snap = w.snapshot();
             std::vector<int64_t> rows, pids;
             {
                 py::gil_scoped_release release;
-                w.screen_aabbs(frames.data(), frames.shape(0), thresholds.data(), verify_original, group_size, rows, pids);
+                snap->screen_aabbs(frames.data(), frames.shape(0), thresholds.data(), verify_original, group_size, rows, pids);
             }
             py::array_t<int64_t> r_arr(static_cast<py::ssize_t>(rows.size()));
             py::array_t<int64_t> p_arr(static_cast<py::ssize_t>(pids.size()));
@@ -443,38 +593,41 @@ PYBIND11_MODULE(_coal_native, module) {
         }, py::arg("frames"), py::arg("thresholds"), py::arg("verify_original") = false, py::arg("group_size") = 1)
         .def("query_distances_indexed", [](const gp::PlanningWorld& w, const Input& frames,
                                            const Indices& rows, const Indices& pair_ids, bool verify) {
+            auto snap = w.snapshot();
             const int64_t K = rows.size();
             const int64_t width = verify ? 1 : 10;
             py::array_t<double> out({K, width});
             if (K > 0) {
                 py::gil_scoped_release release;
-                w.query_distances_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
-                                          K, verify, out.mutable_data());
+                snap->query_distances_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
+                                              K, verify, out.mutable_data());
             }
             return out;
         }, py::arg("frames"), py::arg("rows"), py::arg("pair_ids"), py::arg("verify") = false)
         .def("query_all_distances", [](const gp::PlanningWorld& w, const Input& q_arr, bool verify) {
-            if (q_arr.ndim() != 2 || q_arr.shape(1) != w.kin.num_joints())
+            auto snap = w.snapshot();
+            if (q_arr.ndim() != 2 || q_arr.shape(1) != snap->kin.num_joints())
                 throw std::invalid_argument("expected [S, J] joint array");
             const int64_t S = q_arr.shape(0);
-            const auto& pairs = w.active_pairs();
+            const auto& pairs = snap->pairs;
             const int64_t P = static_cast<int64_t>(pairs.size());
-            const int64_t N = static_cast<int64_t>(w.shapes().size());
+            const int64_t N = static_cast<int64_t>(snap->shapes.size());
             py::array_t<double> out({S, P});
             if (S == 0 || P == 0) return out;
             std::vector<double> frames(static_cast<size_t>(S * N * 12));
             double* op = out.mutable_data();
             {
                 py::gil_scoped_release release;
-                w.compute_frames(q_arr.data(), S, frames.data());
-                const auto& shapes = w.shapes();
+                snap->compute_frames(q_arr.data(), S, frames.data());
+                const auto& shapes = snap->shapes;
                 gp::ThreadPool::instance().parallel_for(S * P, 64, [&](int64_t b, int64_t e) {
                     double tmp[10];
                     for (int64_t k = b; k < e; ++k) {
                         const int64_t s = k / P;
                         const int64_t p = k % P;
                         const auto& pr = pairs[static_cast<size_t>(p)];
-                        gp::eval_coal_distance(*shapes[pr.shape_a].shape, *shapes[pr.shape_b].shape,
+                        gp::eval_coal_distance(*shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                               *shapes[static_cast<size_t>(pr.shape_b)].shape,
                                                frames.data() + (s * N + pr.shape_a) * 12,
                                                frames.data() + (s * N + pr.shape_b) * 12,
                                                verify, std::numeric_limits<double>::infinity(), tmp);
@@ -487,11 +640,12 @@ PYBIND11_MODULE(_coal_native, module) {
         .def("first_violation_indexed", [](const gp::PlanningWorld& w, const Input& frames,
                                            const Indices& rows, const Indices& pair_ids,
                                            const Input& margins, bool verify) -> py::object {
+            auto snap = w.snapshot();
             std::optional<std::pair<int64_t, int64_t>> hit;
             {
                 py::gil_scoped_release release;
-                hit = w.first_violation_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
-                                                rows.size(), margins.data(), verify);
+                hit = snap->first_violation_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
+                                                    rows.size(), margins.data(), verify);
             }
             if (!hit.has_value()) return py::none();
             return py::make_tuple(hit->first, hit->second);
@@ -499,11 +653,12 @@ PYBIND11_MODULE(_coal_native, module) {
         .def("violating_pairs_indexed", [](const gp::PlanningWorld& w, const Input& frames,
                                            const Indices& rows, const Indices& pair_ids,
                                            const Input& margins, bool verify) {
+            auto snap = w.snapshot();
             std::vector<int64_t> out_rows, out_pairs;
             if (rows.size() > 0) {
                 py::gil_scoped_release release;
-                w.violating_pairs_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
-                                          rows.size(), margins.data(), verify, out_rows, out_pairs);
+                snap->violating_pairs_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
+                                              rows.size(), margins.data(), verify, out_rows, out_pairs);
             }
             py::array_t<int64_t> r_arr(static_cast<py::ssize_t>(out_rows.size()));
             py::array_t<int64_t> p_arr(static_cast<py::ssize_t>(out_pairs.size()));
@@ -515,43 +670,58 @@ PYBIND11_MODULE(_coal_native, module) {
         }, py::arg("frames"), py::arg("rows"), py::arg("pair_ids"), py::arg("margins"), py::arg("verify") = false)
         .def("first_violation_continuous", [](const gp::PlanningWorld& w, const Input& q_waypoints,
                                               int substeps, const Input& frames, const Input& margins,
-                                              bool verify, double disp_tol) -> py::object {
+                                              bool verify, double disp_tol,
+                                              py::object times_obj, py::object vel_obj) -> py::object {
+            auto snap = w.snapshot();
+            const double* t_ptr = nullptr;
+            const double* v_ptr = nullptr;
+            Input t_arr, v_arr;
+            if (!times_obj.is_none() && !vel_obj.is_none()) {
+                t_arr = times_obj.cast<Input>();
+                v_arr = vel_obj.cast<Input>();
+                t_ptr = t_arr.data();
+                v_ptr = v_arr.data();
+            }
             std::optional<gp::ContinuousViolation> hit;
             {
                 py::gil_scoped_release release;
-                hit = w.first_violation_continuous(q_waypoints.data(), static_cast<int>(q_waypoints.shape(0)),
-                                                   substeps, frames.data(), margins.data(), verify, disp_tol);
+                hit = snap->first_violation_continuous(
+                    q_waypoints.data(), static_cast<int>(q_waypoints.shape(0)),
+                    substeps, frames.data(), margins.data(), verify, disp_tol, t_ptr, v_ptr);
             }
             if (!hit.has_value()) return py::none();
             return py::make_tuple(hit->seg, hit->u, hit->pair_id, hit->distance);
         }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
-           py::arg("verify") = false, py::arg("disp_tol") = 2e-3)
+           py::arg("verify") = false, py::arg("disp_tol") = 5e-4,
+           py::arg("times") = py::none(), py::arg("velocities") = py::none())
         .def("compute_analytic_gradients", [](const gp::PlanningWorld& w, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
+            auto snap = w.snapshot();
             const int64_t K = rows.size();
-            const int J = w.kin.num_joints();
+            const int J = snap->kin.num_joints();
             py::array_t<double> grad({K, static_cast<py::ssize_t>(J)});
             py::array_t<double> wit({K, py::ssize_t(6)});
             if (K > 0) {
                 py::gil_scoped_release release;
-                w.compute_analytic_gradients(frames.data(), jorig.data(), jaxis.data(),
-                                             rows.data(), pair_ids.data(), data.data(),
-                                             K, grad.mutable_data(), wit.mutable_data());
+                snap->compute_analytic_gradients(frames.data(), jorig.data(), jaxis.data(),
+                                                 rows.data(), pair_ids.data(), data.data(),
+                                                 K, grad.mutable_data(), wit.mutable_data());
             }
             return py::make_tuple(grad, wit);
         })
         .def("eval_collision_rows", [](const gp::PlanningWorld& w, const Input& q_arr,
                                        const Input& opt_margins, const Input& check_margins,
                                        double buffer, bool linearize, int64_t group_size, bool segment_minimum) {
+            auto snap = w.snapshot();
             const int64_t S = q_arr.shape(0);
-            const int N = static_cast<int>(w.shapes().size());
-            const int J = w.kin.num_joints();
+            const int N = static_cast<int>(snap->shapes.size());
+            const int J = snap->kin.num_joints();
             gp::CollisionEvalResult res;
             {
                 py::gil_scoped_release release;
-                res = w.eval_collision_rows(q_arr.data(), S, opt_margins.data(), check_margins.data(),
-                                            buffer, linearize, group_size, segment_minimum);
+                res = snap->eval_collision_rows(q_arr.data(), S, opt_margins.data(), check_margins.data(),
+                                                buffer, linearize, group_size, segment_minimum);
             }
             const py::ssize_t K = static_cast<py::ssize_t>(res.rows.size());
             py::array_t<int64_t> rows_arr(K), pids_arr(K);
@@ -581,13 +751,14 @@ PYBIND11_MODULE(_coal_native, module) {
         })
         .def("eval_pose_constraints", [](const gp::PlanningWorld& w, const Input& q_vec,
                                          const std::vector<gp::PoseConstraintSpec>& specs, bool linearize) {
-            const int B = w.kin.num_bodies();
-            const int J = w.kin.num_joints();
+            auto snap = w.snapshot();
+            const int B = snap->kin.num_bodies();
+            const int J = snap->kin.num_joints();
             std::vector<gp::Vec3> bpos(static_cast<size_t>(B)), jorig(linearize ? static_cast<size_t>(J) : 0),
                 jaxis(linearize ? static_cast<size_t>(J) : 0);
             std::vector<gp::Mat3> brot(static_cast<size_t>(B));
-            w.kin.fk_single(q_vec.data(), bpos.data(), brot.data(),
-                            linearize ? jorig.data() : nullptr, linearize ? jaxis.data() : nullptr);
+            snap->kin.fk_single(q_vec.data(), bpos.data(), brot.data(),
+                                linearize ? jorig.data() : nullptr, linearize ? jaxis.data() : nullptr);
             int total_dim = 0;
             for (const auto& s : specs) total_dim += s.residual_dim();
             py::array_t<double> res_arr(total_dim);
@@ -599,10 +770,10 @@ PYBIND11_MODULE(_coal_native, module) {
             Eigen::VectorXd r;
             Eigen::MatrixXd jc;
             for (const auto& s : specs) {
-                const bool ok = w.kin.eval_pose_constraint(s, bpos.data(), brot.data(),
-                                                           linearize ? jorig.data() : nullptr,
-                                                           linearize ? jaxis.data() : nullptr,
-                                                           r, linearize ? &jc : nullptr);
+                const bool ok = snap->kin.eval_pose_constraint(s, bpos.data(), brot.data(),
+                                                               linearize ? jorig.data() : nullptr,
+                                                               linearize ? jaxis.data() : nullptr,
+                                                               r, linearize ? &jc : nullptr);
                 all_ok = all_ok && ok;
                 for (int i = 0; i < r.size(); ++i) {
                     res_arr.mutable_data()[offset + i] = r(i);
@@ -619,21 +790,22 @@ PYBIND11_MODULE(_coal_native, module) {
                                   const std::vector<std::pair<std::vector<gp::PoseConstraintSpec>, Eigen::VectorXd>>& problems_in,
                                   const MaskInput& active_mask_in,
                                   double margin, double world_margin, int iterations, bool verify_original) {
+            auto snap = w.snapshot();
+            const int J = snap->kin.num_joints();
             std::vector<gp::IKProblem> problems;
             problems.reserve(problems_in.size());
             for (const auto& [targets, seed] : problems_in) problems.push_back({targets, seed});
-            std::vector<uint8_t> mask(static_cast<size_t>(w.kin.num_joints()), 1);
-            if (active_mask_in.size() == w.kin.num_joints()) {
-                for (int j = 0; j < w.kin.num_joints(); ++j) mask[static_cast<size_t>(j)] = active_mask_in.data()[j] ? 1 : 0;
+            std::vector<uint8_t> mask(static_cast<size_t>(J), 1);
+            if (active_mask_in.size() == J) {
+                for (int j = 0; j < J; ++j) mask[static_cast<size_t>(j)] = active_mask_in.data()[j] ? 1 : 0;
             }
             std::vector<gp::IKResultNative> res;
             {
                 py::gil_scoped_release release;
-                res = w.solve_ik_batch(problems, mask, margin, world_margin, iterations, verify_original);
+                res = snap->solve_ik_batch(problems, mask, margin, world_margin, iterations, verify_original);
             }
             const py::ssize_t B = static_cast<py::ssize_t>(res.size());
-            const py::ssize_t J = w.kin.num_joints();
-            py::array_t<double> q_out({B, J});
+            py::array_t<double> q_out({B, static_cast<py::ssize_t>(J)});
             py::array_t<bool> ok_out(B);
             std::vector<py::object> reasons(static_cast<size_t>(B));
             for (py::ssize_t i = 0; i < B; ++i) {
@@ -656,8 +828,9 @@ PYBIND11_MODULE(_coal_native, module) {
                                     double step_size, int max_iterations, double timeout_s,
                                     const std::vector<uint64_t>& seeds, bool verify_original,
                                     int shortcut_iters, int output_waypoints) {
+            auto snap = w.snapshot();
             const int64_t B = starts.shape(0);
-            const int J = w.kin.num_joints();
+            const int J = snap->kin.num_joints();
             std::vector<uint8_t> mask(static_cast<size_t>(J), 1);
             if (active_mask_in.size() == J) {
                 for (int j = 0; j < J; ++j) mask[static_cast<size_t>(j)] = active_mask_in.data()[j] ? 1 : 0;
@@ -670,9 +843,9 @@ PYBIND11_MODULE(_coal_native, module) {
                         Eigen::Map<const Eigen::VectorXd> s(starts.data() + i * J, J);
                         Eigen::Map<const Eigen::VectorXd> g(goals.data() + i * J, J);
                         const uint64_t sd = (i < static_cast<int64_t>(seeds.size())) ? seeds[static_cast<size_t>(i)] : static_cast<uint64_t>(i + 1);
-                        res[static_cast<size_t>(i)] = w.plan_birrt(s, g, mask, margin, world_margin, step_size,
-                                                                   max_iterations, timeout_s, sd, verify_original,
-                                                                   shortcut_iters, output_waypoints);
+                        res[static_cast<size_t>(i)] = snap->plan_birrt(s, g, mask, margin, world_margin, step_size,
+                                                                       max_iterations, timeout_s, sd, verify_original,
+                                                                       shortcut_iters, output_waypoints);
                     }
                 });
             }
@@ -694,8 +867,27 @@ PYBIND11_MODULE(_coal_native, module) {
             }
             return py::make_tuple(paths, ok);
         })
+        .def("finalize_trajectory", [](const gp::PlanningWorld& w, const Input& pos_arr, const py::dict& cfg_dict) {
+            auto snap = w.snapshot();
+            const int J = snap->kin.num_joints();
+            if (pos_arr.ndim() != 2 || pos_arr.shape(1) != J)
+                throw std::invalid_argument("positions must have shape [T, J]");
+            gp::RowMatrixXd pos(pos_arr.shape(0), J);
+            std::copy(pos_arr.data(), pos_arr.data() + pos_arr.shape(0) * J, pos.data());
+            const auto cfg = parse_solver_config(cfg_dict);
+            gp::FinalizeResultNative fin;
+            {
+                py::gil_scoped_release release;
+                fin = gp::finalize_trajectory(*snap, pos, cfg);
+            }
+            if (!fin.success) {
+                return py::make_tuple(py::none(), fin.retime_ms, py::str(fin.reason));
+            }
+            return py::make_tuple(trajectory_to_dict(fin.trajectory), fin.retime_ms, py::none());
+        })
         .def("solve_sqp_batch", [](const gp::PlanningWorld& w, const py::list& jobs_in, bool race) {
-            const int J = w.kin.num_joints();
+            auto snap = w.snapshot();
+            const int J = snap->kin.num_joints();
             std::vector<gp::SQPJobSpecNative> specs;
             specs.reserve(jobs_in.size());
             for (const auto& item : jobs_in) {
@@ -721,17 +913,14 @@ PYBIND11_MODULE(_coal_native, module) {
                 if (d.contains("pose_constraints") && !d["pose_constraints"].is_none()) {
                     const py::dict pc_dict = d["pose_constraints"].cast<py::dict>();
                     for (const auto& kv : pc_dict) {
-                        const int idx = kv.first.cast<int>();
                         auto vec = kv.second.cast<std::vector<gp::PoseConstraintSpec>>();
-                        if (!vec.empty()) sp.pose_constraints.emplace_back(idx, std::move(vec));
+                        if (!vec.empty()) sp.pose_constraints.emplace_back(kv.first.cast<int>(), std::move(vec));
                     }
                 }
                 if (d.contains("joint_targets") && !d["joint_targets"].is_none()) {
                     const py::dict jt_dict = d["joint_targets"].cast<py::dict>();
                     for (const auto& kv : jt_dict) {
-                        const int idx = kv.first.cast<int>();
-                        const Eigen::VectorXd tgt = kv.second.cast<Eigen::VectorXd>();
-                        sp.joint_targets.emplace_back(idx, tgt);
+                        sp.joint_targets.emplace_back(kv.first.cast<int>(), kv.second.cast<Eigen::VectorXd>());
                     }
                 }
                 sp.margin = d["margin"].cast<double>();
@@ -750,7 +939,7 @@ PYBIND11_MODULE(_coal_native, module) {
             std::vector<gp::SQPJobResultNative> res;
             {
                 py::gil_scoped_release release;
-                res = gp::solve_sqp_batch(w, specs, race);
+                res = gp::solve_sqp_batch(*snap, specs, race);
             }
             py::list out_list;
             for (const auto& r : res) {
@@ -785,4 +974,33 @@ PYBIND11_MODULE(_coal_native, module) {
             }
             return out_list;
         }, py::arg("jobs"), py::arg("race") = false);
+
+    py::class_<gp::MotionPlannerNative>(module, "MotionPlanner")
+        .def(py::init<std::shared_ptr<gp::PlanningWorld>>())
+        .def("plan", [](const gp::MotionPlannerNative& planner, const py::dict& req_dict) {
+            const int J = planner.world()->num_joints();
+            const auto req = parse_plan_request(req_dict, J);
+            gp::PlanResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = planner.plan(req);
+            }
+            return plan_result_to_dict(res);
+        })
+        .def("plan_batch", [](const gp::MotionPlannerNative& planner, const py::list& req_list, int chunk_size) {
+            const int J = planner.world()->num_joints();
+            std::vector<gp::MotionPlanRequestNative> reqs;
+            reqs.reserve(req_list.size());
+            for (const auto& item : req_list) {
+                reqs.push_back(parse_plan_request(item.cast<py::dict>(), J));
+            }
+            std::vector<gp::PlanResultNative> res;
+            {
+                py::gil_scoped_release release;
+                res = planner.plan_batch(reqs, chunk_size);
+            }
+            py::list out;
+            for (const auto& r : res) out.append(plan_result_to_dict(r));
+            return out;
+        }, py::arg("requests"), py::arg("chunk_size") = 64);
 }

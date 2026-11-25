@@ -91,12 +91,11 @@ inline void build_segment_samples(
 
 }  // namespace detail
 
-inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
+inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                                         const SQPJobSpecNative& spec,
                                         const std::atomic<bool>* cancel_flag = nullptr) {
     using Clock = std::chrono::steady_clock;
     const auto t_job_start = Clock::now();
-    world.ensure_pairs();
 
     SQPJobResultNative out;
     out.seed_strategy = spec.seed_strategy;
@@ -108,21 +107,21 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
     const int fixed = spec.fixed;
     const int n_free_wp = T - 2 * fixed;
     const int n_vars = std::max(0, n_free_wp * J);
-    const int N_shapes = static_cast<int>(world.shapes().size());
-    const int B_links = world.kin.num_bodies();
-    const int P = static_cast<int>(world.active_pairs().size());
-    const bool has_mesh = world.has_mesh();
+    const int N_shapes = static_cast<int>(snap.shapes.size());
+    const int B_links = snap.kin.num_bodies();
+    const int P = static_cast<int>(snap.pairs.size());
+    const bool has_mesh = snap.has_mesh;
 
-    const Eigen::VectorXd& lower = world.kin.lower();
-    const Eigen::VectorXd& upper = world.kin.upper();
-    const Eigen::VectorXd vmax = world.kin.velocity_limit() * spec.velocity_scale;
-    const Eigen::VectorXd margins = world.pair_margins(spec.margin, spec.world_margin);
+    const Eigen::VectorXd& lower = snap.kin.lower();
+    const Eigen::VectorXd& upper = snap.kin.upper();
+    const Eigen::VectorXd vmax = snap.kin.velocity_limit() * spec.velocity_scale;
+    const Eigen::VectorXd margins = snap.pair_margins(spec.margin, spec.world_margin);
     const Eigen::VectorXd opt_margins_cushion = margins.array() + 5e-4;
     const Eigen::VectorXd opt_margins_extra = margins.array() + 8e-4;
 
     // Precompute fixed goal frame once for fast validation reuse.
     std::vector<double> goal_frame(static_cast<size_t>(N_shapes * 12));
-    world.compute_frames(q_init.data() + (T - 1) * J, 1, goal_frame.data());
+    snap.compute_frames(q_init.data() + (T - 1) * J, 1, goal_frame.data());
 
     // Per-job failure caches for convex and original mesh checks.
     bool has_prev_convex = false, has_prev_orig = false;
@@ -144,15 +143,15 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
             const int64_t pp = verify_orig ? prev_o_pair : prev_c_pair;
             const int64_t psub = verify_orig ? prev_o_sub : prev_c_sub;
             if (psub == substeps && ps < S) {
-                auto hit = world.first_violation_indexed(frames_ptr, S, &ps, &pp, 1, margins.data(), verify_orig);
+                auto hit = snap.first_violation_indexed(frames_ptr, S, &ps, &pp, 1, margins.data(), verify_orig);
                 if (hit.has_value()) return hit;
             }
         }
-        world.screen_aabbs(frames_ptr, S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
+        snap.screen_aabbs(frames_ptr, S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
         std::optional<std::pair<int64_t, int64_t>> hit;
         if (!screen_rows.empty()) {
-            hit = world.first_violation_indexed(frames_ptr, S, screen_rows.data(), screen_pairs.data(),
-                                                static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig);
+            hit = snap.first_violation_indexed(frames_ptr, S, screen_rows.data(), screen_pairs.data(),
+                                               static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig);
         }
         if (verify_orig) {
             has_prev_orig = hit.has_value();
@@ -173,9 +172,9 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
         }
         Eigen::VectorXd r_tmp;
         for (const auto& [idx, specs] : spec.pose_constraints) {
-            world.kin.fk_single(pos.data() + idx * J, bpos.data(), brot.data());
+            snap.kin.fk_single(pos.data() + idx * J, bpos.data(), brot.data());
             for (const auto& cs : specs) {
-                if (!world.kin.eval_pose_constraint(cs, bpos.data(), brot.data(), nullptr, nullptr, r_tmp, nullptr)) {
+                if (!snap.kin.eval_pose_constraint(cs, bpos.data(), brot.data(), nullptr, nullptr, r_tmp, nullptr)) {
                     failure = "pose tolerance at waypoint " + std::to_string(idx);
                     return false;
                 }
@@ -185,8 +184,7 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
     };
 
     auto pair_name = [&](int64_t pid) -> std::string {
-        const auto& pr = world.active_pairs()[static_cast<size_t>(pid)];
-        return "(" + world.shapes()[pr.shape_a].link_key + ", " + world.shapes()[pr.shape_b].link_key + ")";
+        return snap.pair_display_name(pid);
     };
 
     // Per-job adaptive inter-sample points injected whenever Conservative Advancement catches tunneling.
@@ -249,7 +247,7 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
             } else {
                 detail::build_segment_samples(pos, substeps, true, val_samples);
                 val_frames.resize(static_cast<size_t>(S_total * N_shapes * 12));
-                world.compute_frames(val_samples.data(), S_total, val_frames.data());
+                snap.compute_frames(val_samples.data(), S_total, val_frames.data());
             }
             if (!skip_convex) {
                 auto hit = check_frames(val_frames.data(), S_total, substeps, false);
@@ -259,10 +257,10 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
                     break;
                 }
             }
-            // Provable Conservative Advancement check to catch any inter-sample tunneling dips.
+            // Sound kinematic-chain Conservative Advancement check (convex hull; implies d_orig >= d_convex >= margin).
             {
-                auto ccd_hit = world.first_violation_continuous(
-                    pos.data(), T, substeps, val_frames.data(), margins.data(), false, 2e-3);
+                auto ccd_hit = snap.first_violation_continuous(
+                    pos.data(), T, substeps, val_frames.data(), margins.data(), false, 1e-3);
                 if (ccd_hit.has_value()) {
                     failure = "continuous collision clearance on segment " + std::to_string(ccd_hit->seg) +
                               ", pair " + pair_name(ccd_hit->pair_id);
@@ -389,8 +387,8 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
         const int64_t S = static_cast<int64_t>((T - 1) * substeps);
         const Eigen::VectorXd& opt_m = use_cushion ? opt_margins_cushion : margins;
         const double buffer = linearize ? detail::kCollisionLinearizationBufferM : 0.0;
-        ep.col = world.eval_collision_rows(eval_samples.data(), S, opt_m.data(), margins.data(),
-                                           buffer, linearize, substeps, segment_minimum);
+        ep.col = snap.eval_collision_rows(eval_samples.data(), S, opt_m.data(), margins.data(),
+                                          buffer, linearize, substeps, segment_minimum);
 
         bool all_seg_ok = true;
         for (uint8_t b : ep.col.seg_ok) if (!b) { all_seg_ok = false; break; }
@@ -414,8 +412,8 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
                 for (int j = 0; j < J; ++j) extra_q[static_cast<size_t>(e * J + j)] = w * q(seg, j) + u * q(seg + 1, j);
             }
             const Eigen::VectorXd& extra_opt = use_cushion ? opt_margins_extra : opt_margins_cushion;
-            extra_col = world.eval_collision_rows(extra_q.data(), E, extra_opt.data(), margins.data(),
-                                                  buffer, linearize, 1, false);
+            extra_col = snap.eval_collision_rows(extra_q.data(), E, extra_opt.data(), margins.data(),
+                                                 buffer, linearize, 1, false);
             for (uint8_t b : extra_col.seg_ok) if (!b) { all_seg_ok = false; break; }
             n_extra_rows = static_cast<int>(extra_col.rows.size());
         }
@@ -435,12 +433,12 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
             }
         }
         for (const auto& [idx, specs] : spec.pose_constraints) {
-            world.kin.fk_single(q.data() + idx * J, bpos.data(), brot.data(),
-                                linearize ? jorig.data() : nullptr, linearize ? jaxis.data() : nullptr);
+            snap.kin.fk_single(q.data() + idx * J, bpos.data(), brot.data(),
+                               linearize ? jorig.data() : nullptr, linearize ? jaxis.data() : nullptr);
             for (const auto& cs : specs) {
                 Eigen::VectorXd r;
                 Eigen::MatrixXd jc;
-                const bool ok_c = world.kin.eval_pose_constraint(
+                const bool ok_c = snap.kin.eval_pose_constraint(
                     cs, bpos.data(), brot.data(),
                     linearize ? jorig.data() : nullptr, linearize ? jaxis.data() : nullptr,
                     r, linearize ? &jc : nullptr);
@@ -769,16 +767,14 @@ inline SQPJobResultNative solve_sqp_job(const PlanningWorld& world,
     return out;
 }
 
-inline std::vector<SQPJobResultNative> solve_sqp_batch(const PlanningWorld& world,
+inline std::vector<SQPJobResultNative> solve_sqp_batch(const WorldSnapshot& snap,
                                                        const std::vector<SQPJobSpecNative>& specs,
                                                        bool race = false) {
-    world.ensure_pairs();
     const int64_t B = static_cast<int64_t>(specs.size());
     std::vector<SQPJobResultNative> results(static_cast<size_t>(B));
     if (B == 0) return results;
     if (B == 1) {
-        // Single job runs inline so internal FK/AABB/Coal queries parallelize across all cores.
-        results[0] = solve_sqp_job(world, specs[0], nullptr);
+        results[0] = solve_sqp_job(snap, specs[0], nullptr);
         return results;
     }
     std::atomic<bool> race_won{false};
@@ -790,13 +786,20 @@ inline std::vector<SQPJobResultNative> solve_sqp_batch(const PlanningWorld& worl
             if (race && race_won.load(std::memory_order_relaxed)) break;
             const int64_t i = next_idx.fetch_add(1, std::memory_order_relaxed);
             if (i >= B) break;
-            results[static_cast<size_t>(i)] = solve_sqp_job(world, specs[static_cast<size_t>(i)], flag_ptr);
+            results[static_cast<size_t>(i)] = solve_sqp_job(snap, specs[static_cast<size_t>(i)], flag_ptr);
             if (race && results[static_cast<size_t>(i)].success) {
                 race_won.store(true, std::memory_order_relaxed);
             }
         }
     });
     return results;
+}
+
+inline std::vector<SQPJobResultNative> solve_sqp_batch(const PlanningWorld& world,
+                                                       const std::vector<SQPJobSpecNative>& specs,
+                                                       bool race = false) {
+    auto snap = world.snapshot();
+    return solve_sqp_batch(*snap, specs, race);
 }
 
 }  // namespace gobot::planning

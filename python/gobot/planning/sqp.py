@@ -254,7 +254,7 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                     failure = f"collision clearance on segment {seg}, pair {world.collision_pairs[int(hit[1])]}"
                     return False
             ccd_hit = nat.first_violation_continuous(
-                np.ascontiguousarray(positions, dtype=np.float64), substeps, frames, margins, False, 2e-3,
+                np.ascontiguousarray(positions, dtype=np.float64), substeps, frames, margins, False, 1e-3,
             )
             if ccd_hit is not None:
                 seg_h, u_h, pid_h = int(ccd_hit[0]), float(ccd_hit[1]), int(ccd_hit[2])

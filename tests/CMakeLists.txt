@@ -22,6 +22,14 @@ if(GOB_BUILD_MUJOCO)
     gtest_discover_tests(test_mujoco_batch)
 endif()
 
+if(GOB_BUILD_COAL)
+    find_package(Threads REQUIRED)
+    add_executable(test_motion_planning_cpp planning/test_motion_planning_cpp.cpp)
+    target_link_libraries(test_motion_planning_cpp PRIVATE gtest_main gobot_planning Threads::Threads)
+    target_compile_features(test_motion_planning_cpp PRIVATE cxx_std_17)
+    gtest_discover_tests(test_motion_planning_cpp)
+endif()
+
 add_library(gobot_test_support
         support/test_main.cpp
         support/test_render_backend.cpp)

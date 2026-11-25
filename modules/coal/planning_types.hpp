@@ -10,6 +10,12 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
+#ifdef GOBOT_PLANNING_HAS_TBB
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+#include <tbb/task_arena.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -41,12 +47,31 @@ public:
         return pool;
     }
 
-    unsigned int max_threads() const { return num_threads_; }
+    unsigned int max_threads() const {
+#ifdef GOBOT_PLANNING_HAS_TBB
+        return static_cast<unsigned int>(std::max(1, tbb::this_task_arena::max_concurrency()));
+#else
+        return num_threads_;
+#endif
+    }
 
     void parallel_for(int64_t count, int64_t min_chunk,
                       const std::function<void(int64_t, int64_t)>& fn) {
         if (count <= 0) return;
-        if (num_threads_ <= 1 || count < min_chunk * 2) {
+        const int64_t grain = std::max<int64_t>(1, min_chunk);
+#ifdef GOBOT_PLANNING_HAS_TBB
+        if (count < grain * 2) {
+            fn(0, count);
+            return;
+        }
+        tbb::parallel_for(
+            tbb::blocked_range<int64_t>(0, count, static_cast<size_t>(grain)),
+            [&](const tbb::blocked_range<int64_t>& r) {
+                fn(r.begin(), r.end());
+            });
+        return;
+#else
+        if (num_threads_ <= 1 || count < grain * 2) {
             fn(0, count);
             return;
         }
@@ -55,7 +80,7 @@ public:
             fn(0, count);
             return;
         }
-        const int64_t max_chunks = std::min<int64_t>(num_threads_, (count + min_chunk - 1) / min_chunk);
+        const int64_t max_chunks = std::min<int64_t>(num_threads_, (count + grain - 1) / grain);
         if (max_chunks <= 1) {
             fn(0, count);
             return;
@@ -89,19 +114,23 @@ public:
         for (const auto& err : errors) {
             if (err) std::rethrow_exception(err);
         }
+#endif
     }
 
 private:
     ThreadPool() {
+#ifndef GOBOT_PLANNING_HAS_TBB
         const unsigned int hw = std::thread::hardware_concurrency();
         num_threads_ = std::min(16u, std::max(1u, hw));
         workers_.reserve(num_threads_ > 1 ? num_threads_ - 1 : 0);
         for (unsigned int id = 1; id < num_threads_; ++id) {
             workers_.emplace_back([this, id] { worker_loop(static_cast<int64_t>(id)); });
         }
+#endif
     }
 
     ~ThreadPool() {
+#ifndef GOBOT_PLANNING_HAS_TBB
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
             stop_ = true;
@@ -111,6 +140,7 @@ private:
         for (auto& worker : workers_) {
             if (worker.joinable()) worker.join();
         }
+#endif
     }
 
     void worker_loop(int64_t id) {
@@ -386,17 +416,69 @@ public:
         }
         body_ancestor_.assign(static_cast<size_t>(B * J), 0);
         joint_prismatic_.assign(static_cast<size_t>(J), 0);
+        body_joint_base_reach_.assign(static_cast<size_t>(B * J), 0.0);
+        body_joint_pris_desc_.assign(static_cast<size_t>(B * J), {});
         for (int b = 0; b < B; ++b) {
             if (joint_idx_[b] >= 0 && kinds_[b] == 3) {
                 joint_prismatic_[static_cast<size_t>(joint_idx_[b])] = 1;
             }
+            // Walk up from body b to root, accumulating exact kinematic chain reach bounds.
+            double acc_reach = 0.0;
+            std::vector<int> pris_below;
             int cur = b;
             while (cur >= 0) {
-                if (joint_idx_[cur] >= 0) {
-                    body_ancestor_[static_cast<size_t>(b * J + joint_idx_[cur])] = 1;
+                const int j = joint_idx_[cur];
+                if (j >= 0) {
+                    const size_t slot = static_cast<size_t>(b * J + j);
+                    body_ancestor_[slot] = 1;
+                    // From joint j's origin to body cur's origin is at most ||b_pos_[cur]||;
+                    // downstream links add acc_reach + sum(|q_p|) for downstream prismatic joints.
+                    body_joint_base_reach_[slot] = acc_reach + b_pos_[static_cast<size_t>(cur)].norm();
+                    body_joint_pris_desc_[slot] = pris_below;
+                }
+                if (parent_[cur] >= 0) {
+                    acc_reach += a_pos_[static_cast<size_t>(cur)].norm() + b_pos_[static_cast<size_t>(cur)].norm();
+                    if (j >= 0 && kinds_[cur] == 3) {
+                        pris_below.push_back(j);
+                    }
                 }
                 cur = parent_[cur];
             }
+        }
+    }
+
+    // Exact rotation-invariant Lipschitz upper bound R_max(shape, j) on point displacement
+    // per unit joint motion dq_j for any point in a shape attached to `body_id`.
+    // `shape_body_radius` must be >= max_{x in shape} ||x_in_body_frame||_2.
+    // `pris_abs_max` (optional length J) bounds |q_p| for any downstream prismatic joints.
+    void body_lipschitz_weights(int body_id, double shape_body_radius,
+                                const double* pris_abs_max, double* out_weights) const {
+        const int J = num_joints();
+        if (body_id < 0) {
+            std::fill(out_weights, out_weights + J, 0.0);
+            return;
+        }
+        const uint8_t* anc = body_ancestor_.data() + body_id * J;
+        for (int j = 0; j < J; ++j) {
+            if (!anc[j]) {
+                out_weights[j] = 0.0;
+                continue;
+            }
+            if (joint_prismatic_[static_cast<size_t>(j)]) {
+                out_weights[j] = 1.0;
+                continue;
+            }
+            const size_t slot = static_cast<size_t>(body_id * J + j);
+            double r = body_joint_base_reach_[slot] + shape_body_radius;
+            for (const int pj : body_joint_pris_desc_[slot]) {
+                if (pris_abs_max != nullptr) {
+                    r += pris_abs_max[pj];
+                } else {
+                    const double bound = std::max(std::abs(lower_(pj)), std::abs(upper_(pj)));
+                    r += std::isfinite(bound) ? bound : 1e6;
+                }
+            }
+            out_weights[j] = r;
         }
     }
 
@@ -597,6 +679,53 @@ private:
     Eigen::VectorXd lower_, upper_, velocity_limit_, acceleration_limit_, initial_q_;
     std::vector<uint8_t> body_ancestor_;
     std::vector<uint8_t> joint_prismatic_;
+    std::vector<double> body_joint_base_reach_;
+    std::vector<std::vector<int>> body_joint_pris_desc_;
 };
+
+// Exact total variation int_{u0}^{u1} |dp/du| du of a scalar cubic Hermite segment
+// with displacement d = p1 - p0, endpoint velocities v0, v1, duration h, over [u0, u1] in [0, 1].
+inline double hermite_scalar_total_variation(double d, double v0, double v1, double h,
+                                             double u0, double u1) {
+    if (u1 <= u0) return 0.0;
+    auto eval = [&](double u) {
+        const double u2 = u * u;
+        const double u3 = u2 * u;
+        return (3.0 * u2 - 2.0 * u3) * d + (u3 - 2.0 * u2 + u) * (h * v0) + (u3 - u2) * (h * v1);
+    };
+    const double inv_h = 1.0 / std::max(h, 1e-12);
+    const double six_d_h = 6.0 * d * inv_h;
+    const double c1 = six_d_h - 4.0 * v0 - 2.0 * v1;
+    const double c2 = -six_d_h + 3.0 * (v0 + v1);
+
+    // Roots of derivative v(u) = c2 * u^2 + c1 * u + v0 = 0 strictly inside (u0, u1).
+    double pts[4];
+    int n_pts = 0;
+    pts[n_pts++] = u0;
+    if (std::abs(c2) > 1e-12) {
+        const double disc = c1 * c1 - 4.0 * c2 * v0;
+        if (disc > 0.0) {
+            const double sq = std::sqrt(disc);
+            double r1 = (-c1 - sq) / (2.0 * c2);
+            double r2 = (-c1 + sq) / (2.0 * c2);
+            if (r1 > r2) std::swap(r1, r2);
+            if (r1 > u0 && r1 < u1) pts[n_pts++] = r1;
+            if (r2 > u0 && r2 < u1 && std::abs(r2 - r1) > 1e-12) pts[n_pts++] = r2;
+        }
+    } else if (std::abs(c1) > 1e-12) {
+        const double r = -v0 / c1;
+        if (r > u0 && r < u1) pts[n_pts++] = r;
+    }
+    pts[n_pts++] = u1;
+
+    double tv = 0.0;
+    double prev = eval(pts[0]);
+    for (int i = 1; i < n_pts; ++i) {
+        const double cur = eval(pts[i]);
+        tv += std::abs(cur - prev);
+        prev = cur;
+    }
+    return tv;
+}
 
 }  // namespace gobot::planning

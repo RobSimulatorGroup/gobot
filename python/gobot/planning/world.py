@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 import math
+import warnings
 
 import numpy as np
 from scipy.spatial import ConvexHull
@@ -150,6 +151,7 @@ class PlanningWorld:
         upper_list: list[float] = []
         vel_list: list[float] = []
         acc_list: list[float] = []
+        defaulted_acc_joints: list[str] = []
         init_list: list[float] = []
         link_map: dict[Link, int] = {}
         link_index_str: dict[str, int] = {}
@@ -216,7 +218,11 @@ class PlanningWorld:
                     speed = float(j.get("velocity_limit", 0.0))
                     vel_list.append(speed if speed > 0 else math.inf)
                     acc = float(j.get("acceleration_limit", 0.0))
-                    acc_list.append(acc if acc > 0 else float(default_acceleration_limit))
+                    if acc > 0:
+                        acc_list.append(acc)
+                    else:
+                        acc_list.append(float(default_acceleration_limit))
+                        defaulted_acc_joints.append(f"{robot_name}::{j['name']}")
                     init_list.append(float(j.get("initial_position", 0.0)))
 
                 local_body_id: dict[str, int] = {}
@@ -258,6 +264,13 @@ class PlanningWorld:
 
         if not joint_names:
             raise ValueError("selected robots have no movable joints")
+        if defaulted_acc_joints:
+            warnings.warn(
+                f"Joints missing acceleration_limit ({len(defaulted_acc_joints)} joints, e.g. "
+                f"{defaulted_acc_joints[0]}): defaulting to {float(default_acceleration_limit):.1f} rad/s^2",
+                UserWarning,
+                stacklevel=2,
+            )
         lower = np.asarray(lower_list, dtype=np.float64)
         upper = np.asarray(upper_list, dtype=np.float64)
         vel = np.asarray(vel_list, dtype=np.float64)
@@ -591,12 +604,20 @@ class PlanningWorld:
             return True, None
         (frames,) = self._native.compute_frames(np.ascontiguousarray(samples), False)
         margins = self.pair_margins(margin, world_margin)
+        is_traj = isinstance(positions_or_trajectory, Trajectory)
+        t_arg = np.ascontiguousarray(positions_or_trajectory.times, dtype=np.float64) if is_traj else None
+        v_arg = np.ascontiguousarray(positions_or_trajectory.velocities, dtype=np.float64) if is_traj else None
+        q_c = np.ascontiguousarray(q, dtype=np.float64)
+
         rows, pids = self._native.screen_aabbs(frames, margins, False, substeps)
         if len(rows):
             hit = self._native.first_violation_indexed(frames, rows, pids, margins, False)
             if hit is not None:
                 seg = min(int(hit[0]) // substeps, len(q) - 2)
                 return False, f"convex clearance failed on segment {seg}, pair {self.collision_pairs[int(hit[1])]}"
+        ccd = self._native.first_violation_continuous(q_c, substeps, frames, margins, False, 5e-4, t_arg, v_arg)
+        if ccd is not None:
+            return False, f"continuous convex clearance failed on segment {int(ccd[0])}, pair {self.collision_pairs[int(ccd[2])]}"
         if verify_original and self.has_mesh:
             rows, pids = self._native.screen_aabbs(frames, margins, True, substeps)
             if len(rows):
@@ -604,4 +625,7 @@ class PlanningWorld:
                 if hit is not None:
                     seg = min(int(hit[0]) // substeps, len(q) - 2)
                     return False, f"mesh clearance failed on segment {seg}, pair {self.collision_pairs[int(hit[1])]}"
+            ccd_m = self._native.first_violation_continuous(q_c, substeps, frames, margins, True, 5e-4, t_arg, v_arg)
+            if ccd_m is not None:
+                return False, f"continuous mesh clearance failed on segment {int(ccd_m[0])}, pair {self.collision_pairs[int(ccd_m[2])]}"
         return True, None

@@ -13,11 +13,33 @@ ExternalProject_Add(gobot_coal_sdk SOURCE_DIR "${coal_source}" BINARY_DIR "${coa
                -DCMAKE_DISABLE_FIND_PACKAGE_octomap=ON -DINSTALL_DOCUMENTATION=OFF
     BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target coal
     INSTALL_COMMAND "" BUILD_ALWAYS TRUE BUILD_BYPRODUCTS "${coal_lib}")
-pybind11_add_module(_coal_native MODULE NO_EXTRAS planning_collision.cpp)
-add_dependencies(_coal_native gobot_coal_sdk)
-target_include_directories(_coal_native SYSTEM PRIVATE "${coal_source}/include" "${coal_build}/include")
-target_link_libraries(_coal_native PRIVATE Eigen3::Eigen "${coal_lib}")
-set_target_properties(_coal_native PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+
+if(NOT TARGET TBB::tbb)
+    find_package(TBB CONFIG QUIET)
+endif()
+
+# Standalone C++ motion planning library (no Python/pybind11 dependency) for C++ engine,
+# editor tools, C++ unit tests, and the thin Python binding module.
+add_library(gobot_planning SHARED planning_lib.cpp)
+add_dependencies(gobot_planning gobot_coal_sdk)
+target_include_directories(gobot_planning PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(gobot_planning SYSTEM PUBLIC "${coal_source}/include" "${coal_build}/include")
+target_link_libraries(gobot_planning PUBLIC Eigen3::Eigen "${coal_lib}")
+if(TARGET TBB::tbb)
+    target_link_libraries(gobot_planning PUBLIC TBB::tbb)
+    target_compile_definitions(gobot_planning PUBLIC GOBOT_PLANNING_HAS_TBB=1)
+endif()
+set_target_properties(gobot_planning PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+    BUILD_RPATH "${coal_build}/lib"
     INSTALL_RPATH "$ORIGIN")
-install(TARGETS _coal_native LIBRARY DESTINATION gobot COMPONENT python)
+
+# Thin pybind11 wrapper over gobot_planning.
+pybind11_add_module(_coal_native MODULE NO_EXTRAS planning_collision.cpp)
+target_link_libraries(_coal_native PRIVATE gobot_planning)
+set_target_properties(_coal_native PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+    INSTALL_RPATH "$ORIGIN")
+
+install(TARGETS gobot_planning _coal_native LIBRARY DESTINATION gobot COMPONENT python)
 install(DIRECTORY "${coal_build}/lib/" DESTINATION gobot COMPONENT python FILES_MATCHING PATTERN "libcoal.so*")

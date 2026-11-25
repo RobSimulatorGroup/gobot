@@ -46,9 +46,10 @@ stack, then swings it toward the conveyor.
   forward kinematics and exact analytic collision/pose Jacobians, and runs
   AABB-screened Coal queries + Conservative Advancement CCD on all 350 shape pairs.
 - Native C++ trust-region SQP with a custom ProxAL-SSN L1-hinge box QP solver
-  (`planning_sqp.hpp` / `planning_qp.hpp`) finds a verified 14-waypoint
+  (`libgobot_planning.so`: `planning_sqp.hpp` / `planning_qp.hpp` /
+  `planning_planner.hpp`, parallelized with TBB) finds a verified 14-waypoint
   collision-free path with 14 mm environment clearance and 1 mm self-collision
-  clearance (`~180 ms` cold full unloading without via, `~63 ms` with via).
+  clearance (`~122 ms` cold full unloading without via, `~36 ms` with via).
 - `retime_trajectory` computes an exact cubic-Hermite velocity- and
   acceleration-bounded TOPP timing profile (`~2.86 s`), and `play.py` samples
   `result.trajectory.sample(t)` in real time with live C++ FK.
@@ -96,32 +97,31 @@ authored mesh verification.
 Run the headless comparison from the repository root:
 
 ```sh
-.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 8 32 64 128 --repeats 3 --solver sqp_fast
+.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 8 32 --repeats 3 --solver sqp_fast
 ```
 
-Measured on a Ryzen 7 3700X (8C/16T) and RTX 4070 (`cuda:0`) across 350 shape
-pairs, 12 collision substeps, and `dt=None` TOPP retiming (median of 3 warm
-runs; every returned trajectory is independently verified along its actual
-continuous cubic Hermite curve at 313 configurations on both convex hulls and
-authored triangle meshes, plus exact velocity and acceleration limits):
+Measured on a Ryzen 7 3700X (8C/16T, oneTBB enabled) and RTX 4070 (`cuda:0`)
+across 350 shape pairs, 12 collision substeps, and `dt=None` TOPP retiming
+(median of 3 warm runs; every returned trajectory passes kinematic-chain
+continuous Hermite CCD and is independently verified at 313 configurations on
+both convex hulls and authored triangle meshes, plus exact velocity and
+acceleration limits):
 
-- **C++ Parallel Batch IK**: `0.14 ms` (`B=1`), `0.46 ms` (`B=4`), `0.84 ms` (`B=8`), `1.56 ms` (`B=16`), `3.05 ms` (`B=32`), `6.34 ms` (`B=64`), `12.35 ms` (`B=128`, `0.10 ms/solve`)
-- **Short transfer (zero-QP fast path)**: `1.74 ms` median (11 warm runs)
+- **C++ Parallel Batch IK**: `0.13 ms` (`B=1`), `0.52 ms` (`B=4`), `0.80 ms` (`B=8`), `1.48 ms` (`B=16`), `2.85 ms` (`B=32`, `0.09 ms/solve`)
+- **Short transfer (zero-QP fast path)**: `1.28 ms` median (11 warm runs)
 
 | Trajectories (`B`) | Backend | `sqp_fast` median | Per trajectory | Solved & Verified | Min carton clearance |
 | ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | `coal` | **0.063 s** | 63.1 ms | 1/1 | 14.28 mm |
-| 1 | `mujoco_warp` | **0.175 s** | 174.6 ms | 1/1 | 14.28 mm |
-| 4 | `coal` | **0.205 s** | 51.2 ms | 4/4 | 14.00 mm |
-| 4 | `mujoco_warp` | **0.376 s** | 94.1 ms | 4/4 | 14.28 mm |
-| 8 | `coal` | **0.486 s** | 60.7 ms | 8/8 | 14.00 mm |
-| 8 | `mujoco_warp` | **0.981 s** | 122.6 ms | 8/8 | 14.00 mm |
-| 32 | `coal` | **1.162 s** | 36.3 ms | 32/32 | 14.00 mm |
-| 32 | `mujoco_warp` | **2.895 s** | 90.5 ms | 32/32 | 14.00 mm |
-| 64 | `coal` | **2.305 s** | 36.0 ms | 64/64 | 14.00 mm |
-| 64 | `mujoco_warp` | **5.265 s** | 82.3 ms | 64/64 | 14.00 mm |
-| 128 | `coal` | **4.736 s** | 37.0 ms | 128/128 | 14.00 mm |
-| 128 | `mujoco_warp` | **11.028 s** | 86.2 ms | 128/128 | 14.00 mm |
+| 1 | `coal` | **0.036 s** | 35.7 ms | 1/1 | 14.24 mm |
+| 1 | `mujoco_warp` (exp.) | **0.136 s** | 136.1 ms | 1/1 | 14.24 mm |
+| 4 | `coal` | **0.050 s** | 12.5 ms | 4/4 | 14.24 mm |
+| 4 | `mujoco_warp` (exp.) | **0.259 s** | 64.8 ms | 4/4 | 14.24 mm |
+| 8 | `coal` | **0.149 s** | 18.6 ms | 8/8 | 14.00 mm |
+| 8 | `mujoco_warp` (exp.) | **0.747 s** | 93.3 ms | 8/8 | 14.00 mm |
+| 32 | `coal` | **0.402 s** | 12.6 ms | 32/32 | 14.00 mm |
+| 32 | `mujoco_warp` (exp.) | **2.189 s** | 68.4 ms | 32/32 | 14.00 mm |
+| 64 | `coal` | **0.901 s** | 14.1 ms | 64/64 | — |
+| 128 | `coal` | **1.666 s** | 13.0 ms | 128/128 | — |
 
 ## Requirements and assets
 

@@ -82,9 +82,9 @@ Key pipeline stages:
   and acceleration-bounded timestamps and exposes continuous evaluation via
   `result.trajectory.sample(t)`.
 
-On a Ryzen 7 3700X, the headless Panda inspection task solves in **~50 ms**
-(1.5 ms IK, 40.8 ms C++ SQP over 13 QPs, 1.1 ms validation, 6.4 ms TOPP
-retiming + continuous Hermite verification), achieving `0.001 mm` / `0.000 deg`
+On a Ryzen 7 3700X (TBB enabled), the headless Panda inspection task solves in
+**~31 ms** (0.5 ms IK, 27.6 ms C++ SQP over 12 QPs, 1.8 ms validation, 1.0 ms
+C++ TOPP retiming + continuous Hermite CCD), achieving `0.001 mm` / `0.000 deg`
 inspection error and `40.1 mm` minimum sampled world clearance.
 
 ## Build

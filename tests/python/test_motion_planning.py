@@ -606,3 +606,62 @@ def test_conservative_advancement_ccd_catches_inter_sample_tunneling(simple_snap
     ts = np.linspace(0.0, res.trajectory.duration, 201)
     qs, _, _ = res.trajectory.sample(ts)
     assert float(world.collision_distances(qs).min()) >= 0.005 - 1e-5
+
+
+def test_missing_acceleration_limit_emits_warning_and_hermite_ccd(simple_snapshot):
+    """from_snapshot must warn when acceleration_limit defaults, and Hermite CCD must catch curved-spline hits."""
+    with pytest.warns(UserWarning, match="missing acceleration_limit"):
+        world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+
+    # Place an obstacle directly on the revolute arc of right_tip (radius 0.25 around (0, 0.7, 0.5)):
+    # At q_hinge = 0 -> tip at (0.25, 0.7, 0.5); at q_hinge = pi -> tip at (-0.25, 0.7, 0.5);
+    # mid-arc passes through (0.0, 0.95, 0.5).
+    world.add_box("arc_post", (0.06, 0.06, 0.25), (0.0, 0.95, 0.5))
+    q_path = np.array([[-0.6, 0.0, 0.0], [-0.6, 0.0, math.pi]], dtype=np.float64)
+    traj = retime_trajectory(q_path, world.velocity_limits, world.acceleration_limits, stop_at_endpoints=True)
+    ok, reason = world.validate_trajectory(traj, margin=0.005, world_margin=0.01, collision_substeps=1)
+    assert not ok
+    assert reason is not None and "continuous" in reason
+
+
+def test_concurrent_world_mutation_during_planning(simple_snapshot):
+    """Mutating PlanningWorld on another thread during plan_batch must be thread-safe via CoW snapshots."""
+    import threading
+    from gobot import _coal_native
+
+    assert _coal_native.abi_version() >= 1
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    world.add_box("mover", (0.10, 0.10, 0.20), (0.0, 0.30, 0.5))
+    planner = MotionPlanner(world, backend="coal")
+
+    stop = threading.Event()
+    errors: list[Exception] = []
+
+    def mutator():
+        step = 0
+        try:
+            while not stop.is_set():
+                y = 0.28 + 0.06 * math.sin(0.2 * step)
+                world.update_obstacle_pose("mover", (0.0, y, 0.5))
+                if step % 6 == 0:
+                    world.add_sphere("tmp_s", 0.03, (0.85, -0.85, 0.5))
+                    world.remove_obstacle("tmp_s")
+                step += 1
+        except Exception as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=mutator, daemon=True)
+    t.start()
+    try:
+        cfg = SolverConfig(waypoints=10, margin=0.01, world_margin=0.015, collision_substeps=4)
+        reqs = [
+            MotionPlanRequest(np.array([-0.6, 0.35 + 0.02 * i, 0.0]), np.array([0.6, 0.35 + 0.02 * i, 0.0]), config=cfg)
+            for i in range(6)
+        ]
+        for _ in range(4):
+            batch = planner.plan_batch(reqs)
+            assert batch.success.all(), batch.reasons
+    finally:
+        stop.set()
+        t.join(timeout=2.0)
+    assert not errors, f"mutator thread raised: {errors}"

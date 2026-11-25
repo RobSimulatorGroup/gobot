@@ -131,183 +131,106 @@ inline bool eval_coal_clearance(const CollisionShape& a, const CollisionShape& b
     return dist.min_distance >= threshold;
 }
 
-class PlanningWorld {
+// Immutable Copy-on-Write snapshot of a PlanningWorld.
+// All query and planning methods operate lock-free on a const WorldSnapshot.
+class WorldSnapshot {
 public:
     KinematicsModel kin;
+    std::unordered_map<std::string, int> link_index;
+    std::vector<WorldShape> shapes;
+    std::unordered_map<std::string, int> shape_index;
+    std::unordered_set<std::string> disabled_pairs;
 
-    uint64_t version() const { return version_; }
-    uint64_t topology_version() const { return topology_version_; }
-
-    void set_link_index(std::unordered_map<std::string, int> map) {
-        link_index_ = std::move(map);
-    }
+    std::vector<ActivePair> pairs;
+    std::vector<int> mobile_shapes;
+    std::vector<int> shape_move_slot;
+    std::vector<double> mobile_body_radius_convex;
+    std::vector<double> mobile_body_radius_orig;
+    int self_pair_count = 0;
+    bool has_mesh = false;
+    uint64_t version = 0;
+    uint64_t topology_version = 0;
 
     int link_id(const std::string& link_key) const {
-        auto it = link_index_.find(link_key);
-        if (it == link_index_.end()) throw std::invalid_argument("unknown link: " + link_key);
+        auto it = link_index.find(link_key);
+        if (it == link_index.end()) throw std::invalid_argument("unknown link: " + link_key);
         return it->second;
     }
 
-    void add_shape(WorldShape ws) {
-        if (shape_index_.count(ws.name))
-            throw std::invalid_argument("duplicate collision shape name: " + ws.name);
-        ws.update_fixed_bounds();
-        const int idx = static_cast<int>(shapes_.size());
-        shape_index_[ws.name] = idx;
-        shapes_.push_back(std::move(ws));
-        pairs_dirty_ = true;
-        ++version_;
-        ++topology_version_;
+    std::string pair_display_name(int64_t pid) const {
+        const auto& pr = pairs[static_cast<size_t>(pid)];
+        return "('" + shapes[static_cast<size_t>(pr.shape_a)].name + "', '" +
+               shapes[static_cast<size_t>(pr.shape_b)].name + "')";
     }
 
-    void update_obstacle_pose(const std::string& name, const Frame& world_frame) {
-        auto it = shape_index_.find(name);
-        if (it == shape_index_.end()) throw std::invalid_argument("unknown obstacle: " + name);
-        auto& ws = shapes_[static_cast<size_t>(it->second)];
-        if (ws.body_id >= 0) throw std::invalid_argument("cannot set world pose of attached/robot shape: " + name);
-        ws.local_frame = world_frame;
-        ws.update_fixed_bounds();
-        ++version_;
-    }
-
-    void remove_obstacle(const std::string& name) {
-        auto it = shape_index_.find(name);
-        if (it == shape_index_.end()) throw std::invalid_argument("unknown obstacle: " + name);
-        const int idx = it->second;
-        if (shapes_[static_cast<size_t>(idx)].body_id >= 0)
-            throw std::invalid_argument("cannot remove robot/attached shape directly; detach first: " + name);
-        shapes_.erase(shapes_.begin() + idx);
-        shape_index_.clear();
-        for (size_t i = 0; i < shapes_.size(); ++i) shape_index_[shapes_[i].name] = static_cast<int>(i);
-        pairs_dirty_ = true;
-        ++version_;
-        ++topology_version_;
-    }
-
-    void attach_object(const std::string& name, const std::string& link_key,
-                       const Frame& local_frame, const std::vector<std::string>& touch_links) {
-        auto it = shape_index_.find(name);
-        if (it == shape_index_.end()) throw std::invalid_argument("unknown object to attach: " + name);
-        const int bid = link_id(link_key);
-        auto& ws = shapes_[static_cast<size_t>(it->second)];
-        ws.body_id = bid;
-        ws.is_attached = true;
-        // Keep the attached object's own link_key ("::" + name) so touch_links only
-        // exempt pairs involving this attached object without mutating global link ACM.
-        ws.link_key = "::" + ws.name;
-        ws.local_frame = local_frame;
-        ws.attached_touch_links.clear();
-        ws.attached_touch_links.insert(link_key);
-        for (const auto& tl : touch_links) {
-            ws.attached_touch_links.insert(tl);
-        }
-        pairs_dirty_ = true;
-        ++version_;
-        ++topology_version_;
-    }
-
-    void detach_object(const std::string& name, const Eigen::VectorXd& q_current) {
-        auto it = shape_index_.find(name);
-        if (it == shape_index_.end()) throw std::invalid_argument("unknown object to detach: " + name);
-        auto& ws = shapes_[static_cast<size_t>(it->second)];
-        if (!ws.is_attached || ws.body_id < 0) throw std::invalid_argument("object is not attached: " + name);
-        const int B = kin.num_bodies();
-        std::vector<Vec3> bpos(static_cast<size_t>(B));
-        std::vector<Mat3> brot(static_cast<size_t>(B));
-        kin.fk_single(q_current.data(), bpos.data(), brot.data());
-        const Mat3& R = brot[static_cast<size_t>(ws.body_id)];
-        const Vec3& p = bpos[static_cast<size_t>(ws.body_id)];
-        Frame world_f;
-        world_f.leftCols<3>() = R * ws.local_frame.leftCols<3>();
-        world_f.col(3) = R * ws.local_frame.col(3) + p;
-        ws.body_id = -1;
-        ws.is_attached = false;
-        ws.attached_touch_links.clear();
-        ws.link_key = "::" + ws.name;
-        ws.local_frame = world_f;
-        ws.update_fixed_bounds();
-        pairs_dirty_ = true;
-        ++version_;
-        ++topology_version_;
-    }
-
-    void set_collision_enabled(const std::string& link_a, const std::string& link_b, bool enabled) {
-        const auto key = canonical_pair_key(link_a, link_b);
-        if (enabled) disabled_pairs_.erase(key);
-        else disabled_pairs_.insert(key);
-        pairs_dirty_ = true;
-        ++version_;
-        ++topology_version_;
-    }
-
-    void set_robot_base_pose(int branch_idx, const Vec3& pos, const Mat3& rot) {
-        kin.set_branch_pose(branch_idx, pos, rot);
-        ++version_;
-    }
-
-    void ensure_pairs() const {
-        if (!pairs_dirty_) return;
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-        if (!pairs_dirty_) return;
-        pairs_.clear();
-        mobile_shapes_.clear();
-        shape_move_slot_.assign(shapes_.size(), -1);
+    void rebuild_pairs() {
+        pairs.clear();
+        mobile_shapes.clear();
+        mobile_body_radius_convex.clear();
+        mobile_body_radius_orig.clear();
+        shape_move_slot.assign(shapes.size(), -1);
         std::vector<int> fixed_shapes;
-        for (int i = 0; i < static_cast<int>(shapes_.size()); ++i) {
-            if (shapes_[static_cast<size_t>(i)].body_id >= 0) {
-                shape_move_slot_[static_cast<size_t>(i)] = static_cast<int>(mobile_shapes_.size());
-                mobile_shapes_.push_back(i);
+        for (int i = 0; i < static_cast<int>(shapes.size()); ++i) {
+            const auto& ws = shapes[static_cast<size_t>(i)];
+            if (ws.body_id >= 0) {
+                shape_move_slot[static_cast<size_t>(i)] = static_cast<int>(mobile_shapes.size());
+                mobile_shapes.push_back(i);
+                if (ws.shape->kind == 6) {
+                    mobile_body_radius_convex.push_back(0.0);
+                    mobile_body_radius_orig.push_back(0.0);
+                } else {
+                    const Vec3 c_cvx = ws.local_frame.leftCols<3>() * ws.shape->convex_center + ws.local_frame.col(3);
+                    const Vec3 c_org = ws.local_frame.leftCols<3>() * ws.shape->orig_center + ws.local_frame.col(3);
+                    mobile_body_radius_convex.push_back(c_cvx.norm() + ws.shape->convex_half.norm());
+                    mobile_body_radius_orig.push_back(c_org.norm() + ws.shape->orig_half.norm());
+                }
             } else {
                 fixed_shapes.push_back(i);
             }
         }
         auto enabled = [&](int i, int j) {
-            const auto& a = shapes_[static_cast<size_t>(i)];
-            const auto& b = shapes_[static_cast<size_t>(j)];
+            const auto& a = shapes[static_cast<size_t>(i)];
+            const auto& b = shapes[static_cast<size_t>(j)];
             if (a.link_key == b.link_key) return false;
             if (a.is_attached && a.attached_touch_links.count(b.link_key)) return false;
             if (b.is_attached && b.attached_touch_links.count(a.link_key)) return false;
-            if (disabled_pairs_.count(canonical_pair_key(a.link_key, b.link_key))) return false;
+            if (disabled_pairs.count(canonical_pair_key(a.link_key, b.link_key))) return false;
             return ((a.layer & b.mask) != 0) || ((b.layer & a.mask) != 0);
         };
-        for (size_t a = 0; a < mobile_shapes_.size(); ++a) {
-            for (size_t b = a + 1; b < mobile_shapes_.size(); ++b) {
-                const int ia = mobile_shapes_[a], ib = mobile_shapes_[b];
+        for (size_t a = 0; a < mobile_shapes.size(); ++a) {
+            for (size_t b = a + 1; b < mobile_shapes.size(); ++b) {
+                const int ia = mobile_shapes[a], ib = mobile_shapes[b];
                 if (enabled(ia, ib)) {
-                    const bool pl = (shapes_[ia].shape->kind == 6 || shapes_[ib].shape->kind == 6);
-                    pairs_.push_back({ia, ib, true, pl});
+                    const bool pl = (shapes[static_cast<size_t>(ia)].shape->kind == 6 ||
+                                     shapes[static_cast<size_t>(ib)].shape->kind == 6);
+                    pairs.push_back({ia, ib, true, pl});
                 }
             }
         }
-        self_pair_count_ = static_cast<int>(pairs_.size());
-        for (const int ia : mobile_shapes_) {
+        self_pair_count = static_cast<int>(pairs.size());
+        for (const int ia : mobile_shapes) {
             for (const int ib : fixed_shapes) {
                 if (enabled(ia, ib)) {
-                    const bool pl = (shapes_[ia].shape->kind == 6 || shapes_[ib].shape->kind == 6);
-                    pairs_.push_back({ia, ib, false, pl});
+                    const bool pl = (shapes[static_cast<size_t>(ia)].shape->kind == 6 ||
+                                     shapes[static_cast<size_t>(ib)].shape->kind == 6);
+                    pairs.push_back({ia, ib, false, pl});
                 }
             }
         }
-        has_mesh_ = false;
-        for (const auto& pr : pairs_) {
-            if (shapes_[pr.shape_a].shape->kind == 5 || shapes_[pr.shape_b].shape->kind == 5) {
-                has_mesh_ = true;
+        has_mesh = false;
+        for (const auto& pr : pairs) {
+            if (shapes[static_cast<size_t>(pr.shape_a)].shape->kind == 5 ||
+                shapes[static_cast<size_t>(pr.shape_b)].shape->kind == 5) {
+                has_mesh = true;
                 break;
             }
         }
-        pairs_dirty_ = false;
     }
 
-    const std::vector<WorldShape>& shapes() const { return shapes_; }
-    const std::vector<ActivePair>& active_pairs() const { ensure_pairs(); return pairs_; }
-    int self_pair_count() const { ensure_pairs(); return self_pair_count_; }
-    bool has_mesh() const { ensure_pairs(); return has_mesh_; }
-
     Eigen::VectorXd pair_margins(double margin, double world_margin) const {
-        ensure_pairs();
-        Eigen::VectorXd m(static_cast<Eigen::Index>(pairs_.size()));
-        for (size_t i = 0; i < pairs_.size(); ++i) {
-            m(static_cast<Eigen::Index>(i)) = pairs_[i].is_self ? margin : world_margin;
+        Eigen::VectorXd m(static_cast<Eigen::Index>(pairs.size()));
+        for (size_t i = 0; i < pairs.size(); ++i) {
+            m(static_cast<Eigen::Index>(i)) = pairs[i].is_self ? margin : world_margin;
         }
         return m;
     }
@@ -317,10 +240,9 @@ public:
                         double* out_frames,
                         double* out_jorig = nullptr,
                         double* out_jaxis = nullptr) const {
-        ensure_pairs();
         const int B = kin.num_bodies();
         const int J = kin.num_joints();
-        const int N = static_cast<int>(shapes_.size());
+        const int N = static_cast<int>(shapes.size());
         const bool need_joints = (out_jorig != nullptr && out_jaxis != nullptr);
 
         auto work = [&](int64_t s_begin, int64_t s_end) {
@@ -340,7 +262,7 @@ public:
                 }
                 double* sf = out_frames + s * N * 12;
                 for (int i = 0; i < N; ++i) {
-                    const auto& ws = shapes_[static_cast<size_t>(i)];
+                    const auto& ws = shapes[static_cast<size_t>(i)];
                     Eigen::Map<Frame> dst(sf + i * 12);
                     if (ws.body_id >= 0) {
                         const Mat3& R = brot[static_cast<size_t>(ws.body_id)];
@@ -360,12 +282,11 @@ public:
     void screen_aabbs(const double* frames, int64_t S, const double* thresholds,
                       bool verify_original, int64_t group_size,
                       std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pairs) const {
-        ensure_pairs();
         out_rows.clear();
         out_pairs.clear();
-        const int64_t N = static_cast<int64_t>(shapes_.size());
-        const int64_t P = static_cast<int64_t>(pairs_.size());
-        const int64_t M = static_cast<int64_t>(mobile_shapes_.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
+        const int64_t P = static_cast<int64_t>(pairs.size());
+        const int64_t M = static_cast<int64_t>(mobile_shapes.size());
         if (S == 0 || P == 0) return;
 
         std::vector<double> mlo(static_cast<size_t>(S * M * 3));
@@ -377,8 +298,8 @@ public:
                 double* lo_s = mlo.data() + s * M * 3;
                 double* hi_s = mhi.data() + s * M * 3;
                 for (int64_t m = 0; m < M; ++m) {
-                    const int sid = mobile_shapes_[static_cast<size_t>(m)];
-                    const auto& sh = *shapes_[static_cast<size_t>(sid)].shape;
+                    const int sid = mobile_shapes[static_cast<size_t>(m)];
+                    const auto& sh = *shapes[static_cast<size_t>(sid)].shape;
                     if (sh.kind == 6) continue;
                     const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
                     const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
@@ -399,13 +320,13 @@ public:
         };
 
         auto get_b = [&](int64_t s, int sid, const double*& lo, const double*& hi) {
-            const int slot = shape_move_slot_[static_cast<size_t>(sid)];
+            const int slot = shape_move_slot[static_cast<size_t>(sid)];
             if (slot >= 0) {
                 const size_t off = static_cast<size_t>((s * M + slot) * 3);
                 lo = mlo.data() + off;
                 hi = mhi.data() + off;
             } else {
-                const auto& ws = shapes_[static_cast<size_t>(sid)];
+                const auto& ws = shapes[static_cast<size_t>(sid)];
                 lo = (verify_original ? ws.fixed_lo_orig : ws.fixed_lo_convex).data();
                 hi = (verify_original ? ws.fixed_hi_orig : ws.fixed_hi_convex).data();
             }
@@ -414,7 +335,7 @@ public:
         if (group_size <= 1 || S < 2) {
             for (int64_t s = 0; s < S; ++s) {
                 for (int64_t p = 0; p < P; ++p) {
-                    const auto& pr = pairs_[static_cast<size_t>(p)];
+                    const auto& pr = pairs[static_cast<size_t>(p)];
                     if (pr.is_plane) {
                         out_rows.push_back(s);
                         out_pairs.push_back(p);
@@ -456,27 +377,27 @@ public:
             }
             selected.clear();
             for (int64_t p = 0; p < P; ++p) {
-                const auto& pr = pairs_[static_cast<size_t>(p)];
+                const auto& pr = pairs[static_cast<size_t>(p)];
                 if (pr.is_plane) {
                     selected.push_back(p);
                     continue;
                 }
-                const int sa = shape_move_slot_[static_cast<size_t>(pr.shape_a)];
-                const int sb = shape_move_slot_[static_cast<size_t>(pr.shape_b)];
+                const int sa = shape_move_slot[static_cast<size_t>(pr.shape_a)];
+                const int sb = shape_move_slot[static_cast<size_t>(pr.shape_b)];
                 const double* alo = sa >= 0 ? glo.data() + sa * 3
-                                            : (verify_original ? shapes_[pr.shape_a].fixed_lo_orig : shapes_[pr.shape_a].fixed_lo_convex).data();
+                                            : (verify_original ? shapes[static_cast<size_t>(pr.shape_a)].fixed_lo_orig : shapes[static_cast<size_t>(pr.shape_a)].fixed_lo_convex).data();
                 const double* ahi = sa >= 0 ? ghi.data() + sa * 3
-                                            : (verify_original ? shapes_[pr.shape_a].fixed_hi_orig : shapes_[pr.shape_a].fixed_hi_convex).data();
+                                            : (verify_original ? shapes[static_cast<size_t>(pr.shape_a)].fixed_hi_orig : shapes[static_cast<size_t>(pr.shape_a)].fixed_hi_convex).data();
                 const double* blo = sb >= 0 ? glo.data() + sb * 3
-                                            : (verify_original ? shapes_[pr.shape_b].fixed_lo_orig : shapes_[pr.shape_b].fixed_lo_convex).data();
+                                            : (verify_original ? shapes[static_cast<size_t>(pr.shape_b)].fixed_lo_orig : shapes[static_cast<size_t>(pr.shape_b)].fixed_lo_convex).data();
                 const double* bhi = sb >= 0 ? ghi.data() + sb * 3
-                                            : (verify_original ? shapes_[pr.shape_b].fixed_hi_orig : shapes_[pr.shape_b].fixed_hi_convex).data();
+                                            : (verify_original ? shapes[static_cast<size_t>(pr.shape_b)].fixed_hi_orig : shapes[static_cast<size_t>(pr.shape_b)].fixed_hi_convex).data();
                 if (overlaps(alo, ahi, blo, bhi, thresholds[p])) selected.push_back(p);
             }
             if (selected.empty()) continue;
             for (int64_t s = start; s < stop; ++s) {
                 for (const int64_t p : selected) {
-                    const auto& pr = pairs_[static_cast<size_t>(p)];
+                    const auto& pr = pairs[static_cast<size_t>(p)];
                     if (pr.is_plane) {
                         out_rows.push_back(s);
                         out_pairs.push_back(p);
@@ -498,17 +419,18 @@ public:
     void query_distances_indexed(const double* frames, int64_t S,
                                  const int64_t* rows, const int64_t* pair_ids, int64_t K,
                                  bool verify, double* out) const {
-        ensure_pairs();
-        const int64_t N = static_cast<int64_t>(shapes_.size());
+        (void)S;
+        const int64_t N = static_cast<int64_t>(shapes.size());
         const int64_t width = verify ? 1 : 10;
         auto work = [&](int64_t begin, int64_t end) {
             for (int64_t k = begin; k < end; ++k) {
                 const int64_t s = rows[k];
                 const int64_t pid = pair_ids[k];
-                const auto& pr = pairs_[static_cast<size_t>(pid)];
+                const auto& pr = pairs[static_cast<size_t>(pid)];
                 const double* fa = frames + (s * N + pr.shape_a) * 12;
                 const double* fb = frames + (s * N + pr.shape_b) * 12;
-                eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                eval_coal_distance(*shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                   *shapes[static_cast<size_t>(pr.shape_b)].shape,
                                    fa, fb, verify, std::numeric_limits<double>::infinity(),
                                    out + k * width);
             }
@@ -521,19 +443,20 @@ public:
         const double* frames, int64_t S,
         const int64_t* rows, const int64_t* pair_ids, int64_t K,
         const double* margins, bool verify) const {
-        ensure_pairs();
+        (void)S;
         if (K <= 0) return std::nullopt;
-        const int64_t N = static_cast<int64_t>(shapes_.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
         std::atomic<int64_t> earliest(K);
         auto work = [&](int64_t begin, int64_t end) {
             for (int64_t k = begin; k < end; ++k) {
                 if (k >= earliest.load(std::memory_order_relaxed)) break;
                 const int64_t s = rows[k];
                 const int64_t pid = pair_ids[k];
-                const auto& pr = pairs_[static_cast<size_t>(pid)];
+                const auto& pr = pairs[static_cast<size_t>(pid)];
                 const double* fa = frames + (s * N + pr.shape_a) * 12;
                 const double* fb = frames + (s * N + pr.shape_b) * 12;
-                if (!eval_coal_clearance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                if (!eval_coal_clearance(*shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                         *shapes[static_cast<size_t>(pr.shape_b)].shape,
                                          fa, fb, verify, margins[pid])) {
                     int64_t prev = earliest.load(std::memory_order_relaxed);
                     while (k < prev && !earliest.compare_exchange_weak(prev, k, std::memory_order_relaxed)) {}
@@ -548,26 +471,26 @@ public:
     }
 
     // Parallel early-exit clearance check returning all violating (sample_row, pair_id) indices.
-    // Uses security_margin early exit (much faster than exact coal::distance).
     void violating_pairs_indexed(
         const double* frames, int64_t S,
         const int64_t* rows, const int64_t* pair_ids, int64_t K,
         const double* margins, bool verify,
         std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pairs) const {
-        ensure_pairs();
+        (void)S;
         out_rows.clear();
         out_pairs.clear();
         if (K <= 0) return;
-        const int64_t N = static_cast<int64_t>(shapes_.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
         std::vector<uint8_t> bad(static_cast<size_t>(K), 0);
         auto work = [&](int64_t begin, int64_t end) {
             for (int64_t k = begin; k < end; ++k) {
                 const int64_t s = rows[k];
                 const int64_t pid = pair_ids[k];
-                const auto& pr = pairs_[static_cast<size_t>(pid)];
+                const auto& pr = pairs[static_cast<size_t>(pid)];
                 const double* fa = frames + (s * N + pr.shape_a) * 12;
                 const double* fb = frames + (s * N + pr.shape_b) * 12;
-                if (!eval_coal_clearance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                if (!eval_coal_clearance(*shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                         *shapes[static_cast<size_t>(pr.shape_b)].shape,
                                          fa, fb, verify, margins[pid])) {
                     bad[static_cast<size_t>(k)] = 1;
                 }
@@ -582,67 +505,71 @@ public:
         }
     }
 
-    // Provable Conservative Advancement continuous clearance check over piecewise-linear
-    // segments q[0..T-1] sampled at `substeps` intervals per segment.
-    // Guarantees no pair drops below margin between discrete samples up to `disp_tol` (meters).
+    // Sound Conservative Advancement continuous clearance check using exact kinematic-chain
+    // Lipschitz upper bounds (Schwarzer-Saha-Latombe) on point arc-length displacement.
+    // Supports BOTH linear joint interpolation (velocities == nullptr) and cubic Hermite
+    // curves (times != nullptr && velocities != nullptr), and BOTH convex and original meshes.
+    // Any undetected inter-sample dip below `margin` is bounded strictly by `< 0.5 * disp_tol`.
     std::optional<ContinuousViolation> first_violation_continuous(
         const double* q_waypoints, int T, int substeps,
         const double* frames, const double* margins,
-        bool verify_original = false, double disp_tol = 2e-3) const {
-        ensure_pairs();
-        const int64_t P = static_cast<int64_t>(pairs_.size());
-        const int64_t M = static_cast<int64_t>(mobile_shapes_.size());
-        const int64_t N = static_cast<int64_t>(shapes_.size());
+        bool verify_original = false, double disp_tol = 5e-4,
+        const double* times = nullptr, const double* velocities = nullptr) const {
+        const int64_t P = static_cast<int64_t>(pairs.size());
+        const int64_t M = static_cast<int64_t>(mobile_shapes.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
         const int J = kin.num_joints();
         const int B_links = kin.num_bodies();
         const int n_segs = T - 1;
         const int64_t S = static_cast<int64_t>(n_segs * substeps + 1);
         if (n_segs <= 0 || P == 0 || M == 0) return std::nullopt;
+        const bool is_hermite = (times != nullptr && velocities != nullptr);
 
-        // Precompute bounding radii and per-step conservative point displacements for mobile shapes.
-        std::vector<double> radii(static_cast<size_t>(M), 0.0);
-        for (int64_t m = 0; m < M; ++m) {
-            const auto& sh = *shapes_[static_cast<size_t>(mobile_shapes_[static_cast<size_t>(m)])].shape;
-            if (sh.kind != 6) {
-                radii[static_cast<size_t>(m)] = (verify_original ? sh.orig_half : sh.convex_half).norm();
+        // Compute conservative max |q_j| over the trajectory for any downstream prismatic joints.
+        std::vector<double> q_abs_max(static_cast<size_t>(J), 0.0);
+        for (int t = 0; t < T; ++t) {
+            for (int j = 0; j < J; ++j) {
+                q_abs_max[static_cast<size_t>(j)] = std::max(q_abs_max[static_cast<size_t>(j)],
+                                                             std::abs(q_waypoints[t * J + j]));
+            }
+        }
+        if (is_hermite) {
+            // Account for possible Hermite overshoot on prismatic joints via upper/lower limits if finite.
+            for (int j = 0; j < J; ++j) {
+                const double lim_b = std::max(std::abs(kin.lower()(j)), std::abs(kin.upper()(j)));
+                if (std::isfinite(lim_b)) q_abs_max[static_cast<size_t>(j)] = std::max(q_abs_max[static_cast<size_t>(j)], lim_b);
             }
         }
 
-        auto shape_disp = [&](const double* f0, const double* f1, int sid, double rad) -> double {
-            const auto& sh = *shapes_[static_cast<size_t>(sid)].shape;
-            if (sh.kind == 6) return 0.0;
-            const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
-            Eigen::Map<const Frame> F0(f0), F1(f1);
-            const Vec3 c0 = F0.leftCols<3>() * lc + F0.col(3);
-            const Vec3 c1 = F1.leftCols<3>() * lc + F1.col(3);
-            const double dp = (c1 - c0).norm();
-            const double tr = (F0.leftCols<3>().transpose() * F1.leftCols<3>()).trace();
-            const double cos_ang = std::clamp(0.5 * (tr - 1.0), -1.0, 1.0);
-            const double ang = std::acos(cos_ang);
-            return dp + rad * ang;
-        };
+        // Precompute exact kinematic-chain Lipschitz weights [M, J] for every mobile shape.
+        std::vector<double> lip_weights(static_cast<size_t>(M * J), 0.0);
+        const auto& rads = verify_original ? mobile_body_radius_orig : mobile_body_radius_convex;
+        for (int64_t m = 0; m < M; ++m) {
+            const int sid = mobile_shapes[static_cast<size_t>(m)];
+            kin.body_lipschitz_weights(shapes[static_cast<size_t>(sid)].body_id,
+                                       rads[static_cast<size_t>(m)],
+                                       q_abs_max.data(),
+                                       lip_weights.data() + m * J);
+        }
 
-        // Compute per-sample moving AABBs and per-interval conservative displacements.
+        // Compute per-sample moving AABBs in parallel.
         std::vector<double> mlo(static_cast<size_t>(S * M * 3));
         std::vector<double> mhi(static_cast<size_t>(S * M * 3));
-        std::vector<double> step_disp(static_cast<size_t>((S - 1) * M), 0.0);
-        for (int64_t s = 0; s < S; ++s) {
-            const double* sf = frames + s * N * 12;
-            double* lo_s = mlo.data() + s * M * 3;
-            double* hi_s = mhi.data() + s * M * 3;
-            for (int64_t m = 0; m < M; ++m) {
-                const int sid = mobile_shapes_[static_cast<size_t>(m)];
-                const auto& sh = *shapes_[static_cast<size_t>(sid)].shape;
-                if (sh.kind == 6) continue;
-                const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
-                const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
-                transform_aabb(sf + sid * 12, lc, lh, lo_s + m * 3, hi_s + m * 3);
-                if (s > 0) {
-                    step_disp[static_cast<size_t>((s - 1) * M + m)] =
-                        shape_disp(frames + ((s - 1) * N + sid) * 12, sf + sid * 12, sid, radii[static_cast<size_t>(m)]);
+        ThreadPool::instance().parallel_for(S, 32, [&](int64_t s_beg, int64_t s_end) {
+            for (int64_t s = s_beg; s < s_end; ++s) {
+                const double* sf = frames + s * N * 12;
+                double* lo_s = mlo.data() + s * M * 3;
+                double* hi_s = mhi.data() + s * M * 3;
+                for (int64_t m = 0; m < M; ++m) {
+                    const int sid = mobile_shapes[static_cast<size_t>(m)];
+                    const auto& sh = *shapes[static_cast<size_t>(sid)].shape;
+                    if (sh.kind == 6) continue;
+                    const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
+                    const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
+                    transform_aabb(sf + sid * 12, lc, lh, lo_s + m * 3, hi_s + m * 3);
                 }
             }
-        }
+        });
 
         auto aabb_gap_sq = [](const double* alo, const double* ahi,
                               const double* blo, const double* bhi) -> double {
@@ -657,144 +584,230 @@ public:
         };
 
         auto get_b = [&](int64_t s, int sid, const double*& lo, const double*& hi) {
-            const int slot = shape_move_slot_[static_cast<size_t>(sid)];
+            const int slot = shape_move_slot[static_cast<size_t>(sid)];
             if (slot >= 0) {
                 const size_t off = static_cast<size_t>((s * M + slot) * 3);
                 lo = mlo.data() + off;
                 hi = mhi.data() + off;
             } else {
-                const auto& ws = shapes_[static_cast<size_t>(sid)];
+                const auto& ws = shapes[static_cast<size_t>(sid)];
                 lo = (verify_original ? ws.fixed_lo_orig : ws.fixed_lo_convex).data();
                 hi = (verify_original ? ws.fixed_hi_orig : ws.fixed_hi_convex).data();
             }
         };
 
-        std::vector<Vec3> bpos(static_cast<size_t>(B_links));
-        std::vector<Mat3> brot(static_cast<size_t>(B_links));
-        std::vector<double> q_mid(static_cast<size_t>(J));
-
-        auto eval_pair_frame = [&](const double* q_ptr, int sid, Frame& out_f) {
-            const auto& ws = shapes_[static_cast<size_t>(sid)];
-            if (ws.body_id >= 0) {
-                out_f.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
-                out_f.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) + bpos[static_cast<size_t>(ws.body_id)];
-            } else {
-                out_f = ws.local_frame;
-            }
-        };
-
-        double dist_buf[10];
-        const double inv_sub = 1.0 / static_cast<double>(substeps);
-
-        struct Interval {
-            double u0, u1;
-            double d0, d1;
-            Frame fa0, fb0, fa1, fb1;
-        };
-        std::vector<Interval> stack;
-        stack.reserve(32);
-
-        for (int64_t s = 0; s < S - 1; ++s) {
-            const int seg = static_cast<int>(s / substeps);
-            const int sub_k = static_cast<int>(s % substeps);
+        auto eval_q = [&](int seg, double u, double* q_out) {
             const double* qa = q_waypoints + seg * J;
             const double* qb = q_waypoints + (seg + 1) * J;
-
-            for (int64_t p = 0; p < P; ++p) {
-                const auto& pr = pairs_[static_cast<size_t>(p)];
-                const int sa = shape_move_slot_[static_cast<size_t>(pr.shape_a)];
-                const int sb = shape_move_slot_[static_cast<size_t>(pr.shape_b)];
-                const double da = (sa >= 0) ? step_disp[static_cast<size_t>(s * M + sa)] : 0.0;
-                const double db = (sb >= 0) ? step_disp[static_cast<size_t>(s * M + sb)] : 0.0;
-                const double delta_ab = da + db;
-                if (delta_ab <= disp_tol) continue;
-
-                const double req = std::max(0.0, margins[p] - 1e-6);
-                if (!pr.is_plane) {
-                    const double *alo0, *ahi0, *blo0, *bhi0;
-                    const double *alo1, *ahi1, *blo1, *bhi1;
-                    get_b(s, pr.shape_a, alo0, ahi0);
-                    get_b(s, pr.shape_b, blo0, bhi0);
-                    get_b(s + 1, pr.shape_a, alo1, ahi1);
-                    get_b(s + 1, pr.shape_b, blo1, bhi1);
-                    const double g0 = std::sqrt(aabb_gap_sq(alo0, ahi0, blo0, bhi0));
-                    const double g1 = std::sqrt(aabb_gap_sq(alo1, ahi1, blo1, bhi1));
-                    if ((g0 - req) + (g1 - req) > delta_ab) continue;
+            if (!is_hermite) {
+                const double w = 1.0 - u;
+                for (int j = 0; j < J; ++j) q_out[j] = w * qa[j] + u * qb[j];
+            } else {
+                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+                const double* va = velocities + seg * J;
+                const double* vb = velocities + (seg + 1) * J;
+                const double u2 = u * u;
+                const double u3 = u2 * u;
+                const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+                const double h10 = (u3 - 2.0 * u2 + u) * h;
+                const double h01 = -2.0 * u3 + 3.0 * u2;
+                const double h11 = (u3 - u2) * h;
+                for (int j = 0; j < J; ++j) {
+                    q_out[j] = h00 * qa[j] + h10 * va[j] + h01 * qb[j] + h11 * vb[j];
                 }
+            }
+        };
 
-                // Exact Coal endpoint distances.
-                const double* fa0_ptr = frames + (s * N + pr.shape_a) * 12;
-                const double* fb0_ptr = frames + (s * N + pr.shape_b) * 12;
-                const double* fa1_ptr = frames + ((s + 1) * N + pr.shape_a) * 12;
-                const double* fb1_ptr = frames + ((s + 1) * N + pr.shape_b) * 12;
-                eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
-                                   fa0_ptr, fb0_ptr, verify_original, req + delta_ab, dist_buf);
-                const double d0 = dist_buf[0];
-                if (!std::isfinite(d0) || d0 < req) {
-                    return ContinuousViolation{seg, static_cast<double>(sub_k) * inv_sub, p, d0};
+        // Exact kinematic-chain displacement upper bound for pair (sa, sb) on [u0, u1] of segment `seg`.
+        auto pair_disp_bound = [&](int seg, double u0, double u1, int sa, int sb) -> double {
+            const double* qa = q_waypoints + seg * J;
+            const double* qb = q_waypoints + (seg + 1) * J;
+            const double* wa = (sa >= 0) ? (lip_weights.data() + sa * J) : nullptr;
+            const double* wb = (sb >= 0) ? (lip_weights.data() + sb * J) : nullptr;
+            double total = 0.0;
+            if (!is_hermite) {
+                const double du = u1 - u0;
+                for (int j = 0; j < J; ++j) {
+                    const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
+                    if (w > 0.0) total += w * std::abs(qb[j] - qa[j]) * du;
                 }
-                eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
-                                   fa1_ptr, fb1_ptr, verify_original, req + delta_ab, dist_buf);
-                const double d1 = dist_buf[0];
-                if (!std::isfinite(d1) || d1 < req) {
-                    return ContinuousViolation{seg, static_cast<double>(sub_k + 1) * inv_sub, p, d1};
-                }
-                if ((d0 - req) + (d1 - req) > delta_ab) continue;
-
-                // Recursive Conservative Advancement bisection for this single close pair.
-                const double rad_a = (sa >= 0) ? radii[static_cast<size_t>(sa)] : 0.0;
-                const double rad_b = (sb >= 0) ? radii[static_cast<size_t>(sb)] : 0.0;
-                stack.clear();
-                Interval root;
-                root.u0 = static_cast<double>(sub_k) * inv_sub;
-                root.u1 = static_cast<double>(sub_k + 1) * inv_sub;
-                root.d0 = d0;
-                root.d1 = d1;
-                root.fa0 = Eigen::Map<const Frame>(fa0_ptr);
-                root.fb0 = Eigen::Map<const Frame>(fb0_ptr);
-                root.fa1 = Eigen::Map<const Frame>(fa1_ptr);
-                root.fb1 = Eigen::Map<const Frame>(fb1_ptr);
-                stack.push_back(root);
-
-                while (!stack.empty()) {
-                    const Interval cur = stack.back();
-                    stack.pop_back();
-                    const double um = 0.5 * (cur.u0 + cur.u1);
-                    const double wm = 1.0 - um;
-                    for (int j = 0; j < J; ++j) q_mid[static_cast<size_t>(j)] = wm * qa[j] + um * qb[j];
-                    kin.fk_single(q_mid.data(), bpos.data(), brot.data());
-                    Frame fam, fbm;
-                    eval_pair_frame(q_mid.data(), pr.shape_a, fam);
-                    eval_pair_frame(q_mid.data(), pr.shape_b, fbm);
-                    eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
-                                       fam.data(), fbm.data(), verify_original,
-                                       std::numeric_limits<double>::infinity(), dist_buf);
-                    const double dm = dist_buf[0];
-                    if (!std::isfinite(dm) || dm < req) {
-                        return ContinuousViolation{seg, um, p, dm};
-                    }
-                    const double dL = (sa >= 0 ? shape_disp(cur.fa0.data(), fam.data(), pr.shape_a, rad_a) : 0.0)
-                                    + (sb >= 0 ? shape_disp(cur.fb0.data(), fbm.data(), pr.shape_b, rad_b) : 0.0);
-                    if (dL > disp_tol && (cur.d0 - req) + (dm - req) <= dL) {
-                        stack.push_back({cur.u0, um, cur.d0, dm, cur.fa0, cur.fb0, fam, fbm});
-                    }
-                    const double dR = (sa >= 0 ? shape_disp(fam.data(), cur.fa1.data(), pr.shape_a, rad_a) : 0.0)
-                                    + (sb >= 0 ? shape_disp(fbm.data(), cur.fb1.data(), pr.shape_b, rad_b) : 0.0);
-                    if (dR > disp_tol && (dm - req) + (cur.d1 - req) <= dR) {
-                        stack.push_back({um, cur.u1, dm, cur.d1, fam, fbm, cur.fa1, cur.fb1});
+            } else {
+                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+                const double* va = velocities + seg * J;
+                const double* vb = velocities + (seg + 1) * J;
+                for (int j = 0; j < J; ++j) {
+                    const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
+                    if (w > 0.0) {
+                        total += w * hermite_scalar_total_variation(qb[j] - qa[j], va[j], vb[j], h, u0, u1);
                     }
                 }
             }
-        }
-        return std::nullopt;
+            return total;
+        };
+
+        const double inv_sub = 1.0 / static_cast<double>(substeps);
+        std::atomic<int64_t> earliest_s(S);
+        std::mutex hit_mutex;
+        std::optional<ContinuousViolation> best_hit;
+
+        auto check_range = [&](int64_t s_beg, int64_t s_end) {
+            std::vector<Vec3> bpos(static_cast<size_t>(B_links));
+            std::vector<Mat3> brot(static_cast<size_t>(B_links));
+            std::vector<double> q_mid(static_cast<size_t>(J));
+            double dist_buf[10];
+
+            auto eval_pair_frame = [&](int sid, Frame& out_f) {
+                const auto& ws = shapes[static_cast<size_t>(sid)];
+                if (ws.body_id >= 0) {
+                    out_f.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
+                    out_f.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) + bpos[static_cast<size_t>(ws.body_id)];
+                } else {
+                    out_f = ws.local_frame;
+                }
+            };
+
+            struct Interval {
+                double u0, u1;
+                double d0, d1;
+            };
+            std::vector<Interval> stack;
+            stack.reserve(32);
+
+            for (int64_t s = s_beg; s < s_end; ++s) {
+                if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                const int seg = static_cast<int>(s / substeps);
+                const int sub_k = static_cast<int>(s % substeps);
+                const double u_start = static_cast<double>(sub_k) * inv_sub;
+                const double u_end = static_cast<double>(sub_k + 1) * inv_sub;
+
+                for (int64_t p = 0; p < P; ++p) {
+                    if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                    const auto& pr = pairs[static_cast<size_t>(p)];
+                    const int sa = shape_move_slot[static_cast<size_t>(pr.shape_a)];
+                    const int sb = shape_move_slot[static_cast<size_t>(pr.shape_b)];
+                    const double delta_ab = pair_disp_bound(seg, u_start, u_end, sa, sb);
+                    const double req = std::max(0.0, margins[p] - 1e-6);
+
+                    if (!pr.is_plane) {
+                        const double *alo0, *ahi0, *blo0, *bhi0;
+                        const double *alo1, *ahi1, *blo1, *bhi1;
+                        get_b(s, pr.shape_a, alo0, ahi0);
+                        get_b(s, pr.shape_b, blo0, bhi0);
+                        get_b(s + 1, pr.shape_a, alo1, ahi1);
+                        get_b(s + 1, pr.shape_b, blo1, bhi1);
+                        const double g0 = std::sqrt(aabb_gap_sq(alo0, ahi0, blo0, bhi0));
+                        const double g1 = std::sqrt(aabb_gap_sq(alo1, ahi1, blo1, bhi1));
+                        if ((g0 - req) + (g1 - req) > delta_ab) continue;
+                    } else {
+                        // Exact AABB-to-halfspace signed distance lower bound (prunes distant shapes from floor/wall planes).
+                        const int plane_sid = (shapes[static_cast<size_t>(pr.shape_a)].shape->kind == 6) ? pr.shape_a : pr.shape_b;
+                        const int other_sid = (plane_sid == pr.shape_a) ? pr.shape_b : pr.shape_a;
+                        if (shapes[static_cast<size_t>(other_sid)].shape->kind != 6) {
+                            auto plane_aabb_gap = [&](int64_t s_idx) -> double {
+                                Eigen::Map<const Frame> pf(frames + (s_idx * N + plane_sid) * 12);
+                                const Vec3 n = pf.leftCols<3>().col(2);
+                                const Vec3 p0 = pf.col(3);
+                                const double *olo, *ohi;
+                                get_b(s_idx, other_sid, olo, ohi);
+                                const Vec3 ctr(0.5 * (olo[0] + ohi[0]), 0.5 * (olo[1] + ohi[1]), 0.5 * (olo[2] + ohi[2]));
+                                const Vec3 hlf(0.5 * (ohi[0] - olo[0]), 0.5 * (ohi[1] - olo[1]), 0.5 * (ohi[2] - olo[2]));
+                                return n.dot(ctr - p0) - n.cwiseAbs().dot(hlf);
+                            };
+                            const double g0 = plane_aabb_gap(s);
+                            const double g1 = plane_aabb_gap(s + 1);
+                            if ((g0 - req) + (g1 - req) > delta_ab) continue;
+                        }
+                    }
+
+                    const double* fa0_ptr = frames + (s * N + pr.shape_a) * 12;
+                    const double* fb0_ptr = frames + (s * N + pr.shape_b) * 12;
+                    const double* fa1_ptr = frames + ((s + 1) * N + pr.shape_a) * 12;
+                    const double* fb1_ptr = frames + ((s + 1) * N + pr.shape_b) * 12;
+                    const auto& sh_a = *shapes[static_cast<size_t>(pr.shape_a)].shape;
+                    const auto& sh_b = *shapes[static_cast<size_t>(pr.shape_b)].shape;
+
+                    // Since original triangle meshes are subsets of their convex hulls (d_orig >= d_convex),
+                    // check convex distance first when verify_original is requested to prune safe mesh pairs fast.
+                    if (verify_original && (sh_a.original != sh_a.convex || sh_b.original != sh_b.convex)) {
+                        eval_coal_distance(sh_a, sh_b, fa0_ptr, fb0_ptr, false, req + delta_ab, dist_buf);
+                        const double dc0 = dist_buf[0];
+                        if (std::isfinite(dc0) && dc0 >= req) {
+                            eval_coal_distance(sh_a, sh_b, fa1_ptr, fb1_ptr, false, req + delta_ab, dist_buf);
+                            const double dc1 = dist_buf[0];
+                            if (std::isfinite(dc1) && dc1 >= req && (dc0 - req) + (dc1 - req) > delta_ab) {
+                                continue;
+                            }
+                        }
+                    }
+
+                    eval_coal_distance(sh_a, sh_b, fa0_ptr, fb0_ptr, verify_original, req + delta_ab, dist_buf);
+                    const double d0 = dist_buf[0];
+                    if (!std::isfinite(d0) || d0 < req) {
+                        std::lock_guard<std::mutex> lk(hit_mutex);
+                        if (s < earliest_s.load(std::memory_order_relaxed)) {
+                            earliest_s.store(s, std::memory_order_relaxed);
+                            best_hit = ContinuousViolation{seg, u_start, p, d0};
+                        }
+                        break;
+                    }
+                    eval_coal_distance(sh_a, sh_b, fa1_ptr, fb1_ptr, verify_original, req + delta_ab, dist_buf);
+                    const double d1 = dist_buf[0];
+                    if (!std::isfinite(d1) || d1 < req) {
+                        std::lock_guard<std::mutex> lk(hit_mutex);
+                        if (s < earliest_s.load(std::memory_order_relaxed)) {
+                            earliest_s.store(s, std::memory_order_relaxed);
+                            best_hit = ContinuousViolation{seg, u_end, p, d1};
+                        }
+                        break;
+                    }
+                    if ((d0 - req) + (d1 - req) > delta_ab || delta_ab <= disp_tol) continue;
+
+                    // Recursive Conservative Advancement bisection along the exact curve.
+                    stack.clear();
+                    stack.push_back({u_start, u_end, d0, d1});
+                    while (!stack.empty()) {
+                        const Interval cur = stack.back();
+                        stack.pop_back();
+                        const double um = 0.5 * (cur.u0 + cur.u1);
+                        eval_q(seg, um, q_mid.data());
+                        kin.fk_single(q_mid.data(), bpos.data(), brot.data());
+                        Frame fam, fbm;
+                        eval_pair_frame(pr.shape_a, fam);
+                        eval_pair_frame(pr.shape_b, fbm);
+                        eval_coal_distance(sh_a, sh_b, fam.data(), fbm.data(), verify_original,
+                                           std::numeric_limits<double>::infinity(), dist_buf);
+                        const double dm = dist_buf[0];
+                        if (!std::isfinite(dm) || dm < req) {
+                            std::lock_guard<std::mutex> lk(hit_mutex);
+                            if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                earliest_s.store(s, std::memory_order_relaxed);
+                                best_hit = ContinuousViolation{seg, um, p, dm};
+                            }
+                            stack.clear();
+                            break;
+                        }
+                        const double dL = pair_disp_bound(seg, cur.u0, um, sa, sb);
+                        if (dL > disp_tol && (cur.d0 - req) + (dm - req) <= dL) {
+                            stack.push_back({cur.u0, um, cur.d0, dm});
+                        }
+                        const double dR = pair_disp_bound(seg, um, cur.u1, sa, sb);
+                        if (dR > disp_tol && (dm - req) + (cur.d1 - req) <= dR) {
+                            stack.push_back({um, cur.u1, dm, cur.d1});
+                        }
+                    }
+                }
+            }
+        };
+
+        ThreadPool::instance().parallel_for(S - 1, 8, check_range);
+        return best_hit;
     }
 
     // Analytic geometric collision gradient for residual = margin - distance.
     void compute_analytic_gradients(const double* frames, const double* jorig, const double* jaxis,
                                     const int64_t* rows, const int64_t* pair_ids, const double* data,
                                     int64_t K, double* out_grad, double* out_witnesses = nullptr) const {
-        ensure_pairs();
-        const int64_t N = static_cast<int64_t>(shapes_.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
         const int J = kin.num_joints();
         const auto& anc = kin.body_ancestor();
         const auto& pris = kin.joint_prismatic();
@@ -803,7 +816,7 @@ public:
             for (int64_t k = begin; k < end; ++k) {
                 const int64_t s = rows[k];
                 const int64_t pid = pair_ids[k];
-                const auto& pr = pairs_[static_cast<size_t>(pid)];
+                const auto& pr = pairs[static_cast<size_t>(pid)];
                 const double* d = data + k * 10;
                 const Vec3 la(d[1], d[2], d[3]);
                 const Vec3 lb(d[4], d[5], d[6]);
@@ -818,8 +831,8 @@ public:
                     Eigen::Map<Vec3>(out_witnesses + k * 6 + 3) = wb;
                 }
 
-                const int ba = shapes_[static_cast<size_t>(pr.shape_a)].body_id;
-                const int bb = shapes_[static_cast<size_t>(pr.shape_b)].body_id;
+                const int ba = shapes[static_cast<size_t>(pr.shape_a)].body_id;
+                const int bb = shapes[static_cast<size_t>(pr.shape_b)].body_id;
                 double* g = out_grad + k * J;
                 for (int j = 0; j < J; ++j) {
                     double val = 0.0;
@@ -849,10 +862,9 @@ public:
                                             const double* opt_margins, const double* check_margins,
                                             double buffer, bool linearize, int64_t group_size,
                                             bool segment_minimum) const {
-        ensure_pairs();
         CollisionEvalResult res;
-        const int64_t N = static_cast<int64_t>(shapes_.size());
-        const int64_t P = static_cast<int64_t>(pairs_.size());
+        const int64_t N = static_cast<int64_t>(shapes.size());
+        const int64_t P = static_cast<int64_t>(pairs.size());
         const int J = kin.num_joints();
         const int64_t n_segs = (group_size > 0) ? (S / group_size) : S;
         res.seg_ok.assign(static_cast<size_t>(n_segs), 1);
@@ -878,7 +890,6 @@ public:
         std::vector<double> data(static_cast<size_t>(C * 10));
         query_distances_indexed(res.frames.data(), S, c_rows.data(), c_pairs.data(), C, false, data.data());
 
-        // Check exact uninflated clearance for seg_ok and collect rows within buffer.
         std::vector<int64_t> near;
         near.reserve(static_cast<size_t>(C));
         for (int64_t k = 0; k < C; ++k) {
@@ -895,7 +906,6 @@ public:
         }
 
         if (segment_minimum && !near.empty() && group_size > 0) {
-            // Keep worst sample per (segment, pair), breaking ties by earliest sample.
             struct Key { int64_t grp; double neg_res; int64_t idx; };
             std::vector<Key> items;
             items.reserve(near.size());
@@ -945,17 +955,15 @@ public:
         return res;
     }
 
-    // Fast single-configuration validity check (bounds + convex + optional original mesh).
     bool is_config_valid(const double* q, const Eigen::VectorXd& margins, bool verify_original) const {
-        ensure_pairs();
         const int J = kin.num_joints();
         const auto& lo = kin.lower();
         const auto& hi = kin.upper();
         for (int j = 0; j < J; ++j) {
             if (!std::isfinite(q[j]) || q[j] < lo(j) || q[j] > hi(j)) return false;
         }
-        if (pairs_.empty()) return true;
-        const int N = static_cast<int>(shapes_.size());
+        if (pairs.empty()) return true;
+        const int N = static_cast<int>(shapes.size());
         std::vector<double> frame(static_cast<size_t>(N * 12));
         compute_frames(q, 1, frame.data());
         std::vector<int64_t> rows, pids;
@@ -965,7 +973,7 @@ public:
                                         static_cast<int64_t>(rows.size()), margins.data(), false).has_value())
                 return false;
         }
-        if (verify_original && has_mesh_) {
+        if (verify_original && has_mesh) {
             screen_aabbs(frame.data(), 1, margins.data(), true, 1, rows, pids);
             if (!rows.empty()) {
                 if (first_violation_indexed(frame.data(), 1, rows.data(), pids.data(),
@@ -976,13 +984,11 @@ public:
         return true;
     }
 
-    // Bisection-order segment validity check for fast BiRRT edge rejection.
     bool is_segment_valid(const Eigen::VectorXd& qa, const Eigen::VectorXd& qb,
                           const Eigen::VectorXd& margins, double max_step, bool verify_original) const {
         const double dist = (qb - qa).norm();
         const int steps = std::max(1, static_cast<int>(std::ceil(dist / max_step)));
         if (steps == 1) return is_config_valid(qb.data(), margins, verify_original);
-        // Check endpoints first, then bisection order (midpoint, quarters, eighths...).
         if (!is_config_valid(qb.data(), margins, verify_original)) return false;
         std::vector<std::pair<int, int>> stack;
         stack.reserve(static_cast<size_t>(steps));
@@ -1007,15 +1013,14 @@ public:
                                                const std::vector<uint8_t>& active_mask,
                                                double margin, double world_margin,
                                                int iterations, bool verify_original) const {
-        ensure_pairs();
         const int B_prob = static_cast<int>(problems.size());
         std::vector<IKResultNative> results(static_cast<size_t>(B_prob));
         if (B_prob == 0) return results;
 
         const int J = kin.num_joints();
         const int B_links = kin.num_bodies();
-        const int N_shapes = static_cast<int>(shapes_.size());
-        const int P = static_cast<int>(pairs_.size());
+        const int N_shapes = static_cast<int>(shapes.size());
+        const int P = static_cast<int>(pairs.size());
         const Eigen::VectorXd margins = pair_margins(margin, world_margin);
         const Eigen::VectorXd& lo = kin.lower();
         const Eigen::VectorXd& hi = kin.upper();
@@ -1042,11 +1047,11 @@ public:
                 kin.fk_single(qc.data(), bpos.data(), brot.data(),
                               need_j ? jorig.data() : nullptr, need_j ? jaxis.data() : nullptr);
                 for (int i = 0; i < N_shapes; ++i) {
-                    const auto& ws = shapes_[static_cast<size_t>(i)];
+                    const auto& ws = shapes[static_cast<size_t>(i)];
                     Eigen::Map<Frame> dst(frame.data() + i * 12);
                     if (ws.body_id >= 0) {
-                        dst.leftCols<3>().noalias() = brot[ws.body_id] * ws.local_frame.leftCols<3>();
-                        dst.col(3).noalias() = brot[ws.body_id] * ws.local_frame.col(3) + bpos[ws.body_id];
+                        dst.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
+                        dst.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) + bpos[static_cast<size_t>(ws.body_id)];
                     } else {
                         dst = ws.local_frame;
                     }
@@ -1068,19 +1073,17 @@ public:
                         auto hit = first_violation_indexed(frame.data(), 1, cand_rows.data(), cand_pairs.data(),
                                                            static_cast<int64_t>(cand_rows.size()), margins.data(), false);
                         if (hit.has_value()) {
-                            const auto& pr = pairs_[static_cast<size_t>(hit->second)];
-                            fail_reason = "IK collision clearance failed for " + shapes_[pr.shape_a].name + " / " + shapes_[pr.shape_b].name;
+                            fail_reason = "IK collision clearance failed for " + pair_display_name(hit->second);
                             return false;
                         }
                     }
-                    if (verify_original && has_mesh_) {
+                    if (verify_original && has_mesh) {
                         screen_aabbs(frame.data(), 1, margins.data(), true, 1, cand_rows, cand_pairs);
                         if (!cand_rows.empty()) {
                             auto hit = first_violation_indexed(frame.data(), 1, cand_rows.data(), cand_pairs.data(),
                                                                static_cast<int64_t>(cand_rows.size()), margins.data(), true);
                             if (hit.has_value()) {
-                                const auto& pr = pairs_[static_cast<size_t>(hit->second)];
-                                fail_reason = "IK original mesh clearance failed for " + shapes_[pr.shape_a].name + " / " + shapes_[pr.shape_b].name;
+                                fail_reason = "IK original mesh clearance failed for " + pair_display_name(hit->second);
                                 return false;
                             }
                         }
@@ -1112,7 +1115,6 @@ public:
                     g_out->setZero(J);
                 }
                 double cost = 0.0;
-                // Small regularization toward seed q0.
                 const double w_reg = 1e-3;
                 for (int j = 0; j < J; ++j) {
                     if (!active_mask[static_cast<size_t>(j)]) continue;
@@ -1155,8 +1157,9 @@ public:
                     if (C > 0) {
                         dist_data.resize(static_cast<size_t>(C * 10));
                         for (int64_t k = 0; k < C; ++k) {
-                            const auto& pr = pairs_[static_cast<size_t>(cand_pairs[static_cast<size_t>(k)])];
-                            eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                            const auto& pr = pairs[static_cast<size_t>(cand_pairs[static_cast<size_t>(k)])];
+                            eval_coal_distance(*shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                               *shapes[static_cast<size_t>(pr.shape_b)].shape,
                                                frame.data() + pr.shape_a * 12, frame.data() + pr.shape_b * 12,
                                                false, std::numeric_limits<double>::infinity(),
                                                dist_data.data() + k * 10);
@@ -1205,7 +1208,6 @@ public:
                 double cost = eval_merit(q, nullptr, nullptr);
                 for (int it = 0; it < iterations; ++it) {
                     cost = eval_merit(q, &H, &g);
-                    // Project out inactive joints and active box constraints.
                     std::vector<uint8_t> free(static_cast<size_t>(J), 0);
                     double max_g = 0.0;
                     for (int j = 0; j < J; ++j) {
@@ -1295,7 +1297,6 @@ public:
                                double step_size, int max_iterations, double timeout_s,
                                uint64_t rng_seed, bool verify_original,
                                int shortcut_iters, int output_waypoints) const {
-        ensure_pairs();
         const auto t0 = std::chrono::steady_clock::now();
         RRTResultNative out;
         const int J = kin.num_joints();
@@ -1308,7 +1309,6 @@ public:
             !is_config_valid(goal.data(), margins, verify_original)) {
             return out;
         }
-        // Quick direct connection check.
         if (is_segment_valid(start, goal, margins, check_res, verify_original)) {
             out.success = true;
             out.waypoints = resample_path({start, goal}, output_waypoints);
@@ -1350,7 +1350,6 @@ public:
         };
 
         auto extend = [&](std::vector<Node>& tree, const Eigen::VectorXd& target) -> int {
-            // Returns: 0 = trapped, 1 = advanced, 2 = reached.
             const int near_id = nearest(tree, target);
             const Eigen::VectorXd& q_near = tree[static_cast<size_t>(near_id)].q;
             Eigen::VectorXd diff = target - q_near;
@@ -1365,9 +1364,7 @@ public:
 
         auto connect = [&](std::vector<Node>& tree, const Eigen::VectorXd& target) -> int {
             int status = 1;
-            while (status == 1) {
-                status = extend(tree, target);
-            }
+            while (status == 1) status = extend(tree, target);
             return status;
         };
 
@@ -1388,7 +1385,6 @@ public:
             }
             if (extend(ta, sample) != 0) {
                 if (connect(tb, ta.back().q) == 2) {
-                    // Extract path start -> goal.
                     std::vector<Eigen::VectorXd> pa, pb;
                     for (int cur = static_cast<int>(tree_a.size()) - 1; cur >= 0; cur = tree_a[static_cast<size_t>(cur)].parent)
                         pa.push_back(tree_a[static_cast<size_t>(cur)].q);
@@ -1400,7 +1396,6 @@ public:
                     } else {
                         pa.insert(pa.end(), pb.begin(), pb.end());
                     }
-                    // Shortcutting passes.
                     for (int sc = 0; sc < shortcut_iters && pa.size() > 2; ++sc) {
                         const int n = static_cast<int>(pa.size());
                         int i = static_cast<int>(rng() % static_cast<uint64_t>(n - 2));
@@ -1447,22 +1442,248 @@ public:
         out.push_back(path.back());
         return out;
     }
+};
+
+// Thread-safe mutable PlanningWorld backed by Copy-on-Write WorldSnapshot.
+// Mutations clone the lightweight snapshot metadata (sharing immutable CollisionShape pointers),
+// while concurrent planners/queries read an immutable snapshot lock-free.
+class PlanningWorld {
+public:
+    PlanningWorld() : state_(std::make_shared<WorldSnapshot>()) {}
+
+    std::shared_ptr<const WorldSnapshot> snapshot() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return state_;
+    }
+
+    uint64_t version() const { return snapshot()->version; }
+    uint64_t topology_version() const { return snapshot()->topology_version; }
+    int num_bodies() const { return snapshot()->kin.num_bodies(); }
+    int num_joints() const { return snapshot()->kin.num_joints(); }
+    int num_shapes() const { return static_cast<int>(snapshot()->shapes.size()); }
+    int num_pairs() const { return static_cast<int>(snapshot()->pairs.size()); }
+    int self_pair_count() const { return snapshot()->self_pair_count; }
+    bool has_mesh() const { return snapshot()->has_mesh; }
+
+    void init_kinematics(
+        std::vector<int> parent,
+        std::vector<int> kinds,
+        std::vector<int> joint_idx,
+        std::vector<Mat3> a_rot,
+        std::vector<Vec3> a_pos,
+        std::vector<Mat3> b_rot,
+        std::vector<Vec3> b_pos,
+        std::vector<Vec3> axes,
+        std::vector<KinematicsModel::Branch> branches,
+        std::vector<std::string> body_names,
+        std::vector<std::string> joint_names,
+        Eigen::VectorXd lower,
+        Eigen::VectorXd upper,
+        Eigen::VectorXd velocity_limit,
+        Eigen::VectorXd acceleration_limit,
+        Eigen::VectorXd initial_q,
+        std::unordered_map<std::string, int> link_index) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->kin.initialize(std::move(parent), std::move(kinds), std::move(joint_idx),
+                             std::move(a_rot), std::move(a_pos), std::move(b_rot), std::move(b_pos),
+                             std::move(axes), std::move(branches), std::move(body_names), std::move(joint_names),
+                             std::move(lower), std::move(upper), std::move(velocity_limit),
+                             std::move(acceleration_limit), std::move(initial_q));
+        next->link_index = std::move(link_index);
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void add_shape(WorldShape ws) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_->shape_index.count(ws.name))
+            throw std::invalid_argument("duplicate collision shape name: " + ws.name);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        ws.update_fixed_bounds();
+        const int idx = static_cast<int>(next->shapes.size());
+        next->shape_index[ws.name] = idx;
+        next->shapes.push_back(std::move(ws));
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void update_obstacle_pose(const std::string& name, const Frame& world_frame) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto it = state_->shape_index.find(name);
+        if (it == state_->shape_index.end()) throw std::invalid_argument("unknown obstacle: " + name);
+        if (state_->shapes[static_cast<size_t>(it->second)].body_id >= 0)
+            throw std::invalid_argument("cannot set world pose of attached/robot shape: " + name);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        auto& ws = next->shapes[static_cast<size_t>(it->second)];
+        ws.local_frame = world_frame;
+        ws.update_fixed_bounds();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void remove_obstacle(const std::string& name) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto it = state_->shape_index.find(name);
+        if (it == state_->shape_index.end()) throw std::invalid_argument("unknown obstacle: " + name);
+        const int idx = it->second;
+        if (state_->shapes[static_cast<size_t>(idx)].body_id >= 0)
+            throw std::invalid_argument("cannot remove robot/attached shape directly; detach first: " + name);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->shapes.erase(next->shapes.begin() + idx);
+        next->shape_index.clear();
+        for (size_t i = 0; i < next->shapes.size(); ++i) {
+            next->shape_index[next->shapes[i].name] = static_cast<int>(i);
+        }
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void attach_object(const std::string& name, const std::string& link_key,
+                       const Frame& local_frame, const std::vector<std::string>& touch_links) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto it = state_->shape_index.find(name);
+        if (it == state_->shape_index.end()) throw std::invalid_argument("unknown object to attach: " + name);
+        const int bid = state_->link_id(link_key);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        auto& ws = next->shapes[static_cast<size_t>(it->second)];
+        ws.body_id = bid;
+        ws.is_attached = true;
+        ws.link_key = "::" + ws.name;
+        ws.local_frame = local_frame;
+        ws.attached_touch_links.clear();
+        ws.attached_touch_links.insert(link_key);
+        for (const auto& tl : touch_links) ws.attached_touch_links.insert(tl);
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void detach_object(const std::string& name, const Eigen::VectorXd& q_current) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto it = state_->shape_index.find(name);
+        if (it == state_->shape_index.end()) throw std::invalid_argument("unknown object to detach: " + name);
+        const auto& cur_ws = state_->shapes[static_cast<size_t>(it->second)];
+        if (!cur_ws.is_attached || cur_ws.body_id < 0)
+            throw std::invalid_argument("object is not attached: " + name);
+        const int B = state_->kin.num_bodies();
+        std::vector<Vec3> bpos(static_cast<size_t>(B));
+        std::vector<Mat3> brot(static_cast<size_t>(B));
+        state_->kin.fk_single(q_current.data(), bpos.data(), brot.data());
+        const Mat3& R = brot[static_cast<size_t>(cur_ws.body_id)];
+        const Vec3& p = bpos[static_cast<size_t>(cur_ws.body_id)];
+        Frame world_f;
+        world_f.leftCols<3>() = R * cur_ws.local_frame.leftCols<3>();
+        world_f.col(3) = R * cur_ws.local_frame.col(3) + p;
+
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        auto& ws = next->shapes[static_cast<size_t>(it->second)];
+        ws.body_id = -1;
+        ws.is_attached = false;
+        ws.attached_touch_links.clear();
+        ws.link_key = "::" + ws.name;
+        ws.local_frame = world_f;
+        ws.update_fixed_bounds();
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void set_collision_enabled(const std::string& link_a, const std::string& link_b, bool enabled) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        const auto key = canonical_pair_key(link_a, link_b);
+        if (enabled) next->disabled_pairs.erase(key);
+        else next->disabled_pairs.insert(key);
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void set_robot_base_pose(int branch_idx, const Vec3& pos, const Mat3& rot) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->kin.set_branch_pose(branch_idx, pos, rot);
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    // Convenience thread-safe pass-throughs operating on an atomic immutable snapshot.
+    Eigen::VectorXd pair_margins(double margin, double world_margin) const {
+        return snapshot()->pair_margins(margin, world_margin);
+    }
+    void compute_frames(const double* q_batch, int64_t S, double* out_frames,
+                        double* out_jorig = nullptr, double* out_jaxis = nullptr) const {
+        snapshot()->compute_frames(q_batch, S, out_frames, out_jorig, out_jaxis);
+    }
+    void screen_aabbs(const double* frames, int64_t S, const double* thresholds,
+                      bool verify_original, int64_t group_size,
+                      std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pairs) const {
+        snapshot()->screen_aabbs(frames, S, thresholds, verify_original, group_size, out_rows, out_pairs);
+    }
+    void query_distances_indexed(const double* frames, int64_t S,
+                                 const int64_t* rows, const int64_t* pair_ids, int64_t K,
+                                 bool verify, double* out) const {
+        snapshot()->query_distances_indexed(frames, S, rows, pair_ids, K, verify, out);
+    }
+    std::optional<std::pair<int64_t, int64_t>> first_violation_indexed(
+        const double* frames, int64_t S, const int64_t* rows, const int64_t* pair_ids,
+        int64_t K, const double* margins, bool verify) const {
+        return snapshot()->first_violation_indexed(frames, S, rows, pair_ids, K, margins, verify);
+    }
+    void violating_pairs_indexed(
+        const double* frames, int64_t S, const int64_t* rows, const int64_t* pair_ids,
+        int64_t K, const double* margins, bool verify,
+        std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pairs) const {
+        snapshot()->violating_pairs_indexed(frames, S, rows, pair_ids, K, margins, verify, out_rows, out_pairs);
+    }
+    std::optional<ContinuousViolation> first_violation_continuous(
+        const double* q_waypoints, int T, int substeps, const double* frames,
+        const double* margins, bool verify_original = false, double disp_tol = 5e-4,
+        const double* times = nullptr, const double* velocities = nullptr) const {
+        return snapshot()->first_violation_continuous(
+            q_waypoints, T, substeps, frames, margins, verify_original, disp_tol, times, velocities);
+    }
+    void compute_analytic_gradients(const double* frames, const double* jorig, const double* jaxis,
+                                    const int64_t* rows, const int64_t* pair_ids, const double* data,
+                                    int64_t K, double* out_grad, double* out_witnesses = nullptr) const {
+        snapshot()->compute_analytic_gradients(frames, jorig, jaxis, rows, pair_ids, data, K, out_grad, out_witnesses);
+    }
+    CollisionEvalResult eval_collision_rows(const double* q_batch, int64_t S,
+                                            const double* opt_margins, const double* check_margins,
+                                            double buffer, bool linearize, int64_t group_size,
+                                            bool segment_minimum) const {
+        return snapshot()->eval_collision_rows(q_batch, S, opt_margins, check_margins, buffer, linearize, group_size, segment_minimum);
+    }
+    std::vector<IKResultNative> solve_ik_batch(const std::vector<IKProblem>& problems,
+                                               const std::vector<uint8_t>& active_mask,
+                                               double margin, double world_margin,
+                                               int iterations, bool verify_original) const {
+        return snapshot()->solve_ik_batch(problems, active_mask, margin, world_margin, iterations, verify_original);
+    }
+    RRTResultNative plan_birrt(const Eigen::VectorXd& start, const Eigen::VectorXd& goal,
+                               const std::vector<uint8_t>& active_mask,
+                               double margin, double world_margin,
+                               double step_size, int max_iterations, double timeout_s,
+                               uint64_t rng_seed, bool verify_original,
+                               int shortcut_iters, int output_waypoints) const {
+        return snapshot()->plan_birrt(start, goal, active_mask, margin, world_margin, step_size,
+                                      max_iterations, timeout_s, rng_seed, verify_original,
+                                      shortcut_iters, output_waypoints);
+    }
 
 private:
-    std::vector<WorldShape> shapes_;
-    std::unordered_map<std::string, int> shape_index_;
-    std::unordered_map<std::string, int> link_index_;
-    std::unordered_set<std::string> disabled_pairs_;
-
-    mutable std::mutex cache_mutex_;
-    mutable bool pairs_dirty_ = true;
-    mutable std::vector<ActivePair> pairs_;
-    mutable std::vector<int> mobile_shapes_;
-    mutable std::vector<int> shape_move_slot_;
-    mutable int self_pair_count_ = 0;
-    mutable bool has_mesh_ = false;
-    uint64_t version_ = 0;
-    uint64_t topology_version_ = 0;
+    mutable std::mutex state_mutex_;
+    std::shared_ptr<const WorldSnapshot> state_;
 };
 
 }  // namespace gobot::planning

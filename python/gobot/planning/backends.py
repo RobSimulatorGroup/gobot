@@ -89,7 +89,11 @@ _WARP_GPU_MIN_COUNT = 128
 
 
 class MuJoCoWarpBackend:
-    """GPU convex narrow-phase backend backed by MuJoCo Warp, synced to mutable PlanningWorld."""
+    """Experimental GPU convex narrow-phase backend backed by MuJoCo Warp internal GJK/EPA kernels.
+
+    Note: Uses private ``mujoco_warp._src`` APIs and CPU-GPU transfers per SQP step; for exact
+    convex/mesh TrajOpt planning, prefer the native multi-threaded C++ ``CoalBackend``.
+    """
 
     name = "mujoco_warp"
 

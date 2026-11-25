@@ -50,9 +50,9 @@ Goal: cut single-trajectory planning latency and scale batched planning to `B = 
 - Parallelize batch jobs and multi-seed racing directly across C++ threads (`ThreadPool`) with zero GIL contention and zero Python/SciPy overhead per SQP iteration.
 - Support optional soft relative-velocity / segment-length balance when `dt=None` so TOPP-mode batch jobs converge in as few QPs as fixed-`dt` jobs without sacrificing optimality.
 
-### 1.3 Fast Retiming & Swept Continuous Collision Checking
-- Vectorize / eliminate redundant inner work in `retime_trajectory` and `_finalize_trajectory` so Hermite retiming takes `< 2 ms`.
-- Add C++ Swept Convex Hull / conservative continuous collision screening option in `PlanningWorld` to catch thin-link grazing contacts with fewer discrete substeps and accelerate continuous verification.
+### 1.3 Fast Retiming & Continuous Collision Checking
+- Vectorize / eliminate redundant inner work in `retime_trajectory` and `_finalize_trajectory` so Hermite retiming takes `< 3 ms`.
+- Add C++ Conservative Advancement continuous collision checking in `PlanningWorld` to catch inter-sample grazing contacts and accelerate continuous verification.
 
 ### 1.4 Verification & Benchmarks
 - Keep all existing regression tests passing and add dedicated C++ QP KKT optimality + C++/Python SQP equivalence tests.
@@ -60,19 +60,45 @@ Goal: cut single-trajectory planning latency and scale batched planning to `B = 
 
 ---
 
+## Phase 1.5: Architecture & Correctness Hardening (Completed)
+
+Goal: resolve foundational soundness, thread-safety, layering, and CPU utilization issues before building Phases 2–4.
+
+1. **Standalone C++ Planning Library (`libgobot_planning.so`)**:
+   - Extracted [`gobot_planning`](../modules/coal/CMakeLists.txt) with zero Python/pybind11 dependency, including C++ TOPP retiming ([`planning_retime.hpp`](../modules/coal/planning_retime.hpp)), unified Hermite finalization, and [`MotionPlannerNative`](../modules/coal/planning_planner.hpp).
+   - `_coal_native` and `python/gobot/planning/planner.py` are now thin wrappers over `gobot_planning`; future C++ editor tools (Phase 4) can link `gobot_planning` directly.
+   - Added standalone C++ GoogleTest target `test_motion_planning_cpp`.
+2. **Thread-Safe Immutable Copy-on-Write World Snapshots (`WorldSnapshot`)**:
+   - All mutations on [`PlanningWorld`](../modules/coal/planning_world.hpp) clone lightweight metadata (sharing immutable `CollisionShape` pointers) and atomically swap the active `std::shared_ptr<const WorldSnapshot>`.
+   - Queries and planners grab one immutable snapshot and execute lock-free, eliminating data races during concurrent scene updates.
+3. **Sound Kinematic-Chain Continuous Collision Checking (Linear + Hermite, Convex + Mesh)**:
+   - Replaced chord-distance displacement estimates with rotation-invariant kinematic-chain Lipschitz upper bounds (`KinematicsModel::body_lipschitz_weights`) and exact closed-form cubic Hermite joint total variation (`hermite_scalar_total_variation`).
+   - Added halfspace-plane AABB pruning and exact convex lower-bound pruning (`d_orig >= d_convex`) for original triangle meshes.
+   - Covers both SQP linear segments and the actual played Hermite curves; any unresolved inter-sample dip below margin is strictly bounded by `< 0.5 * disp_tol` (`< 0.5 mm` at `disp_tol = 1e-3` in solver / `< 0.25 mm` at `disp_tol = 5e-4` in `validate_trajectory`).
+4. **TBB Nested Work-Stealing Parallelism**:
+   - Switched `ThreadPool` to `TBB::tbb` (`tbb::parallel_for`) when available, raising small-batch CPU utilization from `2–5 / 16` cores to `8.6–15.6 / 16` cores across `B = 1..32`.
+   - `MuJoCoWarpBackend` is marked experimental; `PlanningWorld.from_snapshot` warns explicitly when joints omit `acceleration_limit`.
+5. **Phase 1.5 Verified Speedups (Ryzen 7 3700X, TBB + C++ `MotionPlannerNative` + Kinematic-Chain Hermite CCD)**:
+   - **Panda TrajOpt**: `44.1 ms` → **`30.9 ms`** (7.6× faster than pre-Phase 1).
+   - **Container Unloading (no via)**: `135.8 ms` → **`121.9 ms`** (5.5× faster than pre-Phase 1).
+   - **Container Batch (`coal`, `sqp_fast`, `dt=None` TOPP)**:
+     - `B=1`: **`35.7 ms`**, `B=4`: **`50.0 ms`** (`12.5 ms/traj`), `B=8`: **`149 ms`** (`18.6 ms/traj`), `B=32`: **`402 ms`** (`12.6 ms/traj`), `B=64`: **`901 ms`** (`14.1 ms/traj`), `B=128`: **`1.666 s`** (`13.0 ms/traj`).
+
+---
+
 ## Phase 2: Industrial Planning Capabilities
 
 Goal: cover the core workflows expected in industrial manipulation and assembly cells.
 
-1. **Cartesian Path Planner (`MotionPlanner.plan_cartesian_path`)**
+1. **Incremental Scene Synchronization (`PlanningWorld.sync_from_scene`)**
+   - Update obstacle and robot base transforms incrementally from a live Gobot `Scene` onto CoW snapshots without rebuilding meshes or BVHs.
+2. **Cartesian Path Planner (`MotionPlanner.plan_cartesian_path`)**
    - Linear and circular arc end-effector interpolation with configurable translation/rotation step sizes.
-   - Continuity-preserving IK (minimum joint jump + singularity damping) + collision and joint-limit checks, returning a retimed `Trajectory`.
-2. **`C²` Quintic Spline & Jerk-Bounded Retiming**
-   - Extend `retime.py` with optional `jerk_limit` and time-optimal forward/backward velocity integration (TOPP-RA style) with exact analytic velocity, acceleration, and jerk bound verification.
-3. **Constrained Global Planning (Manifold-Projected BiRRT)**
-   - Extend C++ `PlanningWorld::plan_birrt` to project sampled states onto `PathConstraint` manifolds using existing analytic pose Jacobians (e.g., orientation-locked transport around complex obstacles).
-4. **Incremental Scene Synchronization (`PlanningWorld.sync_from_scene`)**
-   - Update obstacle and robot base transforms incrementally from a live Gobot `Scene` without rebuilding meshes or BVHs.
+   - Continuity-preserving IK (minimum joint jump + singularity damping) + collision, joint-limit, and actual continuous-curve Cartesian deviation checks.
+3. **`C²` Quintic Spline & Jerk-Bounded Retiming**
+   - Upgrade `Trajectory` representation to support `C²`-continuous quintic Hermite splines so joint accelerations are continuous at knots and jerk (`|j(t)| <= jerk_limit`) is strictly bounded.
+4. **Constrained Global Planning (Manifold-Projected BiRRT)**
+   - Extend C++ `plan_birrt` to project sampled states onto `PathConstraint` manifolds using existing analytic pose Jacobians.
 
 ---
 
@@ -80,22 +106,22 @@ Goal: cover the core workflows expected in industrial manipulation and assembly 
 
 Goal: enable millisecond-level obstacle avoidance against live depth/point-cloud sensors and moving obstacles.
 
-1. **Voxel / 3D ESDF Obstacle Layer (CPU + MuJoCo Warp GPU)**
-   - Add `set_occupancy_grid`, `set_point_cloud`, and `set_esdf` APIs on `PlanningWorld`.
-   - Auto-generate sphere-cover approximations for robot links to evaluate ESDF signed distance and analytic trilinear gradients in microseconds (CPU) or batched on GPU (Warp).
+1. **CPU Voxel / 3D ESDF + Sphere-Cover Obstacles First**
+   - Add `set_occupancy_grid`, `set_point_cloud`, and `set_esdf` APIs on `PlanningWorld`, plus automatic link sphere-cover approximation integrated into C++ SQP (fast O(1) trilinear distance/gradient lookup).
 2. **Warm-Start Reactive Replanning (`10–30 Hz`)**
-   - Add `ReactivePlanner` / `replan(q_now, dq_now, prev_traj)` that shifts the previous solution as warm start while enforcing continuity of current position and velocity.
-   - Ship a dynamic-obstacle avoidance example (moving obstacle crossing the workspace).
+   - Add start-velocity boundary constraints to SQP and retiming (`q(0)=q_now, v(0)=v_now`), plus `replan(q_now, dq_now, prev_traj)` with shifted warm start and a moving-obstacle demo.
+3. **Full GPU-Resident Batch Optimizer (Follow-up)**
+   - Keep FK, sphere-to-ESDF collision/gradients, and a branchless parallel optimizer (L-BFGS / MPPI) resident in GPU memory with zero per-step PCIe transfers so large batches (`B >= 64..1024`) genuinely outperform 16-thread CPU Coal.
 
 ---
 
 ## Phase 4: Editor Interactive Motion Planning
 
-Goal: provide an RViz/MoveIt-style interactive planning workflow inside `gobot_editor` while keeping clean `Scene / RenderBackend / Editor` boundaries.
+Goal: provide an RViz/MoveIt-style interactive planning workflow inside `gobot_editor` linked directly against `gobot_planning` while keeping clean `Scene / RenderBackend / Editor` boundaries.
 
-1. **End-Effector Interactive Gizmo & Real-Time IK Ghost Preview**
-   - Dragging a target gizmo on a selected `Robot3D` invokes C++ IK live and renders a translucent ghost preview colored by collision/reachability state.
+1. **Viewport Overlay Mesh Pass & Real-Time IK Ghost Preview**
+   - Add an editor viewport overlay mesh draw path (without injecting ghost nodes into `SceneTree`) so dragging an end-effector gizmo on a selected `Robot3D` invokes C++ `gobot_planning` IK live and renders a translucent reachability-colored ghost robot.
 2. **Motion Planning Editor Panel**
-   - Select planning group, start/goal configurations, margins, velocity/acceleration scales, and debug overlays; trigger `Plan`, `Preview`, `Stop`, and `Re-Plan` asynchronously without blocking the viewport.
+   - Select planning group, start/goal configurations, margins, velocity/acceleration scales, and debug overlays; trigger `Plan`, `Preview`, `Stop`, and `Re-Plan` asynchronously against immutable `WorldSnapshot`s.
 3. **Timeline Scrubbing & Physics Tracking Handoff**
    - Scrub planned trajectories frame-by-frame with live end-effector paths and collision witnesses, export reusable trajectories, and optionally execute them through `SimulationServer` / `JointController` in MuJoCo.
