@@ -42,6 +42,9 @@ dependencies = [
     "warp-lang==1.17.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
+[project.optional-dependencies]
+planning-sqp = ["osqp>=1,<2"]
+
 [project.urls]
 Homepage = "https://github.com/RobSimulatorGroup/gobot"
 Repository = "https://github.com/RobSimulatorGroup/gobot"

@@ -49,3 +49,6 @@
 	path = 3rdparty/project_superdex
 	url = https://github.com/RobSimulatorGroup/project_superdex.git
 	branch = gobot-superdex-core
+[submodule "3rdparty/coal"]
+	path = 3rdparty/coal
+	url = https://github.com/coal-library/coal.git

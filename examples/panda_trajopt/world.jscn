@@ -1,0 +1,487 @@
+{
+  "__VERSION__": 3,
+  "__TYPE__": "PackedScene",
+  "__META_TYPE__": "SCENE",
+  "__EXT_RESOURCES__": [
+    {
+      "__ID__": "panda",
+      "__TYPE__": "PackedScene",
+      "__PATH__": "res://panda.jscn"
+    },
+    {
+      "__ID__": "play",
+      "__TYPE__": "PythonScript",
+      "__PATH__": "res://scripts/play.py"
+    },
+    {
+      "__ID__": "fixture",
+      "__TYPE__": "ArrayMesh",
+      "__PATH__": "res://hulls/fixture.obj"
+    },
+    {
+      "__ID__": "wedge",
+      "__TYPE__": "ArrayMesh",
+      "__PATH__": "res://hulls/wedge.obj"
+    },
+    {
+      "__ID__": "pillar",
+      "__TYPE__": "ArrayMesh",
+      "__PATH__": "res://hulls/pillar.obj"
+    },
+    {
+      "__ID__": "stop",
+      "__TYPE__": "ArrayMesh",
+      "__PATH__": "res://hulls/stop.obj"
+    }
+  ],
+  "__SUB_RESOURCES__": [
+    {
+      "__ID__": "wall_material",
+      "__TYPE__": "PBRMaterial3D",
+      "albedo": {"red": 0.95, "green": 0.4, "blue": 0.12, "alpha": 0.48},
+      "alpha_mode": "Blend"
+    },
+    {
+      "__ID__": "bench_box",
+      "__TYPE__": "BoxShape3D",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.94, 1.18, 0.04]}}
+    },
+    {
+      "__ID__": "bench_mesh",
+      "__TYPE__": "BoxMesh",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.94, 1.18, 0.04]}}
+    },
+    {
+      "__ID__": "marker",
+      "__TYPE__": "SphereMesh",
+      "radius": 0.022
+    },
+    {
+      "__ID__": "fixture_shape",
+      "__TYPE__": "ConvexMeshShape3D",
+      "mesh": "ExtResource(fixture)"
+    },
+    {
+      "__ID__": "wedge_shape",
+      "__TYPE__": "ConvexMeshShape3D",
+      "mesh": "ExtResource(wedge)"
+    },
+    {
+      "__ID__": "pillar_shape",
+      "__TYPE__": "ConvexMeshShape3D",
+      "mesh": "ExtResource(pillar)"
+    },
+    {
+      "__ID__": "stop_shape",
+      "__TYPE__": "ConvexMeshShape3D",
+      "mesh": "ExtResource(stop)"
+    },
+    {
+      "__ID__": "scanner_post_shape",
+      "__TYPE__": "BoxShape3D",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.04, 0.052, 0.64]}}
+    },
+    {
+      "__ID__": "scanner_post_mesh",
+      "__TYPE__": "BoxMesh",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.04, 0.052, 0.64]}}
+    },
+    {
+      "__ID__": "scanner_bar_shape",
+      "__TYPE__": "BoxShape3D",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.35, 0.052, 0.024]}}
+    },
+    {
+      "__ID__": "scanner_bar_mesh",
+      "__TYPE__": "BoxMesh",
+      "size": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.35, 0.052, 0.024]}}
+    }
+  ],
+  "__NODES__": [
+    {
+      "name": "PandaTrajOpt",
+      "parent": -1,
+      "type": "Node3D",
+      "properties": {
+        "script": "ExtResource(play)"
+      }
+    },
+    {
+      "name": "panda",
+      "parent": 0,
+      "type": "Robot3D",
+      "properties": {},
+      "instance": "ExtResource(panda)"
+    },
+    {
+      "name": "Worktop",
+      "parent": 0,
+      "type": "Node3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.64, 0, -0.02]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "parent": 2,
+      "type": "MeshInstance3D",
+      "properties": {
+        "mesh": "SubResource(bench_mesh)",
+        "surface_color": {"red": 0.23, "green": 0.3, "blue": 0.34, "alpha": 1}
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 2,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(bench_box)"
+      }
+    },
+    {
+      "name": "Start",
+      "parent": 0,
+      "type": "MeshInstance3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.5, -0.35, 0.2]}},
+        "mesh": "SubResource(marker)",
+        "surface_color": {"red": 0.12, "green": 0.82, "blue": 0.49, "alpha": 1}
+      }
+    },
+    {
+      "name": "Goal",
+      "parent": 0,
+      "type": "MeshInstance3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.5, 0.35, 0.2]}},
+        "mesh": "SubResource(marker)",
+        "surface_color": {"red": 0.86, "green": 0.34, "blue": 0.78, "alpha": 1}
+      }
+    },
+    {
+      "name": "CenterFixture",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.51, -0.015, 0.13]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 12]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 7,
+      "properties": {
+        "mesh": "ExtResource(fixture)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 7,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(fixture_shape)"
+      }
+    },
+    {
+      "name": "EntryWedge",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.52, -0.16, 0.1]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, -18]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 10,
+      "properties": {
+        "mesh": "ExtResource(wedge)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 10,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(wedge_shape)"
+      }
+    },
+    {
+      "name": "ExitWedge",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.55, 0.12, 0.1]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 30]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 13,
+      "properties": {
+        "mesh": "ExtResource(wedge)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 13,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(wedge_shape)"
+      }
+    },
+    {
+      "name": "RearPillar",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.85, -0.06, 0.17]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, -18]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 16,
+      "properties": {
+        "mesh": "ExtResource(pillar)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 16,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(pillar_shape)"
+      }
+    },
+    {
+      "name": "RearStop",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.8, 0.35, 0.065]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 12]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 19,
+      "properties": {
+        "mesh": "ExtResource(stop)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 19,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(stop_shape)"
+      }
+    },
+    {
+      "name": "NearStop",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.83, -0.37, 0.065]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 25]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 22,
+      "properties": {
+        "mesh": "ExtResource(stop)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 22,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(stop_shape)"
+      }
+    },
+    {
+      "name": "LeftPillar",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.28, 0.49, 0.17]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 15]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 25,
+      "properties": {
+        "mesh": "ExtResource(pillar)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 25,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(pillar_shape)"
+      }
+    },
+    {
+      "name": "RightFixture",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.31, -0.49, 0.13]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 35]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 28,
+      "properties": {
+        "mesh": "ExtResource(fixture)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 28,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(fixture_shape)"
+      }
+    },
+    {
+      "name": "RearFixture",
+      "type": "Node3D",
+      "parent": 0,
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.88, 0.2, 0.13]}},
+        "rotation_degrees": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0, 0, 23]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "type": "MeshInstance3D",
+      "parent": 31,
+      "properties": {
+        "mesh": "ExtResource(fixture)",
+        "material": "SubResource(wall_material)"
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 31,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(fixture_shape)"
+      }
+    },
+    {
+      "name": "Inspection",
+      "parent": 0,
+      "type": "MeshInstance3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.52, 0.02, 0.41]}},
+        "mesh": "SubResource(marker)",
+        "surface_color": {"red": 0.98, "green": 0.82, "blue": 0.12, "alpha": 1}
+      }
+    },
+    {
+      "name": "InspectionGauge",
+      "parent": 0,
+      "type": "Node3D",
+      "properties": {}
+    },
+    {
+      "name": "Column",
+      "parent": 35,
+      "type": "Node3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.714, 0.02, 0.32]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "parent": 36,
+      "type": "MeshInstance3D",
+      "properties": {
+        "mesh": "SubResource(scanner_post_mesh)",
+        "surface_color": {"red": 0.22, "green": 0.52, "blue": 0.64, "alpha": 1}
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 36,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(scanner_post_shape)"
+      }
+    },
+    {
+      "name": "UpperJaw",
+      "parent": 35,
+      "type": "Node3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.559, 0.02, 0.64]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "parent": 39,
+      "type": "MeshInstance3D",
+      "properties": {
+        "mesh": "SubResource(scanner_bar_mesh)",
+        "surface_color": {"red": 0.22, "green": 0.52, "blue": 0.64, "alpha": 1}
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 39,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(scanner_bar_shape)"
+      }
+    },
+    {
+      "name": "LowerJaw",
+      "parent": 35,
+      "type": "Node3D",
+      "properties": {
+        "position": {"matrix_data": {"rows": 3, "cols": 1, "storage": [0.559, 0.02, 0.277]}}
+      }
+    },
+    {
+      "name": "Surface",
+      "parent": 42,
+      "type": "MeshInstance3D",
+      "properties": {
+        "mesh": "SubResource(scanner_bar_mesh)",
+        "surface_color": {"red": 0.22, "green": 0.52, "blue": 0.64, "alpha": 1}
+      }
+    },
+    {
+      "name": "Collision",
+      "parent": 42,
+      "type": "CollisionShape3D",
+      "properties": {
+        "shape": "SubResource(scanner_bar_shape)"
+      }
+    }
+  ]
+}

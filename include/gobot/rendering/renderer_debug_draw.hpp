@@ -28,6 +28,7 @@ struct DebugArrow {
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
     RealType scale{1.0};
     std::string label;
+    bool show_head{true};
 };
 
 class RendererDebugDraw {

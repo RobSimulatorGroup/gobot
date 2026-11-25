@@ -466,7 +466,8 @@ class Script(gobot.NodeScript):
                 color=(0.1, 0.2, 0.3, 1.0),
                 scale=2.0,
                 label="test_arrow",
-            )
+            ),
+            gobot.render.DebugArrow((0, 0, 0), (1, 0, 0), show_head=False),
         ])
 
     def _exit_tree(self):
@@ -476,7 +477,9 @@ class Script(gobot.NodeScript):
     root->SetScript(script);
 
     ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
-    ASSERT_EQ(context->GetDebugArrows().size(), 1);
+    ASSERT_EQ(context->GetDebugArrows().size(), 2);
+    EXPECT_TRUE(context->GetDebugArrows()[0].show_head);
+    EXPECT_FALSE(context->GetDebugArrows()[1].show_head);
     EXPECT_EQ(context->GetDebugArrows()[0].label, "test_arrow");
     EXPECT_TRUE(context->GetDebugArrows()[0].start.isApprox(gobot::Vector3(1.0, 2.0, 3.0)));
     EXPECT_TRUE(context->GetDebugArrows()[0].vector.isApprox(gobot::Vector3(0.5, 0.0, 0.0)));
