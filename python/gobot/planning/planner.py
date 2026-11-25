@@ -92,6 +92,9 @@ def _config_to_native_dict(cfg: SolverConfig) -> dict:
         "rrt_shortcut_iters": int(cfg.rrt_shortcut_iters),
         "velocity_scale": float(cfg.velocity_scale),
         "acceleration_scale": float(cfg.acceleration_scale),
+        "jerk_scale": float(cfg.jerk_scale),
+        "spline_order": int(cfg.spline_order),
+        "strict_ccd": bool(cfg.strict_ccd),
         "dt": None if cfg.dt is None else float(cfg.dt),
         "retime": bool(cfg.retime),
     }
@@ -106,6 +109,7 @@ def _trajectory_from_native(d: dict | None) -> Trajectory | None:
         velocities=d["velocities"],
         accelerations=d["accelerations"],
         dt=d["dt"],
+        spline_order=int(d.get("spline_order", 3)),
     )
 
 
@@ -129,6 +133,7 @@ def _plan_result_from_native(d: dict) -> PlanResult:
         goal_index=int(d["goal_index"]),
         reason=d["reason"],
         diagnostics=diag,
+        world_version=int(d.get("world_version", 0)),
     )
 
 
@@ -298,7 +303,8 @@ class MotionPlanner:
                              for r in final_results])
         success = np.asarray([r.success for r in final_results], dtype=np.bool_)
         reasons = tuple(r.reason for r in final_results)
-        return BatchPlanResult(final_results, positions, success, reasons, init_pos)
+        world_ver = final_results[0].world_version if final_results else self.world.version
+        return BatchPlanResult(final_results, positions, success, reasons, init_pos, world_version=world_ver)
 
     # --- Experimental MuJoCo Warp path (shares C++ IK, BiRRT, QP, and unified C++ finalize_trajectory) ---
 
@@ -471,9 +477,12 @@ class MotionPlanner:
         pose_map, joint_map = _expand_path_constraints(
             self.world, cfg.waypoints, fixed, request.waypoint_targets, request.path_constraints,
         )
+        pinned_ver = int(pinned.version)
         start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(request, mask, snap=pinned)
         if ep_err is not None or goal_candidates is None:
-            return PlanResult(None, None, 0, ep_err, PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms))
+            return PlanResult(None, None, 0, ep_err,
+                              PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms),
+                              world_version=pinned_ver)
         valid_goals = []
         last_ep_err = None
         for gid, gq in goal_candidates:
@@ -483,7 +492,9 @@ class MotionPlanner:
             else:
                 last_ep_err = err
         if not valid_goals:
-            return PlanResult(None, None, 0, last_ep_err, PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms))
+            return PlanResult(None, None, 0, last_ep_err,
+                              PlanDiagnostics(total_ms=(perf_counter() - t_start) * 1000.0, ik_ms=ik_ms),
+                              world_version=pinned_ver)
 
         specs, seed_ms = self._build_seed_jobs(start_q, valid_goals, request, mask, pose_map, joint_map, snap=pinned)
         raw_results = run_sqp_batch(self.world, self.backend, specs, race=(len(specs) > 1 and cfg.first_feasible), snap=pinned)
@@ -508,7 +519,8 @@ class MotionPlanner:
                 witnesses=None if first is None else first.witnesses,
             )
             return PlanResult(None, None if first is None else first.initial_positions, 0,
-                              "trajectory optimization failed" if first is None else first.reason, diag)
+                              "trajectory optimization failed" if first is None else first.reason, diag,
+                              world_version=pinned_ver)
 
         winner = min(succeeded, key=lambda r: r.cost)
         traj, retime_ms, retime_err = self._finalize_trajectory(winner.positions, cfg, snap=pinned)
@@ -518,11 +530,13 @@ class MotionPlanner:
             qp_calls=winner.qp_calls, sqp_iterations=winner.sqp_iterations,
             seed_strategy=winner.seed_strategy, witnesses=winner.witnesses,
         )
-        return PlanResult(traj, winner.initial_positions, winner.goal_index, retime_err, diag)
+        return PlanResult(traj, winner.initial_positions, winner.goal_index, retime_err, diag,
+                          world_version=pinned_ver)
 
     def _plan_warp_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int) -> tuple[PlanResult, ...]:
         B = len(requests)
         pinned = self.world._native.snapshot()
+        pinned_ver = int(pinned.version)
         all_results: list[PlanResult | None] = [None] * B
         for offset in range(0, B, chunk_size):
             chunk = requests[offset:min(offset + chunk_size, B)]
@@ -542,13 +556,15 @@ class MotionPlanner:
                 )
                 start_q, goal_candidates, ep_err, ik_ms = self._resolve_endpoints(req, mask, snap=pinned)
                 if ep_err is not None or goal_candidates is None:
-                    all_results[row_i] = PlanResult(None, None, 0, ep_err, PlanDiagnostics(ik_ms=ik_ms))
+                    all_results[row_i] = PlanResult(None, None, 0, ep_err, PlanDiagnostics(ik_ms=ik_ms),
+                                                    world_version=pinned_ver)
                     continue
                 valid_goals = [(gid, gq) for gid, gq in goal_candidates
                                if self._validate_endpoints(start_q, gq, cfg, fixed, snap=pinned) is None]
                 if not valid_goals:
                     err = self._validate_endpoints(start_q, goal_candidates[0][1], cfg, fixed, snap=pinned)
-                    all_results[row_i] = PlanResult(None, None, 0, err, PlanDiagnostics(ik_ms=ik_ms))
+                    all_results[row_i] = PlanResult(None, None, 0, err, PlanDiagnostics(ik_ms=ik_ms),
+                                                    world_version=pinned_ver)
                     continue
                 specs, seed_ms = self._build_seed_jobs(start_q, valid_goals[:1], req, mask, pose_map, joint_map, snap=pinned)
                 active_indices.append(row_i)
@@ -576,6 +592,7 @@ class MotionPlanner:
                                 sqp_iterations=0 if sqp_res is None else sqp_res.sqp_iterations,
                                 witnesses=None if sqp_res is None else sqp_res.witnesses,
                             ),
+                            world_version=pinned_ver,
                         )
                     else:
                         traj, retime_ms, retime_err = self._finalize_trajectory(sqp_res.positions, cfg, snap=pinned)
@@ -587,6 +604,7 @@ class MotionPlanner:
                                 qp_calls=sqp_res.qp_calls, sqp_iterations=sqp_res.sqp_iterations,
                                 seed_strategy=sqp_res.seed_strategy, witnesses=sqp_res.witnesses,
                             ),
+                            world_version=pinned_ver,
                         )
         return tuple(r for r in all_results if r is not None)
 

@@ -774,3 +774,680 @@ def test_validate_trajectory_snapshot_isolation_and_frame_shape_guard(simple_sna
         stop.set()
         t.join(timeout=2.0)
     assert not errors, f"mutator thread raised: {errors}"
+
+
+def _make_tf(pos, rot=None):
+    mat = np.eye(4, dtype=np.float64)
+    if rot is not None:
+        mat[:3, :3] = np.asarray(rot, dtype=np.float64)
+    mat[:3, 3] = np.asarray(pos, dtype=np.float64)
+    return {"matrix": mat.tolist()}
+
+
+def test_sync_from_snapshot_full_acceptance(simple_snapshot, monkeypatch):
+    """Comprehensive acceptance test for PlanningWorld.sync_from_snapshot."""
+    import copy
+    import gobot.planning.world as world_mod
+
+    # Add two box obstacles + one triangle-mesh obstacle with stable_ids into a mutable snapshot copy.
+    cube_verts = np.array([
+        [-0.05, -0.05, -0.05], [0.05, -0.05, -0.05], [0.05, 0.05, -0.05], [-0.05, 0.05, -0.05],
+        [-0.05, -0.05,  0.05], [0.05, -0.05,  0.05], [0.05, 0.05,  0.05], [-0.05, 0.05,  0.05],
+    ], dtype=np.float64)
+    cube_idx = np.array([
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
+        0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6,
+        1, 2, 6, 1, 6, 5, 0, 4, 7, 0, 7, 3,
+    ], dtype=np.int64)
+
+    snap0 = copy.deepcopy(simple_snapshot)
+    snap0["loose_shapes"] = [
+        {
+            "name": "box_a", "path": "World/box_a", "stable_id": "sid_box_a",
+            "type": 1, "size": [0.12, 0.12, 0.20], "transform": _make_tf([0.40, 0.25, 0.50]),
+            "collision_layer": 1, "collision_mask": 1, "disabled": False,
+        },
+        {
+            "name": "box_b", "path": "World/box_b", "stable_id": "sid_box_b",
+            "type": 1, "size": [0.10, 0.10, 0.10], "transform": _make_tf([-0.40, 0.25, 0.50]),
+            "collision_layer": 1, "collision_mask": 1, "disabled": False,
+        },
+        {
+            "name": "mesh_c", "path": "World/mesh_c", "stable_id": "sid_mesh_c",
+            "type": 5, "vertices": cube_verts.tolist(), "indices": cube_idx.tolist(),
+            "geometry_version": 1,
+            "transform": _make_tf([0.0, 0.60, 0.50]),
+            "collision_layer": 1, "collision_mask": 1, "disabled": False,
+        },
+    ]
+
+    world = PlanningWorld.from_snapshot(snap0, {"planning": "base"})
+    world.define_group("xy_only", [("planning", "x"), ("planning", "y")])
+
+    # Instrument _make_native_shape to prove pure pose/filter syncs NEVER rebuild convex hulls or BVHs.
+    build_calls = []
+    orig_make = world_mod._make_native_shape
+
+    def counting_make(spec, label):
+        build_calls.append(label)
+        return orig_make(spec, label)
+
+    monkeypatch.setattr(world_mod, "_make_native_shape", counting_make)
+
+    # 1. No-op sync: must NOT publish a new version or rebuild geometry.
+    v_init = world.version
+    tv_init = world.topology_version
+    res_noop = world.sync_from_snapshot(snap0)
+    assert not res_noop.changed
+    assert res_noop.version == v_init
+    assert res_noop.topology_version == tv_init
+    assert build_calls == []
+
+    # 2. Pure pose update + robot base move + rename/reparent (same stable_id):
+    #    exactly ONE new snapshot version, ZERO topology_version bump, ZERO geometry rebuilds!
+    snap1 = copy.deepcopy(snap0)
+    snap1["loose_shapes"][0]["transform"] = _make_tf([0.20, 0.35, 0.50])
+    snap1["loose_shapes"][0]["name"] = "box_a_renamed"
+    snap1["loose_shapes"][0]["path"] = "World/Group/box_a_renamed"
+    snap1["loose_shapes"][2]["transform"] = _make_tf([0.10, 0.55, 0.50])
+    # Shift robot base + all robot links & joints rigidly by (+0.05, 0, 0).
+    shift = np.eye(4, dtype=np.float64)
+    shift[0, 3] = 0.05
+    for rob in snap1["robots"]:
+        if rob["name"] == "planning":
+            for lk in rob["links"]:
+                lk["global_transform"]["matrix"] = (shift @ np.asarray(lk["global_transform"]["matrix"])).tolist()
+                for sh in lk.get("shapes", ()):
+                    sh["transform"]["matrix"] = (shift @ np.asarray(sh["transform"]["matrix"])).tolist()
+            for jt in rob["joints"]:
+                jt["global_transform"]["matrix"] = (shift @ np.asarray(jt["global_transform"]["matrix"])).tolist()
+
+    res_pose = world.sync_from_snapshot(snap1)
+    assert res_pose.changed
+    assert res_pose.version == v_init + 1
+    # box_a's path/link_key changed -> link_key metadata updated without rebuilding geometry/BVH.
+    assert res_pose.topology_version == tv_init + 1
+    assert res_pose.poses_updated == 1
+    assert res_pose.robot_bases_updated == 1
+    assert res_pose.shapes_added == 0
+    assert res_pose.shapes_removed == 0
+    assert res_pose.shapes_replaced == 1
+    assert build_calls == [], f"Pure pose/rename sync rebuilt geometry: {build_calls}"
+
+    # Verify equivalence against full rebuild at same configuration.
+    q_test = np.array([0.15, 0.20, 0.40], dtype=np.float64)
+    rebuilt1 = PlanningWorld.from_snapshot(snap1, {"planning": "base"})
+    pos_inc, rot_inc = world.forward_kinematics(q_test)
+    pos_full, rot_full = rebuilt1.forward_kinematics(q_test)
+    assert np.allclose(pos_inc, pos_full, atol=1e-12)
+    assert np.allclose(rot_inc, rot_full, atol=1e-12)
+    assert np.allclose(np.sort(world.collision_distances(q_test)), np.sort(rebuilt1.collision_distances(q_test)), atol=1e-12)
+
+    # 3. Filter-only change (collision_mask -> 0): must NOT rebuild mesh geometry, MUST update active pairs.
+    build_calls.clear()
+    snap2 = copy.deepcopy(snap1)
+    snap2["loose_shapes"][2]["collision_layer"] = 0
+    snap2["loose_shapes"][2]["collision_mask"] = 0
+    res_filter = world.sync_from_snapshot(snap2)
+    assert res_filter.changed
+    assert res_filter.shapes_replaced == 1
+    assert res_filter.topology_version == tv_init + 2
+    assert build_calls == [], f"Filter-only sync rebuilt mesh geometry: {build_calls}"
+    rebuilt2 = PlanningWorld.from_snapshot(snap2, {"planning": "base"})
+    assert world.num_pairs == rebuilt2.num_pairs
+    assert np.allclose(np.sort(world.collision_distances(q_test)), np.sort(rebuilt2.collision_distances(q_test)), atol=1e-12)
+
+    # 4. Add + disable (remove) + geometry replace (size + mesh geometry_version):
+    build_calls.clear()
+    snap3 = copy.deepcopy(snap2)
+    snap3["loose_shapes"][0]["size"] = [0.24, 0.12, 0.20]   # geometry replace
+    snap3["loose_shapes"][1]["disabled"] = True              # remove
+    snap3["loose_shapes"][2]["collision_layer"] = 1
+    snap3["loose_shapes"][2]["collision_mask"] = 1
+    snap3["loose_shapes"][2]["vertices"] = (cube_verts * 1.5).tolist()
+    snap3["loose_shapes"][2]["geometry_version"] = 2         # geometry replace
+    snap3["loose_shapes"].append({
+        "name": "sphere_d", "path": "World/sphere_d", "stable_id": "sid_sphere_d",
+        "type": 2, "radius": 0.08, "transform": _make_tf([0.0, -0.45, 0.50]),
+        "collision_layer": 1, "collision_mask": 1, "disabled": False,
+    })
+    res_topo = world.sync_from_snapshot(snap3)
+    assert res_topo.changed
+    assert res_topo.shapes_added == 1
+    assert res_topo.shapes_removed == 1
+    assert res_topo.shapes_replaced == 2
+    assert len(build_calls) == 3  # 2 geometry replacements + 1 addition
+    rebuilt3 = PlanningWorld.from_snapshot(snap3, {"planning": "base"})
+    assert world.num_pairs == rebuilt3.num_pairs
+    assert np.allclose(np.sort(world.collision_distances(q_test)), np.sort(rebuilt3.collision_distances(q_test)), atol=1e-12)
+
+    # 5. Attached object preservation + User ACM override + PlanningGroup preservation:
+    #    Attach World/sphere_d to left_tip, disable World/box_a via user ACM, then move sphere_d in snapshot!
+    world.attach_object("World/sphere_d", ("planning", "left_tip"), local_position=(0.0, 0.0, 0.10))
+    world.set_collision_enabled(("planning", "left_tip"), "World/box_a", False)
+    pairs_before = world.num_pairs
+
+    snap4 = copy.deepcopy(snap3)
+    # Stale scene moves sphere_d far away (or even deletes it) -> attached payload must NOT be touched or duplicated!
+    snap4["loose_shapes"][-1]["transform"] = _make_tf([5.0, 5.0, 5.0])
+    v_before_att = world.version
+    res_att = world.sync_from_snapshot(snap4)
+    assert not res_att.changed
+    assert res_att.version == v_before_att
+    assert world.num_pairs == pairs_before
+    # PlanningGroup still intact and inactive joint stays part of robot (frozen, not static obstacle).
+    mask_xy = world.group_mask("xy_only")
+    assert mask_xy.tolist() == [True, True, False]
+
+    # Detach sphere_d -> next sync reconciles its world pose to snap4!
+    world.detach_object("World/sphere_d", q_test)
+    res_det = world.sync_from_snapshot(snap4)
+    assert res_det.changed
+    assert res_det.poses_updated == 1
+
+    # 6. Atomic failure: robot topology change or invalid transform must throw and leave world completely unchanged!
+    v_safe = world.version
+    tv_safe = world.topology_version
+    dists_safe = world.collision_distances(q_test).copy()
+
+    snap_bad_topo = copy.deepcopy(snap4)
+    snap_bad_topo["loose_shapes"][0]["transform"] = _make_tf([9.0, 9.0, 9.0])
+    for rob in snap_bad_topo["robots"]:
+        if rob["name"] == "planning":
+            rob["joints"].pop()  # remove joint -> topology change!
+    with pytest.raises(ValueError, match="robot topology changed"):
+        world.sync_from_snapshot(snap_bad_topo)
+    assert world.version == v_safe
+    assert world.topology_version == tv_safe
+    assert np.allclose(world.collision_distances(q_test), dists_safe, atol=1e-12)
+
+    # 7. PlanResult & BatchPlanResult record exact world_version.
+    planner = MotionPlanner(world, backend="coal")
+    req = MotionPlanRequest(
+        start=np.array([0.0, 0.0, 0.0]),
+        goal=np.array([0.2, 0.1, 0.0]),
+        group="xy_only",
+        config=SolverConfig(waypoints=8, margin=0.002, world_margin=0.005),
+    )
+    pres = planner.plan(req)
+    assert pres.success
+    assert pres.world_version == world.version
+    bres = planner.plan_batch([req, req])
+    assert bres.world_version == world.version
+    assert all(r.world_version == world.version for r in bres.results)
+
+
+def test_sync_from_scene_live_engine_context(tmp_path):
+    """Verify PlanningWorld.from_scene and sync_from_scene against a live Gobot EngineContext."""
+    xml = """<mujoco model="sync_scene_test">
+      <worldbody>
+        <body name="base" pos="0 0 0">
+          <body name="slider" pos="0 0 0.2">
+            <joint name="jx" type="slide" axis="1 0 0" range="-1 1"/>
+            <geom name="tip" type="sphere" size="0.05"/>
+          </body>
+        </body>
+        <geom name="wall" type="box" pos="0.5 0 0.2" size="0.05 0.1 0.1"/>
+      </worldbody>
+    </mujoco>"""
+    xml_path = tmp_path / "sync_scene_test.xml"
+    xml_path.write_text(xml, encoding="utf-8")
+
+    ctx = gobot.app.context()
+    prev = ctx.project_path
+    try:
+        gobot.set_project_path(str(tmp_path))
+        gobot.import_mjcf_scene(str(xml_path), "res://sync_scene_test.jscn", name="sync_scene_test")
+        ctx.set_project_path(str(tmp_path))
+        ctx.load_scene("res://sync_scene_test.jscn")
+
+        world = PlanningWorld.from_scene(ctx, {"sync_scene_test": "base"})
+        v0 = world.version
+
+        # No scene edits -> no-op sync.
+        r0 = world.sync_from_scene(ctx)
+        assert not r0.changed
+        assert r0.version == v0
+        assert r0.export_ms >= 0.0
+
+        # Move the wall obstacle node directly in the live Gobot Scene!
+        root = ctx.root
+        wall_node = None
+        stack = [root]
+        while stack:
+            cur = stack.pop()
+            if "wall" in cur.name.lower():
+                wall_node = cur
+                break
+            stack.extend(cur.children)
+        assert wall_node is not None, "could not find wall node in imported scene"
+        old_pos = list(wall_node.position)
+        wall_node.position = [old_pos[0] + 0.30, old_pos[1], old_pos[2]]
+
+        r1 = world.sync_from_scene(ctx)
+        assert r1.changed
+        assert r1.version == v0 + 1
+        assert r1.poses_updated == 1
+        assert r1.shapes_added == 0 and r1.shapes_removed == 0 and r1.shapes_replaced == 0
+
+        # Distance at q=0 must match a fresh PlanningWorld.from_scene(ctx, ...).
+        q0 = np.array([0.0], dtype=np.float64)
+        fresh = PlanningWorld.from_scene(ctx, {"sync_scene_test": "base"})
+        assert np.allclose(world.collision_distances(q0), fresh.collision_distances(q0), atol=1e-12)
+    finally:
+        ctx.clear_scene()
+        if prev:
+            ctx.set_project_path(prev)
+
+
+def test_quintic_c2_spline_jerk_limits_and_counterexamples(simple_snapshot):
+    """Verify shared C^2 quintic spline evaluation, global time scaling, jerk limits, and counterexamples."""
+    from gobot.planning.retime import check_trajectory_bounds
+
+    # 1. Standalone C^2 quintic retiming with global time scaling & stop_at_endpoints=True.
+    wp = np.array([
+        [0.0, 0.0, 0.0],
+        [0.2, 0.15, 0.3],
+        [0.45, 0.25, -0.2],
+        [0.6, 0.10, 0.1],
+    ], dtype=np.float64)
+    vmax = np.array([1.5, 1.5, 2.0])
+    amax = np.array([4.0, 4.0, 5.0])
+    jmax = np.array([15.0, 15.0, 20.0])
+
+    traj_loose = retime_trajectory(wp, vmax, amax, stop_at_endpoints=True, spline_order=5)
+    traj_jerk = retime_trajectory(wp, vmax, amax, stop_at_endpoints=True, jerk_limits=jmax, spline_order=5)
+    assert traj_jerk.spline_order == 5
+    assert traj_jerk.duration >= traj_loose.duration
+
+    # Verify global scaling preserves exact geometric path q(s) for normalized progress s in [0, 1]!
+    s = np.linspace(0.0, 1.0, 201)
+    p_loose, _, _ = traj_loose.sample(s * traj_loose.duration)
+    p_jerk, v_jerk, a_jerk, j_jerk = traj_jerk.sample_with_jerk(s * traj_jerk.duration)
+    assert np.allclose(p_loose, p_jerk, atol=1e-10), "Global time scaling altered geometric path!"
+
+    # Verify strict v, a, j bounds everywhere and stop_at_endpoints v=a=0.
+    assert np.allclose(v_jerk[0], 0.0, atol=1e-10)
+    assert np.allclose(a_jerk[0], 0.0, atol=1e-10)
+    assert np.allclose(v_jerk[-1], 0.0, atol=1e-10)
+    assert np.allclose(a_jerk[-1], 0.0, atol=1e-10)
+    assert (np.abs(v_jerk) <= vmax[None, :] * (1.0 + 1e-5)).all()
+    assert (np.abs(a_jerk) <= amax[None, :] * (1.0 + 1e-5)).all()
+    assert (np.abs(j_jerk) <= jmax[None, :] * (1.0 + 1e-5)).all()
+
+    # Verify C^2 continuity across interior knots & finite left/right jerk within limits.
+    eps = 1e-7
+    for tk in traj_jerk.times[1:-1]:
+        pl, vl, al, jl = traj_jerk.sample_with_jerk(float(tk - eps))
+        pr, vr, ar, jr = traj_jerk.sample_with_jerk(float(tk + eps))
+        assert np.allclose(pl, pr, atol=1e-5)
+        assert np.allclose(vl, vr, atol=1e-5)
+        assert np.allclose(al, ar, atol=1e-3)
+        assert (np.abs(jl) <= jmax * (1.0 + 1e-4)).all()
+        assert (np.abs(jr) <= jmax * (1.0 + 1e-4)).all()
+
+    ok, err, bad = check_trajectory_bounds(traj_jerk, vmax, amax, jerk_limits=jmax)
+    assert ok and err is None and bad == []
+
+    # 2. Counterexample A: knots strictly inside joint limits, mid-segment quintic exceeds upper limit!
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    world.set_jerk_limits([25.0, 25.0, 30.0])
+    x_hi = float(world.upper_limits[0])
+    bad_pos_traj = Trajectory(
+        times=np.array([0.0, 1.0]),
+        positions=np.array([[x_hi - 0.05, 0.2, 0.0], [x_hi - 0.05, 0.2, 0.0]]),
+        velocities=np.array([[0.8, 0.0, 0.0], [-0.8, 0.0, 0.0]]),  # mid-segment overshoots x_hi by +0.20 m!
+        accelerations=np.zeros((2, 3)),
+        spline_order=5,
+    )
+    ok_pos, err_pos = world.validate_trajectory(bad_pos_traj, collision_substeps=1)
+    assert not ok_pos
+    assert err_pos is not None and "position" in err_pos and "segment 0" in err_pos and "joint 0" in err_pos
+
+    # 3. Counterexample B: fixed dt where v & a are well inside limits, ONLY jerk exceeds limit!
+    world_tight_j = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    world_tight_j.set_jerk_limits([2.0, 2.0, 2.0])
+    wp_2 = np.array([[0.0, 0.2, 0.0], [0.1, 0.2, 0.0]])
+    traj_fixed = retime_trajectory(
+        wp_2, world_tight_j.velocity_limits, world_tight_j.acceleration_limits,
+        stop_at_endpoints=True, dt=0.5, jerk_limits=world_tight_j.jerk_limits, spline_order=5,
+    )
+    assert np.isclose(traj_fixed.duration, 0.5)
+    ok_j, err_j = world_tight_j.validate_trajectory(traj_fixed, collision_substeps=4)
+    assert not ok_j
+    assert err_j is not None and "jerk" in err_j and "segment 0" in err_j and "joint 0" in err_j
+
+    # 4. End-to-end MotionPlanner.plan with C^2 quintic spline + jerk limits + strict_ccd=True!
+    world.add_box("mid_post", (0.12, 0.12, 0.25), (0.0, 0.35, 0.50))
+    planner = MotionPlanner(world, backend="coal")
+    req = MotionPlanRequest(
+        start=np.array([-0.45, 0.35, 0.0]),
+        goal=np.array([0.45, 0.35, 0.0]),
+        config=SolverConfig(
+            waypoints=12,
+            margin=0.005,
+            world_margin=0.015,
+            collision_substeps=6,
+            stop_at_endpoints=True,
+            spline_order=5,
+            strict_ccd=True,
+        ),
+    )
+    res = planner.plan(req)
+    assert res.success, res.reason
+    assert res.trajectory is not None and res.trajectory.spline_order == 5
+    assert res.diagnostics.retime_ms >= 0.0
+    ok_val, err_val = world.validate_trajectory(
+        res.trajectory, margin=0.005, world_margin=0.015, strict_ccd=True,
+    )
+    assert ok_val, err_val
+
+
+def test_review_regressions_quintic_peaks_concurrent_sync_and_attached_rename(simple_snapshot, tmp_path):
+    """Regression tests for all P1/P2 findings from 2.1 + 2.2 review."""
+    import copy
+    import threading
+    from gobot.planning.retime import check_trajectory_bounds
+
+    # 1. P1: Quintic near-zero c5 interior acceleration peak (a(0)=0, a(1)=4e-15, a(0.5)=-3.0 > 2.0).
+    traj_acc = Trajectory(
+        times=np.array([0.0, 1.0]),
+        positions=np.array([[0.0], [0.0]]),
+        velocities=np.array([[1.0], [-1.0]]),
+        accelerations=np.array([[0.0], [4e-15]]),
+        spline_order=5,
+    )
+    ok_acc, err_acc, _ = check_trajectory_bounds(traj_acc, np.array([10.0]), np.array([2.0]))
+    assert not ok_acc and err_acc is not None and "acceleration" in err_acc
+
+    # 2. P1/P2: Wrong-length limit vectors & zero-duration moving segment & invalid SolverConfig(spline_order=4).
+    with pytest.raises(ValueError, match="length"):
+        check_trajectory_bounds(traj_acc, np.array([10.0, 10.0]), np.array([2.0]))
+    with pytest.raises(ValueError, match="length"):
+        check_trajectory_bounds(traj_acc, np.array([10.0]), np.array([2.0]), jerk_limits=np.array([5.0, 5.0]))
+    traj_zdt = Trajectory(
+        times=np.array([0.0, 0.0]),
+        positions=np.array([[0.0], [0.5]]),
+        velocities=np.zeros((2, 1)),
+        accelerations=np.zeros((2, 1)),
+        spline_order=5,
+    )
+    ok_zdt, err_zdt, _ = check_trajectory_bounds(traj_zdt, np.array([10.0]), np.array([10.0]))
+    assert not ok_zdt and err_zdt is not None and "Zero-duration" in err_zdt
+    with pytest.raises(ValueError, match="spline_order"):
+        SolverConfig(spline_order=4)
+
+    # 3. P2: Snapshot joint jerk_limit change must be detected by sync_from_snapshot.
+    snap_j0 = copy.deepcopy(simple_snapshot)
+    snap_j0["robots"][0]["joints"][0]["jerk_limit"] = 20.0
+    world_j = PlanningWorld.from_snapshot(snap_j0, {"planning": "base"})
+    snap_j1 = copy.deepcopy(snap_j0)
+    snap_j1["robots"][0]["joints"][0]["jerk_limit"] = 5.0
+    with pytest.raises(ValueError, match="jerk"):
+        world_j.sync_from_snapshot(snap_j1)
+
+    # 4. P1: Two concurrent sync_from_snapshot writers must never publish a mixed/hybrid scene!
+    #    State A: both boxes at y = +0.55. State B: both boxes at y = -0.55.
+    #    At q = [0, 0, 0] (tip at (0, 0, 0.5)), every published snapshot MUST have equal distance to both boxes
+    #    (never one box at +0.55 and the other at -0.55, or one at +0.55 and one at +1.55!).
+    snap_a = copy.deepcopy(simple_snapshot)
+    snap_a["loose_shapes"] = [
+        {"name": "b1", "path": "World/b1", "stable_id": "s1", "type": 1, "size": [0.1, 0.1, 0.1],
+         "transform": _make_tf([0.3, 0.40, 0.50]), "collision_layer": 1, "collision_mask": 1, "disabled": False},
+        {"name": "b2", "path": "World/b2", "stable_id": "s2", "type": 1, "size": [0.1, 0.1, 0.1],
+         "transform": _make_tf([-0.3, 0.40, 0.50]), "collision_layer": 1, "collision_mask": 1, "disabled": False},
+    ]
+    snap_b = copy.deepcopy(snap_a)
+    snap_b["loose_shapes"][0]["transform"] = _make_tf([0.3, 1.40, 0.50])
+    snap_b["loose_shapes"][1]["transform"] = _make_tf([-0.3, 1.40, 0.50])
+
+    world_c = PlanningWorld.from_snapshot(snap_a, {"planning": "base"})
+    q0 = np.array([0.0, 0.0, 0.0])
+    d_a = np.sort(world_c.collision_distances(q0))
+    d_b = np.sort(PlanningWorld.from_snapshot(snap_b, {"planning": "base"}).collision_distances(q0))
+
+    stop = threading.Event()
+    errs = []
+
+    def writer(snap_target):
+        try:
+            for _ in range(80):
+                if stop.is_set():
+                    break
+                world_c.sync_from_snapshot(snap_target)
+        except Exception as exc:
+            errs.append(exc)
+
+    ta = threading.Thread(target=writer, args=(snap_a,))
+    tb = threading.Thread(target=writer, args=(snap_b,))
+    ta.start()
+    tb.start()
+    while ta.is_alive() or tb.is_alive():
+        d_now = np.sort(world_c.collision_distances(q0))
+        ok_a = np.allclose(d_now, d_a, atol=1e-9)
+        ok_b = np.allclose(d_now, d_b, atol=1e-9)
+        assert ok_a or ok_b, f"Observed mixed/hybrid scene from concurrent sync writers: {d_now} vs A={d_a}, B={d_b}"
+    ta.join()
+    tb.join()
+    assert not errs, f"Concurrent sync writer raised: {errs}"
+
+    # 5. P1: Renaming a real attached obstacle node in a live Gobot Scene must NOT duplicate its collision shape!
+    xml = """<mujoco model="rename_attached_test">
+      <worldbody>
+        <body name="base" pos="0 0 0">
+          <body name="slider" pos="0 0 0.2">
+            <joint name="jx" type="slide" axis="1 0 0" range="-1 1"/>
+            <geom name="tip" type="sphere" size="0.05"/>
+          </body>
+        </body>
+        <geom name="payload" type="box" pos="0.5 0 0.2" size="0.05 0.05 0.05"/>
+      </worldbody>
+    </mujoco>"""
+    xml_path = tmp_path / "rename_attached_test.xml"
+    xml_path.write_text(xml, encoding="utf-8")
+
+    ctx = gobot.app.context()
+    prev = ctx.project_path
+    try:
+        gobot.set_project_path(str(tmp_path))
+        gobot.import_mjcf_scene(str(xml_path), "res://rename_attached_test.jscn", name="rename_attached_test")
+        ctx.set_project_path(str(tmp_path))
+        ctx.load_scene("res://rename_attached_test.jscn")
+
+        w_live = PlanningWorld.from_scene(ctx, {"rename_attached_test": "base"})
+        payload_shape_name = [n for n in w_live._native.shape_names() if "payload" in n.lower()]
+        assert len(payload_shape_name) == 1
+        w_live.attach_object(payload_shape_name[0], ("rename_attached_test", "slider"), local_position=(0.0, 0.0, 0.12))
+        shapes_before = list(w_live._native.shape_names())
+
+        # Rename the real Gobot scene node!
+        payload_node = None
+        stack = [ctx.root]
+        while stack:
+            cur = stack.pop()
+            if "payload" in cur.name.lower():
+                payload_node = cur
+                break
+            stack.extend(cur.children)
+        assert payload_node is not None
+        payload_node.name = "payload_renamed"
+
+        sync_res = w_live.sync_from_scene(ctx)
+        assert not sync_res.changed, f"Renaming attached real node unexpectedly mutated world: {sync_res}"
+        assert sync_res.shapes_added == 0
+        assert list(w_live._native.shape_names()) == shapes_before
+        assert payload_shape_name[0] in w_live._native.attached_shape_names()
+
+        # 6. P1: Mixing from_scene + sync_from_snapshot (without node_id) must NOT duplicate the attached shape!
+        raw_snap = ctx.compile_physics_scene_snapshot()
+        mix_res = w_live.sync_from_snapshot(raw_snap)
+        assert not mix_res.changed, f"Mixing from_scene and sync_from_snapshot duplicated/mutated world: {mix_res}"
+        assert mix_res.shapes_added == 0
+        assert list(w_live._native.shape_names()) == shapes_before
+    finally:
+        ctx.clear_scene()
+        if prev:
+            ctx.set_project_path(prev)
+
+    # 7. P1: Reparenting a shape to a different link must update link_key and collision filtering!
+    snap_lk0 = copy.deepcopy(simple_snapshot)
+    snap_lk0["loose_shapes"] = [
+        {"name": "panel", "path": "World/link_a", "stable_id": "sid_panel", "type": 1,
+         "size": [0.10, 0.10, 0.20], "transform": _make_tf([0.0, 0.35, 0.50]),
+         "collision_layer": 1, "collision_mask": 1, "disabled": False},
+    ]
+    w_lk = PlanningWorld.from_snapshot(snap_lk0, {"planning": "base"})
+    w_lk.set_collision_enabled(("planning", "left_tip"), "World/link_a", False)
+    pairs_disabled = w_lk.num_pairs
+    snap_lk1 = copy.deepcopy(snap_lk0)
+    snap_lk1["loose_shapes"][0]["path"] = "World/link_b"  # moved to link_b, where collision is NOT disabled!
+    r_lk = w_lk.sync_from_snapshot(snap_lk1)
+    assert r_lk.changed and r_lk.shapes_replaced == 1
+    assert w_lk.num_pairs > pairs_disabled, "Reparented obstacle kept stale link_key ACM suppression!"
+
+    # 8. P1: validate_trajectory must pin ONE snapshot across jerk_limits and collision checks!
+    #    State A: tight jerk limit (traj fails jerk), obstacle far away.
+    #    State B: loose jerk limit (traj passes jerk), obstacle dead-on blocking path.
+    #    Every valid world version rejects this trajectory; cross-version tearing would falsely pass!
+    w_pin = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    w_pin.add_box("gate", (0.14, 0.14, 0.20), (0.0, 0.35, 0.50))
+    traj_pin = retime_trajectory(
+        np.array([[-0.35, 0.35, 0.0], [0.35, 0.35, 0.0]]),
+        w_pin.velocity_limits, w_pin.acceleration_limits, stop_at_endpoints=True, spline_order=5,
+    )
+    w_pin.set_jerk_limits(1000.0)
+    # Verify State B (loose jerk + blocking box) fails collision, and State A (tight jerk + far box) fails jerk.
+    ok_b, _ = w_pin.validate_trajectory(traj_pin, margin=0.0, world_margin=0.0)
+    assert not ok_b
+    w_pin.update_obstacle_pose("gate", (3.0, 3.0, 0.50))
+    w_pin.set_jerk_limits(0.1)
+    ok_a, _ = w_pin.validate_trajectory(traj_pin, margin=0.0, world_margin=0.0)
+    assert not ok_a
+    # Prove validate_trajectory reads limits from the pinned C++ WorldSnapshot (not stale/mutated Python attrs)
+    # and runs bounds + collision against that exact same snapshot even if another thread mutates world mid-call:
+    w_pin.jerk_limits = np.full(3, np.inf)  # corrupt Python attr; pinned C++ snapshot still has 0.1!
+    ok_a2, err_a2 = w_pin.validate_trajectory(traj_pin, margin=0.0, world_margin=0.0)
+    assert not ok_a2 and err_a2 is not None and "jerk" in err_a2
+    w_pin.set_jerk_limits(1000.0)
+
+    # 9. P1/P2: Native quintic CCD missing spline params, empty samples, invalid jerk_scale & polyline dt,
+    #    tiny dq jerk retime, tiny positive dt playback & rejection, and one-sided lower_limits enforcement.
+    with pytest.raises(ValueError, match="accelerations"):
+        w_pin._native.validate_trajectory_collision(
+            traj_pin.positions, traj_pin.positions, 1, 0.0, 0.0, False, 5e-4,
+            traj_pin.times, traj_pin.velocities, False, None, 5,
+        )
+    with pytest.raises(ValueError, match="accelerations"):
+        w_pin._native.validate_trajectory_collision(
+            traj_pin.positions, traj_pin.positions, 1, 0.0, 0.0, False, 5e-4,
+            None, None, False, None, 5,
+        )
+    with pytest.raises(ValueError, match="samples must have shape"):
+        w_pin._native.validate_trajectory_collision(
+            traj_pin.positions, np.empty((0, 3), dtype=np.float64), 1, 0.0, 0.0, False, 5e-4,
+        )
+    with pytest.raises(ValueError, match="jerk_scale"):
+        SolverConfig(jerk_scale=0.0)
+    with pytest.raises(ValueError, match="jerk_scale"):
+        w_pin.validate_trajectory(traj_pin, jerk_scale=-1.0)
+    with pytest.raises(ValueError, match="dt must be finite and positive"):
+        w_pin.validate_trajectory(traj_pin.positions, dt=-0.1)
+    with pytest.raises(ValueError, match="dt must be finite and positive"):
+        w_pin.validate_trajectory(traj_pin.positions, dt=float("nan"))
+
+    # Tiny positive duration segment playback must reach exact endpoint.
+    t_short_end = Trajectory(
+        times=np.array([0.0, 5e-13]),
+        positions=np.array([[0.0], [1.0]]),
+        velocities=np.zeros((2, 1)),
+        accelerations=np.zeros((2, 1)),
+        spline_order=5,
+    )
+    p_end_sample, _, _ = t_short_end.sample(5e-13)
+    assert np.allclose(p_end_sample, [1.0], atol=1e-12)
+
+    # Tiny non-zero displacement (5e-13) with finite jerk limit must be retimed to satisfy jerk bounds.
+    t_tiny = retime_trajectory(
+        np.array([[0.0], [5e-13]]), np.array([2.0]), np.array([5.0]),
+        stop_at_endpoints=True, jerk_limits=np.array([5.0]), spline_order=5,
+    )
+    ok_tiny, err_tiny, _ = check_trajectory_bounds(
+        t_tiny, np.array([2.0]), np.array([5.0]), jerk_limits=np.array([5.0]),
+    )
+    assert ok_tiny, err_tiny
+
+    # Tiny positive duration segment (5e-13 s) with non-zero displacement (5e-13 m) must NOT bypass bounds!
+    t_short = Trajectory(
+        times=np.array([0.0, 5e-13]),
+        positions=np.array([[0.0], [5e-13]]),
+        velocities=np.zeros((2, 1)),
+        accelerations=np.zeros((2, 1)),
+        spline_order=5,
+    )
+    ok_short, _, _ = check_trajectory_bounds(
+        t_short, np.array([2.0]), np.array([5.0]), jerk_limits=np.array([5.0]),
+    )
+    assert not ok_short
+
+    # One-sided lower_limits only must be enforced (never silently ignored).
+    t_lo = Trajectory(
+        times=np.array([0.0, 1.0]),
+        positions=np.array([[-0.5], [-0.5]]),
+        velocities=np.zeros((2, 1)),
+        accelerations=np.zeros((2, 1)),
+        spline_order=5,
+    )
+    ok_lo, err_lo, _ = check_trajectory_bounds(
+        t_lo, np.array([2.0]), np.array([5.0]), lower_limits=np.array([0.0]),
+    )
+    assert not ok_lo and err_lo is not None and "position" in err_lo
+
+
+def test_tiny_positive_duration_ccd_matches_playback_for_cubic_and_quintic(simple_snapshot):
+    """Time-scaling a colliding spline from h=1.0 s down to h=5e-13 s (scaling v->v/h) preserves
+    the exact geometric curve; strict_ccd=True must catch the mid-segment penetration for both
+    cubic (order=3) and quintic (order=5) trajectories."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Endpoints at q = (0.0, 0.35, 0.0) are completely collision-free (~0.215 m clearance).
+    # Midpoint dips to y = 0.078 (penetration ~57 mm into obstacle at y in [-0.21, 0.09] with sphere r=0.045).
+    q_end = np.array([0.0, 0.35, 0.0], dtype=np.float64)
+    y_mid_target = 0.078
+    dip = float(q_end[1] - y_mid_target)
+    assert float(world.collision_distances(q_end).min()) > 0.15
+
+    for order in (3, 5):
+        # cubic:   p(0.5) - p0 = -(h/4)*(v_base/h) = -dip   -> v_base = 4 * dip
+        # quintic: p(0.5) - p0 = -(5*h/16)*(v_base/h) = -dip -> v_base = (16/5) * dip
+        v_base = (3.2 if order == 5 else 4.0) * dip
+        mid_ref = None
+        for h_scale in (1.0, 5e-13):
+            traj = Trajectory(
+                times=np.array([0.0, h_scale], dtype=np.float64),
+                positions=np.vstack([q_end, q_end]),
+                velocities=np.array([[0.0, -v_base / h_scale, 0.0], [0.0, v_base / h_scale, 0.0]], dtype=np.float64),
+                accelerations=np.zeros((2, 3), dtype=np.float64),
+                spline_order=order,
+            )
+            mid_pos, _, _ = traj.sample(0.5 * h_scale)
+            assert math.isclose(float(mid_pos[1]), y_mid_target, abs_tol=1e-12)
+            if mid_ref is None:
+                mid_ref = mid_pos.copy()
+            else:
+                assert np.allclose(mid_pos, mid_ref, atol=1e-12)
+
+            # Confirm midpoint penetrates ~57 mm into the obstacle.
+            assert float(world.collision_distances(mid_pos).min()) < -0.05
+
+            # Relax motion limits so validation isolates collision/CCD with substeps=1 (only safe endpoints sampled).
+            ok, reason = world.validate_trajectory(
+                traj,
+                margin=0.0,
+                world_margin=0.0,
+                collision_substeps=1,
+                strict_ccd=True,
+                velocity_scale=1e30,
+                acceleration_scale=1e30,
+                jerk_scale=1e60,
+            )
+            assert not ok, f"CCD missed mid-segment penetration for order={order}, h={h_scale}"
+            assert reason is not None and "clearance" in reason

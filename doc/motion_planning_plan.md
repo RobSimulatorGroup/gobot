@@ -90,15 +90,19 @@ Goal: resolve foundational soundness, thread-safety, layering, and CPU utilizati
 
 Goal: cover the core workflows expected in industrial manipulation and assembly cells.
 
-1. **Incremental Scene Synchronization (`PlanningWorld.sync_from_scene`)**
-   - Update obstacle and robot base transforms incrementally from a live Gobot `Scene` onto CoW snapshots without rebuilding meshes or BVHs.
-2. **Cartesian Path Planner (`MotionPlanner.plan_cartesian_path`)**
-   - Linear and circular arc end-effector interpolation with configurable translation/rotation step sizes.
-   - Continuity-preserving IK (minimum joint jump + singularity damping) + collision, joint-limit, and actual continuous-curve Cartesian deviation checks.
-3. **`C²` Quintic Spline & Jerk-Bounded Retiming**
-   - Upgrade `Trajectory` representation to support `C²`-continuous quintic Hermite splines so joint accelerations are continuous at knots and jerk (`|j(t)| <= jerk_limit`) is strictly bounded.
+1. **Incremental Scene Synchronization (`PlanningWorld.sync_from_snapshot` / `sync_from_scene`) (Completed)**
+   - **Responsibility boundary**: `PlanningWorld` owns atomic incremental scene-to-planning-world sync (`apply_sync_batch`), while editor edit history (`Undo`/`Redo`) remains strictly in `SceneCommandStack`. `PlanningWorld` does not maintain a second undo/redo stack.
+   - **Atomic single-snapshot publishing & version semantics**: each sync computes the full diff first, validates all updates, rebuilds collision pairs at most once on topology/filter changes, and publishes at most one new immutable `WorldSnapshot` (strong exception safety: failures leave the previous snapshot untouched). `world.version` increments monotonically only when planning-relevant state actually changes (e.g. material-only edits are a no-op). `SyncResult` reports `version`, `topology_version`, `changed`, change counters, and `export_ms / diff_ms / commit_ms`; `PlanResult` and `BatchPlanResult` record the pinned `world_version` so callers can detect stale plans (`result.world_version != world.version`) and re-validate before replanning.
+   - **Identity, geometry reuse & state preservation**: obstacles match by `stable_id` (falling back to unique path/name) so renames/reparents reuse convex hulls and BVHs; filter-only (`collision_layer`/`collision_mask`) updates reuse existing geometry; attached payloads, layered ACM (`auto_disabled_pairs` vs `user_acm_overrides`), `PlanningGroup`s, and manual obstacles are preserved. v1 requires fixed robot topology and raises a clear rebuild error on robot topology/shape changes.
+   - **Scene vs simulation source**: `sync_from_snapshot(snapshot)` is the deterministic data-only core; `sync_from_scene(scene_or_context)` compiles the current `Scene` via `compile_physics_scene_snapshot()` (live simulation callers should sync physics to `Scene` or pass runtime snapshots).
+2. **`C²` Quintic Hermite Spline & Jerk-Bounded Retiming (Completed)**
+   - Shared C++/Python trajectory evaluation ([`planning_spline.hpp`](../modules/coal/planning_spline.hpp), `Trajectory.sample` / `sample_with_jerk`, `_coal_native.evaluate_trajectory` / `retime_trajectory` / `check_trajectory_bounds`) and certified Bernstein-hull / de Casteljau interval bounds feeding playback, continuous joint position/velocity/acceleration/jerk bounds (including both left/right knot jerk), continuous CCD, and Cartesian deviation checks.
+   - Global time-scaling retiming ($\alpha = \max(1, r_v, \sqrt{r_a}, \sqrt[3]{r_j})$) preserving exact geometric path, $C^2$ continuity, and collision clearance; `stop_at_endpoints` explicitly sets $v = a = 0$; fixed-`dt` mode preserves `dt` and reports violating segment & joint on velocity/acceleration/jerk failure.
+   - Quintic CCD uses certified Bernstein position ranges for unbounded prismatic reach and subinterval velocity Bernstein bounds $h(u_1 - u_0)\max_i |w_i^{[u_0, u_1]}|$ (snapping to exact $|p(u_1)-p(u_0)|$ on monotonic subintervals) so bisection tightens bounds cleanly.
+3. **Cartesian Path Planner (`MotionPlanner.plan_cartesian_path`)**
+   - Linear and directed circular arc TCP interpolation (`link + tcp_offset`) with explicit corner handling, continuity-preserving damped IK (adaptive subdivision before jump failure, per-joint rad/m thresholds, continuous revolute unwrapping), monotone progress `fraction` over verified executable prefixes, and adaptive continuous TCP deviation bounds + `strict_ccd` pass-through.
 4. **Constrained Global Planning (Manifold-Projected BiRRT)**
-   - Extend C++ `plan_birrt` to project sampled states onto `PathConstraint` manifolds using existing analytic pose Jacobians.
+   - Explicit global manifold constraints (without altering interior-only `PathConstraint` semantics), projection operator checking true orientation angles (handling anti-parallel $\pi$ degeneracy), storing intermediate projected states on tree edges, unified constrained connect/shortcut/resampling, and post-SQP/retiming continuous manifold verification.
 
 ---
 
@@ -121,7 +125,8 @@ Goal: provide an RViz/MoveIt-style interactive planning workflow inside `gobot_e
 
 1. **Viewport Overlay Mesh Pass & Real-Time IK Ghost Preview**
    - Add an editor viewport overlay mesh draw path (without injecting ghost nodes into `SceneTree`) so dragging an end-effector gizmo on a selected `Robot3D` invokes C++ `gobot_planning` IK live and renders a translucent reachability-colored ghost robot.
-2. **Motion Planning Editor Panel**
-   - Select planning group, start/goal configurations, margins, velocity/acceleration scales, and debug overlays; trigger `Plan`, `Preview`, `Stop`, and `Re-Plan` asynchronously against immutable `WorldSnapshot`s.
+2. **Motion Planning Editor Panel & Command-Stack Sync**
+   - Select planning group, start/goal configurations, margins, velocity/acceleration/jerk scales, and debug overlays; trigger `Plan`, `Preview`, `Stop`, and `Re-Plan` asynchronously against immutable `WorldSnapshot`s.
+   - Trigger `sync_from_scene()` on standalone command execution, transaction commit, `Undo`, `Redo`, and `Esc` drag-cancel (if live drag preview synced intermediate poses, cancelling must resync the restored pose); coalesce live drag previews to at most once per frame rather than per `Do()`. Later, if profiling shows scene export or full diff is hot, commands can report dirty node `stable_id`s to traverse affected subtrees / resolve deleted mappings and feed `PlanningWorld::apply_sync_batch` directly.
 3. **Timeline Scrubbing & Physics Tracking Handoff**
    - Scrub planned trajectories frame-by-frame with live end-effector paths and collision witnesses, export reusable trajectories, and optionally execute them through `SimulationServer` / `JointController` in MuJoCo.

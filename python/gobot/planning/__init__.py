@@ -16,6 +16,7 @@ from .types import (
     PlanResult,
     PoseConstraint,
     SolverConfig,
+    SyncResult,
     Trajectory,
 )
 from .world import PlanningWorld
@@ -38,6 +39,7 @@ __all__ = [
     "PlanningWorld",
     "PoseConstraint",
     "SolverConfig",
+    "SyncResult",
     "Trajectory",
     "make_backend",
     "retime_trajectory",

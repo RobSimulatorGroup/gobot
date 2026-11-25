@@ -1,5 +1,7 @@
 #pragma once
 
+#include "planning_spline.hpp"
+
 #include <coal/BV/OBBRSS.h>
 #include <coal/BVH/BVH_model.h>
 #include <coal/collision.h>
@@ -310,6 +312,7 @@ struct WorldShape {
     int layer = 1;
     int mask = 1;
     bool is_attached = false;
+    std::string detached_link_key;  // original link_key preserved across attach/detach
     std::unordered_set<std::string> attached_touch_links;
     std::shared_ptr<CollisionShape> shape;
     // Cached static world AABBs (only used when body_id < 0).
@@ -400,6 +403,8 @@ public:
         upper_ = std::move(upper);
         velocity_limit_ = std::move(velocity_limit);
         acceleration_limit_ = std::move(acceleration_limit);
+        jerk_limit_ = Eigen::VectorXd::Constant(static_cast<Eigen::Index>(joint_names_.size()),
+                                                std::numeric_limits<double>::infinity());
         initial_q_ = std::move(initial_q);
 
         const int B = num_bodies();
@@ -661,7 +666,15 @@ public:
     const Eigen::VectorXd& upper() const { return upper_; }
     const Eigen::VectorXd& velocity_limit() const { return velocity_limit_; }
     const Eigen::VectorXd& acceleration_limit() const { return acceleration_limit_; }
+    const Eigen::VectorXd& jerk_limit() const { return jerk_limit_; }
     const Eigen::VectorXd& initial_q() const { return initial_q_; }
+
+    void set_jerk_limits(const Eigen::VectorXd& jlim) {
+        if (jlim.size() != num_joints()) {
+            throw std::invalid_argument("jerk_limits length must match num_joints");
+        }
+        jerk_limit_ = jlim;
+    }
     const std::vector<uint8_t>& body_ancestor() const { return body_ancestor_; }
     const std::vector<uint8_t>& joint_prismatic() const { return joint_prismatic_; }
 
@@ -676,7 +689,7 @@ private:
     std::vector<int> body_branch_;
     std::vector<std::string> body_names_;
     std::vector<std::string> joint_names_;
-    Eigen::VectorXd lower_, upper_, velocity_limit_, acceleration_limit_, initial_q_;
+    Eigen::VectorXd lower_, upper_, velocity_limit_, acceleration_limit_, jerk_limit_, initial_q_;
     std::vector<uint8_t> body_ancestor_;
     std::vector<uint8_t> joint_prismatic_;
     std::vector<double> body_joint_base_reach_;
@@ -688,34 +701,25 @@ private:
 inline double hermite_scalar_total_variation(double d, double v0, double v1, double h,
                                              double u0, double u1) {
     if (u1 <= u0) return 0.0;
+    if (h <= 0.0) return std::abs(d);
+    const double hv0 = h * v0;
+    const double hv1 = h * v1;
     auto eval = [&](double u) {
         const double u2 = u * u;
         const double u3 = u2 * u;
-        return (3.0 * u2 - 2.0 * u3) * d + (u3 - 2.0 * u2 + u) * (h * v0) + (u3 - u2) * (h * v1);
+        return (3.0 * u2 - 2.0 * u3) * d + (u3 - 2.0 * u2 + u) * hv0 + (u3 - u2) * hv1;
     };
-    const double inv_h = 1.0 / std::max(h, 1e-12);
-    const double six_d_h = 6.0 * d * inv_h;
-    const double c1 = six_d_h - 4.0 * v0 - 2.0 * v1;
-    const double c2 = -six_d_h + 3.0 * (v0 + v1);
+    // Roots of dp/du = c2 * u^2 + c1 * u + hv0 = 0 strictly inside (u0, u1).
+    // Working in u-derivative keeps exact invariance under (h, v) -> (s*h, v/s) for any h > 0.
+    const double c1 = 6.0 * d - 4.0 * hv0 - 2.0 * hv1;
+    const double c2 = -6.0 * d + 3.0 * (hv0 + hv1);
 
-    // Roots of derivative v(u) = c2 * u^2 + c1 * u + v0 = 0 strictly inside (u0, u1).
     double pts[4];
     int n_pts = 0;
     pts[n_pts++] = u0;
-    if (std::abs(c2) > 1e-12) {
-        const double disc = c1 * c1 - 4.0 * c2 * v0;
-        if (disc > 0.0) {
-            const double sq = std::sqrt(disc);
-            double r1 = (-c1 - sq) / (2.0 * c2);
-            double r2 = (-c1 + sq) / (2.0 * c2);
-            if (r1 > r2) std::swap(r1, r2);
-            if (r1 > u0 && r1 < u1) pts[n_pts++] = r1;
-            if (r2 > u0 && r2 < u1 && std::abs(r2 - r1) > 1e-12) pts[n_pts++] = r2;
-        }
-    } else if (std::abs(c1) > 1e-12) {
-        const double r = -v0 / c1;
-        if (r > u0 && r < u1) pts[n_pts++] = r;
-    }
+    double roots[2];
+    const int nr = solve_quadratic_in_interval(c2, c1, hv0, u0, u1, roots);
+    for (int i = 0; i < nr; ++i) pts[n_pts++] = roots[i];
     pts[n_pts++] = u1;
 
     double tv = 0.0;
@@ -731,31 +735,8 @@ inline double hermite_scalar_total_variation(double d, double v0, double v1, dou
 // Exact maximum of |p(u)| for a scalar cubic Hermite segment p(u) over u in [0, 1]
 // with endpoints p0, p1, endpoint velocities v0, v1, and duration h.
 inline double hermite_scalar_abs_max(double p0, double p1, double v0, double v1, double h) {
-    const double d = p1 - p0;
-    auto eval = [&](double u) {
-        const double u2 = u * u;
-        const double u3 = u2 * u;
-        return p0 + (3.0 * u2 - 2.0 * u3) * d + (u3 - 2.0 * u2 + u) * (h * v0) + (u3 - u2) * (h * v1);
-    };
-    double best = std::max(std::abs(p0), std::abs(p1));
-    const double inv_h = 1.0 / std::max(h, 1e-12);
-    const double six_d_h = 6.0 * d * inv_h;
-    const double c1 = six_d_h - 4.0 * v0 - 2.0 * v1;
-    const double c2 = -six_d_h + 3.0 * (v0 + v1);
-    if (std::abs(c2) > 1e-12) {
-        const double disc = c1 * c1 - 4.0 * c2 * v0;
-        if (disc > 0.0) {
-            const double sq = std::sqrt(disc);
-            const double r1 = (-c1 - sq) / (2.0 * c2);
-            const double r2 = (-c1 + sq) / (2.0 * c2);
-            if (r1 > 0.0 && r1 < 1.0) best = std::max(best, std::abs(eval(r1)));
-            if (r2 > 0.0 && r2 < 1.0) best = std::max(best, std::abs(eval(r2)));
-        }
-    } else if (std::abs(c1) > 1e-12) {
-        const double r = -v0 / c1;
-        if (r > 0.0 && r < 1.0) best = std::max(best, std::abs(eval(r)));
-    }
-    return best;
+    const auto [lo, hi] = cubic_hermite_scalar_range(p0, p1, v0, v1, h);
+    return std::max(std::abs(lo), std::abs(hi));
 }
 
 }  // namespace gobot::planning

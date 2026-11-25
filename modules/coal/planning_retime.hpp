@@ -1,10 +1,14 @@
 #pragma once
 
+#include "planning_spline.hpp"
+
 #include <Eigen/Core>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +24,7 @@ struct TrajectoryNative {
     RowMatrixXd accelerations;    // (T, J)
     bool has_dt = false;
     double dt = 0.0;
+    int spline_order = 3;         // 3 = cubic Hermite (C^1), 5 = quintic Hermite (C^2)
 
     int num_waypoints() const { return static_cast<int>(positions.rows()); }
     int num_joints() const { return static_cast<int>(positions.cols()); }
@@ -27,52 +32,112 @@ struct TrajectoryNative {
         return times.size() > 0 ? (times(times.size() - 1) - times(0)) : 0.0;
     }
 
+    // Shared single-time evaluator supporting both cubic (order 3) and C^2 quintic (order 5) splines.
     void sample_single(double t, Eigen::VectorXd& pos,
                        Eigen::VectorXd* vel = nullptr,
-                       Eigen::VectorXd* acc = nullptr) const {
+                       Eigen::VectorXd* acc = nullptr,
+                       Eigen::VectorXd* jerk = nullptr) const {
         const int T = num_waypoints();
         const int J = num_joints();
         const double tc = std::clamp(t, times(0), times(T - 1));
         int idx = static_cast<int>(std::upper_bound(times.data(), times.data() + T, tc) - times.data()) - 1;
         idx = std::clamp(idx, 0, T - 2);
-        const double h = std::max(times(idx + 1) - times(idx), 1e-12);
-        const double u = (tc - times(idx)) / h;
-        const double u2 = u * u;
-        const double u3 = u2 * u;
-
-        const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
-        const double h10 = (u3 - 2.0 * u2 + u) * h;
-        const double h01 = -2.0 * u3 + 3.0 * u2;
-        const double h11 = (u3 - u2) * h;
+        const double dt_seg = times(idx + 1) - times(idx);
 
         pos.resize(J);
-        for (int j = 0; j < J; ++j) {
-            pos(j) = h00 * positions(idx, j) + h10 * velocities(idx, j)
-                   + h01 * positions(idx + 1, j) + h11 * velocities(idx + 1, j);
-        }
-        if (vel != nullptr) {
-            const double inv_h = 1.0 / h;
-            const double dh00 = (6.0 * u2 - 6.0 * u) * inv_h;
-            const double dh10 = 3.0 * u2 - 4.0 * u + 1.0;
-            const double dh01 = (-6.0 * u2 + 6.0 * u) * inv_h;
-            const double dh11 = 3.0 * u2 - 2.0 * u;
-            vel->resize(J);
+        if (vel) vel->resize(J);
+        if (acc) acc->resize(J);
+        if (jerk) jerk->resize(J);
+
+        if (dt_seg <= 0.0) {
+            const int knot = (tc >= times(idx + 1)) ? (idx + 1) : idx;
             for (int j = 0; j < J; ++j) {
-                (*vel)(j) = dh00 * positions(idx, j) + dh10 * velocities(idx, j)
-                          + dh01 * positions(idx + 1, j) + dh11 * velocities(idx + 1, j);
+                pos(j) = positions(knot, j);
+                if (vel) (*vel)(j) = velocities(knot, j);
+                if (acc) (*acc)(j) = accelerations(knot, j);
+                if (jerk) (*jerk)(j) = 0.0;
+            }
+            return;
+        }
+        const double u = std::clamp((tc - times(idx)) / dt_seg, 0.0, 1.0);
+
+        if (spline_order == 5) {
+            for (int j = 0; j < J; ++j) {
+                eval_quintic_hermite_scalar(
+                    positions(idx, j), velocities(idx, j), accelerations(idx, j),
+                    positions(idx + 1, j), velocities(idx + 1, j), accelerations(idx + 1, j),
+                    dt_seg, u,
+                    &pos(j),
+                    vel ? &(*vel)(j) : nullptr,
+                    acc ? &(*acc)(j) : nullptr,
+                    jerk ? &(*jerk)(j) : nullptr);
+            }
+        } else {
+            for (int j = 0; j < J; ++j) {
+                eval_cubic_hermite_scalar(
+                    positions(idx, j), velocities(idx, j),
+                    positions(idx + 1, j), velocities(idx + 1, j),
+                    dt_seg, u,
+                    &pos(j),
+                    vel ? &(*vel)(j) : nullptr,
+                    acc ? &(*acc)(j) : nullptr,
+                    jerk ? &(*jerk)(j) : nullptr);
             }
         }
-        if (acc != nullptr) {
-            const double inv_h = 1.0 / h;
-            const double inv_h2 = inv_h * inv_h;
-            const double ddh00 = (12.0 * u - 6.0) * inv_h2;
-            const double ddh10 = (6.0 * u - 4.0) * inv_h;
-            const double ddh01 = (-12.0 * u + 6.0) * inv_h2;
-            const double ddh11 = (6.0 * u - 2.0) * inv_h;
-            acc->resize(J);
-            for (int j = 0; j < J; ++j) {
-                (*acc)(j) = ddh00 * positions(idx, j) + ddh10 * velocities(idx, j)
-                          + ddh01 * positions(idx + 1, j) + ddh11 * velocities(idx + 1, j);
+    }
+
+    // Shared batch evaluator for arrays of query times ts[0..S-1].
+    void sample_batch(const double* ts, int64_t S,
+                      double* out_pos,
+                      double* out_vel = nullptr,
+                      double* out_acc = nullptr,
+                      double* out_jerk = nullptr) const {
+        const int T = num_waypoints();
+        const int J = num_joints();
+        const double t_lo = times(0);
+        const double t_hi = times(T - 1);
+        for (int64_t s = 0; s < S; ++s) {
+            const double tc = std::clamp(ts[s], t_lo, t_hi);
+            int idx = static_cast<int>(std::upper_bound(times.data(), times.data() + T, tc) - times.data()) - 1;
+            idx = std::clamp(idx, 0, T - 2);
+            const double dt_seg = times(idx + 1) - times(idx);
+            double* dp = out_pos + s * J;
+            double* dv = out_vel ? (out_vel + s * J) : nullptr;
+            double* da = out_acc ? (out_acc + s * J) : nullptr;
+            double* dj = out_jerk ? (out_jerk + s * J) : nullptr;
+            if (dt_seg <= 0.0) {
+                const int knot = (tc >= times(idx + 1)) ? (idx + 1) : idx;
+                for (int j = 0; j < J; ++j) {
+                    dp[j] = positions(knot, j);
+                    if (dv) dv[j] = velocities(knot, j);
+                    if (da) da[j] = accelerations(knot, j);
+                    if (dj) dj[j] = 0.0;
+                }
+                continue;
+            }
+            const double u = std::clamp((tc - times(idx)) / dt_seg, 0.0, 1.0);
+            if (spline_order == 5) {
+                for (int j = 0; j < J; ++j) {
+                    eval_quintic_hermite_scalar(
+                        positions(idx, j), velocities(idx, j), accelerations(idx, j),
+                        positions(idx + 1, j), velocities(idx + 1, j), accelerations(idx + 1, j),
+                        dt_seg, u,
+                        dp + j,
+                        dv ? (dv + j) : nullptr,
+                        da ? (da + j) : nullptr,
+                        dj ? (dj + j) : nullptr);
+                }
+            } else {
+                for (int j = 0; j < J; ++j) {
+                    eval_cubic_hermite_scalar(
+                        positions(idx, j), velocities(idx, j),
+                        positions(idx + 1, j), velocities(idx + 1, j),
+                        dt_seg, u,
+                        dp + j,
+                        dv ? (dv + j) : nullptr,
+                        da ? (da + j) : nullptr,
+                        dj ? (dj + j) : nullptr);
+                }
             }
         }
     }
@@ -86,22 +151,26 @@ struct TrajectoryNative {
         out_samples.resize(static_cast<size_t>(total * J));
         const double inv_sub = 1.0 / static_cast<double>(substeps);
         for (int seg = 0; seg < n_segs; ++seg) {
-            const double h = std::max(times(seg + 1) - times(seg), 1e-12);
+            const double dt_seg = times(seg + 1) - times(seg);
             const double* p0 = positions.data() + seg * J;
             const double* p1 = positions.data() + (seg + 1) * J;
             const double* v0 = velocities.data() + seg * J;
             const double* v1 = velocities.data() + (seg + 1) * J;
+            const double* a0 = accelerations.data() + seg * J;
+            const double* a1 = accelerations.data() + (seg + 1) * J;
             for (int k = 0; k < substeps; ++k) {
                 const double u = static_cast<double>(k) * inv_sub;
-                const double u2 = u * u;
-                const double u3 = u2 * u;
-                const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
-                const double h10 = (u3 - 2.0 * u2 + u) * h;
-                const double h01 = -2.0 * u3 + 3.0 * u2;
-                const double h11 = (u3 - u2) * h;
                 double* dst = out_samples.data() + (seg * substeps + k) * J;
-                for (int j = 0; j < J; ++j) {
-                    dst[j] = h00 * p0[j] + h10 * v0[j] + h01 * p1[j] + h11 * v1[j];
+                if (dt_seg <= 0.0) {
+                    std::copy(p0, p0 + J, dst);
+                } else if (spline_order == 5) {
+                    for (int j = 0; j < J; ++j) {
+                        eval_quintic_hermite_scalar(p0[j], v0[j], a0[j], p1[j], v1[j], a1[j], dt_seg, u, dst + j);
+                    }
+                } else {
+                    for (int j = 0; j < J; ++j) {
+                        eval_cubic_hermite_scalar(p0[j], v0[j], p1[j], v1[j], dt_seg, u, dst + j);
+                    }
                 }
             }
         }
@@ -263,46 +332,338 @@ inline BoundsCheckResult check_trajectory_bounds(const TrajectoryNative& traj,
                                                  const Eigen::VectorXd& acceleration_limits,
                                                  bool check_velocity = true,
                                                  bool check_acceleration = true,
-                                                 double tol = 1e-5) {
+                                                 double tol = 1e-5,
+                                                 const Eigen::VectorXd* lower_limits = nullptr,
+                                                 const Eigen::VectorXd* upper_limits = nullptr,
+                                                 const Eigen::VectorXd* jerk_limits = nullptr,
+                                                 bool check_jerk = true) {
     BoundsCheckResult out;
     const int T = traj.num_waypoints();
     const int J = traj.num_joints();
-    Eigen::VectorXd safe_vmax(J), safe_amax(J);
-    for (int j = 0; j < J; ++j) {
-        safe_vmax(j) = (std::isfinite(velocity_limits(j)) && velocity_limits(j) > 0.0)
-            ? velocity_limits(j) : std::numeric_limits<double>::infinity();
-        safe_amax(j) = (std::isfinite(acceleration_limits(j)) && acceleration_limits(j) > 0.0)
-            ? acceleration_limits(j) : std::numeric_limits<double>::infinity();
+    if (T < 2 || J <= 0) {
+        throw std::invalid_argument("trajectory must have shape [T>=2, J>=1]");
     }
+    if (traj.spline_order != 3 && traj.spline_order != 5) {
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    }
+    if (traj.times.size() != T || traj.velocities.rows() != T || traj.velocities.cols() != J ||
+        traj.accelerations.rows() != T || traj.accelerations.cols() != J) {
+        throw std::invalid_argument("trajectory array shapes are inconsistent");
+    }
+    if (velocity_limits.size() != J) {
+        throw std::invalid_argument("velocity_limits length must match num_joints");
+    }
+    if (acceleration_limits.size() != J) {
+        throw std::invalid_argument("acceleration_limits length must match num_joints");
+    }
+    if (lower_limits != nullptr && lower_limits->size() != J) {
+        throw std::invalid_argument("lower_limits length must match num_joints");
+    }
+    if (upper_limits != nullptr && upper_limits->size() != J) {
+        throw std::invalid_argument("upper_limits length must match num_joints");
+    }
+    if (jerk_limits != nullptr && jerk_limits->size() != J) {
+        throw std::invalid_argument("jerk_limits length must match num_joints");
+    }
+    const bool check_lo = (lower_limits != nullptr);
+    const bool check_hi = (upper_limits != nullptr);
+    const bool check_pos = (check_lo || check_hi);
+    const bool do_jerk = (check_jerk && traj.spline_order == 5 && jerk_limits != nullptr);
+
+    Eigen::VectorXd safe_vmax(J), safe_amax(J), safe_jmax(J);
+    for (int j = 0; j < J; ++j) {
+        if (std::isnan(velocity_limits(j)) || velocity_limits(j) <= 0.0) {
+            throw std::invalid_argument("velocity_limits must be positive (or +inf for unlimited)");
+        }
+        if (std::isnan(acceleration_limits(j)) || acceleration_limits(j) <= 0.0) {
+            throw std::invalid_argument("acceleration_limits must be positive (or +inf for unlimited)");
+        }
+        if (jerk_limits != nullptr && (std::isnan((*jerk_limits)(j)) || (*jerk_limits)(j) <= 0.0)) {
+            throw std::invalid_argument("jerk_limits must be positive (or +inf for unlimited)");
+        }
+        safe_vmax(j) = velocity_limits(j);
+        safe_amax(j) = acceleration_limits(j);
+        safe_jmax(j) = do_jerk ? (*jerk_limits)(j) : std::numeric_limits<double>::infinity();
+    }
+
     std::vector<double> d(static_cast<size_t>(J)), mv(static_cast<size_t>(J)), ma(static_cast<size_t>(J));
     const double scale = 1.0 + tol;
 
     for (int k = 0; k < T - 1; ++k) {
         const double h = traj.times(k + 1) - traj.times(k);
-        if (h <= 1e-12) continue;
-        for (int j = 0; j < J; ++j) d[static_cast<size_t>(j)] = traj.positions(k + 1, j) - traj.positions(k, j);
-        retime_detail::hermite_segment_peaks(
-            d.data(), traj.velocities.data() + k * J, traj.velocities.data() + (k + 1) * J,
-            J, h, mv.data(), ma.data());
-        double max_vr = 0.0, max_ar = 0.0;
-        for (int j = 0; j < J; ++j) {
-            if (check_velocity && std::isfinite(safe_vmax(j))) max_vr = std::max(max_vr, mv[static_cast<size_t>(j)] / safe_vmax(j));
-            if (check_acceleration && std::isfinite(safe_amax(j))) max_ar = std::max(max_ar, ma[static_cast<size_t>(j)] / safe_amax(j));
-        }
-        if (check_velocity && max_vr > scale) {
+        if (!std::isfinite(h) || h < 0.0) {
             out.ok = false;
             out.bad_segments.push_back(k);
             if (out.reason.empty()) {
                 char buf[160];
-                std::snprintf(buf, sizeof(buf), "Hermite curve violates joint velocity limits on segment %d (%.2fx limit)", k, max_vr);
+                std::snprintf(buf, sizeof(buf),
+                              "Trajectory has non-monotonic or non-finite timestamps on segment %d (dt=%.6g)", k, h);
+                out.reason = buf;
+            }
+            continue;
+        }
+        if (h == 0.0) {
+            // Exact zero-duration segment: only valid if strictly stationary with consistent states within limits.
+            bool seg_bad = false;
+            for (int j = 0; j < J; ++j) {
+                const double p0 = traj.positions(k, j);
+                const double p1 = traj.positions(k + 1, j);
+                const double v0 = traj.velocities(k, j);
+                const double v1 = traj.velocities(k + 1, j);
+                const double a0 = traj.accelerations(k, j);
+                const double a1 = traj.accelerations(k + 1, j);
+                if (!std::isfinite(p0) || !std::isfinite(p1) || !std::isfinite(v0) || !std::isfinite(v1) ||
+                    (traj.spline_order == 5 && (!std::isfinite(a0) || !std::isfinite(a1)))) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[160];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Zero-duration segment %d has non-finite state on joint %d", k, j);
+                        out.reason = buf;
+                    }
+                    break;
+                }
+                if (check_pos) {
+                    const double lo = check_lo ? (*lower_limits)(j) : -std::numeric_limits<double>::infinity();
+                    const double hi = check_hi ? (*upper_limits)(j) : std::numeric_limits<double>::infinity();
+                    if ((std::isfinite(lo) && (p0 < lo - 1e-6 || p1 < lo - 1e-6)) ||
+                        (std::isfinite(hi) && (p0 > hi + 1e-6 || p1 > hi + 1e-6))) {
+                        seg_bad = true;
+                        if (out.reason.empty()) {
+                            char buf[180];
+                            std::snprintf(buf, sizeof(buf),
+                                          "Zero-duration segment %d violates joint position limits on joint %d", k, j);
+                            out.reason = buf;
+                        }
+                        break;
+                    }
+                }
+                if (p1 != p0) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Zero-duration segment %d has non-zero displacement on joint %d (dq=%.6g)",
+                                      k, j, p1 - p0);
+                        out.reason = buf;
+                    }
+                    break;
+                }
+                if (check_velocity && std::isfinite(safe_vmax(j)) &&
+                    (std::abs(v0) > safe_vmax(j) * scale || std::abs(v1) > safe_vmax(j) * scale)) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Zero-duration segment %d violates joint velocity limits on joint %d", k, j);
+                        out.reason = buf;
+                    }
+                    break;
+                }
+                if (check_acceleration && std::isfinite(safe_amax(j)) && std::abs(v1 - v0) > 1e-9) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Zero-duration segment %d has velocity discontinuity on joint %d", k, j);
+                        out.reason = buf;
+                    }
+                    break;
+                }
+                if (traj.spline_order == 5) {
+                    if (check_acceleration && std::isfinite(safe_amax(j)) &&
+                        (std::abs(a0) > safe_amax(j) * scale || std::abs(a1) > safe_amax(j) * scale)) {
+                        seg_bad = true;
+                        if (out.reason.empty()) {
+                            char buf[180];
+                            std::snprintf(buf, sizeof(buf),
+                                          "Zero-duration segment %d violates joint acceleration limits on joint %d", k, j);
+                            out.reason = buf;
+                        }
+                        break;
+                    }
+                    if (do_jerk && std::isfinite(safe_jmax(j)) && std::abs(a1 - a0) > 1e-9) {
+                        seg_bad = true;
+                        if (out.reason.empty()) {
+                            char buf[180];
+                            std::snprintf(buf, sizeof(buf),
+                                          "Zero-duration segment %d has acceleration discontinuity on joint %d", k, j);
+                            out.reason = buf;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (seg_bad) {
+                out.ok = false;
+                out.bad_segments.push_back(k);
+            }
+            continue;
+        }
+
+        if (traj.spline_order == 5) {
+            bool seg_bad = false;
+            int bad_pos_j = -1;
+            double bad_pos_val = 0.0;
+            int bad_v_j = -1, bad_a_j = -1, bad_j_j = -1;
+            double max_vr = 0.0, max_ar = 0.0, max_jr = 0.0;
+
+            for (int j = 0; j < J; ++j) {
+                const double p0 = traj.positions(k, j);
+                const double p1 = traj.positions(k + 1, j);
+                const double v0 = traj.velocities(k, j);
+                const double v1 = traj.velocities(k + 1, j);
+                const double a0 = traj.accelerations(k, j);
+                const double a1 = traj.accelerations(k + 1, j);
+                if (!std::isfinite(p0) || !std::isfinite(p1) || !std::isfinite(v0) ||
+                    !std::isfinite(v1) || !std::isfinite(a0) || !std::isfinite(a1)) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[160];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Quintic curve has non-finite state on segment %d, joint %d", k, j);
+                        out.reason = buf;
+                    }
+                    break;
+                }
+                if (check_pos) {
+                    const double lo = check_lo ? (*lower_limits)(j) : -std::numeric_limits<double>::infinity();
+                    const double hi = check_hi ? (*upper_limits)(j) : std::numeric_limits<double>::infinity();
+                    const auto [pmin, pmax] = quintic_hermite_scalar_pos_range(p0, v0, a0, p1, v1, a1, h);
+                    if ((std::isfinite(lo) && pmin < lo - 1e-6) || (std::isfinite(hi) && pmax > hi + 1e-6)) {
+                        if (bad_pos_j < 0) {
+                            bad_pos_j = j;
+                            bad_pos_val = (std::isfinite(lo) && pmin < lo - 1e-6) ? pmin : pmax;
+                        }
+                    }
+                }
+                const auto pk = quintic_hermite_scalar_peaks(p0, v0, a0, p1, v1, a1, h);
+                if (check_velocity && std::isfinite(safe_vmax(j))) {
+                    const double vr = std::isfinite(pk.max_vel) ? (pk.max_vel / safe_vmax(j))
+                                                                : std::numeric_limits<double>::infinity();
+                    if (vr > max_vr) { max_vr = vr; bad_v_j = j; }
+                }
+                if (check_acceleration && std::isfinite(safe_amax(j))) {
+                    const double ar = std::isfinite(pk.max_acc) ? (pk.max_acc / safe_amax(j))
+                                                                : std::numeric_limits<double>::infinity();
+                    if (ar > max_ar) { max_ar = ar; bad_a_j = j; }
+                }
+                if (do_jerk && std::isfinite(safe_jmax(j))) {
+                    const double jr = std::isfinite(pk.max_jerk) ? (pk.max_jerk / safe_jmax(j))
+                                                                 : std::numeric_limits<double>::infinity();
+                    if (jr > max_jr) { max_jr = jr; bad_j_j = j; }
+                }
+            }
+            if (!seg_bad) {
+                if (bad_pos_j >= 0) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Quintic curve violates joint position limits on segment %d, joint %d (value %.6f)",
+                                      k, bad_pos_j, bad_pos_val);
+                        out.reason = buf;
+                    }
+                } else if (check_velocity && max_vr > scale) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Quintic curve violates joint velocity limits on segment %d, joint %d (%.2fx limit)",
+                                      k, bad_v_j, max_vr);
+                        out.reason = buf;
+                    }
+                } else if (check_acceleration && max_ar > scale) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Quintic curve violates joint acceleration limits on segment %d, joint %d (%.2fx limit)",
+                                      k, bad_a_j, max_ar);
+                        out.reason = buf;
+                    }
+                } else if (do_jerk && max_jr > scale) {
+                    seg_bad = true;
+                    if (out.reason.empty()) {
+                        char buf[180];
+                        std::snprintf(buf, sizeof(buf),
+                                      "Quintic curve violates joint jerk limits on segment %d, joint %d (%.2fx limit)",
+                                      k, bad_j_j, max_jr);
+                        out.reason = buf;
+                    }
+                }
+            }
+            if (seg_bad) {
+                out.ok = false;
+                out.bad_segments.push_back(k);
+            }
+            continue;
+        }
+
+        // Cubic Hermite (order 3) exact continuous position, velocity & acceleration verification.
+        int bad_pos_j = -1;
+        double bad_pos_val = 0.0;
+        for (int j = 0; j < J; ++j) {
+            d[static_cast<size_t>(j)] = traj.positions(k + 1, j) - traj.positions(k, j);
+            if (check_pos) {
+                const double lo = check_lo ? (*lower_limits)(j) : -std::numeric_limits<double>::infinity();
+                const double hi = check_hi ? (*upper_limits)(j) : std::numeric_limits<double>::infinity();
+                const auto [pmin, pmax] = cubic_hermite_scalar_range(
+                    traj.positions(k, j), traj.positions(k + 1, j),
+                    traj.velocities(k, j), traj.velocities(k + 1, j), h);
+                if ((std::isfinite(lo) && pmin < lo - 1e-6) || (std::isfinite(hi) && pmax > hi + 1e-6)) {
+                    if (bad_pos_j < 0) {
+                        bad_pos_j = j;
+                        bad_pos_val = (std::isfinite(lo) && pmin < lo - 1e-6) ? pmin : pmax;
+                    }
+                }
+            }
+        }
+        retime_detail::hermite_segment_peaks(
+            d.data(), traj.velocities.data() + k * J, traj.velocities.data() + (k + 1) * J,
+            J, h, mv.data(), ma.data());
+        double max_vr = 0.0, max_ar = 0.0;
+        int bad_v_j = -1, bad_a_j = -1;
+        for (int j = 0; j < J; ++j) {
+            if (check_velocity && std::isfinite(safe_vmax(j))) {
+                const double vr = std::isfinite(mv[static_cast<size_t>(j)]) ? (mv[static_cast<size_t>(j)] / safe_vmax(j))
+                                                                            : std::numeric_limits<double>::infinity();
+                if (vr > max_vr) { max_vr = vr; bad_v_j = j; }
+            }
+            if (check_acceleration && std::isfinite(safe_amax(j))) {
+                const double ar = std::isfinite(ma[static_cast<size_t>(j)]) ? (ma[static_cast<size_t>(j)] / safe_amax(j))
+                                                                            : std::numeric_limits<double>::infinity();
+                if (ar > max_ar) { max_ar = ar; bad_a_j = j; }
+            }
+        }
+        if (bad_pos_j >= 0) {
+            out.ok = false;
+            out.bad_segments.push_back(k);
+            if (out.reason.empty()) {
+                char buf[180];
+                std::snprintf(buf, sizeof(buf),
+                              "Hermite curve violates joint position limits on segment %d, joint %d (value %.6f)",
+                              k, bad_pos_j, bad_pos_val);
+                out.reason = buf;
+            }
+        } else if (check_velocity && max_vr > scale) {
+            out.ok = false;
+            out.bad_segments.push_back(k);
+            if (out.reason.empty()) {
+                char buf[180];
+                std::snprintf(buf, sizeof(buf),
+                              "Hermite curve violates joint velocity limits on segment %d, joint %d (%.2fx limit)",
+                              k, bad_v_j, max_vr);
                 out.reason = buf;
             }
         } else if (check_acceleration && max_ar > scale) {
             out.ok = false;
             out.bad_segments.push_back(k);
             if (out.reason.empty()) {
-                char buf[160];
-                std::snprintf(buf, sizeof(buf), "Hermite curve violates joint acceleration limits on segment %d (%.2fx limit)", k, max_ar);
+                char buf[180];
+                std::snprintf(buf, sizeof(buf),
+                              "Hermite curve violates joint acceleration limits on segment %d, joint %d (%.2fx limit)",
+                              k, bad_a_j, max_ar);
                 out.reason = buf;
             }
         }
@@ -316,15 +677,42 @@ inline TrajectoryNative retime_trajectory(const RowMatrixXd& positions,
                                           bool stop_at_endpoints = true,
                                           bool has_dt = false,
                                           double dt = 0.0,
-                                          const Eigen::VectorXd* knot_velocity_scales = nullptr) {
+                                          const Eigen::VectorXd* knot_velocity_scales = nullptr,
+                                          const Eigen::VectorXd* jerk_limits = nullptr,
+                                          int spline_order = 3) {
+    if (spline_order != 3 && spline_order != 5) {
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    }
     const int T = static_cast<int>(positions.rows());
     const int J = static_cast<int>(positions.cols());
-    if (T < 2) throw std::invalid_argument("positions must have shape [T>=2, J]");
+    if (T < 2 || J <= 0) throw std::invalid_argument("positions must have shape [T>=2, J>=1]");
+    if (velocity_limits.size() != J) {
+        throw std::invalid_argument("velocity_limits length must match num_joints");
+    }
+    if (acceleration_limits.size() != J) {
+        throw std::invalid_argument("acceleration_limits length must match num_joints");
+    }
+    if (jerk_limits != nullptr && jerk_limits->size() != J) {
+        throw std::invalid_argument("jerk_limits length must match num_joints");
+    }
+    if (has_dt && (!std::isfinite(dt) || dt <= 0.0)) {
+        throw std::invalid_argument("dt must be finite and positive");
+    }
 
-    Eigen::VectorXd safe_vmax(J), safe_amax(J);
+    Eigen::VectorXd safe_vmax(J), safe_amax(J), safe_jmax(J);
     for (int j = 0; j < J; ++j) {
-        safe_vmax(j) = (std::isfinite(velocity_limits(j)) && velocity_limits(j) > 0.0) ? velocity_limits(j) : 1e6;
-        safe_amax(j) = (std::isfinite(acceleration_limits(j)) && acceleration_limits(j) > 0.0) ? acceleration_limits(j) : 1e6;
+        if (std::isnan(velocity_limits(j)) || velocity_limits(j) <= 0.0) {
+            throw std::invalid_argument("velocity_limits must be positive (or +inf for unlimited)");
+        }
+        if (std::isnan(acceleration_limits(j)) || acceleration_limits(j) <= 0.0) {
+            throw std::invalid_argument("acceleration_limits must be positive (or +inf for unlimited)");
+        }
+        if (jerk_limits != nullptr && (std::isnan((*jerk_limits)(j)) || (*jerk_limits)(j) <= 0.0)) {
+            throw std::invalid_argument("jerk_limits must be positive (or +inf for unlimited)");
+        }
+        safe_vmax(j) = std::isfinite(velocity_limits(j)) ? velocity_limits(j) : 1e6;
+        safe_amax(j) = std::isfinite(acceleration_limits(j)) ? acceleration_limits(j) : 1e6;
+        safe_jmax(j) = (jerk_limits != nullptr) ? (*jerk_limits)(j) : std::numeric_limits<double>::infinity();
     }
 
     Eigen::VectorXd k_scales = Eigen::VectorXd::Ones(T);
@@ -340,6 +728,164 @@ inline TrajectoryNative retime_trajectory(const RowMatrixXd& positions,
         dq.row(k) = positions.row(k + 1) - positions.row(k);
         ds(k) = dq.row(k).norm();
         nonzero[static_cast<size_t>(k)] = (ds(k) > 1e-12) ? 1 : 0;
+    }
+
+    // C^2 Quintic Hermite path (order 5) with global time scaling (free dt) or fixed-dt validation.
+    if (spline_order == 5) {
+        TrajectoryNative traj;
+        traj.spline_order = 5;
+        traj.positions = positions;
+        traj.velocities = RowMatrixXd::Zero(T, J);
+        traj.accelerations = RowMatrixXd::Zero(T, J);
+        traj.times.resize(T);
+
+        if (has_dt) {
+            traj.has_dt = true;
+            traj.dt = dt;
+            for (int i = 0; i < T; ++i) traj.times(i) = static_cast<double>(i) * dt;
+            for (int i = 1; i < T - 1; ++i) {
+                if (nonzero[static_cast<size_t>(i - 1)] && nonzero[static_cast<size_t>(i)]) {
+                    traj.velocities.row(i) = (positions.row(i + 1) - positions.row(i - 1)) / (2.0 * dt);
+                }
+            }
+            if (!stop_at_endpoints) {
+                if (nonzero[0]) traj.velocities.row(0) = dq.row(0) / dt;
+                if (nonzero[static_cast<size_t>(T - 2)]) traj.velocities.row(T - 1) = dq.row(T - 2) / dt;
+            }
+            for (int i = 0; i < T; ++i) traj.velocities.row(i) *= k_scales(i);
+            for (int k = 0; k < T - 1; ++k) {
+                if (!nonzero[static_cast<size_t>(k)]) {
+                    traj.velocities.row(k).setZero();
+                    traj.velocities.row(k + 1).setZero();
+                }
+            }
+            // Clamp knot velocities to velocity_limits.
+            for (int i = 0; i < T; ++i) {
+                double ratio = 0.0;
+                for (int j = 0; j < J; ++j) ratio = std::max(ratio, std::abs(traj.velocities(i, j)) / safe_vmax(j));
+                if (ratio > 1.0) traj.velocities.row(i) /= ratio;
+            }
+            // C^2 knot accelerations (explicitly zero at endpoints when stop_at_endpoints == true).
+            for (int i = 1; i < T - 1; ++i) {
+                if (nonzero[static_cast<size_t>(i - 1)] && nonzero[static_cast<size_t>(i)]) {
+                    traj.accelerations.row(i) =
+                        ((traj.velocities.row(i + 1) - traj.velocities.row(i - 1)) / (2.0 * dt)) * (k_scales(i) * k_scales(i));
+                }
+            }
+            if (!stop_at_endpoints) {
+                if (nonzero[0]) {
+                    traj.accelerations.row(0) = ((traj.velocities.row(1) - traj.velocities.row(0)) / dt) * (k_scales(0) * k_scales(0));
+                }
+                if (nonzero[static_cast<size_t>(T - 2)]) {
+                    traj.accelerations.row(T - 1) = ((traj.velocities.row(T - 1) - traj.velocities.row(T - 2)) / dt) * (k_scales(T - 1) * k_scales(T - 1));
+                }
+            }
+            for (int k = 0; k < T - 1; ++k) {
+                if (!nonzero[static_cast<size_t>(k)]) {
+                    traj.accelerations.row(k).setZero();
+                    traj.accelerations.row(k + 1).setZero();
+                }
+            }
+            for (int i = 0; i < T; ++i) {
+                for (int j = 0; j < J; ++j) {
+                    traj.accelerations(i, j) = std::clamp(traj.accelerations(i, j), -safe_amax(j), safe_amax(j));
+                }
+            }
+            // Preserve exact fixed dt without rescaling; caller validates velocity/acc/jerk bounds.
+            return traj;
+        }
+
+        // Free timing: build initial well-proportioned cubic TOPP timing and knot velocities,
+        // derive C^2 knot accelerations, then apply single global time-scale factor
+        // alpha = max(1, r_v, sqrt(r_a), cbrt(r_j)) preserving exact geometric path & C^2 continuity.
+        TrajectoryNative base = retime_trajectory(
+            positions, velocity_limits, acceleration_limits, stop_at_endpoints, false, 0.0, knot_velocity_scales, nullptr, 3);
+        traj.times = base.times;
+        traj.velocities = base.velocities;
+
+        for (int i = 1; i < T - 1; ++i) {
+            if (nonzero[static_cast<size_t>(i - 1)] && nonzero[static_cast<size_t>(i)]) {
+                const double h_sum = std::max((traj.times(i) - traj.times(i - 1)) + (traj.times(i + 1) - traj.times(i)), 1e-12);
+                traj.accelerations.row(i) =
+                    ((traj.velocities.row(i + 1) - traj.velocities.row(i - 1)) / h_sum) * (k_scales(i) * k_scales(i));
+            }
+        }
+        if (stop_at_endpoints) {
+            traj.velocities.row(0).setZero();
+            traj.velocities.row(T - 1).setZero();
+            traj.accelerations.row(0).setZero();
+            traj.accelerations.row(T - 1).setZero();
+        } else {
+            if (nonzero[0]) {
+                const double h0 = std::max(traj.times(1) - traj.times(0), 1e-12);
+                traj.accelerations.row(0) = ((traj.velocities.row(1) - traj.velocities.row(0)) / h0) * (k_scales(0) * k_scales(0));
+            }
+            if (nonzero[static_cast<size_t>(T - 2)]) {
+                const double hlast = std::max(traj.times(T - 1) - traj.times(T - 2), 1e-12);
+                traj.accelerations.row(T - 1) =
+                    ((traj.velocities.row(T - 1) - traj.velocities.row(T - 2)) / hlast) * (k_scales(T - 1) * k_scales(T - 1));
+            }
+        }
+        for (int k = 0; k < T - 1; ++k) {
+            if (!nonzero[static_cast<size_t>(k)]) {
+                traj.velocities.row(k).setZero();
+                traj.velocities.row(k + 1).setZero();
+                traj.accelerations.row(k).setZero();
+                traj.accelerations.row(k + 1).setZero();
+            }
+        }
+        for (int i = 0; i < T; ++i) {
+            for (int j = 0; j < J; ++j) {
+                traj.accelerations(i, j) = std::clamp(traj.accelerations(i, j), -safe_amax(j), safe_amax(j));
+            }
+        }
+
+        // Compute global peak ratios r_v, r_a, r_j across ALL segments with any non-zero motion
+        // (including tiny sub-1e-12 displacements where 60*dq/h^3 can still exceed jerk_limits!).
+        double r_v = 0.0, r_a = 0.0, r_j = 0.0;
+        std::vector<uint8_t> scale_seg(static_cast<size_t>(T - 1), 0);
+        for (int k = 0; k < T - 1; ++k) {
+            const bool has_motion = (dq.row(k).cwiseAbs().maxCoeff() > 0.0) ||
+                                    (traj.velocities.row(k).cwiseAbs().maxCoeff() > 0.0) ||
+                                    (traj.velocities.row(k + 1).cwiseAbs().maxCoeff() > 0.0) ||
+                                    (traj.accelerations.row(k).cwiseAbs().maxCoeff() > 0.0) ||
+                                    (traj.accelerations.row(k + 1).cwiseAbs().maxCoeff() > 0.0);
+            if (!has_motion) continue;
+            scale_seg[static_cast<size_t>(k)] = 1;
+            const double h = traj.times(k + 1) - traj.times(k);
+            if (h <= 0.0) continue;
+            for (int j = 0; j < J; ++j) {
+                const auto pk = quintic_hermite_scalar_peaks(
+                    traj.positions(k, j), traj.velocities(k, j), traj.accelerations(k, j),
+                    traj.positions(k + 1, j), traj.velocities(k + 1, j), traj.accelerations(k + 1, j),
+                    h);
+                if (std::isfinite(velocity_limits(j))) {
+                    r_v = std::max(r_v, pk.max_vel / velocity_limits(j));
+                }
+                if (std::isfinite(acceleration_limits(j))) {
+                    r_a = std::max(r_a, pk.max_acc / acceleration_limits(j));
+                }
+                if (std::isfinite(safe_jmax(j))) {
+                    r_j = std::max(r_j, pk.max_jerk / safe_jmax(j));
+                }
+            }
+        }
+        double alpha = std::max({1.0, r_v, std::sqrt(r_a), std::cbrt(r_j)});
+        if (alpha > 1.0) {
+            alpha *= (1.0 + 1e-7);
+            const double inv_alpha = 1.0 / alpha;
+            const double inv_alpha2 = inv_alpha * inv_alpha;
+            Eigen::VectorXd new_times(T);
+            new_times(0) = 0.0;
+            for (int k = 0; k < T - 1; ++k) {
+                const double hk = traj.times(k + 1) - traj.times(k);
+                new_times(k + 1) = new_times(k) + (scale_seg[static_cast<size_t>(k)] ? (hk * alpha) : hk);
+            }
+            traj.times = std::move(new_times);
+            traj.velocities *= inv_alpha;
+            traj.accelerations *= inv_alpha2;
+        }
+        return traj;
     }
 
     TrajectoryNative traj;

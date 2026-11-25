@@ -119,6 +119,15 @@ gp::SolverConfigNative parse_solver_config(const py::dict& d) {
     cfg.rrt_shortcut_iters = d["rrt_shortcut_iters"].cast<int>();
     cfg.velocity_scale = d["velocity_scale"].cast<double>();
     cfg.acceleration_scale = d["acceleration_scale"].cast<double>();
+    if (d.contains("jerk_scale") && !d["jerk_scale"].is_none()) {
+        cfg.jerk_scale = d["jerk_scale"].cast<double>();
+    }
+    if (d.contains("spline_order") && !d["spline_order"].is_none()) {
+        cfg.spline_order = d["spline_order"].cast<int>();
+    }
+    if (d.contains("strict_ccd") && !d["strict_ccd"].is_none()) {
+        cfg.strict_ccd = d["strict_ccd"].cast<bool>();
+    }
     if (d.contains("dt") && !d["dt"].is_none()) {
         cfg.has_dt = true;
         cfg.dt = d["dt"].cast<double>();
@@ -195,6 +204,7 @@ py::dict trajectory_to_dict(const gp::TrajectoryNative& traj) {
     d["velocities"] = std::move(vel);
     d["accelerations"] = std::move(acc);
     d["dt"] = traj.has_dt ? py::cast(traj.dt) : py::none();
+    d["spline_order"] = traj.spline_order;
     return d;
 }
 
@@ -212,6 +222,7 @@ py::dict plan_result_to_dict(const gp::PlanResultNative& r) {
         d["initial_positions"] = py::none();
     }
     d["goal_index"] = r.goal_index;
+    d["world_version"] = r.world_version;
     d["reason"] = r.success ? py::none() : py::object(py::str(r.reason));
     py::dict diag;
     diag["total_ms"] = r.diagnostics.total_ms;
@@ -496,24 +507,54 @@ py::tuple snap_violating_pairs_indexed(const gp::WorldSnapshot& snap, const Inpu
 py::object snap_first_violation_continuous(const gp::WorldSnapshot& snap, const Input& q_waypoints,
                                            int substeps, const Input& frames, const Input& margins,
                                            bool verify, double disp_tol,
-                                           py::object times_obj, py::object vel_obj, bool strict) {
+                                           py::object times_obj, py::object vel_obj, bool strict,
+                                           py::object acc_obj = py::none(), int spline_order = 3) {
+    if (spline_order != 3 && spline_order != 5)
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    if (substeps < 1)
+        throw std::invalid_argument("substeps must be >= 1");
+    const int J = snap.kin.num_joints();
+    if (q_waypoints.ndim() != 2 || q_waypoints.shape(0) < 2 || q_waypoints.shape(1) != J)
+        throw std::invalid_argument("q_waypoints must have shape [T>=2, J]");
+    const int T = static_cast<int>(q_waypoints.shape(0));
     check_frames_shape(frames, static_cast<int64_t>(snap.shapes.size()));
+    const int64_t expected_S = static_cast<int64_t>(T - 1) * static_cast<int64_t>(substeps) + 1;
+    if (frames.shape(0) != expected_S)
+        throw std::invalid_argument("frames row count must equal (T - 1) * substeps + 1");
     check_margins_shape(margins, static_cast<int64_t>(snap.pairs.size()));
+    const bool has_t = !times_obj.is_none();
+    const bool has_v = !vel_obj.is_none();
+    const bool has_a = !acc_obj.is_none();
+    if (has_t != has_v)
+        throw std::invalid_argument("times and velocities must both be provided or both omitted");
+    if (spline_order == 5 && (!has_t || !has_v || !has_a))
+        throw std::invalid_argument("quintic continuous collision check requires times, velocities, and accelerations");
     const double* t_ptr = nullptr;
     const double* v_ptr = nullptr;
-    Input t_arr, v_arr;
-    if (!times_obj.is_none() && !vel_obj.is_none()) {
+    const double* a_ptr = nullptr;
+    Input t_arr, v_arr, a_arr;
+    if (has_t) {
         t_arr = times_obj.cast<Input>();
         v_arr = vel_obj.cast<Input>();
+        if (t_arr.ndim() != 1 || t_arr.shape(0) != T)
+            throw std::invalid_argument("times must have shape [T]");
+        if (v_arr.ndim() != 2 || v_arr.shape(0) != T || v_arr.shape(1) != J)
+            throw std::invalid_argument("velocities must have shape [T, J]");
         t_ptr = t_arr.data();
         v_ptr = v_arr.data();
+        if (has_a) {
+            a_arr = acc_obj.cast<Input>();
+            if (a_arr.ndim() != 2 || a_arr.shape(0) != T || a_arr.shape(1) != J)
+                throw std::invalid_argument("accelerations must have shape [T, J]");
+            a_ptr = a_arr.data();
+        }
     }
     std::optional<gp::ContinuousViolation> hit;
     {
         py::gil_scoped_release release;
         hit = snap.first_violation_continuous(
-            q_waypoints.data(), static_cast<int>(q_waypoints.shape(0)),
-            substeps, frames.data(), margins.data(), verify, disp_tol, t_ptr, v_ptr, strict);
+            q_waypoints.data(), T,
+            substeps, frames.data(), margins.data(), verify, disp_tol, t_ptr, v_ptr, strict, a_ptr, spline_order);
     }
     if (!hit.has_value()) return py::none();
     return py::make_tuple(hit->seg, hit->u, hit->pair_id, hit->distance);
@@ -716,31 +757,84 @@ py::tuple snap_finalize_trajectory(const gp::WorldSnapshot& snap, const Input& p
 py::tuple snap_validate_trajectory_collision(
     const gp::WorldSnapshot& snap, const Input& q_waypoints, const Input& samples,
     int substeps, double margin, double world_margin, bool verify_original, double disp_tol,
-    py::object times_obj, py::object vel_obj, bool strict_ccd) {
+    py::object times_obj, py::object vel_obj, bool strict_ccd,
+    py::object acc_obj = py::none(), int spline_order = 3) {
+    if (spline_order != 3 && spline_order != 5)
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    if (substeps < 1)
+        throw std::invalid_argument("substeps must be >= 1");
     const int J = snap.kin.num_joints();
-    if (q_waypoints.ndim() != 2 || q_waypoints.shape(1) != J)
-        throw std::invalid_argument("q_waypoints must have shape [T, J]");
-    if (samples.ndim() != 2 || samples.shape(1) != J)
-        throw std::invalid_argument("samples must have shape [S, J]");
+    if (q_waypoints.ndim() != 2 || q_waypoints.shape(0) < 2 || q_waypoints.shape(1) != J)
+        throw std::invalid_argument("q_waypoints must have shape [T>=2, J]");
+    const int T = static_cast<int>(q_waypoints.shape(0));
+    const int64_t expected_S = static_cast<int64_t>(T - 1) * static_cast<int64_t>(substeps) + 1;
+    if (samples.ndim() != 2 || samples.shape(0) != expected_S || samples.shape(1) != J)
+        throw std::invalid_argument("samples must have shape [(T - 1) * substeps + 1, J]");
+    const bool has_t = !times_obj.is_none();
+    const bool has_v = !vel_obj.is_none();
+    const bool has_a = !acc_obj.is_none();
+    if (has_t != has_v)
+        throw std::invalid_argument("times and velocities must both be provided or both omitted");
+    if (spline_order == 5 && (!has_t || !has_v || !has_a))
+        throw std::invalid_argument("quintic continuous collision check requires times, velocities, and accelerations");
     const double* t_ptr = nullptr;
     const double* v_ptr = nullptr;
-    Input t_arr, v_arr;
-    if (!times_obj.is_none() && !vel_obj.is_none()) {
+    const double* a_ptr = nullptr;
+    Input t_arr, v_arr, a_arr;
+    if (has_t) {
         t_arr = times_obj.cast<Input>();
         v_arr = vel_obj.cast<Input>();
+        if (t_arr.ndim() != 1 || t_arr.shape(0) != T)
+            throw std::invalid_argument("times must have shape [T]");
+        if (v_arr.ndim() != 2 || v_arr.shape(0) != T || v_arr.shape(1) != J)
+            throw std::invalid_argument("velocities must have shape [T, J]");
         t_ptr = t_arr.data();
         v_ptr = v_arr.data();
+        if (has_a) {
+            a_arr = acc_obj.cast<Input>();
+            if (a_arr.ndim() != 2 || a_arr.shape(0) != T || a_arr.shape(1) != J)
+                throw std::invalid_argument("accelerations must have shape [T, J]");
+            a_ptr = a_arr.data();
+        }
     }
     gp::WorldSnapshot::ValidationResult res;
     {
         py::gil_scoped_release release;
         res = snap.validate_trajectory_collision(
-            q_waypoints.data(), static_cast<int>(q_waypoints.shape(0)),
+            q_waypoints.data(), T,
             samples.data(), samples.shape(0), substeps,
-            margin, world_margin, verify_original, disp_tol, t_ptr, v_ptr, strict_ccd);
+            margin, world_margin, verify_original, disp_tol, t_ptr, v_ptr, strict_ccd, a_ptr, spline_order);
     }
     if (res.valid) return py::make_tuple(true, py::none());
     return py::make_tuple(false, py::str(res.reason));
+}
+
+gp::TrajectoryNative trajectory_from_arrays(const Input& times_in, const Input& pos_in,
+                                            const Input& vel_in, const Input& acc_in,
+                                            int spline_order) {
+    if (pos_in.ndim() != 2 || pos_in.shape(0) < 2)
+        throw std::invalid_argument("positions must have shape [T>=2, J]");
+    const int T = static_cast<int>(pos_in.shape(0));
+    const int J = static_cast<int>(pos_in.shape(1));
+    if (times_in.ndim() != 1 || times_in.shape(0) != T)
+        throw std::invalid_argument("times must have shape [T]");
+    if (vel_in.ndim() != 2 || vel_in.shape(0) != T || vel_in.shape(1) != J)
+        throw std::invalid_argument("velocities must have shape [T, J]");
+    if (acc_in.ndim() != 2 || acc_in.shape(0) != T || acc_in.shape(1) != J)
+        throw std::invalid_argument("accelerations must have shape [T, J]");
+    if (spline_order != 3 && spline_order != 5)
+        throw std::invalid_argument("spline_order must be 3 or 5");
+    gp::TrajectoryNative traj;
+    traj.spline_order = spline_order;
+    traj.times.resize(T);
+    std::copy(times_in.data(), times_in.data() + T, traj.times.data());
+    traj.positions.resize(T, J);
+    std::copy(pos_in.data(), pos_in.data() + T * J, traj.positions.data());
+    traj.velocities.resize(T, J);
+    std::copy(vel_in.data(), vel_in.data() + T * J, traj.velocities.data());
+    traj.accelerations.resize(T, J);
+    std::copy(acc_in.data(), acc_in.data() + T * J, traj.accelerations.data());
+    return traj;
 }
 
 }  // namespace
@@ -748,6 +842,104 @@ py::tuple snap_validate_trajectory_collision(
 PYBIND11_MODULE(_coal_native, module) {
     module.def("has_tbb", &gp::gobot_planning_has_tbb);
     module.def("abi_version", &gp::gobot_planning_abi_version);
+    module.def("evaluate_trajectory", [](const Input& times_in, const Input& pos_in,
+                                         const Input& vel_in, const Input& acc_in,
+                                         const Input& query_times, int spline_order, bool return_jerk) -> py::tuple {
+        const auto traj = trajectory_from_arrays(times_in, pos_in, vel_in, acc_in, spline_order);
+        const int64_t S = query_times.size();
+        const py::ssize_t J = traj.num_joints();
+        py::array_t<double> out_p({static_cast<py::ssize_t>(S), J});
+        py::array_t<double> out_v({static_cast<py::ssize_t>(S), J});
+        py::array_t<double> out_a({static_cast<py::ssize_t>(S), J});
+        py::array_t<double> out_j = return_jerk ? py::array_t<double>({static_cast<py::ssize_t>(S), J})
+                                                : py::array_t<double>(0);
+        if (S > 0) {
+            py::gil_scoped_release release;
+            traj.sample_batch(query_times.data(), S,
+                              out_p.mutable_data(), out_v.mutable_data(), out_a.mutable_data(),
+                              return_jerk ? out_j.mutable_data() : nullptr);
+        }
+        if (return_jerk) return py::make_tuple(out_p, out_v, out_a, out_j);
+        return py::make_tuple(out_p, out_v, out_a);
+    }, py::arg("times"), py::arg("positions"), py::arg("velocities"), py::arg("accelerations"),
+       py::arg("query_times"), py::arg("spline_order") = 3, py::arg("return_jerk") = false);
+
+    module.def("retime_trajectory", [](const Input& pos_in,
+                                       const Eigen::VectorXd& vmax,
+                                       const Eigen::VectorXd& amax,
+                                       bool stop_at_endpoints,
+                                       py::object dt_obj,
+                                       py::object knot_scales_obj,
+                                       py::object jmax_obj,
+                                       int spline_order) {
+        if (pos_in.ndim() != 2 || pos_in.shape(0) < 2)
+            throw std::invalid_argument("positions must have shape [T>=2, J]");
+        const int T = static_cast<int>(pos_in.shape(0));
+        const int J = static_cast<int>(pos_in.shape(1));
+        gp::RowMatrixXd pos(T, J);
+        std::copy(pos_in.data(), pos_in.data() + T * J, pos.data());
+        const bool has_dt = !dt_obj.is_none();
+        const double dt_val = has_dt ? dt_obj.cast<double>() : 0.0;
+        Eigen::VectorXd ks;
+        const Eigen::VectorXd* ks_ptr = nullptr;
+        if (!knot_scales_obj.is_none()) {
+            ks = knot_scales_obj.cast<Eigen::VectorXd>();
+            ks_ptr = &ks;
+        }
+        Eigen::VectorXd jmax;
+        const Eigen::VectorXd* jmax_ptr = nullptr;
+        if (!jmax_obj.is_none()) {
+            jmax = jmax_obj.cast<Eigen::VectorXd>();
+            jmax_ptr = &jmax;
+        }
+        gp::TrajectoryNative traj;
+        {
+            py::gil_scoped_release release;
+            traj = gp::retime_trajectory(pos, vmax, amax, stop_at_endpoints, has_dt, dt_val,
+                                         ks_ptr, jmax_ptr, spline_order);
+        }
+        return trajectory_to_dict(traj);
+    }, py::arg("positions"), py::arg("velocity_limits"), py::arg("acceleration_limits"),
+       py::arg("stop_at_endpoints") = true, py::arg("dt") = py::none(),
+       py::arg("knot_velocity_scales") = py::none(), py::arg("jerk_limits") = py::none(),
+       py::arg("spline_order") = 3);
+
+    module.def("check_trajectory_bounds", [](const Input& times_in, const Input& pos_in,
+                                             const Input& vel_in, const Input& acc_in,
+                                             const Eigen::VectorXd& vmax,
+                                             const Eigen::VectorXd& amax,
+                                             bool check_velocity, bool check_acceleration, double tol,
+                                             py::object lo_obj, py::object hi_obj,
+                                             py::object jmax_obj, bool check_jerk, int spline_order) {
+        const auto traj = trajectory_from_arrays(times_in, pos_in, vel_in, acc_in, spline_order);
+        Eigen::VectorXd lo, hi, jmax;
+        const Eigen::VectorXd* lo_ptr = nullptr;
+        const Eigen::VectorXd* hi_ptr = nullptr;
+        const Eigen::VectorXd* jmax_ptr = nullptr;
+        if (!lo_obj.is_none()) {
+            lo = lo_obj.cast<Eigen::VectorXd>();
+            lo_ptr = &lo;
+        }
+        if (!hi_obj.is_none()) {
+            hi = hi_obj.cast<Eigen::VectorXd>();
+            hi_ptr = &hi;
+        }
+        if (!jmax_obj.is_none()) {
+            jmax = jmax_obj.cast<Eigen::VectorXd>();
+            jmax_ptr = &jmax;
+        }
+        gp::BoundsCheckResult res;
+        {
+            py::gil_scoped_release release;
+            res = gp::check_trajectory_bounds(traj, vmax, amax, check_velocity, check_acceleration,
+                                              tol, lo_ptr, hi_ptr, jmax_ptr, check_jerk);
+        }
+        return py::make_tuple(res.ok, res.ok ? py::none() : py::object(py::str(res.reason)), res.bad_segments);
+    }, py::arg("times"), py::arg("positions"), py::arg("velocities"), py::arg("accelerations"),
+       py::arg("velocity_limits"), py::arg("acceleration_limits"),
+       py::arg("check_velocity") = true, py::arg("check_acceleration") = true, py::arg("tol") = 1e-5,
+       py::arg("lower_limits") = py::none(), py::arg("upper_limits") = py::none(),
+       py::arg("jerk_limits") = py::none(), py::arg("check_jerk") = true, py::arg("spline_order") = 3);
     module.def("forward_kinematics", &forward_kinematics,
                py::arg("parent"), py::arg("kinds"), py::arg("joint_idx"),
                py::arg("parent_joint"), py::arg("joint_child"), py::arg("axes"),
@@ -831,6 +1023,11 @@ PYBIND11_MODULE(_coal_native, module) {
         .def_property_readonly("has_mesh", [](const PyWorldSnapshot& s) { return s.ptr->has_mesh; })
         .def_property_readonly("num_shapes", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->shapes.size()); })
         .def_property_readonly("num_pairs", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->pairs.size()); })
+        .def_property_readonly("lower_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.lower(); })
+        .def_property_readonly("upper_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.upper(); })
+        .def_property_readonly("velocity_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.velocity_limit(); })
+        .def_property_readonly("acceleration_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.acceleration_limit(); })
+        .def_property_readonly("jerk_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.jerk_limit(); })
         .def("pair_labels", [](const PyWorldSnapshot& s) { return snap_pair_labels(*s.ptr); })
         .def("pair_shape_names", [](const PyWorldSnapshot& s) { return snap_pair_shape_names(*s.ptr); })
         .def("pair_margins", [](const PyWorldSnapshot& s, double margin, double world_margin) {
@@ -861,12 +1058,15 @@ PYBIND11_MODULE(_coal_native, module) {
         .def("first_violation_continuous", [](const PyWorldSnapshot& s, const Input& q_waypoints,
                                               int substeps, const Input& frames, const Input& margins,
                                               bool verify, double disp_tol,
-                                              py::object times_obj, py::object vel_obj, bool strict) {
+                                              py::object times_obj, py::object vel_obj, bool strict,
+                                              py::object acc_obj, int spline_order) {
             return snap_first_violation_continuous(*s.ptr, q_waypoints, substeps, frames, margins,
-                                                   verify, disp_tol, times_obj, vel_obj, strict);
+                                                   verify, disp_tol, times_obj, vel_obj, strict,
+                                                   acc_obj, spline_order);
         }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
            py::arg("verify") = false, py::arg("disp_tol") = 5e-4,
-           py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false)
+           py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false,
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
         .def("compute_analytic_gradients", [](const PyWorldSnapshot& s, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
@@ -907,14 +1107,14 @@ PYBIND11_MODULE(_coal_native, module) {
                                                  const Input& samples, int substeps,
                                                  double margin, double world_margin, bool verify_original,
                                                  double disp_tol, py::object times_obj, py::object vel_obj,
-                                                 bool strict_ccd) {
+                                                 bool strict_ccd, py::object acc_obj, int spline_order) {
             return snap_validate_trajectory_collision(
                 *s.ptr, q_waypoints, samples, substeps, margin, world_margin,
-                verify_original, disp_tol, times_obj, vel_obj, strict_ccd);
+                verify_original, disp_tol, times_obj, vel_obj, strict_ccd, acc_obj, spline_order);
         }, py::arg("q_waypoints"), py::arg("samples"), py::arg("substeps"),
            py::arg("margin"), py::arg("world_margin"), py::arg("verify_original") = true,
            py::arg("disp_tol") = 5e-4, py::arg("times") = py::none(), py::arg("velocities") = py::none(),
-           py::arg("strict_ccd") = false);
+           py::arg("strict_ccd") = false, py::arg("accelerations") = py::none(), py::arg("spline_order") = 3);
 
     py::class_<gp::PlanningWorld, std::shared_ptr<gp::PlanningWorld>>(module, "PlanningWorld")
         .def(py::init<>())
@@ -982,9 +1182,81 @@ PYBIND11_MODULE(_coal_native, module) {
             w.attach_object(name, link_key, frame_from_array(local_frame), touch_links);
         })
         .def("detach_object", &gp::PlanningWorld::detach_object)
+        .def("set_auto_collision_disabled", &gp::PlanningWorld::set_auto_collision_disabled)
         .def("set_collision_enabled", &gp::PlanningWorld::set_collision_enabled)
         .def("set_robot_base_pose", [](gp::PlanningWorld& w, int branch_idx, const gp::Vec3& pos, const gp::Mat3& rot) {
             w.set_robot_base_pose(branch_idx, pos, rot);
+        })
+        .def("set_jerk_limits", &gp::PlanningWorld::set_jerk_limits)
+        .def("attached_shape_names", &gp::PlanningWorld::attached_shape_names)
+        .def("shape_names", &gp::PlanningWorld::shape_names)
+        .def("apply_sync_batch", [](gp::PlanningWorld& w,
+                                    const py::list& base_updates,
+                                    const py::list& pose_updates,
+                                    const std::vector<std::string>& remove_names,
+                                    const py::list& replace_shapes,
+                                    const py::list& add_shapes) {
+            gp::SyncBatch batch;
+            batch.base_updates.reserve(base_updates.size());
+            for (const auto& item : base_updates) {
+                auto tup = item.cast<py::tuple>();
+                gp::SyncBaseUpdate bu;
+                bu.branch_idx = tup[0].cast<int>();
+                bu.pos = tup[1].cast<gp::Vec3>();
+                bu.rot = tup[2].cast<gp::Mat3>();
+                batch.base_updates.push_back(std::move(bu));
+            }
+            batch.pose_updates.reserve(pose_updates.size());
+            for (const auto& item : pose_updates) {
+                auto tup = item.cast<py::tuple>();
+                gp::SyncPoseUpdate pu;
+                pu.name = tup[0].cast<std::string>();
+                pu.world_frame = frame_from_array(tup[1].cast<Input>());
+                batch.pose_updates.push_back(std::move(pu));
+            }
+            batch.remove_names = remove_names;
+            batch.replace_shapes.reserve(replace_shapes.size());
+            for (const auto& item : replace_shapes) {
+                auto tup = item.cast<py::tuple>();
+                gp::SyncShapeReplacement rep;
+                rep.name = tup[0].cast<std::string>();
+                rep.link_key = tup[1].cast<std::string>();
+                rep.world_frame = frame_from_array(tup[2].cast<Input>());
+                rep.layer = tup[3].cast<int>();
+                rep.mask = tup[4].cast<int>();
+                if (!tup[5].is_none()) {
+                    rep.shape = tup[5].cast<std::shared_ptr<gp::CollisionShape>>();
+                }
+                batch.replace_shapes.push_back(std::move(rep));
+            }
+            batch.add_shapes.reserve(add_shapes.size());
+            for (const auto& item : add_shapes) {
+                auto tup = item.cast<py::tuple>();
+                gp::WorldShape ws;
+                ws.name = tup[0].cast<std::string>();
+                ws.link_key = tup[1].cast<std::string>();
+                ws.body_id = -1;
+                ws.local_frame = frame_from_array(tup[2].cast<Input>());
+                ws.layer = tup[3].cast<int>();
+                ws.mask = tup[4].cast<int>();
+                ws.shape = tup[5].cast<std::shared_ptr<gp::CollisionShape>>();
+                batch.add_shapes.push_back(std::move(ws));
+            }
+            gp::SyncResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = w.apply_sync_batch(batch);
+            }
+            py::dict d;
+            d["version"] = res.version;
+            d["topology_version"] = res.topology_version;
+            d["changed"] = res.changed;
+            d["poses_updated"] = res.poses_updated;
+            d["shapes_added"] = res.shapes_added;
+            d["shapes_removed"] = res.shapes_removed;
+            d["shapes_replaced"] = res.shapes_replaced;
+            d["robot_bases_updated"] = res.robot_bases_updated;
+            return d;
         })
         .def("pair_labels", [](const gp::PlanningWorld& w) { return snap_pair_labels(*w.snapshot()); })
         .def("pair_shape_names", [](const gp::PlanningWorld& w) { return snap_pair_shape_names(*w.snapshot()); })
@@ -1077,12 +1349,15 @@ PYBIND11_MODULE(_coal_native, module) {
         .def("first_violation_continuous", [](const gp::PlanningWorld& w, const Input& q_waypoints,
                                               int substeps, const Input& frames, const Input& margins,
                                               bool verify, double disp_tol,
-                                              py::object times_obj, py::object vel_obj, bool strict) -> py::object {
+                                              py::object times_obj, py::object vel_obj, bool strict,
+                                              py::object acc_obj, int spline_order) -> py::object {
             return snap_first_violation_continuous(
-                *w.snapshot(), q_waypoints, substeps, frames, margins, verify, disp_tol, times_obj, vel_obj, strict);
+                *w.snapshot(), q_waypoints, substeps, frames, margins, verify, disp_tol,
+                times_obj, vel_obj, strict, acc_obj, spline_order);
         }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
            py::arg("verify") = false, py::arg("disp_tol") = 5e-4,
-           py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false)
+           py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false,
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
         .def("compute_analytic_gradients", [](const gp::PlanningWorld& w, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
@@ -1123,14 +1398,14 @@ PYBIND11_MODULE(_coal_native, module) {
                                                  const Input& samples, int substeps,
                                                  double margin, double world_margin, bool verify_original,
                                                  double disp_tol, py::object times_obj, py::object vel_obj,
-                                                 bool strict_ccd) {
+                                                 bool strict_ccd, py::object acc_obj, int spline_order) {
             return snap_validate_trajectory_collision(
                 *w.snapshot(), q_waypoints, samples, substeps, margin, world_margin,
-                verify_original, disp_tol, times_obj, vel_obj, strict_ccd);
+                verify_original, disp_tol, times_obj, vel_obj, strict_ccd, acc_obj, spline_order);
         }, py::arg("q_waypoints"), py::arg("samples"), py::arg("substeps"),
            py::arg("margin"), py::arg("world_margin"), py::arg("verify_original") = true,
            py::arg("disp_tol") = 5e-4, py::arg("times") = py::none(), py::arg("velocities") = py::none(),
-           py::arg("strict_ccd") = false)
+           py::arg("strict_ccd") = false, py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
         .def("solve_sqp_batch", [](const gp::PlanningWorld& w, const py::list& jobs_in, bool race) {
             auto snap = w.snapshot();
             const int J = snap->kin.num_joints();

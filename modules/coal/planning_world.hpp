@@ -52,6 +52,45 @@ struct ContinuousViolation {
     double distance = 0.0;
 };
 
+struct SyncBaseUpdate {
+    int branch_idx = 0;
+    Vec3 pos = Vec3::Zero();
+    Mat3 rot = Mat3::Identity();
+};
+
+struct SyncPoseUpdate {
+    std::string name;
+    Frame world_frame = Frame::Zero();
+};
+
+struct SyncShapeReplacement {
+    std::string name;
+    std::string link_key;
+    Frame world_frame = Frame::Zero();
+    int layer = 1;
+    int mask = 1;
+    std::shared_ptr<CollisionShape> shape;  // nullptr => reuse existing CollisionShape/BVH
+};
+
+struct SyncBatch {
+    std::vector<SyncBaseUpdate> base_updates;
+    std::vector<SyncPoseUpdate> pose_updates;
+    std::vector<std::string> remove_names;
+    std::vector<SyncShapeReplacement> replace_shapes;
+    std::vector<WorldShape> add_shapes;
+};
+
+struct SyncResultNative {
+    uint64_t version = 0;
+    uint64_t topology_version = 0;
+    bool changed = false;
+    int poses_updated = 0;
+    int shapes_added = 0;
+    int shapes_removed = 0;
+    int shapes_replaced = 0;
+    int robot_bases_updated = 0;
+};
+
 inline std::string canonical_pair_key(const std::string& a, const std::string& b) {
     return (a < b) ? (a + "\x1f" + b) : (b + "\x1f" + a);
 }
@@ -139,7 +178,8 @@ public:
     std::unordered_map<std::string, int> link_index;
     std::vector<WorldShape> shapes;
     std::unordered_map<std::string, int> shape_index;
-    std::unordered_set<std::string> disabled_pairs;
+    std::unordered_set<std::string> auto_disabled_pairs;
+    std::unordered_map<std::string, bool> user_acm_overrides;
 
     std::vector<ActivePair> pairs;
     std::vector<int> mobile_shapes;
@@ -150,6 +190,28 @@ public:
     bool has_mesh = false;
     uint64_t version = 0;
     uint64_t topology_version = 0;
+
+    bool is_pair_disabled_by_acm(const std::string& link_a, const std::string& link_b) const {
+        const auto key = canonical_pair_key(link_a, link_b);
+        auto it = user_acm_overrides.find(key);
+        if (it != user_acm_overrides.end()) return !it->second;
+        return auto_disabled_pairs.count(key) > 0;
+    }
+
+    std::vector<std::string> attached_shape_names() const {
+        std::vector<std::string> out;
+        for (const auto& ws : shapes) {
+            if (ws.is_attached) out.push_back(ws.name);
+        }
+        return out;
+    }
+
+    std::vector<std::string> shape_names() const {
+        std::vector<std::string> out;
+        out.reserve(shapes.size());
+        for (const auto& ws : shapes) out.push_back(ws.name);
+        return out;
+    }
 
     int link_id(const std::string& link_key) const {
         auto it = link_index.find(link_key);
@@ -194,7 +256,7 @@ public:
             if (a.link_key == b.link_key) return false;
             if (a.is_attached && a.attached_touch_links.count(b.link_key)) return false;
             if (b.is_attached && b.attached_touch_links.count(a.link_key)) return false;
-            if (disabled_pairs.count(canonical_pair_key(a.link_key, b.link_key))) return false;
+            if (is_pair_disabled_by_acm(a.link_key, b.link_key)) return false;
             return ((a.layer & b.mask) != 0) || ((b.layer & a.mask) != 0);
         };
         for (size_t a = 0; a < mobile_shapes.size(); ++a) {
@@ -517,7 +579,35 @@ public:
         const double* frames, const double* margins,
         bool verify_original = false, double disp_tol = 5e-4,
         const double* times = nullptr, const double* velocities = nullptr,
-        bool strict = false) const {
+        bool strict = false,
+        const double* accelerations = nullptr, int spline_order = 3) const {
+        if (T < 2) {
+            throw std::invalid_argument("q_waypoints must have at least 2 waypoints");
+        }
+        if (substeps < 1) {
+            throw std::invalid_argument("substeps must be >= 1");
+        }
+        if (spline_order != 3 && spline_order != 5) {
+            throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+        }
+        if ((times != nullptr) != (velocities != nullptr)) {
+            throw std::invalid_argument("times and velocities must both be provided or both omitted");
+        }
+        if (spline_order == 5 && (times == nullptr || velocities == nullptr || accelerations == nullptr)) {
+            throw std::invalid_argument("quintic continuous collision check requires times, velocities, and accelerations");
+        }
+        if (times != nullptr) {
+            for (int t = 0; t < T; ++t) {
+                if (!std::isfinite(times[t])) {
+                    throw std::invalid_argument("times must be finite");
+                }
+            }
+            for (int seg = 0; seg < T - 1; ++seg) {
+                if (times[seg + 1] < times[seg]) {
+                    throw std::invalid_argument("times must be non-decreasing");
+                }
+            }
+        }
         const int64_t P = static_cast<int64_t>(pairs.size());
         const int64_t M = static_cast<int64_t>(mobile_shapes.size());
         const int64_t N = static_cast<int64_t>(shapes.size());
@@ -526,10 +616,12 @@ public:
         const int n_segs = T - 1;
         const int64_t S = static_cast<int64_t>(n_segs * substeps + 1);
         if (n_segs <= 0 || P == 0 || M == 0) return std::nullopt;
-        const bool is_hermite = (times != nullptr && velocities != nullptr);
+        const bool is_quintic = (spline_order == 5 && times != nullptr);
+        const bool is_hermite = (spline_order == 3 && times != nullptr);
 
-        // Compute exact conservative max |q_j(u)| over the trajectory for any downstream prismatic joints
-        // (exact analytical extremum on every cubic Hermite segment, independent of finite joint limits).
+        // Compute exact/certified conservative max |q_j(u)| over the trajectory for any downstream prismatic joints
+        // (exact analytical extremum for cubic Hermite, certified Bernstein branch-and-bound for quintic Hermite,
+        // both sound even without finite joint limits).
         std::vector<double> q_abs_max(static_cast<size_t>(J), 0.0);
         for (int t = 0; t < T; ++t) {
             for (int j = 0; j < J; ++j) {
@@ -537,17 +629,22 @@ public:
                                                              std::abs(q_waypoints[t * J + j]));
             }
         }
-        if (is_hermite) {
+        if (is_quintic || is_hermite) {
             const auto& is_pris = kin.joint_prismatic();
             for (int seg = 0; seg < n_segs; ++seg) {
-                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+                const double h = times[seg + 1] - times[seg];
+                if (h <= 0.0) continue;
                 const double* qa = q_waypoints + seg * J;
                 const double* qb = q_waypoints + (seg + 1) * J;
                 const double* va = velocities + seg * J;
                 const double* vb = velocities + (seg + 1) * J;
+                const double* aa = is_quintic ? (accelerations + seg * J) : nullptr;
+                const double* ab = is_quintic ? (accelerations + (seg + 1) * J) : nullptr;
                 for (int j = 0; j < J; ++j) {
                     if (is_pris[static_cast<size_t>(j)]) {
-                        const double seg_max = hermite_scalar_abs_max(qa[j], qb[j], va[j], vb[j], h);
+                        const double seg_max = is_quintic
+                            ? quintic_hermite_scalar_abs_max(qa[j], va[j], aa[j], qb[j], vb[j], ab[j], h)
+                            : hermite_scalar_abs_max(qa[j], qb[j], va[j], vb[j], h);
                         q_abs_max[static_cast<size_t>(j)] = std::max(q_abs_max[static_cast<size_t>(j)], seg_max);
                     }
                 }
@@ -612,40 +709,72 @@ public:
         auto eval_q = [&](int seg, double u, double* q_out) {
             const double* qa = q_waypoints + seg * J;
             const double* qb = q_waypoints + (seg + 1) * J;
-            if (!is_hermite) {
-                const double w = 1.0 - u;
-                for (int j = 0; j < J; ++j) q_out[j] = w * qa[j] + u * qb[j];
-            } else {
-                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+            if (is_quintic) {
+                const double h = times[seg + 1] - times[seg];
+                if (h <= 0.0) {
+                    std::copy(qa, qa + J, q_out);
+                    return;
+                }
                 const double* va = velocities + seg * J;
                 const double* vb = velocities + (seg + 1) * J;
-                const double u2 = u * u;
-                const double u3 = u2 * u;
-                const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
-                const double h10 = (u3 - 2.0 * u2 + u) * h;
-                const double h01 = -2.0 * u3 + 3.0 * u2;
-                const double h11 = (u3 - u2) * h;
+                const double* aa = accelerations + seg * J;
+                const double* ab = accelerations + (seg + 1) * J;
                 for (int j = 0; j < J; ++j) {
-                    q_out[j] = h00 * qa[j] + h10 * va[j] + h01 * qb[j] + h11 * vb[j];
+                    eval_quintic_hermite_scalar(qa[j], va[j], aa[j], qb[j], vb[j], ab[j], h, u, q_out + j);
                 }
+            } else if (is_hermite) {
+                const double h = times[seg + 1] - times[seg];
+                if (h <= 0.0) {
+                    std::copy(qa, qa + J, q_out);
+                    return;
+                }
+                const double* va = velocities + seg * J;
+                const double* vb = velocities + (seg + 1) * J;
+                for (int j = 0; j < J; ++j) {
+                    eval_cubic_hermite_scalar(qa[j], va[j], qb[j], vb[j], h, u, q_out + j);
+                }
+            } else {
+                const double w = 1.0 - u;
+                for (int j = 0; j < J; ++j) q_out[j] = w * qa[j] + u * qb[j];
             }
         };
 
-        // Exact kinematic-chain displacement upper bound for pair (sa, sb) on [u0, u1] of segment `seg`.
+        // Exact/certified kinematic-chain displacement upper bound for pair (sa, sb) on [u0, u1] of segment `seg`.
         auto pair_disp_bound = [&](int seg, double u0, double u1, int sa, int sb) -> double {
             const double* qa = q_waypoints + seg * J;
             const double* qb = q_waypoints + (seg + 1) * J;
             const double* wa = (sa >= 0) ? (lip_weights.data() + sa * J) : nullptr;
             const double* wb = (sb >= 0) ? (lip_weights.data() + sb * J) : nullptr;
             double total = 0.0;
-            if (!is_hermite) {
-                const double du = u1 - u0;
+            if (is_quintic) {
+                const double h = times[seg + 1] - times[seg];
+                if (h <= 0.0) {
+                    for (int j = 0; j < J; ++j) {
+                        const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
+                        if (w > 0.0) total += w * std::abs(qb[j] - qa[j]);
+                    }
+                    return total;
+                }
+                const double* va = velocities + seg * J;
+                const double* vb = velocities + (seg + 1) * J;
+                const double* aa = accelerations + seg * J;
+                const double* ab = accelerations + (seg + 1) * J;
                 for (int j = 0; j < J; ++j) {
                     const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
-                    if (w > 0.0) total += w * std::abs(qb[j] - qa[j]) * du;
+                    if (w > 0.0) {
+                        total += w * quintic_hermite_scalar_total_variation_bound(
+                            qa[j], va[j], aa[j], qb[j], vb[j], ab[j], h, u0, u1);
+                    }
                 }
-            } else {
-                const double h = std::max(times[seg + 1] - times[seg], 1e-12);
+            } else if (is_hermite) {
+                const double h = times[seg + 1] - times[seg];
+                if (h <= 0.0) {
+                    for (int j = 0; j < J; ++j) {
+                        const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
+                        if (w > 0.0) total += w * std::abs(qb[j] - qa[j]);
+                    }
+                    return total;
+                }
                 const double* va = velocities + seg * J;
                 const double* vb = velocities + (seg + 1) * J;
                 for (int j = 0; j < J; ++j) {
@@ -653,6 +782,12 @@ public:
                     if (w > 0.0) {
                         total += w * hermite_scalar_total_variation(qb[j] - qa[j], va[j], vb[j], h, u0, u1);
                     }
+                }
+            } else {
+                const double du = u1 - u0;
+                for (int j = 0; j < J; ++j) {
+                    const double w = (wa ? wa[j] : 0.0) + (wb ? wb[j] : 0.0);
+                    if (w > 0.0) total += w * std::abs(qb[j] - qa[j]) * du;
                 }
             }
             return total;
@@ -1503,8 +1638,40 @@ public:
         double margin, double world_margin,
         bool verify_original = true, double disp_tol = 5e-4,
         const double* times = nullptr, const double* velocities = nullptr,
-        bool strict_ccd = false) const {
-        if (pairs.empty() || T < 2 || S <= 0) return {true, ""};
+        bool strict_ccd = false,
+        const double* accelerations = nullptr, int spline_order = 3) const {
+        if (T < 2) {
+            throw std::invalid_argument("q_waypoints must have at least 2 waypoints");
+        }
+        if (substeps < 1) {
+            throw std::invalid_argument("substeps must be >= 1");
+        }
+        if (spline_order != 3 && spline_order != 5) {
+            throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+        }
+        if ((times != nullptr) != (velocities != nullptr)) {
+            throw std::invalid_argument("times and velocities must both be provided or both omitted");
+        }
+        if (spline_order == 5 && (times == nullptr || velocities == nullptr || accelerations == nullptr)) {
+            throw std::invalid_argument("quintic continuous collision check requires times, velocities, and accelerations");
+        }
+        if (times != nullptr) {
+            for (int t = 0; t < T; ++t) {
+                if (!std::isfinite(times[t])) {
+                    throw std::invalid_argument("times must be finite");
+                }
+            }
+            for (int seg = 0; seg < T - 1; ++seg) {
+                if (times[seg + 1] < times[seg]) {
+                    throw std::invalid_argument("times must be non-decreasing");
+                }
+            }
+        }
+        const int64_t expected_S = static_cast<int64_t>(T - 1) * static_cast<int64_t>(substeps) + 1;
+        if (S != expected_S) {
+            throw std::invalid_argument("samples row count must equal (T - 1) * substeps + 1");
+        }
+        if (pairs.empty()) return {true, ""};
         const int64_t N = static_cast<int64_t>(shapes.size());
         const auto margins = pair_margins(margin, world_margin);
         std::vector<double> frames(static_cast<size_t>(S * N * 12));
@@ -1523,7 +1690,7 @@ public:
         }
         auto ccd = first_violation_continuous(
             q_waypoints, T, substeps, frames.data(), margins.data(),
-            false, disp_tol, times, velocities, strict_ccd);
+            false, disp_tol, times, velocities, strict_ccd, accelerations, spline_order);
         if (ccd.has_value()) {
             return {false, "continuous convex clearance failed on segment " + std::to_string(ccd->seg)
                            + ", pair " + pair_display_name(ccd->pair_id)};
@@ -1543,7 +1710,7 @@ public:
             }
             auto ccd_m = first_violation_continuous(
                 q_waypoints, T, substeps, frames.data(), margins.data(),
-                true, disp_tol, times, velocities, strict_ccd);
+                true, disp_tol, times, velocities, strict_ccd, accelerations, spline_order);
             if (ccd_m.has_value()) {
                 return {false, "continuous mesh clearance failed on segment " + std::to_string(ccd_m->seg)
                                + ", pair " + pair_display_name(ccd_m->pair_id)};
@@ -1662,6 +1829,9 @@ public:
         const int bid = state_->link_id(link_key);
         auto next = std::make_shared<WorldSnapshot>(*state_);
         auto& ws = next->shapes[static_cast<size_t>(it->second)];
+        if (!ws.is_attached) {
+            ws.detached_link_key = ws.link_key;
+        }
         ws.body_id = bid;
         ws.is_attached = true;
         ws.link_key = "::" + ws.name;
@@ -1697,9 +1867,22 @@ public:
         ws.body_id = -1;
         ws.is_attached = false;
         ws.attached_touch_links.clear();
-        ws.link_key = "::" + ws.name;
+        ws.link_key = ws.detached_link_key.empty() ? ("::" + ws.name) : ws.detached_link_key;
+        ws.detached_link_key.clear();
         ws.local_frame = world_f;
         ws.update_fixed_bounds();
+        next->rebuild_pairs();
+        ++next->version;
+        ++next->topology_version;
+        state_ = std::move(next);
+    }
+
+    void set_auto_collision_disabled(const std::string& link_a, const std::string& link_b) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto key = canonical_pair_key(link_a, link_b);
+        if (state_->auto_disabled_pairs.count(key) > 0) return;
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->auto_disabled_pairs.insert(key);
         next->rebuild_pairs();
         ++next->version;
         ++next->topology_version;
@@ -1710,8 +1893,7 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         auto next = std::make_shared<WorldSnapshot>(*state_);
         const auto key = canonical_pair_key(link_a, link_b);
-        if (enabled) next->disabled_pairs.erase(key);
-        else next->disabled_pairs.insert(key);
+        next->user_acm_overrides[key] = enabled;
         next->rebuild_pairs();
         ++next->version;
         ++next->topology_version;
@@ -1724,6 +1906,145 @@ public:
         next->kin.set_branch_pose(branch_idx, pos, rot);
         ++next->version;
         state_ = std::move(next);
+    }
+
+    void set_jerk_limits(const Eigen::VectorXd& jerk_limits) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->kin.set_jerk_limits(jerk_limits);
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    // Atomic batch synchronization: validates everything on a single CoW copy, rebuilds pairs
+    // at most once when topology/filter changes, and publishes one new snapshot (or zero if no-op).
+    // Strong exception guarantee: any validation error leaves state_ completely untouched.
+    SyncResultNative apply_sync_batch(const SyncBatch& batch) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        SyncResultNative out;
+        out.version = state_->version;
+        out.topology_version = state_->topology_version;
+        if (batch.base_updates.empty() && batch.pose_updates.empty() &&
+            batch.remove_names.empty() && batch.replace_shapes.empty() &&
+            batch.add_shapes.empty()) {
+            return out;
+        }
+
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        bool topology_changed = false;
+
+        // 1. Robot base pose updates (validates branch index).
+        for (const auto& bu : batch.base_updates) {
+            next->kin.set_branch_pose(bu.branch_idx, bu.pos, bu.rot);
+            ++out.robot_bases_updated;
+        }
+
+        // 2. Removals (must exist, must be static non-attached obstacle, no duplicates).
+        if (!batch.remove_names.empty()) {
+            std::vector<uint8_t> remove_mask(next->shapes.size(), 0);
+            for (const auto& name : batch.remove_names) {
+                auto it = next->shape_index.find(name);
+                if (it == next->shape_index.end()) {
+                    throw std::invalid_argument("sync remove: unknown obstacle: " + name);
+                }
+                const size_t idx = static_cast<size_t>(it->second);
+                if (remove_mask[idx]) {
+                    throw std::invalid_argument("sync remove: duplicate obstacle name: " + name);
+                }
+                const auto& ws = next->shapes[idx];
+                if (ws.body_id >= 0 || ws.is_attached) {
+                    throw std::invalid_argument("sync remove: cannot remove robot/attached shape: " + name);
+                }
+                remove_mask[idx] = 1;
+                ++out.shapes_removed;
+            }
+            std::vector<WorldShape> kept;
+            kept.reserve(next->shapes.size() - static_cast<size_t>(out.shapes_removed));
+            for (size_t i = 0; i < next->shapes.size(); ++i) {
+                if (!remove_mask[i]) kept.push_back(std::move(next->shapes[i]));
+            }
+            next->shapes = std::move(kept);
+            next->shape_index.clear();
+            for (size_t i = 0; i < next->shapes.size(); ++i) {
+                next->shape_index[next->shapes[i].name] = static_cast<int>(i);
+            }
+            topology_changed = true;
+        }
+
+        // 3. Replacements (geometry, filter, or link_key change on existing static obstacle).
+        for (const auto& rep : batch.replace_shapes) {
+            auto it = next->shape_index.find(rep.name);
+            if (it == next->shape_index.end()) {
+                throw std::invalid_argument("sync replace: unknown obstacle: " + rep.name);
+            }
+            auto& ws = next->shapes[static_cast<size_t>(it->second)];
+            if (ws.body_id >= 0 || ws.is_attached) {
+                throw std::invalid_argument("sync replace: cannot replace robot/attached shape: " + rep.name);
+            }
+            if (!rep.link_key.empty()) ws.link_key = rep.link_key;
+            ws.local_frame = rep.world_frame;
+            ws.layer = rep.layer;
+            ws.mask = rep.mask;
+            if (rep.shape) ws.shape = rep.shape;
+            ws.update_fixed_bounds();
+            ++out.shapes_replaced;
+            topology_changed = true;
+        }
+
+        // 4. Additions (new static obstacles).
+        for (const auto& add_ws : batch.add_shapes) {
+            if (add_ws.body_id >= 0 || add_ws.is_attached) {
+                throw std::invalid_argument("sync add: added obstacle must be static: " + add_ws.name);
+            }
+            if (!add_ws.shape) {
+                throw std::invalid_argument("sync add: null collision shape: " + add_ws.name);
+            }
+            if (next->shape_index.count(add_ws.name)) {
+                throw std::invalid_argument("sync add: duplicate collision shape name: " + add_ws.name);
+            }
+            WorldShape ws = add_ws;
+            ws.update_fixed_bounds();
+            const int idx = static_cast<int>(next->shapes.size());
+            next->shape_index[ws.name] = idx;
+            next->shapes.push_back(std::move(ws));
+            ++out.shapes_added;
+            topology_changed = true;
+        }
+
+        // 5. Pure pose updates (no geometry/BVH/pair rebuild).
+        for (const auto& pu : batch.pose_updates) {
+            auto it = next->shape_index.find(pu.name);
+            if (it == next->shape_index.end()) {
+                throw std::invalid_argument("sync pose: unknown obstacle: " + pu.name);
+            }
+            auto& ws = next->shapes[static_cast<size_t>(it->second)];
+            if (ws.body_id >= 0 || ws.is_attached) {
+                throw std::invalid_argument("sync pose: cannot set world pose of robot/attached shape: " + pu.name);
+            }
+            ws.local_frame = pu.world_frame;
+            ws.update_fixed_bounds();
+            ++out.poses_updated;
+        }
+
+        if (topology_changed) {
+            next->rebuild_pairs();
+            ++next->topology_version;
+        }
+        ++next->version;
+        state_ = std::move(next);
+
+        out.version = state_->version;
+        out.topology_version = state_->topology_version;
+        out.changed = true;
+        return out;
+    }
+
+    std::vector<std::string> attached_shape_names() const {
+        return snapshot()->attached_shape_names();
+    }
+
+    std::vector<std::string> shape_names() const {
+        return snapshot()->shape_names();
     }
 
     // Convenience thread-safe pass-throughs operating on an atomic immutable snapshot.
@@ -1758,9 +2079,11 @@ public:
     std::optional<ContinuousViolation> first_violation_continuous(
         const double* q_waypoints, int T, int substeps, const double* frames,
         const double* margins, bool verify_original = false, double disp_tol = 5e-4,
-        const double* times = nullptr, const double* velocities = nullptr) const {
+        const double* times = nullptr, const double* velocities = nullptr,
+        bool strict = false, const double* accelerations = nullptr, int spline_order = 3) const {
         return snapshot()->first_violation_continuous(
-            q_waypoints, T, substeps, frames, margins, verify_original, disp_tol, times, velocities);
+            q_waypoints, T, substeps, frames, margins, verify_original, disp_tol, times, velocities,
+            strict, accelerations, spline_order);
     }
     void compute_analytic_gradients(const double* frames, const double* jorig, const double* jaxis,
                                     const int64_t* rows, const int64_t* pair_ids, const double* data,

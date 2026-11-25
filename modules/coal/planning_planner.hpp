@@ -35,6 +35,9 @@ struct SolverConfigNative {
     int rrt_shortcut_iters = 64;
     double velocity_scale = 1.0;
     double acceleration_scale = 1.0;
+    double jerk_scale = 1.0;
+    int spline_order = 3;
+    bool strict_ccd = false;
     bool has_dt = false;
     double dt = 0.0;
     bool retime = true;
@@ -88,6 +91,7 @@ struct PlanResultNative {
     bool has_initial_positions = false;
     RowMatrixXd initial_positions;
     int goal_index = 0;
+    uint64_t world_version = 0;
     std::string reason;
     PlanDiagnosticsNative diagnostics;
 };
@@ -145,12 +149,26 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
 
     const int T = static_cast<int>(positions.rows());
     const int J = static_cast<int>(positions.cols());
+    if (!std::isfinite(cfg.velocity_scale) || cfg.velocity_scale <= 0.0) {
+        throw std::invalid_argument("velocity_scale must be finite and positive");
+    }
+    if (!std::isfinite(cfg.acceleration_scale) || cfg.acceleration_scale <= 0.0) {
+        throw std::invalid_argument("acceleration_scale must be finite and positive");
+    }
+    if (!std::isfinite(cfg.jerk_scale) || cfg.jerk_scale <= 0.0) {
+        throw std::invalid_argument("jerk_scale must be finite and positive");
+    }
     const Eigen::VectorXd vmax = snap.kin.velocity_limit() * cfg.velocity_scale;
     const Eigen::VectorXd amax = snap.kin.acceleration_limit() * cfg.acceleration_scale;
+    const Eigen::VectorXd jmax = snap.kin.jerk_limit() * cfg.jerk_scale;
     const Eigen::VectorXd& lo = snap.kin.lower();
     const Eigen::VectorXd& hi = snap.kin.upper();
     const bool has_dt = cfg.has_dt || !cfg.retime;
     const double dt_val = cfg.has_dt ? cfg.dt : 0.1;
+    if (cfg.spline_order != 3 && cfg.spline_order != 5) {
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    }
+    const int spline_order = cfg.spline_order;
 
     int substeps = std::max(2 * cfg.collision_substeps, 4);
     if (cfg.max_segment_length > 0.0 && T >= 2) {
@@ -169,10 +187,11 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
 
     for (int attempt = 0; attempt < 8; ++attempt) {
         TrajectoryNative traj = retime_trajectory(
-            positions, vmax, amax, cfg.stop_at_endpoints, has_dt, dt_val, &knot_scales);
+            positions, vmax, amax, cfg.stop_at_endpoints, has_dt, dt_val, &knot_scales, &jmax, spline_order);
 
-        // 1. Exact continuous cubic Hermite velocity & acceleration verification.
-        auto bchk = check_trajectory_bounds(traj, vmax, amax, true, true, 1e-5);
+        // 1. Exact/certified continuous position, velocity, acceleration & jerk verification.
+        auto bchk = check_trajectory_bounds(
+            traj, vmax, amax, true, true, 1e-5, &lo, &hi, &jmax, spline_order == 5);
         if (!bchk.ok) {
             last_error = bchk.reason;
             if (has_dt) {
@@ -182,7 +201,7 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
             }
         }
 
-        // 2. Sample actual cubic Hermite curve and check joint limits + discrete & continuous CCD.
+        // 2. Sample actual spline curve and check discrete & continuous CCD.
         traj.sample_segments(substeps, samples);
         const int64_t S = static_cast<int64_t>((T - 1) * substeps + 1);
         std::set<int> bad_segs(bchk.bad_segments.begin(), bchk.bad_segments.end());
@@ -191,7 +210,7 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
             for (int j = 0; j < J; ++j) {
                 if (!std::isfinite(qs[j]) || qs[j] < lo(j) - 1e-6 || qs[j] > hi(j) + 1e-6) {
                     bad_segs.insert(std::min(static_cast<int>(s / substeps), T - 2));
-                    if (last_error.empty()) last_error = "retimed Hermite curve violates joint limits";
+                    if (last_error.empty()) last_error = "retimed spline curve violates joint limits";
                     break;
                 }
             }
@@ -221,12 +240,13 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
                         break;
                     }
                 }
-                // Sound kinematic-chain Conservative Advancement CCD on the actual played Hermite curve.
+                // Sound kinematic-chain Conservative Advancement CCD on the actual played spline curve.
                 // (For triangle meshes, d_orig >= d_convex everywhere, so convex CCD proves mesh clearance too.)
                 if (!verify_orig) {
                     auto ccd_hit = snap.first_violation_continuous(
                         traj.positions.data(), T, substeps, frames.data(), margins.data(),
-                        false, 1e-3, traj.times.data(), traj.velocities.data());
+                        false, 1e-3, traj.times.data(), traj.velocities.data(),
+                        cfg.strict_ccd, traj.accelerations.data(), traj.spline_order);
                     if (ccd_hit.has_value()) {
                         last_error = std::string("retimed Hermite continuous ") + kind + " clearance failed on segment " +
                                      std::to_string(ccd_hit->seg) + ", pair " + snap.pair_display_name(ccd_hit->pair_id);
@@ -563,7 +583,20 @@ private:
         using Clock = std::chrono::steady_clock;
         const auto t_start = Clock::now();
         PlanResultNative res;
+        res.world_version = snap.version;
         const auto& cfg = req.config;
+        if (cfg.spline_order != 3 && cfg.spline_order != 5) {
+            throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+        }
+        if (!std::isfinite(cfg.velocity_scale) || cfg.velocity_scale <= 0.0) {
+            throw std::invalid_argument("velocity_scale must be finite and positive");
+        }
+        if (!std::isfinite(cfg.acceleration_scale) || cfg.acceleration_scale <= 0.0) {
+            throw std::invalid_argument("acceleration_scale must be finite and positive");
+        }
+        if (!std::isfinite(cfg.jerk_scale) || cfg.jerk_scale <= 0.0) {
+            throw std::invalid_argument("jerk_scale must be finite and positive");
+        }
         const int fixed = cfg.stop_at_endpoints ? 2 : 1;
         if (cfg.waypoints < 2 * fixed) throw std::invalid_argument("waypoints must be >= 2 * fixed");
 

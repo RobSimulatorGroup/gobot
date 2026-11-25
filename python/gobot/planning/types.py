@@ -77,8 +77,23 @@ class SolverConfig:
     rrt_shortcut_iters: int = 64
     velocity_scale: float = 1.0
     acceleration_scale: float = 1.0
+    jerk_scale: float = 1.0
+    spline_order: int = 3
+    strict_ccd: bool = False
     dt: float | None = None
     retime: bool = True
+
+    def __post_init__(self) -> None:
+        if self.spline_order not in (3, 5):
+            raise ValueError("spline_order must be 3 (cubic Hermite) or 5 (quintic Hermite)")
+        if not math.isfinite(self.velocity_scale) or self.velocity_scale <= 0.0:
+            raise ValueError("velocity_scale must be finite and positive")
+        if not math.isfinite(self.acceleration_scale) or self.acceleration_scale <= 0.0:
+            raise ValueError("acceleration_scale must be finite and positive")
+        if not math.isfinite(self.jerk_scale) or self.jerk_scale <= 0.0:
+            raise ValueError("jerk_scale must be finite and positive")
+        if self.dt is not None and (not math.isfinite(self.dt) or self.dt <= 0.0):
+            raise ValueError("dt must be finite and positive")
 
     @property
     def effective_world_margin(self) -> float:
@@ -106,13 +121,18 @@ class MotionPlanRequest:
 
 @dataclass(frozen=True)
 class Trajectory:
-    """Time-parameterized joint trajectory supporting continuous cubic Hermite sampling."""
+    """Time-parameterized joint trajectory supporting C^1 cubic (order 3) and C^2 quintic (order 5) Hermite sampling."""
 
     times: np.ndarray
     positions: np.ndarray
     velocities: np.ndarray
     accelerations: np.ndarray
     dt: float | None = None
+    spline_order: int = 3
+
+    def __post_init__(self) -> None:
+        if self.spline_order not in (3, 5):
+            raise ValueError("spline_order must be 3 (cubic Hermite) or 5 (quintic Hermite)")
 
     @property
     def duration(self) -> float:
@@ -122,44 +142,31 @@ class Trajectory:
     def num_waypoints(self) -> int:
         return int(self.positions.shape[0])
 
-    def sample(self, t: float | np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Evaluate (position, velocity, acceleration) at time(s) t via cubic Hermite splines."""
+    def _eval(self, t: float | np.ndarray, *, return_jerk: bool):
+        from gobot import _coal_native as _native
+
         scalar = np.ndim(t) == 0
-        ts = np.atleast_1d(np.asarray(t, dtype=np.float64))
-        ts = np.clip(ts, self.times[0], self.times[-1])
-        idx = np.searchsorted(self.times, ts, side="right") - 1
-        idx = np.clip(idx, 0, len(self.times) - 2)
-        t0 = self.times[idx]
-        h = np.maximum(self.times[idx + 1] - t0, 1e-12)
-        u = ((ts - t0) / h)[:, None]
-        h_col = h[:, None]
-
-        p0, p1 = self.positions[idx], self.positions[idx + 1]
-        v0, v1 = self.velocities[idx], self.velocities[idx + 1]
-
-        u2 = u * u
-        u3 = u2 * u
-        h00 = 2 * u3 - 3 * u2 + 1
-        h10 = u3 - 2 * u2 + u
-        h01 = -2 * u3 + 3 * u2
-        h11 = u3 - u2
-        pos = h00 * p0 + h10 * h_col * v0 + h01 * p1 + h11 * h_col * v1
-
-        dh00 = (6 * u2 - 6 * u) / h_col
-        dh10 = 3 * u2 - 4 * u + 1
-        dh01 = (-6 * u2 + 6 * u) / h_col
-        dh11 = 3 * u2 - 2 * u
-        vel = dh00 * p0 + dh10 * v0 + dh01 * p1 + dh11 * v1
-
-        ddh00 = (12 * u - 6) / (h_col * h_col)
-        ddh10 = (6 * u - 4) / h_col
-        ddh01 = (-12 * u + 6) / (h_col * h_col)
-        ddh11 = (6 * u - 2) / h_col
-        acc = ddh00 * p0 + ddh10 * v0 + ddh01 * p1 + ddh11 * v1
-
+        ts = np.ascontiguousarray(np.atleast_1d(np.asarray(t, dtype=np.float64)))
+        out = _native.evaluate_trajectory(
+            np.ascontiguousarray(self.times, dtype=np.float64),
+            np.ascontiguousarray(self.positions, dtype=np.float64),
+            np.ascontiguousarray(self.velocities, dtype=np.float64),
+            np.ascontiguousarray(self.accelerations, dtype=np.float64),
+            ts,
+            int(self.spline_order),
+            bool(return_jerk),
+        )
         if scalar:
-            return pos[0], vel[0], acc[0]
-        return pos, vel, acc
+            return tuple(arr[0] for arr in out)
+        return out
+
+    def sample(self, t: float | np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate (position, velocity, acceleration) at time(s) t via the shared C++ spline evaluator."""
+        return self._eval(t, return_jerk=False)
+
+    def sample_with_jerk(self, t: float | np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate (position, velocity, acceleration, jerk) at time(s) t via the shared C++ spline evaluator."""
+        return self._eval(t, return_jerk=True)
 
 
 @dataclass(frozen=True)
@@ -196,12 +203,30 @@ class BatchIKResult:
 
 
 @dataclass(frozen=True)
+class SyncResult:
+    """Summary of an incremental PlanningWorld synchronization."""
+
+    version: int
+    topology_version: int
+    changed: bool
+    poses_updated: int = 0
+    shapes_added: int = 0
+    shapes_removed: int = 0
+    shapes_replaced: int = 0
+    robot_bases_updated: int = 0
+    export_ms: float = 0.0
+    diff_ms: float = 0.0
+    commit_ms: float = 0.0
+
+
+@dataclass(frozen=True)
 class PlanResult:
     trajectory: Trajectory | None
     initial_positions: np.ndarray | None = None
     goal_index: int = 0
     reason: str | None = None
     diagnostics: PlanDiagnostics = field(default_factory=PlanDiagnostics)
+    world_version: int = 0
 
     @property
     def success(self) -> bool:
@@ -223,3 +248,4 @@ class BatchPlanResult:
     success: np.ndarray
     reasons: tuple[str | None, ...]
     initial_positions: np.ndarray
+    world_version: int = 0
