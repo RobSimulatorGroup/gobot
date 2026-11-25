@@ -5,73 +5,80 @@ from pathlib import Path
 import sys
 
 import numpy as np
-import torch
 from scipy.spatial.transform import Rotation
 
-from gobot.planning import Planner, PoseTarget
+from gobot.planning import MotionPlanner, MotionPlanRequest, PlanningWorld, PoseConstraint, SolverConfig
 
 
 def solve(snapshot, start, goal, inspection):
-    # These shells meet at a shared joint center (links 1 and 5 have no
-    # translation between their axes), or at the fixed wrist-hand mounting.
     mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"),
               ("panda_link7", "panda_hand"))
-    planner = Planner(snapshot, {"panda": "panda_link0"}, collision_backend="coal",
-                      ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts])
+    world = PlanningWorld.from_snapshot(
+        snapshot, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    planner = MotionPlanner(world, backend="coal")
     hand = ("panda", "panda_hand")
-    down = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]
-    seed = [0, -0.5, 0, -2, 0, 1.5, -2.3]
+    down = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=np.float64)
+    seed = np.array([0, -0.5, 0, -2, 0, 1.5, -2.3], dtype=np.float64)
     endpoints = []
     for name, position in (("Start", start), ("Goal", goal)):
-        ik = planner.solve_ik([PoseTarget(hand, position, down)], seed=seed, margin=0.002, world_margin=0.025)
+        ik = planner.solve_ik(
+            [PoseConstraint(hand, position, down)],
+            seed=seed, margin=0.002, world_margin=0.025,
+        )
         if not ik.success:
             raise ValueError(f"{name} IK failed: {ik.reason}")
         seed = ik.positions
         endpoints.append(seed)
+
     inspection_index = 8
     inspection_rotation = Rotation.from_euler("z", 25, degrees=True).as_matrix() @ down
-    inspection_target = PoseTarget(hand, inspection, inspection_rotation)
-    plan = planner.solve_trajopt(*endpoints, waypoints=16, dt=0.14, margin=0.002, world_margin=0.025,
-                                 collision_substeps=3, stop_at_endpoints=True, iterations=40,
-                                 solver="sqp", waypoint_targets={inspection_index: inspection_target},
-                                 longest_valid_segment_length=0.075)
+    inspection_target = PoseConstraint(hand, inspection, inspection_rotation,
+                                       position_tolerance=1e-4, rotation_tolerance=1e-4)
+    cfg = SolverConfig(
+        waypoints=16, dt=0.14, margin=0.002, world_margin=0.025,
+        collision_substeps=3, max_segment_length=0.075,
+        stop_at_endpoints=True, iterations=40, first_feasible=False,
+    )
+    plan = planner.plan(MotionPlanRequest(
+        start=endpoints[0], goal=endpoints[1],
+        waypoint_targets={inspection_index: inspection_target}, config=cfg,
+    ))
     if not plan.success:
         raise ValueError(plan.reason)
-    # Reserve 5 mm between the optimization target and the finer 20 mm acceptance threshold.
-    if not planner.validate_trajectory(plan.positions, dt=plan.dt, collision_substeps=24,
-                                       margin=0.002, world_margin=0.020):
-        raise ValueError("Original geometry failed the 24-substep trajectory clearance check")
-    position, rotation = planner.link_pose(plan.positions[inspection_index], hand)
-    position_error = np.linalg.norm(position.numpy() - inspection)
-    angle_error = Rotation.from_matrix(inspection_rotation.T @ rotation.numpy()).magnitude()
-    # Both tracks share the same waypoint clock. Interpolate joints before FK.
+    valid, reason = world.validate_trajectory(
+        plan.positions, dt=plan.dt, collision_substeps=24, margin=0.002, world_margin=0.020,
+    )
+    if not valid:
+        raise ValueError(f"Original geometry failed 24-substep check: {reason}")
+    position, rotation = world.link_pose(plan.positions[inspection_index], hand)
+    position_error = float(np.linalg.norm(position - inspection))
+    angle_error = float(Rotation.from_matrix(inspection_rotation.T @ rotation).magnitude())
+
     steps = 24
-    q = torch.stack((plan.initial_positions, plan.positions))
-    fraction = torch.arange(steps, dtype=q.dtype)[:, None] / steps
-    between = torch.lerp(q[:, :-1, None], q[:, 1:, None], fraction)
-    samples = torch.cat((between.flatten(1, 2), q[:, -1:]), dim=1)
-    world = [i for i, (_, other) in enumerate(planner.collision_pairs) if not other[0]]
-    clearance = planner.collision_distances(samples)[:, :, world].amin(dim=1)
-    hits = sorted({planner.collision_pairs[world[i]][1][1].split("/")[-2]
-                   for i in (clearance[0] < 0).nonzero().flatten().tolist()})
+    q = np.stack((plan.initial_positions, plan.positions), axis=0)
+    fraction = (np.arange(steps, dtype=np.float64) / steps)[:, None]
+    between = (1.0 - fraction)[None, None, :, :] * q[:, :-1, None, :] + fraction[None, None, :, :] * q[:, 1:, None, :]
+    samples = np.concatenate((between.reshape(2, -1, world.num_joints), q[:, -1:]), axis=1)
+    world_pairs = [i for i, (_, other) in enumerate(world.collision_pairs) if not other.startswith("panda/")]
+    clearance = world.collision_distances(samples)[:, :, world_pairs].min(axis=1)
+    hits = sorted({world.collision_pairs[world_pairs[i]][1].split("/")[-2]
+                   for i in np.flatnonzero(clearance[0] < 0)})
     names = [f"panda_link{i}" for i in range(9)] + [hand[1]]
     poses = []
     for name in names:
-        position, rotation = planner.link_pose(samples, ("panda", name))
-        quaternion = Rotation.from_matrix(rotation.numpy().reshape(-1, 3, 3)).as_quat()
-        quaternion = quaternion.reshape(*position.shape[:-1], 4)
-        poses.append(np.concatenate((position.numpy(), quaternion), axis=-1))
-    # tracks × frames × links × (xyz, xyzw)
+        pos, rot = world.link_pose(samples, ("panda", name))
+        quat = Rotation.from_matrix(rot.reshape(-1, 3, 3)).as_quat().reshape(*pos.shape[:-1], 4)
+        poses.append(np.concatenate((pos, quat), axis=-1))
     poses = np.stack(poses, axis=2).astype(np.float32)
     return dict(links=names, poses=poses, dt=plan.dt / steps,
                 inspection_error=position_error, inspection_angle=angle_error,
-                seed_hits=", ".join(hits), world_clearance=clearance[1].min().item(),
+                seed_hits=", ".join(hits), world_clearance=float(clearance[1].min()),
                 paths=poses[:, ::steps, names.index(hand[1]), :3])
 
 
 if __name__ == "__main__":
-    # These small CPU linear systems run more efficiently on a single thread.
-    torch.set_num_threads(1)
     request, result = map(Path, sys.argv[1:])
     try:
         response = solve(**json.loads(request.read_text()))

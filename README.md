@@ -74,6 +74,5 @@ for evaluation and policy playback.
 - [Documentation index](doc/README.md)
 - [Build and test](doc/building.md)
 - [Engine architecture](doc/architecture.md)
-- [Torch motion planning](doc/torch_planning.md)
 - [MuJoCo and RL](doc/mujoco_rl_plan.md)
 - [Rendering](doc/luisa_rendering_plan.md)

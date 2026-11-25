@@ -12,7 +12,6 @@ Commands in these guides run from the repository root unless stated otherwise.
 | Training, evaluation, policy playback | [Training guide](gobot_training.md) |
 | Independent mjlab comparison | [Shared terrain and training](mjlab_comparison.md) |
 | Engine ownership and API contracts | [Architecture](architecture.md) |
-| Inverse kinematics and trajectory optimization | [Torch motion planning](torch_planning.md) |
 | CPU and CUDA training contracts and roadmap | [MuJoCo RL](mujoco_rl_plan.md) |
 | SuperMimic GenCoord | [Data, training and evaluation](../examples/g1_velocity/supermimic/README.md) |
 | MuJoCo SDK configuration | [MuJoCo setup](physics_mujoco_setup.md) |
