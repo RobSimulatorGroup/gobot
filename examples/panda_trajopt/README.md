@@ -74,19 +74,18 @@ Key pipeline stages:
 
 - **C++ `PlanningWorld` (`_coal_native`)** owns multi-branch forward kinematics,
   exact analytic pose/collision Jacobians, Coal convex/mesh distance queries,
-  early-exit AABB screening, parallel C++ IK, and C++ BiRRT-Connect global
-  seeding. No PyTorch dependency is needed on the planning hot path.
-- **Trust-region SQP (NumPy + OSQP)** optimizes joint smoothness with exact
-  analytic Jacobians and L1 merit checks, with automatic C++ BiRRT fallback when
-  a local seed is blocked.
-- **TOPP Retiming (`retime_trajectory`)** assigns velocity- and
-  acceleration-bounded timestamps and exposes continuous cubic Hermite
-  evaluation via `result.trajectory.sample(t)`.
+  early-exit AABB screening, Conservative Advancement continuous collision
+  checking, parallel C++ IK, C++ BiRRT-Connect global seeding, and the native
+  C++ trust-region SQP + ProxAL-SSN QP solver. No PyTorch or OSQP dependency is
+  needed on the Coal planning hot path.
+- **TOPP Retiming (`retime_trajectory`)** assigns exact cubic-Hermite velocity-
+  and acceleration-bounded timestamps and exposes continuous evaluation via
+  `result.trajectory.sample(t)`.
 
-On a Ryzen 7 3700X, the headless Panda inspection task solves in **~213 ms**
-(1.2 ms IK, 209 ms SQP over 13 QPs, 1.1 ms validation, 0.6 ms TOPP retiming),
-achieving `< 0.001 mm` / `< 0.001 deg` inspection error and `39.8 mm` minimum
-sampled world clearance.
+On a Ryzen 7 3700X, the headless Panda inspection task solves in **~50 ms**
+(1.5 ms IK, 40.8 ms C++ SQP over 13 QPs, 1.1 ms validation, 6.4 ms TOPP
+retiming + continuous Hermite verification), achieving `0.001 mm` / `0.000 deg`
+inspection error and `40.1 mm` minimum sampled world clearance.
 
 ## Build
 

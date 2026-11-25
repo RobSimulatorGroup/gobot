@@ -178,7 +178,7 @@ def run(sizes: list[int], repeats: int, substeps: int, first_feasible: bool) -> 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sizes", type=int, nargs="+", default=[1, 4, 8])
+    parser.add_argument("--sizes", type=int, nargs="+", default=[1, 4, 8, 32, 64, 128])
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--collision-substeps", type=int, default=SAMPLES_PER_SEGMENT // 2)
     parser.add_argument("--solver", choices=("sqp", "sqp_fast"), default="sqp_fast")

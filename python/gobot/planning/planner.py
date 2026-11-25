@@ -328,7 +328,7 @@ class MotionPlanner:
         dt_arg = cfg.dt if cfg.dt is not None else (None if cfg.retime else 0.1)
 
         T = len(positions)
-        substeps = max(int(cfg.collision_substeps), 4)
+        substeps = max(2 * int(cfg.collision_substeps), 4)
         if cfg.max_segment_length is not None:
             longest = float(np.linalg.norm(np.diff(positions, axis=0), axis=-1).max())
             substeps = max(substeps, int(np.ceil(longest / cfg.max_segment_length)))
@@ -375,21 +375,16 @@ class MotionPlanner:
                 for verify in ((False, True) if self.world.has_mesh else (False,)):
                     rows, pids = self.world._native.screen_aabbs(frames, margins, verify, substeps)
                     if len(rows):
-                        hit = self.backend.first_violation(frames, rows, pids, margins, verify)
-                        if hit is not None:
+                        v_rows, v_pids = self.world._native.violating_pairs_indexed(frames, rows, pids, margins, verify)
+                        if len(v_rows):
                             kind = "mesh" if verify else "convex"
-                            seg0 = min(int(hit[0]) // substeps, T - 2)
+                            seg0 = min(int(v_rows[0]) // substeps, T - 2)
                             last_error = (
                                 f"retimed Hermite {kind} clearance failed on segment {seg0}, "
-                                f"pair {self.world.collision_pairs[int(hit[1])]}"
+                                f"pair {self.world.collision_pairs[int(v_pids[0])]}"
                             )
-                            # Identify all violating segments in one pass so multi-corner paths
-                            # converge in at most 2 damping rounds instead of one segment per round.
-                            dists = self.world._native.query_distances_indexed(frames, rows, pids, verify)[:, 0]
-                            viol = dists < np.maximum(0.0, margins[pids] - 1e-6)
-                            for r_idx in rows[viol]:
+                            for r_idx in v_rows:
                                 bad_segs.add(min(int(r_idx) // substeps, T - 2))
-                            bad_segs.add(seg0)
                             break
 
             if not bad_segs:
@@ -495,8 +490,8 @@ class MotionPlanner:
             return PlanResult(None, winner.initial_positions, winner.goal_index, retime_err, diag)
         return PlanResult(traj, winner.initial_positions, winner.goal_index, None, diag)
 
-    def plan_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int = 8) -> BatchPlanResult:
-        """Plan B independent MotionPlanRequests with merged collision batches and parallel OSQP."""
+    def plan_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int = 64) -> BatchPlanResult:
+        """Plan B independent MotionPlanRequests with native C++ parallel SQP or merged GPU batches."""
         if not requests:
             raise ValueError("provide at least one MotionPlanRequest")
         if chunk_size < 1:
@@ -513,6 +508,21 @@ class MotionPlanner:
             active_seed_ms: list[float] = []
             chunk_t0 = perf_counter()
 
+            # Fast batched endpoint collision check when chunk has multiple homogeneous requests.
+            pending_items = []
+            batch_ep_configs: list[np.ndarray] = []
+            batch_ep_meta: list[tuple[int, int]] = []  # (pending_idx, cand_idx)
+            ref_cfg = chunk[0].config
+            can_batch_ep = (
+                len(chunk) > 1
+                and self.world.num_pairs > 0
+                and all(
+                    r.config.margin == ref_cfg.margin
+                    and r.config.effective_world_margin == ref_cfg.effective_world_margin
+                    for r in chunk
+                )
+            )
+
             for local_i, req in enumerate(chunk):
                 row_i = offset + local_i
                 cfg = req.config
@@ -525,24 +535,69 @@ class MotionPlanner:
                 if ep_err is not None or goal_candidates is None:
                     all_results[row_i] = PlanResult(None, None, 0, ep_err, PlanDiagnostics(ik_ms=ik_ms))
                     continue
-                valid_goals = [(gid, gq) for gid, gq in goal_candidates
-                               if self._validate_endpoints(start_q, gq, cfg, fixed) is None]
-                if not valid_goals:
-                    err = self._validate_endpoints(start_q, goal_candidates[0][1], cfg, fixed)
-                    all_results[row_i] = PlanResult(None, None, 0, err, PlanDiagnostics(ik_ms=ik_ms))
-                    continue
-                specs, seed_ms = self._build_seed_jobs(start_q, valid_goals[:1], req, mask, pose_map, joint_map)
-                active_indices.append(row_i)
-                active_specs.append(specs[0])
-                active_ik_ms.append(ik_ms)
-                active_seed_ms.append(seed_ms)
+                if can_batch_ep and len(goal_candidates) == 1:
+                    gid, gq = goal_candidates[0]
+                    ends = np.stack((start_q, gq), axis=0)
+                    lim_err = None
+                    if (ends < self.world.lower_limits).any() or (ends > self.world.upper_limits).any():
+                        lim_err = "start or goal violates joint limits"
+                    elif cfg.dt is not None:
+                        moving = cfg.waypoints - 2 * fixed + 1
+                        vmax = self.world.velocity_limits * cfg.velocity_scale
+                        if (np.abs(gq - start_q) / (moving * cfg.dt) > vmax * (1.0 + 1e-6)).any():
+                            lim_err = "joint velocity limits require a longer duration"
+                    if lim_err is not None:
+                        all_results[row_i] = PlanResult(None, None, 0, lim_err, PlanDiagnostics(ik_ms=ik_ms))
+                        continue
+                    pidx = len(pending_items)
+                    pending_items.append((row_i, req, cfg, mask, pose_map, joint_map, start_q, gid, gq, ik_ms))
+                    batch_ep_configs.append(start_q)
+                    batch_ep_configs.append(gq)
+                    batch_ep_meta.append((pidx, 0))
+                else:
+                    valid_goals = [(gid, gq) for gid, gq in goal_candidates
+                                   if self._validate_endpoints(start_q, gq, cfg, fixed) is None]
+                    if not valid_goals:
+                        err = self._validate_endpoints(start_q, goal_candidates[0][1], cfg, fixed)
+                        all_results[row_i] = PlanResult(None, None, 0, err, PlanDiagnostics(ik_ms=ik_ms))
+                        continue
+                    specs, seed_ms = self._build_seed_jobs(start_q, valid_goals[:1], req, mask, pose_map, joint_map)
+                    active_indices.append(row_i)
+                    active_specs.append(specs[0])
+                    active_ik_ms.append(ik_ms)
+                    active_seed_ms.append(seed_ms)
+
+            if pending_items:
+                ep_arr = np.ascontiguousarray(np.stack(batch_ep_configs, axis=0), dtype=np.float64)
+                margins = self.world.pair_margins(ref_cfg.margin, ref_cfg.effective_world_margin)
+                (ep_frames,) = self.world._native.compute_frames(ep_arr, False)
+                bad_ep: dict[int, str] = {}
+                for verify in ((False, True) if self.world.has_mesh else (False,)):
+                    r_ids, p_ids = self.world._native.screen_aabbs(ep_frames, margins, verify, 1)
+                    if len(r_ids):
+                        v_rows, v_pids = self.world._native.violating_pairs_indexed(ep_frames, r_ids, p_ids, margins, verify)
+                        for r_idx, p_idx in zip(v_rows, v_pids):
+                            p_item = int(r_idx) // 2
+                            if p_item not in bad_ep:
+                                cfg_i = pending_items[p_item][2]
+                                seg = 0 if (int(r_idx) % 2) == 0 else cfg_i.waypoints - 2
+                                bad_ep[p_item] = f"endpoint collision on segment {seg}, pair {self.world.collision_pairs[int(p_idx)]}"
+                for p_idx, (row_i, req, cfg, mask, pose_map, joint_map, start_q, gid, gq, ik_ms) in enumerate(pending_items):
+                    if p_idx in bad_ep:
+                        all_results[row_i] = PlanResult(None, None, 0, bad_ep[p_idx], PlanDiagnostics(ik_ms=ik_ms))
+                        continue
+                    specs, seed_ms = self._build_seed_jobs(start_q, [(gid, gq)], req, mask, pose_map, joint_map)
+                    active_indices.append(row_i)
+                    active_specs.append(specs[0])
+                    active_ik_ms.append(ik_ms)
+                    active_seed_ms.append(seed_ms)
 
             if active_specs:
                 sqp_out = run_sqp_batch(self.world, self.backend, active_specs, race=False)
-                # Optional BiRRT fallback for failed rows in the chunk.
-                for idx_in_chunk, (row_i, sqp_res, ik_ms, seed_ms) in enumerate(
-                    zip(active_indices, sqp_out, active_ik_ms, active_seed_ms)
-                ):
+
+                # Fast batched final Hermite verification + batched damping for homogeneous succeeded trajectories.
+                finalize_candidates = []
+                for row_i, sqp_res, ik_ms, seed_ms in zip(active_indices, sqp_out, active_ik_ms, active_seed_ms):
                     req = requests[row_i]
                     cfg = req.config
                     if (sqp_res is None or sqp_res.positions is None) and cfg.use_global_seeding and req.seed is None:
@@ -562,6 +617,149 @@ class MotionPlanner:
                             ),
                         )
                     else:
+                        finalize_candidates.append((row_i, req, cfg, sqp_res, ik_ms, seed_ms))
+
+                if len(finalize_candidates) > 1 and self.world.num_pairs > 0 and all(
+                    c[2].margin == finalize_candidates[0][2].margin
+                    and c[2].effective_world_margin == finalize_candidates[0][2].effective_world_margin
+                    and c[2].collision_substeps == finalize_candidates[0][2].collision_substeps
+                    and c[2].max_segment_length is None
+                    for c in finalize_candidates
+                ):
+                    t_rt0 = perf_counter()
+                    ref_fcfg = finalize_candidates[0][2]
+                    substeps = max(2 * int(ref_fcfg.collision_substeps), 4)
+                    u_vec = np.arange(substeps, dtype=np.float64) / substeps
+                    margins = self.world.pair_margins(ref_fcfg.margin, ref_fcfg.effective_world_margin)
+
+                    n_cand = len(finalize_candidates)
+                    knot_scales_list = [np.ones(len(c[3].positions), dtype=np.float64) for c in finalize_candidates]
+                    final_trajs: list[object | None] = [None] * n_cand
+                    final_errs: list[str | None] = [None] * n_cand
+                    pending_ci = list(range(n_cand))
+
+                    for attempt in range(8):
+                        if not pending_ci:
+                            break
+                        cur_trajs = {}
+                        bad_segs_map: dict[int, set[int]] = {}
+                        sample_blocks = []
+                        check_cis = []
+                        spans = []
+                        s_off = 0
+                        for ci in pending_ci:
+                            _, _, cfg, sqp_res, _, _ = finalize_candidates[ci]
+                            vmax = self.world.velocity_limits * cfg.velocity_scale
+                            amax = self.world.acceleration_limits * cfg.acceleration_scale
+                            dt_arg = cfg.dt if cfg.dt is not None else (None if cfg.retime else 0.1)
+                            traj = retime_trajectory(
+                                sqp_res.positions, vmax, amax,
+                                stop_at_endpoints=cfg.stop_at_endpoints,
+                                dt=dt_arg,
+                                knot_velocity_scales=knot_scales_list[ci],
+                            )
+                            cur_trajs[ci] = traj
+                            ok_b, bound_err, bound_bad = check_trajectory_bounds(
+                                traj, vmax, amax, check_velocity=True, check_acceleration=True,
+                            )
+                            if not ok_b:
+                                final_errs[ci] = bound_err
+                                if dt_arg is not None:
+                                    bad_segs_map[ci] = {-1}  # immediate reject
+                                    continue
+                            t0s, t1s = traj.times[:-1, None], traj.times[1:, None]
+                            ts = np.concatenate(((t0s + u_vec[None, :] * (t1s - t0s)).reshape(-1), traj.times[-1:]))
+                            samples, _, _ = traj.sample(ts)
+                            bsegs: set[int] = set(bound_bad)
+                            T_ci = len(sqp_res.positions)
+                            lim_bad = (
+                                (samples < self.world.lower_limits - 1e-6) | (samples > self.world.upper_limits + 1e-6)
+                            ).any(axis=-1)
+                            if lim_bad.any():
+                                for idx in np.flatnonzero(lim_bad):
+                                    bsegs.add(min(int(idx) // substeps, T_ci - 2))
+                                final_errs[ci] = "retimed Hermite curve violates joint limits"
+                            if bsegs:
+                                bad_segs_map[ci] = bsegs
+                            else:
+                                sample_blocks.append(samples)
+                                check_cis.append(ci)
+                                spans.append((s_off, len(samples), T_ci))
+                                s_off += len(samples)
+
+                        if sample_blocks:
+                            all_samples = np.ascontiguousarray(np.concatenate(sample_blocks, axis=0), dtype=np.float64)
+                            (all_frames,) = self.world._native.compute_frames(all_samples, False)
+                            row_to_ci = np.empty(s_off, dtype=np.int64)
+                            row_to_base = np.empty(s_off, dtype=np.int64)
+                            row_to_t = np.empty(s_off, dtype=np.int64)
+                            for ci, (so, sc, T_ci) in zip(check_cis, spans):
+                                row_to_ci[so:so + sc] = ci
+                                row_to_base[so:so + sc] = so
+                                row_to_t[so:so + sc] = T_ci
+                            for verify in ((False, True) if self.world.has_mesh else (False,)):
+                                r_ids, p_ids = self.world._native.screen_aabbs(all_frames, margins, verify, substeps)
+                                if len(r_ids):
+                                    v_rows, v_pids = self.world._native.violating_pairs_indexed(
+                                        all_frames, r_ids, p_ids, margins, verify,
+                                    )
+                                    if len(v_rows):
+                                        kind = "mesh" if verify else "convex"
+                                        for r_idx, p_idx in zip(v_rows, v_pids):
+                                            ri = int(r_idx)
+                                            ci = int(row_to_ci[ri])
+                                            seg = min((ri - int(row_to_base[ri])) // substeps, int(row_to_t[ri]) - 2)
+                                            bset = bad_segs_map.setdefault(ci, set())
+                                            if not bset:
+                                                final_errs[ci] = (
+                                                    f"retimed Hermite {kind} clearance failed on segment {seg}, "
+                                                    f"pair {self.world.collision_pairs[int(p_idx)]}"
+                                                )
+                                            bset.add(seg)
+
+                        next_pending = []
+                        for ci in pending_ci:
+                            bsegs = bad_segs_map.get(ci)
+                            if not bsegs:
+                                final_trajs[ci] = cur_trajs[ci]
+                                final_errs[ci] = None
+                                continue
+                            if -1 in bsegs:
+                                continue
+                            _, _, cfg, sqp_res, _, _ = finalize_candidates[ci]
+                            dt_arg = cfg.dt if cfg.dt is not None else (None if cfg.retime else 0.1)
+                            T_ci = len(sqp_res.positions)
+                            ks = knot_scales_list[ci]
+                            changed = False
+                            for seg in bsegs:
+                                knots = (seg, seg + 1)
+                                if dt_arg is not None and not cfg.stop_at_endpoints:
+                                    knots = tuple(k for k in knots if 0 < k < T_ci - 1) or knots
+                                for knot in knots:
+                                    old = ks[knot]
+                                    if old > 0.0:
+                                        ks[knot] = 0.0 if (attempt >= 2 or old <= 0.25) else old * 0.5
+                                        changed = True
+                            if changed:
+                                next_pending.append(ci)
+                            elif dt_arg is None and np.any(ks > 0.0):
+                                ks[:] = 0.0
+                                next_pending.append(ci)
+                        pending_ci = next_pending
+
+                    batch_rt_ms = (perf_counter() - t_rt0) * 1000.0 / n_cand
+                    for ci, (row_i, req, cfg, sqp_res, ik_ms, seed_ms) in enumerate(finalize_candidates):
+                        all_results[row_i] = PlanResult(
+                            final_trajs[ci], sqp_res.initial_positions, sqp_res.goal_index, final_errs[ci],
+                            PlanDiagnostics(
+                                total_ms=(perf_counter() - chunk_t0) * 1000.0, ik_ms=ik_ms, seed_ms=seed_ms,
+                                sqp_ms=sqp_res.sqp_ms, validate_ms=sqp_res.validate_ms, retime_ms=batch_rt_ms,
+                                qp_calls=sqp_res.qp_calls, sqp_iterations=sqp_res.sqp_iterations,
+                                seed_strategy=sqp_res.seed_strategy, witnesses=sqp_res.witnesses,
+                            ),
+                        )
+                else:
+                    for row_i, req, cfg, sqp_res, ik_ms, seed_ms in finalize_candidates:
                         traj, retime_ms, retime_err = self._finalize_trajectory(sqp_res.positions, cfg)
                         all_results[row_i] = PlanResult(
                             traj, sqp_res.initial_positions, sqp_res.goal_index, retime_err,

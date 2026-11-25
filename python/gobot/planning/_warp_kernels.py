@@ -8,7 +8,7 @@ from mujoco_warp._src.types import GeomType, MJ_MAX_EPAFACES
 wp.set_module_options({"enable_backward": False})
 FrameMat = wp.types.matrix(shape=(3, 4), dtype=wp.float32)
 WARP_ITERATIONS = 64
-WARP_TILE = 8192
+WARP_TILE = 16384
 WARP_TYPES = (None, GeomType.BOX, GeomType.SPHERE, GeomType.CYLINDER,
               GeomType.CAPSULE, GeomType.MESH, GeomType.PLANE)
 

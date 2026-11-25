@@ -1,3 +1,5 @@
+#include "planning_qp.hpp"
+#include "planning_sqp.hpp"
 #include "planning_world.hpp"
 
 #include <pybind11/eigen.h>
@@ -186,6 +188,50 @@ PYBIND11_MODULE(_coal_native, module) {
                py::arg("parent_joint"), py::arg("joint_child"), py::arg("axes"),
                py::arg("tracked_idx"), py::arg("root_pos"), py::arg("root_rot"),
                py::arg("q"), py::arg("return_joints") = false);
+
+    module.def("solve_l1_box_qp", [](const Eigen::MatrixXd& H,
+                                     const Eigen::VectorXd& g,
+                                     const Eigen::MatrixXd& A,
+                                     const Eigen::VectorXd& v,
+                                     const Eigen::VectorXd& lower,
+                                     const Eigen::VectorXd& upper,
+                                     double penalty,
+                                     double eps_abs,
+                                     double eps_rel) {
+        gp::L1BoxQPResult res;
+        {
+            py::gil_scoped_release release;
+            res = gp::solve_l1_box_qp(H, g, A, v, lower, upper, penalty, eps_abs, eps_rel);
+        }
+        return py::make_tuple(res.x, res.solved, res.outer_iters, res.newton_iters, res.prim_res, res.dual_res);
+    }, py::arg("H"), py::arg("g"), py::arg("A"), py::arg("v"),
+       py::arg("lower"), py::arg("upper"), py::arg("penalty"),
+       py::arg("eps_abs") = 1e-5, py::arg("eps_rel") = 1e-5);
+
+    py::class_<gp::L1BoxQPSolver>(module, "L1BoxQPSolver")
+        .def(py::init<>())
+        .def("setup", [](gp::L1BoxQPSolver& s,
+                         const Eigen::MatrixXd& H,
+                         const Eigen::VectorXd& g,
+                         const Eigen::MatrixXd& A,
+                         const Eigen::VectorXd& v,
+                         double penalty) {
+            py::gil_scoped_release release;
+            s.setup(H, g, A, v, penalty);
+        }, py::arg("H"), py::arg("g"), py::arg("A"), py::arg("v"), py::arg("penalty"))
+        .def("solve", [](gp::L1BoxQPSolver& s,
+                         const Eigen::VectorXd& lower,
+                         const Eigen::VectorXd& upper,
+                         double eps_abs,
+                         double eps_rel) -> py::object {
+            gp::L1BoxQPResult res;
+            {
+                py::gil_scoped_release release;
+                res = s.solve(lower, upper, eps_abs, eps_rel);
+            }
+            if (!res.solved) return py::none();
+            return py::cast(res.x);
+        }, py::arg("lower"), py::arg("upper"), py::arg("eps_abs") = 1e-5, py::arg("eps_rel") = 1e-5);
 
     py::class_<gp::CollisionShape, std::shared_ptr<gp::CollisionShape>>(module, "Shape")
         .def(py::init(&make_collision_shape))
@@ -450,6 +496,36 @@ PYBIND11_MODULE(_coal_native, module) {
             if (!hit.has_value()) return py::none();
             return py::make_tuple(hit->first, hit->second);
         }, py::arg("frames"), py::arg("rows"), py::arg("pair_ids"), py::arg("margins"), py::arg("verify") = false)
+        .def("violating_pairs_indexed", [](const gp::PlanningWorld& w, const Input& frames,
+                                           const Indices& rows, const Indices& pair_ids,
+                                           const Input& margins, bool verify) {
+            std::vector<int64_t> out_rows, out_pairs;
+            if (rows.size() > 0) {
+                py::gil_scoped_release release;
+                w.violating_pairs_indexed(frames.data(), frames.shape(0), rows.data(), pair_ids.data(),
+                                          rows.size(), margins.data(), verify, out_rows, out_pairs);
+            }
+            py::array_t<int64_t> r_arr(static_cast<py::ssize_t>(out_rows.size()));
+            py::array_t<int64_t> p_arr(static_cast<py::ssize_t>(out_pairs.size()));
+            if (!out_rows.empty()) {
+                std::copy(out_rows.begin(), out_rows.end(), r_arr.mutable_data());
+                std::copy(out_pairs.begin(), out_pairs.end(), p_arr.mutable_data());
+            }
+            return py::make_tuple(r_arr, p_arr);
+        }, py::arg("frames"), py::arg("rows"), py::arg("pair_ids"), py::arg("margins"), py::arg("verify") = false)
+        .def("first_violation_continuous", [](const gp::PlanningWorld& w, const Input& q_waypoints,
+                                              int substeps, const Input& frames, const Input& margins,
+                                              bool verify, double disp_tol) -> py::object {
+            std::optional<gp::ContinuousViolation> hit;
+            {
+                py::gil_scoped_release release;
+                hit = w.first_violation_continuous(q_waypoints.data(), static_cast<int>(q_waypoints.shape(0)),
+                                                   substeps, frames.data(), margins.data(), verify, disp_tol);
+            }
+            if (!hit.has_value()) return py::none();
+            return py::make_tuple(hit->seg, hit->u, hit->pair_id, hit->distance);
+        }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
+           py::arg("verify") = false, py::arg("disp_tol") = 2e-3)
         .def("compute_analytic_gradients", [](const gp::PlanningWorld& w, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
@@ -617,5 +693,96 @@ PYBIND11_MODULE(_coal_native, module) {
                 }
             }
             return py::make_tuple(paths, ok);
-        });
+        })
+        .def("solve_sqp_batch", [](const gp::PlanningWorld& w, const py::list& jobs_in, bool race) {
+            const int J = w.kin.num_joints();
+            std::vector<gp::SQPJobSpecNative> specs;
+            specs.reserve(jobs_in.size());
+            for (const auto& item : jobs_in) {
+                const py::dict d = item.cast<py::dict>();
+                gp::SQPJobSpecNative sp;
+                const Input init_arr = d["initial"].cast<Input>();
+                if (init_arr.ndim() != 2 || init_arr.shape(1) != J)
+                    throw std::invalid_argument("SQP initial trajectory must have shape [T, J]");
+                const py::ssize_t T = init_arr.shape(0);
+                sp.initial.resize(T, J);
+                std::copy(init_arr.data(), init_arr.data() + T * J, sp.initial.data());
+                sp.fixed = d["fixed"].cast<int>();
+                if (d.contains("dt_vel") && !d["dt_vel"].is_none()) {
+                    sp.has_dt_vel = true;
+                    sp.dt_vel = d["dt_vel"].cast<double>();
+                }
+                sp.dt_smooth = d["dt_smooth"].cast<double>();
+                const MaskInput mask_in = d["active_mask"].cast<MaskInput>();
+                sp.active_mask.assign(static_cast<size_t>(J), 1);
+                if (mask_in.size() == J) {
+                    for (int j = 0; j < J; ++j) sp.active_mask[static_cast<size_t>(j)] = mask_in.data()[j] ? 1 : 0;
+                }
+                if (d.contains("pose_constraints") && !d["pose_constraints"].is_none()) {
+                    const py::dict pc_dict = d["pose_constraints"].cast<py::dict>();
+                    for (const auto& kv : pc_dict) {
+                        const int idx = kv.first.cast<int>();
+                        auto vec = kv.second.cast<std::vector<gp::PoseConstraintSpec>>();
+                        if (!vec.empty()) sp.pose_constraints.emplace_back(idx, std::move(vec));
+                    }
+                }
+                if (d.contains("joint_targets") && !d["joint_targets"].is_none()) {
+                    const py::dict jt_dict = d["joint_targets"].cast<py::dict>();
+                    for (const auto& kv : jt_dict) {
+                        const int idx = kv.first.cast<int>();
+                        const Eigen::VectorXd tgt = kv.second.cast<Eigen::VectorXd>();
+                        sp.joint_targets.emplace_back(idx, tgt);
+                    }
+                }
+                sp.margin = d["margin"].cast<double>();
+                sp.world_margin = d["world_margin"].cast<double>();
+                sp.collision_substeps = d["collision_substeps"].cast<int>();
+                if (d.contains("max_segment_length") && !d["max_segment_length"].is_none()) {
+                    sp.max_segment_length = d["max_segment_length"].cast<double>();
+                }
+                sp.iterations = d["iterations"].cast<int>();
+                sp.first_feasible = d["first_feasible"].cast<bool>();
+                sp.velocity_scale = d["velocity_scale"].cast<double>();
+                sp.seed_strategy = d["seed_strategy"].cast<std::string>();
+                sp.goal_index = d["goal_index"].cast<int>();
+                specs.push_back(std::move(sp));
+            }
+            std::vector<gp::SQPJobResultNative> res;
+            {
+                py::gil_scoped_release release;
+                res = gp::solve_sqp_batch(w, specs, race);
+            }
+            py::list out_list;
+            for (const auto& r : res) {
+                py::dict item;
+                item["success"] = r.success;
+                if (r.success) {
+                    const py::ssize_t T = r.positions.rows();
+                    py::array_t<double> pos_arr({T, static_cast<py::ssize_t>(J)});
+                    std::copy(r.positions.data(), r.positions.data() + T * J, pos_arr.mutable_data());
+                    item["positions"] = std::move(pos_arr);
+                    item["reason"] = py::none();
+                } else {
+                    item["positions"] = py::none();
+                    item["reason"] = py::str(r.reason);
+                }
+                item["qp_calls"] = r.qp_calls;
+                item["sqp_iterations"] = r.sqp_iterations;
+                item["sqp_ms"] = r.sqp_ms;
+                item["validate_ms"] = r.validate_ms;
+                item["cost"] = r.cost;
+                item["seed_strategy"] = r.seed_strategy;
+                item["goal_index"] = r.goal_index;
+                if (!r.witnesses.empty()) {
+                    const py::ssize_t K = static_cast<py::ssize_t>(r.witnesses.size() / 6);
+                    py::array_t<double> wit_arr({K, py::ssize_t(6)});
+                    std::copy(r.witnesses.begin(), r.witnesses.end(), wit_arr.mutable_data());
+                    item["witnesses"] = std::move(wit_arr);
+                } else {
+                    item["witnesses"] = py::none();
+                }
+                out_list.append(std::move(item));
+            }
+            return out_list;
+        }, py::arg("jobs"), py::arg("race") = false);
 }

@@ -42,14 +42,16 @@ stack, then swings it toward the conveyor.
 `plan.py` submits a single declarative `MotionPlanRequest` with world-space
 `PoseConstraint` start/goal targets to `MotionPlanner`:
 
-- C++ `_coal_native` solves endpoint IK (`~0.9 ms`), evaluates multi-branch
+- C++ `_coal_native` solves endpoint IK (`~0.14–1.2 ms`), evaluates multi-branch
   forward kinematics and exact analytic collision/pose Jacobians, and runs
-  AABB-screened Coal queries on all 350 shape pairs.
-- Trust-region SQP (NumPy + OSQP) finds a verified 14-waypoint collision-free
-  path with 14 mm environment clearance and 1 mm self-collision clearance.
-- `retime_trajectory` computes a velocity- and acceleration-bounded TOPP timing
-  profile (`~1.61 s`), and `play.py` samples `result.trajectory.sample(t)` in
-  real time with live C++ FK.
+  AABB-screened Coal queries + Conservative Advancement CCD on all 350 shape pairs.
+- Native C++ trust-region SQP with a custom ProxAL-SSN L1-hinge box QP solver
+  (`planning_sqp.hpp` / `planning_qp.hpp`) finds a verified 14-waypoint
+  collision-free path with 14 mm environment clearance and 1 mm self-collision
+  clearance (`~180 ms` cold full unloading without via, `~63 ms` with via).
+- `retime_trajectory` computes an exact cubic-Hermite velocity- and
+  acceleration-bounded TOPP timing profile (`~2.86 s`), and `play.py` samples
+  `result.trajectory.sample(t)` in real time with live C++ FK.
 
 At the end of the planned motion, the carton is 17 mm above the rollers. The
 robot holds its release pose while the carton settles and moves 2.46 m along the
@@ -94,26 +96,32 @@ authored mesh verification.
 Run the headless comparison from the repository root:
 
 ```sh
-.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 8 --repeats 3 --solver sqp_fast
-.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 --repeats 3 --solver sqp
+.venv/bin/python examples/container_unloading/benchmark_batch.py --sizes 1 4 8 32 64 128 --repeats 3 --solver sqp_fast
 ```
 
 Measured on a Ryzen 7 3700X (8C/16T) and RTX 4070 (`cuda:0`) across 350 shape
-pairs and 12 collision substeps (median of 3 warm runs; every solution
-independently verified at 313 configurations on both convex and authored mesh
-geometry):
+pairs, 12 collision substeps, and `dt=None` TOPP retiming (median of 3 warm
+runs; every returned trajectory is independently verified along its actual
+continuous cubic Hermite curve at 313 configurations on both convex hulls and
+authored triangle meshes, plus exact velocity and acceleration limits):
 
-- **C++ Parallel Batch IK**: `0.14 ms` (`B=1`), `0.43 ms` (`B=4`), `0.75 ms` (`B=8`), `1.45 ms` (`B=16`, `0.09 ms/solve`)
-- **Short transfer (zero-QP fast path)**: `0.89 ms` median (11 warm runs)
+- **C++ Parallel Batch IK**: `0.14 ms` (`B=1`), `0.46 ms` (`B=4`), `0.84 ms` (`B=8`), `1.56 ms` (`B=16`), `3.05 ms` (`B=32`), `6.34 ms` (`B=64`), `12.35 ms` (`B=128`, `0.10 ms/solve`)
+- **Short transfer (zero-QP fast path)**: `1.74 ms` median (11 warm runs)
 
-| Trajectories (`B`) | Backend | `sqp` (full polish) | `sqp_fast` (first feasible) | Per trajectory (`sqp_fast`) | Verified |
+| Trajectories (`B`) | Backend | `sqp_fast` median | Per trajectory | Solved & Verified | Min carton clearance |
 | ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | `coal` | 0.306 s | **0.093 s** | 92.5 ms | 1/1 |
-| 1 | `mujoco_warp` | 0.412 s | **0.205 s** | 204.8 ms | 1/1 |
-| 4 | `coal` | 1.392 s | **0.340 s** | 84.9 ms | 4/4 |
-| 4 | `mujoco_warp` | 1.663 s | **0.460 s** | 115.0 ms | 4/4 |
-| 8 | `coal` | — | **0.560 s** | 70.0 ms | 8/8 |
-| 8 | `mujoco_warp` | — | **0.726 s** | 90.8 ms | 8/8 |
+| 1 | `coal` | **0.063 s** | 63.1 ms | 1/1 | 14.28 mm |
+| 1 | `mujoco_warp` | **0.175 s** | 174.6 ms | 1/1 | 14.28 mm |
+| 4 | `coal` | **0.205 s** | 51.2 ms | 4/4 | 14.00 mm |
+| 4 | `mujoco_warp` | **0.376 s** | 94.1 ms | 4/4 | 14.28 mm |
+| 8 | `coal` | **0.486 s** | 60.7 ms | 8/8 | 14.00 mm |
+| 8 | `mujoco_warp` | **0.981 s** | 122.6 ms | 8/8 | 14.00 mm |
+| 32 | `coal` | **1.162 s** | 36.3 ms | 32/32 | 14.00 mm |
+| 32 | `mujoco_warp` | **2.895 s** | 90.5 ms | 32/32 | 14.00 mm |
+| 64 | `coal` | **2.305 s** | 36.0 ms | 64/64 | 14.00 mm |
+| 64 | `mujoco_warp` | **5.265 s** | 82.3 ms | 64/64 | 14.00 mm |
+| 128 | `coal` | **4.736 s** | 37.0 ms | 128/128 | 14.00 mm |
+| 128 | `mujoco_warp` | **11.028 s** | 86.2 ms | 128/128 | 14.00 mm |
 
 ## Requirements and assets
 

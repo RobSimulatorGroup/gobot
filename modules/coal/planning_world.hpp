@@ -45,6 +45,13 @@ struct RRTResultNative {
     double elapsed_ms = 0.0;
 };
 
+struct ContinuousViolation {
+    int seg = 0;
+    double u = 0.0;
+    int64_t pair_id = 0;
+    double distance = 0.0;
+};
+
 inline std::string canonical_pair_key(const std::string& a, const std::string& b) {
     return (a < b) ? (a + "\x1f" + b) : (b + "\x1f" + a);
 }
@@ -538,6 +545,248 @@ public:
         const int64_t hit = earliest.load();
         if (hit >= K) return std::nullopt;
         return std::make_pair(rows[hit], pair_ids[hit]);
+    }
+
+    // Parallel early-exit clearance check returning all violating (sample_row, pair_id) indices.
+    // Uses security_margin early exit (much faster than exact coal::distance).
+    void violating_pairs_indexed(
+        const double* frames, int64_t S,
+        const int64_t* rows, const int64_t* pair_ids, int64_t K,
+        const double* margins, bool verify,
+        std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pairs) const {
+        ensure_pairs();
+        out_rows.clear();
+        out_pairs.clear();
+        if (K <= 0) return;
+        const int64_t N = static_cast<int64_t>(shapes_.size());
+        std::vector<uint8_t> bad(static_cast<size_t>(K), 0);
+        auto work = [&](int64_t begin, int64_t end) {
+            for (int64_t k = begin; k < end; ++k) {
+                const int64_t s = rows[k];
+                const int64_t pid = pair_ids[k];
+                const auto& pr = pairs_[static_cast<size_t>(pid)];
+                const double* fa = frames + (s * N + pr.shape_a) * 12;
+                const double* fb = frames + (s * N + pr.shape_b) * 12;
+                if (!eval_coal_clearance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                                         fa, fb, verify, margins[pid])) {
+                    bad[static_cast<size_t>(k)] = 1;
+                }
+            }
+        };
+        ThreadPool::instance().parallel_for(K, 128, work);
+        for (int64_t k = 0; k < K; ++k) {
+            if (bad[static_cast<size_t>(k)]) {
+                out_rows.push_back(rows[k]);
+                out_pairs.push_back(pair_ids[k]);
+            }
+        }
+    }
+
+    // Provable Conservative Advancement continuous clearance check over piecewise-linear
+    // segments q[0..T-1] sampled at `substeps` intervals per segment.
+    // Guarantees no pair drops below margin between discrete samples up to `disp_tol` (meters).
+    std::optional<ContinuousViolation> first_violation_continuous(
+        const double* q_waypoints, int T, int substeps,
+        const double* frames, const double* margins,
+        bool verify_original = false, double disp_tol = 2e-3) const {
+        ensure_pairs();
+        const int64_t P = static_cast<int64_t>(pairs_.size());
+        const int64_t M = static_cast<int64_t>(mobile_shapes_.size());
+        const int64_t N = static_cast<int64_t>(shapes_.size());
+        const int J = kin.num_joints();
+        const int B_links = kin.num_bodies();
+        const int n_segs = T - 1;
+        const int64_t S = static_cast<int64_t>(n_segs * substeps + 1);
+        if (n_segs <= 0 || P == 0 || M == 0) return std::nullopt;
+
+        // Precompute bounding radii and per-step conservative point displacements for mobile shapes.
+        std::vector<double> radii(static_cast<size_t>(M), 0.0);
+        for (int64_t m = 0; m < M; ++m) {
+            const auto& sh = *shapes_[static_cast<size_t>(mobile_shapes_[static_cast<size_t>(m)])].shape;
+            if (sh.kind != 6) {
+                radii[static_cast<size_t>(m)] = (verify_original ? sh.orig_half : sh.convex_half).norm();
+            }
+        }
+
+        auto shape_disp = [&](const double* f0, const double* f1, int sid, double rad) -> double {
+            const auto& sh = *shapes_[static_cast<size_t>(sid)].shape;
+            if (sh.kind == 6) return 0.0;
+            const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
+            Eigen::Map<const Frame> F0(f0), F1(f1);
+            const Vec3 c0 = F0.leftCols<3>() * lc + F0.col(3);
+            const Vec3 c1 = F1.leftCols<3>() * lc + F1.col(3);
+            const double dp = (c1 - c0).norm();
+            const double tr = (F0.leftCols<3>().transpose() * F1.leftCols<3>()).trace();
+            const double cos_ang = std::clamp(0.5 * (tr - 1.0), -1.0, 1.0);
+            const double ang = std::acos(cos_ang);
+            return dp + rad * ang;
+        };
+
+        // Compute per-sample moving AABBs and per-interval conservative displacements.
+        std::vector<double> mlo(static_cast<size_t>(S * M * 3));
+        std::vector<double> mhi(static_cast<size_t>(S * M * 3));
+        std::vector<double> step_disp(static_cast<size_t>((S - 1) * M), 0.0);
+        for (int64_t s = 0; s < S; ++s) {
+            const double* sf = frames + s * N * 12;
+            double* lo_s = mlo.data() + s * M * 3;
+            double* hi_s = mhi.data() + s * M * 3;
+            for (int64_t m = 0; m < M; ++m) {
+                const int sid = mobile_shapes_[static_cast<size_t>(m)];
+                const auto& sh = *shapes_[static_cast<size_t>(sid)].shape;
+                if (sh.kind == 6) continue;
+                const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
+                const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
+                transform_aabb(sf + sid * 12, lc, lh, lo_s + m * 3, hi_s + m * 3);
+                if (s > 0) {
+                    step_disp[static_cast<size_t>((s - 1) * M + m)] =
+                        shape_disp(frames + ((s - 1) * N + sid) * 12, sf + sid * 12, sid, radii[static_cast<size_t>(m)]);
+                }
+            }
+        }
+
+        auto aabb_gap_sq = [](const double* alo, const double* ahi,
+                              const double* blo, const double* bhi) -> double {
+            double g2 = 0.0;
+            for (int a = 0; a < 3; ++a) {
+                double g = 0.0;
+                if (alo[a] > bhi[a]) g = alo[a] - bhi[a];
+                else if (blo[a] > ahi[a]) g = blo[a] - ahi[a];
+                g2 += g * g;
+            }
+            return g2;
+        };
+
+        auto get_b = [&](int64_t s, int sid, const double*& lo, const double*& hi) {
+            const int slot = shape_move_slot_[static_cast<size_t>(sid)];
+            if (slot >= 0) {
+                const size_t off = static_cast<size_t>((s * M + slot) * 3);
+                lo = mlo.data() + off;
+                hi = mhi.data() + off;
+            } else {
+                const auto& ws = shapes_[static_cast<size_t>(sid)];
+                lo = (verify_original ? ws.fixed_lo_orig : ws.fixed_lo_convex).data();
+                hi = (verify_original ? ws.fixed_hi_orig : ws.fixed_hi_convex).data();
+            }
+        };
+
+        std::vector<Vec3> bpos(static_cast<size_t>(B_links));
+        std::vector<Mat3> brot(static_cast<size_t>(B_links));
+        std::vector<double> q_mid(static_cast<size_t>(J));
+
+        auto eval_pair_frame = [&](const double* q_ptr, int sid, Frame& out_f) {
+            const auto& ws = shapes_[static_cast<size_t>(sid)];
+            if (ws.body_id >= 0) {
+                out_f.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
+                out_f.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) + bpos[static_cast<size_t>(ws.body_id)];
+            } else {
+                out_f = ws.local_frame;
+            }
+        };
+
+        double dist_buf[10];
+        const double inv_sub = 1.0 / static_cast<double>(substeps);
+
+        struct Interval {
+            double u0, u1;
+            double d0, d1;
+            Frame fa0, fb0, fa1, fb1;
+        };
+        std::vector<Interval> stack;
+        stack.reserve(32);
+
+        for (int64_t s = 0; s < S - 1; ++s) {
+            const int seg = static_cast<int>(s / substeps);
+            const int sub_k = static_cast<int>(s % substeps);
+            const double* qa = q_waypoints + seg * J;
+            const double* qb = q_waypoints + (seg + 1) * J;
+
+            for (int64_t p = 0; p < P; ++p) {
+                const auto& pr = pairs_[static_cast<size_t>(p)];
+                const int sa = shape_move_slot_[static_cast<size_t>(pr.shape_a)];
+                const int sb = shape_move_slot_[static_cast<size_t>(pr.shape_b)];
+                const double da = (sa >= 0) ? step_disp[static_cast<size_t>(s * M + sa)] : 0.0;
+                const double db = (sb >= 0) ? step_disp[static_cast<size_t>(s * M + sb)] : 0.0;
+                const double delta_ab = da + db;
+                if (delta_ab <= disp_tol) continue;
+
+                const double req = std::max(0.0, margins[p] - 1e-6);
+                if (!pr.is_plane) {
+                    const double *alo0, *ahi0, *blo0, *bhi0;
+                    const double *alo1, *ahi1, *blo1, *bhi1;
+                    get_b(s, pr.shape_a, alo0, ahi0);
+                    get_b(s, pr.shape_b, blo0, bhi0);
+                    get_b(s + 1, pr.shape_a, alo1, ahi1);
+                    get_b(s + 1, pr.shape_b, blo1, bhi1);
+                    const double g0 = std::sqrt(aabb_gap_sq(alo0, ahi0, blo0, bhi0));
+                    const double g1 = std::sqrt(aabb_gap_sq(alo1, ahi1, blo1, bhi1));
+                    if ((g0 - req) + (g1 - req) > delta_ab) continue;
+                }
+
+                // Exact Coal endpoint distances.
+                const double* fa0_ptr = frames + (s * N + pr.shape_a) * 12;
+                const double* fb0_ptr = frames + (s * N + pr.shape_b) * 12;
+                const double* fa1_ptr = frames + ((s + 1) * N + pr.shape_a) * 12;
+                const double* fb1_ptr = frames + ((s + 1) * N + pr.shape_b) * 12;
+                eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                                   fa0_ptr, fb0_ptr, verify_original, req + delta_ab, dist_buf);
+                const double d0 = dist_buf[0];
+                if (!std::isfinite(d0) || d0 < req) {
+                    return ContinuousViolation{seg, static_cast<double>(sub_k) * inv_sub, p, d0};
+                }
+                eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                                   fa1_ptr, fb1_ptr, verify_original, req + delta_ab, dist_buf);
+                const double d1 = dist_buf[0];
+                if (!std::isfinite(d1) || d1 < req) {
+                    return ContinuousViolation{seg, static_cast<double>(sub_k + 1) * inv_sub, p, d1};
+                }
+                if ((d0 - req) + (d1 - req) > delta_ab) continue;
+
+                // Recursive Conservative Advancement bisection for this single close pair.
+                const double rad_a = (sa >= 0) ? radii[static_cast<size_t>(sa)] : 0.0;
+                const double rad_b = (sb >= 0) ? radii[static_cast<size_t>(sb)] : 0.0;
+                stack.clear();
+                Interval root;
+                root.u0 = static_cast<double>(sub_k) * inv_sub;
+                root.u1 = static_cast<double>(sub_k + 1) * inv_sub;
+                root.d0 = d0;
+                root.d1 = d1;
+                root.fa0 = Eigen::Map<const Frame>(fa0_ptr);
+                root.fb0 = Eigen::Map<const Frame>(fb0_ptr);
+                root.fa1 = Eigen::Map<const Frame>(fa1_ptr);
+                root.fb1 = Eigen::Map<const Frame>(fb1_ptr);
+                stack.push_back(root);
+
+                while (!stack.empty()) {
+                    const Interval cur = stack.back();
+                    stack.pop_back();
+                    const double um = 0.5 * (cur.u0 + cur.u1);
+                    const double wm = 1.0 - um;
+                    for (int j = 0; j < J; ++j) q_mid[static_cast<size_t>(j)] = wm * qa[j] + um * qb[j];
+                    kin.fk_single(q_mid.data(), bpos.data(), brot.data());
+                    Frame fam, fbm;
+                    eval_pair_frame(q_mid.data(), pr.shape_a, fam);
+                    eval_pair_frame(q_mid.data(), pr.shape_b, fbm);
+                    eval_coal_distance(*shapes_[pr.shape_a].shape, *shapes_[pr.shape_b].shape,
+                                       fam.data(), fbm.data(), verify_original,
+                                       std::numeric_limits<double>::infinity(), dist_buf);
+                    const double dm = dist_buf[0];
+                    if (!std::isfinite(dm) || dm < req) {
+                        return ContinuousViolation{seg, um, p, dm};
+                    }
+                    const double dL = (sa >= 0 ? shape_disp(cur.fa0.data(), fam.data(), pr.shape_a, rad_a) : 0.0)
+                                    + (sb >= 0 ? shape_disp(cur.fb0.data(), fbm.data(), pr.shape_b, rad_b) : 0.0);
+                    if (dL > disp_tol && (cur.d0 - req) + (dm - req) <= dL) {
+                        stack.push_back({cur.u0, um, cur.d0, dm, cur.fa0, cur.fb0, fam, fbm});
+                    }
+                    const double dR = (sa >= 0 ? shape_disp(fam.data(), cur.fa1.data(), pr.shape_a, rad_a) : 0.0)
+                                    + (sb >= 0 ? shape_disp(fbm.data(), cur.fb1.data(), pr.shape_b, rad_b) : 0.0);
+                    if (dR > disp_tol && (dm - req) + (cur.d1 - req) <= dR) {
+                        stack.push_back({um, cur.u1, dm, cur.d1, fam, fbm, cur.fa1, cur.fb1});
+                    }
+                }
+            }
+        }
+        return std::nullopt;
     }
 
     // Analytic geometric collision gradient for residual = margin - distance.

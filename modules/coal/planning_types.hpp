@@ -94,7 +94,7 @@ public:
 private:
     ThreadPool() {
         const unsigned int hw = std::thread::hardware_concurrency();
-        num_threads_ = std::min(8u, std::max(1u, hw));
+        num_threads_ = std::min(16u, std::max(1u, hw));
         workers_.reserve(num_threads_ > 1 ? num_threads_ - 1 : 0);
         for (unsigned int id = 1; id < num_threads_; ++id) {
             workers_.emplace_back([this, id] { worker_loop(static_cast<int64_t>(id)); });

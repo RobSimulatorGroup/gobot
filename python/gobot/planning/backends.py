@@ -110,6 +110,9 @@ class MuJoCoWarpBackend:
         self._scratch = None
         self._overflow = None
         self._output = None
+        self._poses_buf = None
+        self._rows_buf = None
+        self._pairs_buf = None
         self._sync_geometry()
 
     def _sync_geometry(self) -> None:
@@ -155,9 +158,23 @@ class MuJoCoWarpBackend:
             with wp.ScopedDevice(self._device):
                 slots = min(count, self._tile)
                 self._ensure_workspace(slots, count)
-                poses = wp.array(np.ascontiguousarray(frames, dtype=np.float32), dtype=self._FrameMat)
-                rows_wp = wp.array(np.ascontiguousarray(rows, dtype=np.int32), dtype=int)
-                pairs_wp = wp.array(np.ascontiguousarray(pair_ids, dtype=np.int32), dtype=int)
+                frames_f32 = np.ascontiguousarray(frames, dtype=np.float32)
+                rows_i32 = np.ascontiguousarray(rows, dtype=np.int32)
+                pairs_i32 = np.ascontiguousarray(pair_ids, dtype=np.int32)
+                n_s, n_sh = frames_f32.shape[0], frames_f32.shape[1]
+                if self._poses_buf is None or self._poses_buf.shape[0] < n_s or self._poses_buf.shape[1] != n_sh:
+                    alloc_s = max(n_s, 64 if self._poses_buf is None else self._poses_buf.shape[0] * 2)
+                    self._poses_buf = wp.empty((alloc_s, n_sh), dtype=self._FrameMat, device=self._device)
+                if self._rows_buf is None or self._rows_buf.shape[0] < count:
+                    alloc_c = max(count, 512 if self._rows_buf is None else self._rows_buf.shape[0] * 2)
+                    self._rows_buf = wp.empty(alloc_c, dtype=int, device=self._device)
+                    self._pairs_buf = wp.empty(alloc_c, dtype=int, device=self._device)
+                poses = self._poses_buf[:n_s]
+                rows_wp = self._rows_buf[:count]
+                pairs_wp = self._pairs_buf[:count]
+                wp.copy(poses, wp.from_numpy(frames_f32, dtype=self._FrameMat))
+                wp.copy(rows_wp, wp.from_numpy(rows_i32, dtype=int))
+                wp.copy(pairs_wp, wp.from_numpy(pairs_i32, dtype=int))
                 out_view = self._output[:count]
                 for offset in range(0, count, slots):
                     wp.launch(

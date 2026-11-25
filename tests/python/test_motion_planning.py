@@ -512,3 +512,97 @@ def test_debug_draw_helper(simple_snapshot):
 
     planner.debug_draw(DummyRender(), res, link=("planning", "left_tip"), samples=32)
     assert len(arrows_out) >= 40
+
+
+def test_cpp_l1_box_qp_kkt_and_matches_osqp():
+    """Verify C++ ProxAL-SSN L1-hinge box QP solver matches OSQP to high precision and supports warm-start."""
+    osqp = pytest.importorskip("osqp")
+    from scipy import sparse
+    from gobot import _coal_native
+
+    rng = np.random.default_rng(7)
+    for n, m, penalty in ((12, 8, 10.0), (48, 32, 100.0), (72, 60, 1e4)):
+        M = rng.normal(size=(n, n))
+        H = M.T @ M + 0.5 * np.eye(n)
+        g = rng.normal(size=n)
+        A = rng.normal(size=(m, n)) * 0.4
+        v = rng.normal(size=m) * 0.1
+        lo = -np.full(n, 0.15)
+        hi = np.full(n, 0.15)
+        # Pin a subset of variables to test pinned-variable elimination.
+        lo[0] = hi[0] = 0.0
+        lo[n // 2] = hi[n // 2] = 0.02
+
+        x_cpp, solved, _, _, prim_res, dual_res = _coal_native.solve_l1_box_qp(
+            H, g, A, v, lo, hi, penalty, 1e-6, 1e-6,
+        )
+        assert solved
+        assert np.all(np.isfinite(x_cpp))
+        assert (x_cpp >= lo - 1e-9).all() and (x_cpp <= hi + 1e-9).all()
+        assert abs(x_cpp[0] - 0.0) < 1e-12
+        assert abs(x_cpp[n // 2] - 0.02) < 1e-12
+        assert prim_res < 1e-5
+        assert dual_res < 1e-5
+
+        # Reference solve via OSQP.
+        scale = max(1.0, penalty / 10.0)
+        P = sparse.block_diag([sparse.triu(sparse.csc_matrix(H)), sparse.csc_matrix((m, m))], format="csc") / scale
+        q_vec = np.r_[g / scale, np.full(m, penalty / scale)]
+        A_mat = sparse.vstack([
+            sparse.eye(n + m, format="csc"),
+            sparse.hstack([sparse.csc_matrix(A), -sparse.eye(m, format="csc")]),
+        ], format="csc")
+        l_vec = np.r_[lo, np.zeros(m), np.full(m, -np.inf)]
+        u_vec = np.r_[hi, np.full(m, np.inf), -v]
+        prob = osqp.OSQP()
+        prob.setup(P=P, q=q_vec, A=A_mat, l=l_vec, u=u_vec, verbose=False, eps_abs=1e-7, eps_rel=1e-7, max_iter=10000, polishing=True)
+        res = prob.solve()
+        x_ref = np.clip(res.x[:n], lo, hi)
+
+        def obj(x):
+            return 0.5 * float(x @ (H @ x)) + float(g @ x) + penalty * float(np.maximum(0.0, v + A @ x).sum())
+
+        obj_cpp, obj_ref = obj(x_cpp), obj(x_ref)
+        assert np.linalg.norm(x_cpp - x_ref) <= 1e-4, f"solution mismatch: {np.linalg.norm(x_cpp - x_ref)}"
+        assert abs(obj_cpp - obj_ref) / scale <= 1e-3 * max(1.0, abs(obj_ref) / scale), f"obj mismatch: {obj_cpp} vs {obj_ref}"
+
+    # Verify warm-started L1BoxQPSolver across shrinking trust-region radii.
+    solver = _coal_native.L1BoxQPSolver()
+    solver.setup(H, g, A, v, 50.0)
+    for radius in (0.2, 0.05, 0.01):
+        lo_r = np.full(n, -radius)
+        hi_r = np.full(n, radius)
+        step = solver.solve(lo_r, hi_r, 1e-5, 1e-5)
+        assert step is not None and np.all(np.isfinite(step))
+        assert (step >= lo_r - 1e-9).all() and (step <= hi_r + 1e-9).all()
+
+
+def test_conservative_advancement_ccd_catches_inter_sample_tunneling(simple_snapshot):
+    """Conservative Advancement CCD must detect thin obstacles strictly between discrete samples."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Place a thin blade centered at x=0.0, y=0.0, z=0.5 directly between start x=-0.6 and goal x=+0.6.
+    world.add_box("thin_blade", (0.04, 0.25, 0.30), (0.0, 0.0, 0.5))
+    q_path = np.array([[-0.6, 0.0, 0.0], [0.6, 0.0, 0.0]], dtype=np.float64)
+    margins = world.pair_margins(0.005, 0.01)
+
+    # At substeps=1, discrete samples are ONLY endpoints q_path[0] and q_path[1], both far from x=0.
+    (frames,) = world._native.compute_frames(np.ascontiguousarray(q_path), False)
+    rows, pids = world._native.screen_aabbs(frames, margins, False, 1)
+    assert world._native.first_violation_indexed(frames, rows, pids, margins, False) is None
+
+    # Conservative Advancement must catch the blade at u ~ 0.5 despite zero discrete endpoint violations.
+    hit = world._native.first_violation_continuous(q_path, 1, frames, margins, False, 2e-3)
+    assert hit is not None
+    seg, u_hit, _, dist = hit
+    assert seg == 0 and 0.25 < u_hit < 0.75 and dist < 0.01
+
+    # End-to-end planner with collision_substeps=1 must avoid tunneling through the thin blade.
+    planner = MotionPlanner(world, backend="coal")
+    res = planner.plan(MotionPlanRequest(
+        start=q_path[0], goal=q_path[1],
+        config=SolverConfig(waypoints=6, margin=0.005, world_margin=0.01, collision_substeps=1, iterations=40),
+    ))
+    assert res.success, res.reason
+    ts = np.linspace(0.0, res.trajectory.duration, 201)
+    qs, _, _ = res.trajectory.sample(ts)
+    assert float(world.collision_distances(qs).min()) >= 0.005 - 1e-5

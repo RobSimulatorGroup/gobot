@@ -108,10 +108,14 @@ def _min_feasible_hermite_dt(
     vmax: np.ndarray,
     amax: np.ndarray,
 ) -> float:
-    """Find a tight feasible duration h where the cubic Hermite segment satisfies vmax and amax."""
-    h_zero = _zero_vel_hermite_dt(d, vmax, amax)
+    """Find the tightest feasible duration h where the cubic Hermite segment satisfies vmax and amax.
+
+    Uses exact closed-form quadratic roots for the 4 linear-in-u endpoint acceleration inequalities
+    to jump directly over forbidden duration intervals in O(J log J), then verifies the quadratic
+    interior velocity extremum.
+    """
     min_dt_vel = float(np.max(np.abs(d) / vmax))
-    h_start = max(float(h_init), min_dt_vel, 1e-4)
+    h_min = max(min_dt_vel, 1e-4)
 
     six_d = 6.0 * d
     v42 = 4.0 * v0 + 2.0 * v1
@@ -121,58 +125,76 @@ def _min_feasible_hermite_dt(
     vmax_tol = vmax * (1.0 + 1e-9)
     amax_tol = amax * (1.0 + 1e-9)
 
-    def feasible(h: float) -> bool:
-        inv_h = 1.0 / h
-        sdh = six_d * inv_h
-        ah = amax_tol * h
-        c1 = sdh - v42
-        if (np.abs(c1) > ah).any() or (np.abs(v24 - sdh) > ah).any():
-            return False
+    # Exact forbidden open intervals (r_minus, r_plus) from the 4 acceleration quadratics:
+    #   a_max * h^2 +/- v42 * h -/+ 6*d >= 0  and  a_max * h^2 +/- v24 * h -/+ 6*d >= 0
+    forbidden: list[tuple[float, float]] = []
+    two_a = 2.0 * amax_tol
+    four_a = 4.0 * amax_tol
+    for b_arr, c_arr in (
+        (v42, -six_d),
+        (-v42, six_d),
+        (v24, -six_d),
+        (-v24, six_d),
+    ):
+        disc = b_arr * b_arr - four_a * c_arr
+        pos = disc > 0.0
+        if pos.any():
+            sq = np.sqrt(disc[pos])
+            inv_2a = 1.0 / two_a[pos]
+            bp = b_arr[pos]
+            r_lo = (-bp - sq) * inv_2a
+            r_hi = (-bp + sq) * inv_2a
+            for lo_v, hi_v in zip(r_lo.tolist(), r_hi.tolist()):
+                if hi_v > h_min:
+                    forbidden.append((lo_v, hi_v))
+
+    forbidden.sort()
+
+    def next_acc_feasible(h: float) -> float:
+        cur = h
+        for lo_v, hi_v in forbidden:
+            if lo_v > cur:
+                break
+            if hi_v > cur:
+                cur = hi_v * (1.0 + 1e-12)
+        return cur
+
+    def vel_feasible(h: float) -> bool:
         if (v_end > vmax_tol).any():
             return False
+        sdh = six_d / h
+        c1 = sdh - v42
         c2 = v3 - sdh
         nz = np.abs(c2) > 1e-12
         if nz.any():
-            u_star = -c1[nz] / (2.0 * c2[nz])
+            c1n = c1[nz]
+            c2n = c2[nz]
+            u_star = -c1n / (2.0 * c2n)
             inside = (u_star > 0.0) & (u_star < 1.0)
             if inside.any():
-                c1_i = c1[nz][inside]
-                c2_i = c2[nz][inside]
-                v_star = v0[nz][inside] - (c1_i * c1_i) / (4.0 * c2_i)
+                v_star = v0[nz][inside] - (c1n[inside] * c1n[inside]) / (4.0 * c2n[inside])
                 if (np.abs(v_star) > vmax_tol[nz][inside]).any():
                     return False
         return True
 
-    # Fast check around h_start (including slightly shorter durations near cruise speed).
-    for scale in (1.0, 0.80, 0.90, 1.15, 0.65, 1.30):
-        cand = max(h_start * scale, min_dt_vel, 1e-4)
-        if feasible(cand):
-            if scale == 1.0 and cand <= min_dt_vel * 1.02:
-                return cand
-            lo = max(min_dt_vel, 1e-4)
-            hi = cand
-            if feasible(lo):
-                return lo
-            for _ in range(8):
-                mid = 0.5 * (lo + hi)
-                if feasible(mid):
-                    hi = mid
-                else:
-                    lo = mid
-            return hi
+    h_acc = next_acc_feasible(h_min)
+    if vel_feasible(h_acc):
+        return h_acc
 
-    h_lo = h_start
-    h_hi = max(h_lo * 1.5, h_zero)
-    for _ in range(20):
-        if feasible(h_hi):
+    # Velocity interior peak exceeded at h_acc: bracket upward while staying acceleration-feasible.
+    h_lo = h_acc
+    h_hi = next_acc_feasible(max(h_lo * 1.5, _zero_vel_hermite_dt(d, vmax, amax)))
+    for _ in range(16):
+        if vel_feasible(h_hi):
             break
         h_lo = h_hi
-        h_hi *= 2.0
+        h_hi = next_acc_feasible(h_hi * 2.0)
 
     for _ in range(10):
         mid = 0.5 * (h_lo + h_hi)
-        if feasible(mid):
-            h_hi = mid
+        cand = next_acc_feasible(mid)
+        if cand < h_hi and vel_feasible(cand):
+            h_hi = cand
         else:
             h_lo = mid
     return h_hi

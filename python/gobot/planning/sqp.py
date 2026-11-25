@@ -1,24 +1,19 @@
-"""Pure NumPy/SciPy/OSQP trust-region SQP with parallel batch execution and seed racing."""
+"""Native C++ & hybrid GPU trust-region SQP with parallel batch execution and seed racing."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import math
 import os
 from time import perf_counter
 
 import numpy as np
-from scipy import sparse
+
+from gobot import _coal_native
 
 from .backends import CollisionBackend
 from .world import PlanningWorld
-
-try:
-    import osqp
-except ImportError as error:
-    raise ImportError("gobot.planning requires the gobot[planning-sqp] extra (osqp)") from error
 
 
 _COLLISION_LINEARIZATION_BUFFER_M = 0.05
@@ -77,73 +72,40 @@ def _grid_substeps(q: np.ndarray, minimum: int, max_length: float | None) -> int
     return max(minimum, math.ceil(longest / max_length))
 
 
-def _qp_step(hessian: sparse.csc_matrix, gradient: np.ndarray, values: np.ndarray,
-             jacobian: sparse.csr_matrix, lower: np.ndarray, upper: np.ndarray,
+def _qp_step(hessian: np.ndarray, gradient: np.ndarray, values: np.ndarray,
+             jacobian: np.ndarray, lower: np.ndarray, upper: np.ndarray,
              penalty: float, cache: dict | None = None) -> np.ndarray | None:
-    size = gradient.size
     if cache is not None and "qp" in cache:
-        qp, l_vec, u_vec = cache["qp"], cache["l"], cache["u"]
-        l_vec[:size] = lower
-        u_vec[:size] = upper
-        qp.update(l=l_vec, u=u_vec)
-        result = qp.solve(raise_error=False)
-        if result.info.status in ("solved", "solved inaccurate") and result.x is not None:
-            step = result.x[:size]
-            if np.all(np.isfinite(step)):
-                return np.clip(step, lower, upper)
-        return None
-
-    if len(values):
-        worst = values + jacobian.maximum(0) @ upper + jacobian.minimum(0) @ lower
-        active = worst > 0.0
-        values, jacobian = values[active], jacobian[active]
-    count = len(values)
-    scale = max(1.0, penalty / 10.0)
-    qp = osqp.OSQP()
-    if count == 0:
-        P = sparse.triu(hessian, format="csc") / scale
-        q_vec = gradient / scale
-        matrix = sparse.eye(size, format="csc")
-        l_vec = lower.copy()
-        u_vec = upper.copy()
-        polish = True
+        solver = cache["qp"]
     else:
-        zero = sparse.csc_matrix((count, count))
-        identity = sparse.eye(count, format="csc")
-        P = sparse.block_diag([sparse.triu(hessian), zero], format="csc") / scale
-        q_vec = np.r_[gradient / scale, np.full(count, penalty / scale)]
-        matrix = sparse.vstack([
-            sparse.eye(size + count, format="csc"),
-            sparse.hstack([jacobian, -identity]),
-        ], format="csc")
-        l_vec = np.r_[lower, np.zeros(count), np.full(count, -np.inf)]
-        u_vec = np.r_[upper, np.full(count, np.inf), -values]
-        polish = count <= 64
-    qp.setup(P=P, q=q_vec, A=matrix, l=l_vec, u=u_vec,
-             verbose=False, eps_abs=1e-5, eps_rel=1e-5, max_iter=4000,
-             polishing=polish, warm_starting=True)
-    if cache is not None:
-        cache["qp"] = qp
-        cache["l"] = l_vec
-        cache["u"] = u_vec
-    result = qp.solve(raise_error=False)
-    if result.info.status in ("solved", "solved inaccurate") and result.x is not None:
-        step = result.x[:size]
-        if np.all(np.isfinite(step)):
-            return np.clip(step, lower, upper)
+        solver = _coal_native.L1BoxQPSolver()
+        solver.setup(hessian, gradient, jacobian, values, float(penalty))
+        if cache is not None:
+            cache["qp"] = solver
+    step = solver.solve(lower, upper, 1e-5, 1e-5)
+    if step is None:
+        return None
+    if np.all(np.isfinite(step)):
+        return np.clip(step, lower, upper)
     return None
 
 
-def _waypoint_rows(derivatives: np.ndarray, starts: np.ndarray, fixed: int, waypoints: int) -> sparse.csr_matrix:
+def _waypoint_rows_dense(derivatives: np.ndarray, starts: np.ndarray, fixed: int, waypoints: int) -> np.ndarray:
     rows, width, joints = derivatives.shape
     size = (waypoints - 2 * fixed) * joints
+    out = np.zeros((rows, size), dtype=np.float64)
     if rows == 0:
-        return sparse.csr_matrix((0, size), dtype=np.float64)
-    columns = (starts[:, None] + np.arange(width) - fixed) * joints
-    columns = columns[:, :, None] + np.arange(joints)
-    valid = (columns >= 0) & (columns < size) & (derivatives != 0.0)
-    row_ids = np.broadcast_to(np.arange(rows)[:, None, None], derivatives.shape)
-    return sparse.csr_matrix((derivatives[valid], (row_ids[valid], columns[valid])), shape=(rows, size))
+        return out
+    row_ids = np.arange(rows, dtype=np.int64)
+    for offset in range(width):
+        wp_idx = starts + offset - fixed
+        valid = (wp_idx >= 0) & (wp_idx < waypoints - 2 * fixed)
+        if valid.any():
+            r_v = row_ids[valid]
+            c_base = wp_idx[valid] * joints
+            cols = c_base[:, None] + np.arange(joints, dtype=np.int64)[None, :]
+            out[r_v[:, None], cols] += derivatives[valid, offset, :]
+    return out
 
 
 def _assemble_segment_eval(
@@ -256,7 +218,8 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                 return False, f"pose tolerance at waypoint {idx}"
         return True, None
 
-    def feasible(positions: np.ndarray, seg_eval: _SegmentEval | None = None) -> bool:
+    def feasible(positions: np.ndarray, seg_eval: _SegmentEval | None = None,
+                 extra_samples: list[tuple[int, float]] | None = None) -> bool:
         nonlocal failure, validate_time
         t0 = perf_counter()
         try:
@@ -290,6 +253,16 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                     seg = min(int(hit[0]) // substeps, waypoints - 2)
                     failure = f"collision clearance on segment {seg}, pair {world.collision_pairs[int(hit[1])]}"
                     return False
+            ccd_hit = nat.first_violation_continuous(
+                np.ascontiguousarray(positions, dtype=np.float64), substeps, frames, margins, False, 2e-3,
+            )
+            if ccd_hit is not None:
+                seg_h, u_h, pid_h = int(ccd_hit[0]), float(ccd_hit[1]), int(ccd_hit[2])
+                failure = f"continuous collision clearance on segment {seg_h}, pair {world.collision_pairs[pid_h]}"
+                if extra_samples is not None and len(extra_samples) < 32:
+                    if not any(es == seg_h and abs(eu - u_h) < 0.005 for es, eu in extra_samples):
+                        extra_samples.append((seg_h, u_h))
+                return False
             if world.has_mesh:
                 hit = check_frames(frames, substeps, True)
                 if hit is not None:
@@ -316,8 +289,8 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
     d1 = np.diff(eye, axis=0)
     d2 = np.diff(eye, n=2, axis=0)
     matrix = np.concatenate((d1, 0.1 * d2 / (spec.dt_smooth ** 2)), axis=0)
-    smooth_jac = sparse.kron(sparse.csr_matrix(matrix[:, free]), sparse.eye(joints), format="csr")
-    hessian = (smooth_jac.T @ smooth_jac).tocsc()
+    mat_free = matrix[:, free]
+    hessian = np.ascontiguousarray(np.kron(mat_free.T @ mat_free, np.eye(joints, dtype=np.float64)))
 
     # Build pinned mask for inactive planning-group joints and matched interior joint targets.
     n_free_wp = waypoints - 2 * fixed
@@ -351,9 +324,10 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                 jac_blocks.append((idx, jc))
         return res_blocks, jac_blocks, all_ok
 
-    def run_attempt(seed_q: np.ndarray, base_substeps: int, segment_minimum: bool):
+    def run_attempt(seed_q: np.ndarray, base_substeps: int, segment_minimum: bool, use_cushion: bool):
         nonlocal qp_calls, sqp_iters, last_witnesses
         q = seed_q.copy()
+        extra_samples: list[tuple[int, float]] = []
         initial_feasible = feasible(q)
         if spec.first_feasible and initial_feasible:
             return q, float(0.5 * np.sum((matrix @ q) ** 2)), None
@@ -369,30 +343,53 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
         min_viol_q: np.ndarray | None = None
         radius, penalty = 0.1, 10.0
 
+        def eval_extra_ccd(path: np.ndarray, linearize: bool):
+            if not extra_samples or world.num_pairs == 0:
+                return np.empty(0, dtype=np.float64), np.empty((0, n_free_wp * joints), dtype=np.float64), True
+            ex_q = np.array([(1.0 - eu) * path[es] + eu * path[es + 1] for es, eu in extra_samples], dtype=np.float64)
+            ex_opt = margins + (8e-4 if use_cushion else 5e-4)
+            buf = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
+            ev = backend.eval_rows(ex_q, ex_opt, margins, buf, linearize, 1, False)
+            ok = bool(ev.seg_ok.all())
+            if not linearize or not len(ev.rows):
+                return ev.residuals, np.empty((len(ev.rows), n_free_wp * joints), dtype=np.float64), ok
+            segs = np.array([extra_samples[int(r)][0] for r in ev.rows], dtype=np.int64)
+            us = np.array([extra_samples[int(r)][1] for r in ev.rows], dtype=np.float64)[:, None]
+            derivs = np.stack(((1.0 - us) * ev.gradients, us * ev.gradients), axis=1)
+            return ev.residuals, _waypoint_rows_dense(derivs, segs, fixed, waypoints), ok
+
         for _ in range(spec.iterations):
             sqp_iters += 1
             substeps = _grid_substeps(q, base_substeps, spec.max_segment_length)
             pairs = np.stack((q[:-1], q[1:]), axis=1)
             seg_eval: _SegmentEval = yield (
-                substeps, True, segment_minimum, pairs, margins, spec.dt_vel, spec.velocity_scale,
+                substeps, True, segment_minimum, use_cushion, pairs, margins, spec.dt_vel, spec.velocity_scale,
             )
             if seg_eval.witnesses is not None and len(seg_eval.witnesses):
                 last_witnesses = seg_eval.witnesses
             cart_res, cart_jacs, cart_ok = eval_targets(q, True)
+            ex_val, ex_jac, ex_ok = eval_extra_ccd(q, True)
 
-            blocks = [_waypoint_rows(seg_eval.jacobian, seg_eval.segment, fixed, waypoints)]
+            blocks = [_waypoint_rows_dense(seg_eval.jacobian, seg_eval.segment, fixed, waypoints)]
             val_list = [seg_eval.value]
+            if len(ex_val):
+                blocks.append(ex_jac)
+                val_list.append(ex_val)
             for (idx, jc), r in zip(cart_jacs, cart_res):
-                blk = _waypoint_rows(jc[:, None, :], np.full(len(r), idx, dtype=np.int64), fixed, waypoints)
+                blk = _waypoint_rows_dense(jc[:, None, :], np.full(len(r), idx, dtype=np.int64), fixed, waypoints)
                 blocks.extend((blk, -blk))
                 val_list.extend((r, -r))
-            value = np.concatenate(val_list) if len(val_list) > 1 else val_list[0]
-            jac = sparse.vstack(blocks, format="csr") if len(blocks) > 1 else blocks[0]
+            value = np.ascontiguousarray(np.concatenate(val_list) if len(val_list) > 1 else val_list[0], dtype=np.float64)
+            jac = np.ascontiguousarray(np.vstack(blocks) if len(blocks) > 1 else blocks[0], dtype=np.float64)
 
             residual = matrix @ q
             cost = float(0.5 * np.sum(residual * residual))
-            gradient = smooth_jac.T @ residual.reshape(-1)
-            cur_viol = float(np.maximum(seg_eval.value, 0.0).sum() + sum(np.abs(r).sum() for r in cart_res))
+            gradient = np.ascontiguousarray((mat_free.T @ residual).reshape(-1), dtype=np.float64)
+            cur_viol = float(
+                np.maximum(seg_eval.value, 0.0).sum()
+                + np.maximum(ex_val, 0.0).sum()
+                + sum(np.abs(r).sum() for r in cart_res)
+            )
             if init_viol is None:
                 init_viol = cur_viol
             if cur_viol < min_viol:
@@ -420,11 +417,16 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                 trial[free] = np.clip(trial[free] + step.reshape(n_free_wp, joints), lower, upper)
                 trial_pairs = np.stack((trial[:-1], trial[1:]), axis=1)
                 trial_seg: _SegmentEval = yield (
-                    substeps, False, segment_minimum, trial_pairs, margins, spec.dt_vel, spec.velocity_scale,
+                    substeps, False, segment_minimum, use_cushion, trial_pairs, margins, spec.dt_vel, spec.velocity_scale,
                 )
                 trial_res, _, trial_cart_ok = eval_targets(trial, False)
+                trial_ex_val, _, trial_ex_ok = eval_extra_ccd(trial, False)
                 trial_cost = float(0.5 * np.sum((matrix @ trial) ** 2))
-                trial_viol = float(np.maximum(trial_seg.value, 0.0).sum() + sum(np.abs(r).sum() for r in trial_res))
+                trial_viol = float(
+                    np.maximum(trial_seg.value, 0.0).sum()
+                    + np.maximum(trial_ex_val, 0.0).sum()
+                    + sum(np.abs(r).sum() for r in trial_res)
+                )
                 actual = cost - trial_cost + penalty * (cur_viol - trial_viol)
                 if actual >= 0.25 * predicted:
                     q = trial
@@ -432,8 +434,8 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
                     if trial_viol < min_viol:
                         min_viol = trial_viol
                         min_viol_q = q.copy()
-                    if trial_cost < best_cost and trial_seg.convex_ok and trial_cart_ok:
-                        if feasible(q, trial_seg):
+                    if trial_cost < best_cost and trial_seg.convex_ok and trial_ex_ok and trial_cart_ok:
+                        if feasible(q, trial_seg, extra_samples):
                             if spec.first_feasible:
                                 return q, trial_cost, None
                             best, best_cost = q.copy(), trial_cost
@@ -445,12 +447,16 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
             if predicted <= 1e-9:
                 if best is not None and np.array_equal(q, best):
                     break
-                if seg_eval.convex_ok and cart_ok and feasible(q, seg_eval):
+                prev_ex_len = len(extra_samples)
+                if seg_eval.convex_ok and ex_ok and cart_ok and feasible(q, seg_eval, extra_samples):
                     if cost < best_cost:
                         best, best_cost = q.copy(), cost
                     if spec.first_feasible:
                         return q, cost, None
                     break
+                if len(extra_samples) > prev_ex_len:
+                    radius = 0.1
+                    continue
                 if penalty >= 1e5:
                     break
                 penalty *= 10.0
@@ -459,18 +465,20 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
         warm = min_viol_q if (best is None and min_viol_q is not None and init_viol is not None and min_viol < init_viol) else None
         return best, best_cost, warm
 
-    attempts = [(spec.collision_substeps, False), (validation_substeps, False)]
+    attempts = [(spec.collision_substeps, False, True), (validation_substeps, False, False)]
     if spec.first_feasible and world.num_pairs > 0:
-        attempts.insert(0, (validation_substeps, True))
+        attempts.insert(0, (validation_substeps, True, True))
 
     seed_cur = q_init
     sol: np.ndarray | None = None
     sol_cost = math.inf
-    for substeps, seg_min in attempts:
-        sol, sol_cost, warm = yield from run_attempt(seed_cur, substeps, seg_min)
+    for substeps, seg_min, use_cushion in attempts:
+        sol, sol_cost, warm = yield from run_attempt(seed_cur, substeps, seg_min, use_cushion)
         if sol is not None or world.num_pairs == 0:
             break
-        if warm is not None:
+        if seg_min:
+            seed_cur = q_init
+        elif warm is not None:
             seed_cur = warm
 
     total_ms = (perf_counter() - t_job_start) * 1000.0
@@ -484,11 +492,11 @@ def _sqp_job(world: PlanningWorld, backend: CollisionBackend, spec: SQPJobSpec):
 def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, requests: list) -> dict[int, _SegmentEval]:
     """Merge heterogeneous SQP requests into ONE FK + ONE narrow-phase collision call."""
     if len(requests) == 1:
-        row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale = requests[0]
+        row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale = requests[0]
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
         u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
         samples = ((1.0 - u)[None, :, :] * pairs[:, :1, :] + u[None, :, :] * pairs[:, 1:, :]).reshape(-1, pairs.shape[-1])
-        opt_m = margins + 5e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if use_cushion else margins
         ev = backend.eval_rows(samples, opt_m, margins, buffer, linearize, substeps, seg_min)
         return {
             row: _assemble_segment_eval(
@@ -504,7 +512,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     sample_blocks = []
     meta = []
     s_off = 0
-    for row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale in requests:
+    for row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale in requests:
         u = u_cache.get(substeps)
         if u is None:
             u = (np.arange(substeps, dtype=np.float64) / substeps)[:, None]
@@ -512,7 +520,7 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
         samples = ((1.0 - u)[None, :, :] * pairs[:, :1, :] + u[None, :, :] * pairs[:, 1:, :]).reshape(-1, joints)
         n_s = len(samples)
         sample_blocks.append(samples)
-        meta.append((row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale, s_off, n_s))
+        meta.append((row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale, s_off, n_s))
         s_off += n_s
 
     all_samples = np.ascontiguousarray(np.concatenate(sample_blocks, axis=0), dtype=np.float64)
@@ -526,9 +534,9 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
     # Screen AABBs per request slice, merge all candidates into ONE narrow-phase call.
     cand_rows, cand_pairs, spans = [], [], []
     c_off = 0
-    for row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale, off, cnt in meta:
+    for row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale, off, cnt in meta:
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
-        opt_m = margins + 5e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if use_cushion else margins
         if world.num_pairs > 0:
             r_loc, p_loc = nat.screen_aabbs(all_frames[off:off + cnt], opt_m + buffer, False, substeps)
         else:
@@ -549,9 +557,9 @@ def _eval_merged_requests(world: PlanningWorld, backend: CollisionBackend, reque
         m_data = np.empty((0, 10), dtype=np.float64)
 
     replies: dict[int, _SegmentEval] = {}
-    for (row, substeps, linearize, seg_min, pairs, margins, dt_vel, vel_scale, off, cnt), (co, cc) in zip(meta, spans):
+    for (row, substeps, linearize, seg_min, use_cushion, pairs, margins, dt_vel, vel_scale, off, cnt), (co, cc) in zip(meta, spans):
         buffer = _COLLISION_LINEARIZATION_BUFFER_M if linearize else 0.0
-        opt_m = margins + 5e-4 if seg_min else margins
+        opt_m = margins + 5e-4 if use_cushion else margins
         n_segs = len(pairs)
         seg_ok = np.ones(n_segs, dtype=np.bool_)
         c_rows_n = np.empty(0, dtype=np.int64)
@@ -596,11 +604,54 @@ def run_sqp_batch(
     *,
     race: bool = False,
 ) -> list[SQPJobResult | None]:
-    """Execute SQP jobs with multi-core OSQP/validation and merged collision batches.
+    """Execute SQP jobs with native C++ SQP (Coal) or merged GPU collision + C++ QP (Warp).
 
     When race=True, returns immediately as soon as any job finds a feasible trajectory.
     """
     n = len(specs)
+    if n == 0:
+        return []
+
+    if backend.name == "coal":
+        native_jobs = [
+            {
+                "initial": np.ascontiguousarray(sp.initial, dtype=np.float64),
+                "fixed": int(sp.fixed),
+                "dt_vel": None if sp.dt_vel is None else float(sp.dt_vel),
+                "dt_smooth": float(sp.dt_smooth),
+                "active_mask": np.ascontiguousarray(sp.active_mask, dtype=np.bool_),
+                "pose_constraints": sp.pose_constraints,
+                "joint_targets": {k: np.ascontiguousarray(v, dtype=np.float64) for k, v in sp.joint_targets.items()},
+                "margin": float(sp.margin),
+                "world_margin": float(sp.world_margin),
+                "collision_substeps": int(sp.collision_substeps),
+                "max_segment_length": None if sp.max_segment_length is None else float(sp.max_segment_length),
+                "iterations": int(sp.iterations),
+                "first_feasible": bool(sp.first_feasible),
+                "velocity_scale": float(sp.velocity_scale),
+                "seed_strategy": str(sp.seed_strategy),
+                "goal_index": int(sp.goal_index),
+            }
+            for sp in specs
+        ]
+        raw = world._native.solve_sqp_batch(native_jobs, bool(race))
+        return [
+            SQPJobResult(
+                positions=item["positions"],
+                initial_positions=sp.initial.copy(),
+                reason=item["reason"],
+                qp_calls=int(item["qp_calls"]),
+                sqp_iterations=int(item["sqp_iterations"]),
+                sqp_ms=float(item["sqp_ms"]),
+                validate_ms=float(item["validate_ms"]),
+                witnesses=item["witnesses"],
+                cost=float(item["cost"]),
+                seed_strategy=item["seed_strategy"],
+                goal_index=int(item["goal_index"]),
+            )
+            for sp, item in zip(specs, raw)
+        ]
+
     jobs = [_sqp_job(world, backend, spec) for spec in specs]
     results: list[SQPJobResult | None] = [None] * n
     replies: dict[int, object] = dict.fromkeys(range(n))
