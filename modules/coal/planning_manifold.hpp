@@ -439,8 +439,9 @@ inline bool is_constrained_segment_valid(const WorldSnapshot& snap,
                                          const std::vector<PoseConstraintSpec>& constraints,
                                          const Eigen::VectorXd& margins,
                                          double max_step,
-                                         bool verify_original) {
-    if (!snap.is_segment_valid(qa, qb, margins, max_step, verify_original)) return false;
+                                         bool verify_original,
+                                         double esdf_margin = -1.0) {
+    if (!snap.is_segment_valid(qa, qb, margins, max_step, verify_original, esdf_margin)) return false;
     if (constraints.empty()) return true;
     if (!is_on_manifold(snap, qb.data(), constraints, 1.0)) return false;
     const double dist = (qb - qa).norm();
@@ -469,7 +470,8 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
                                      double check_res,
                                      bool verify_original,
                                      int max_steps,
-                                     std::vector<Eigen::VectorXd>& out_chain) {
+                                     std::vector<Eigen::VectorXd>& out_chain,
+                                     double esdf_margin = -1.0) {
     out_chain.clear();
     const double proj_step = std::min(step_size, 0.15);
     const double connect_eps = std::max(1e-3, 0.5 * proj_step);
@@ -480,7 +482,7 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
         const double d = diff.norm();
         if (d <= 1e-9) return 2;
         if (d <= proj_step &&
-            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original)) {
+            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin)) {
             out_chain.push_back(q_goal);
             return 2;
         }
@@ -505,14 +507,14 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
         const double d_after = (q_goal - q_proj).norm();
         if (d_after >= d - 1e-5 && d > connect_eps) break;
 
-        if (!is_constrained_segment_valid(snap, q_cur, q_proj, constraints, margins, check_res, verify_original)) {
+        if (!is_constrained_segment_valid(snap, q_cur, q_proj, constraints, margins, check_res, verify_original, esdf_margin)) {
             break;
         }
         out_chain.push_back(q_proj);
         q_cur = std::move(q_proj);
 
         if (d_after <= connect_eps &&
-            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original)) {
+            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin)) {
             if (d_after > 1e-9) out_chain.push_back(q_goal);
             return 2;
         }
@@ -532,7 +534,8 @@ inline bool constrained_resample_path(
     const Eigen::VectorXd& margins,
     double check_res,
     bool verify_original,
-    std::vector<Eigen::VectorXd>& out_resampled) {
+    std::vector<Eigen::VectorXd>& out_resampled,
+    double esdf_margin = -1.0) {
     if (count < 2 || path.size() < 2) {
         out_resampled = path;
         return out_resampled.size() >= 2;
@@ -540,7 +543,7 @@ inline bool constrained_resample_path(
     out_resampled = WorldSnapshot::resample_path(path, count);
     if (constraints.empty()) {
         for (size_t k = 0; k + 1 < out_resampled.size(); ++k) {
-            if (!snap.is_segment_valid(out_resampled[k], out_resampled[k + 1], margins, check_res, verify_original)) {
+            if (!snap.is_segment_valid(out_resampled[k], out_resampled[k + 1], margins, check_res, verify_original, esdf_margin)) {
                 return false;
             }
         }
@@ -551,14 +554,14 @@ inline bool constrained_resample_path(
             Eigen::VectorXd q_proj;
             if (project_onto_manifold(snap, constraints, active_mask, out_resampled[static_cast<size_t>(i)],
                                       q_proj, 0.35, 0.35, 20) &&
-                snap.is_config_valid(q_proj.data(), margins, verify_original)) {
+                snap.is_config_valid(q_proj.data(), margins, verify_original, esdf_margin)) {
                 out_resampled[static_cast<size_t>(i)] = std::move(q_proj);
             }
         }
     }
     for (size_t k = 0; k + 1 < out_resampled.size(); ++k) {
         if (!is_constrained_segment_valid(
-                snap, out_resampled[k], out_resampled[k + 1], constraints, margins, check_res, verify_original)) {
+                snap, out_resampled[k], out_resampled[k + 1], constraints, margins, check_res, verify_original, esdf_margin)) {
             return false;
         }
     }
@@ -884,8 +887,8 @@ inline RRTResultNative plan_constrained_birrt(
     const Eigen::VectorXd& hi = snap.kin.upper();
     const double check_res = std::min(0.05, step_size * 0.25);
 
-    if (!snap.is_config_valid(start.data(), margins, verify_original) ||
-        !snap.is_config_valid(goal.data(), margins, verify_original) ||
+    if (!snap.is_config_valid(start.data(), margins, verify_original, world_margin) ||
+        !snap.is_config_valid(goal.data(), margins, verify_original, world_margin) ||
         !manifold_detail::is_on_manifold(snap, start.data(), constraints, 1.0) ||
         !manifold_detail::is_on_manifold(snap, goal.data(), constraints, 1.0)) {
         return out;
@@ -896,7 +899,7 @@ inline RRTResultNative plan_constrained_birrt(
         std::vector<Eigen::VectorXd> direct_chain;
         const int st = manifold_detail::trace_constrained_segment(
             snap, start, goal, constraints, active_mask, margins,
-            step_size, check_res, verify_original, 64, direct_chain);
+            step_size, check_res, verify_original, 64, direct_chain, world_margin);
         if (st == 2) {
             std::vector<Eigen::VectorXd> full;
             full.reserve(direct_chain.size() + 2);
@@ -911,7 +914,8 @@ inline RRTResultNative plan_constrained_birrt(
             if (output_waypoints >= 2) {
                 std::vector<Eigen::VectorXd> resampled;
                 const bool res_ok = manifold_detail::constrained_resample_path(
-                    snap, full, output_waypoints, constraints, active_mask, margins, check_res, verify_original, resampled);
+                    snap, full, output_waypoints, constraints, active_mask, margins, check_res, verify_original,
+                    resampled, world_margin);
                 out.waypoints = std::move(resampled);
                 out.success = res_ok;
             } else {
@@ -966,7 +970,7 @@ inline RRTResultNative plan_constrained_birrt(
         const Eigen::VectorXd q_near = tree[static_cast<size_t>(near_id)].q;
         const int st = manifold_detail::trace_constrained_segment(
             snap, q_near, target, constraints, active_mask, margins,
-            step_size, check_res, verify_original, max_ext_steps, step_chain);
+            step_size, check_res, verify_original, max_ext_steps, step_chain, world_margin);
         if (st == 0) return 0;
         int parent = near_id;
         for (auto& q_node : step_chain) {
@@ -1038,7 +1042,7 @@ inline RRTResultNative plan_constrained_birrt(
                     const int st = manifold_detail::trace_constrained_segment(
                         snap, pa[static_cast<size_t>(i)], pa[static_cast<size_t>(j)],
                         constraints, active_mask, margins,
-                        step_size, check_res, verify_original, 32, sc_chain);
+                        step_size, check_res, verify_original, 32, sc_chain, world_margin);
                     if (st == 2 && !sc_chain.empty()) {
                         double new_len = (sc_chain.front() - pa[static_cast<size_t>(i)]).norm();
                         for (size_t k = 0; k + 1 < sc_chain.size(); ++k) {
@@ -1061,7 +1065,8 @@ inline RRTResultNative plan_constrained_birrt(
                 if (output_waypoints >= 2) {
                     std::vector<Eigen::VectorXd> resampled;
                     const bool res_ok = manifold_detail::constrained_resample_path(
-                        snap, pa, output_waypoints, constraints, active_mask, margins, check_res, verify_original, resampled);
+                        snap, pa, output_waypoints, constraints, active_mask, margins, check_res, verify_original,
+                        resampled, world_margin);
                     out.waypoints = std::move(resampled);
                     out.success = res_ok;
                 } else {

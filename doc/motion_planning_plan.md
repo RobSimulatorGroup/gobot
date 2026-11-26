@@ -117,8 +117,11 @@ Goal: cover the core workflows expected in industrial manipulation and assembly 
 
 Goal: enable millisecond-level obstacle avoidance against live depth/point-cloud sensors and moving obstacles.
 
-1. **CPU Voxel / 3D ESDF + Sphere-Cover Obstacles First**
-   - Add `set_occupancy_grid`, `set_point_cloud`, and `set_esdf` APIs on `PlanningWorld`, plus automatic link sphere-cover approximation integrated into C++ SQP (fast O(1) trilinear distance/gradient lookup).
+1. **CPU Voxel / 3D ESDF + Sphere-Cover Obstacles First (Completed)**
+   - Standalone C++ 3D ESDF and automatic conservative link sphere-cover kernel ([`planning_esdf.hpp`](../modules/coal/planning_esdf.hpp)): parallel separable Felzenszwalb-Huttenlocher exact 3D Euclidean Distance Transform, $O(1)$ trilinear distance + analytic gradient lookup with smooth exterior extension, certified global trilinear Lipschitz bound for continuous Hermite CCD, and conservative sphere-cover generation for spheres, capsules, cylinders, boxes, PCA-OBB meshes, and attached payloads.
+   - Exposed `set_occupancy_grid`, `set_point_cloud`, `set_esdf`, `clear_esdf`, `has_esdf`, `esdf_info`, `query_esdf`, `esdf_distances`, `link_spheres`, `set_link_spheres`, and `clear_link_spheres` on `PlanningWorld` (C++ & Python) with atomic CoW `WorldSnapshot` publication, `world.version` tracking, collision layer/mask filtering, and ACM link-vs-`"esdf"` overrides.
+   - `query_esdf` reports the interpolated center samples. For occupancy and point clouds, planning subtracts a voxel interpolation allowance of $(\sqrt{1.5}-0.5)h$ for cell width $h$. For supplied grids, planning divides the field by its global Lipschitz bound to bound clearance to the zero surface. `esdf_distances` includes these corrections and the link sphere radius.
+   - Integrated sphere-to-ESDF collision distances, analytic Jacobians, witnesses, and continuous Conservative Advancement CCD across C++ SQP, IK, BiRRT, CBiRRT, Cartesian path planning, and `validate_trajectory` (including ESDF-only worlds with zero static Coal obstacles and `strict_ccd=True` propagation into SQP).
 2. **Warm-Start Reactive Replanning (`10–30 Hz`)**
    - Add start-velocity boundary constraints to SQP and retiming (`q(0)=q_now, v(0)=v_now`), plus `replan(q_now, dq_now, prev_traj)` with shifted warm start and a moving-obstacle demo.
 3. **Full GPU-Resident Batch Optimizer (Follow-up)**

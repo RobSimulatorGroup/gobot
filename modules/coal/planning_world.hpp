@@ -1,5 +1,6 @@
 #pragma once
 
+#include "planning_esdf.hpp"
 #include "planning_types.hpp"
 
 #include <chrono>
@@ -187,10 +188,38 @@ public:
     std::vector<int> shape_move_slot;
     std::vector<double> mobile_body_radius_convex;
     std::vector<double> mobile_body_radius_orig;
+    std::shared_ptr<const VoxelESDF> esdf;
+    std::unordered_map<std::string, CustomLinkSpheres> custom_link_spheres;
+    std::vector<LinkSphere> link_spheres;
+    std::vector<LinkSphere> esdf_spheres;
     int self_pair_count = 0;
     bool has_mesh = false;
     uint64_t version = 0;
     uint64_t topology_version = 0;
+
+    bool has_esdf() const {
+        return esdf && esdf->valid() && !esdf->is_empty && !esdf_spheres.empty();
+    }
+
+    bool has_collision_checks() const {
+        return !pairs.empty() || has_esdf();
+    }
+
+    double resolve_esdf_margin(const double* margins, double explicit_margin) const {
+        if (explicit_margin >= 0.0) return explicit_margin;
+        if (margins != nullptr) {
+            if (static_cast<int>(pairs.size()) > self_pair_count) return margins[self_pair_count];
+            if (!pairs.empty()) return margins[0];
+        }
+        return 0.0;
+    }
+
+    double resolve_esdf_margin(const Eigen::VectorXd& margins, double explicit_margin) const {
+        if (explicit_margin >= 0.0) return explicit_margin;
+        if (margins.size() > self_pair_count) return margins(self_pair_count);
+        if (margins.size() > 0) return margins(0);
+        return 0.0;
+    }
 
     bool is_pair_disabled_by_acm(const std::string& link_a, const std::string& link_b) const {
         const auto key = canonical_pair_key(link_a, link_b);
@@ -221,9 +250,119 @@ public:
     }
 
     std::string pair_display_name(int64_t pid) const {
+        if (pid < 0) {
+            const size_t si = static_cast<size_t>(-(pid + 1));
+            if (si < esdf_spheres.size()) {
+                return "('" + esdf_spheres[si].shape_name + "', 'esdf')";
+            }
+            return "('robot_sphere', 'esdf')";
+        }
         const auto& pr = pairs[static_cast<size_t>(pid)];
         return "('" + shapes[static_cast<size_t>(pr.shape_a)].name + "', '" +
                shapes[static_cast<size_t>(pr.shape_b)].name + "')";
+    }
+
+    void rebuild_esdf_spheres() {
+        esdf_spheres.clear();
+        if (!esdf || !esdf->valid() || esdf->is_empty) return;
+        auto enabled = [&](const std::string& link, int layer, int mask) {
+            return ((layer & esdf->collision_mask) || (mask & esdf->collision_layer))
+                   && !is_pair_disabled_by_acm(link, "::esdf");
+        };
+        for (const int sid : mobile_shapes) {
+            const auto& ws = shapes[static_cast<size_t>(sid)];
+            if (ws.shape->kind == 6 && !custom_link_spheres.count(ws.link_key)
+                    && enabled(ws.link_key, ws.layer, ws.mask)) {
+                throw std::invalid_argument("ESDF cannot bound mobile halfspace: " + ws.name);
+            }
+        }
+        esdf_spheres.reserve(link_spheres.size());
+        for (const auto& sp : link_spheres) {
+            if (sp.body_id < 0) continue;
+            if (enabled(sp.link_key, sp.layer, sp.mask)) {
+                esdf_spheres.push_back(sp);
+            }
+        }
+    }
+
+    void rebuild_link_spheres() {
+        link_spheres.clear();
+        const int B = kin.num_bodies();
+        std::vector<int> body_ref_shape(static_cast<size_t>(std::max(0, B)), -1);
+        for (const int sid : mobile_shapes) {
+            const auto& ws = shapes[static_cast<size_t>(sid)];
+            if (ws.body_id >= 0 && ws.body_id < B && body_ref_shape[static_cast<size_t>(ws.body_id)] < 0) {
+                body_ref_shape[static_cast<size_t>(ws.body_id)] = sid;
+            }
+        }
+
+        // Auto-generate conservative spheres for every mobile shape unless its link_key has a custom override.
+        for (const int sid : mobile_shapes) {
+            const auto& ws = shapes[static_cast<size_t>(sid)];
+            if (ws.body_id < 0 || !ws.shape || ws.shape->kind == 6) continue;
+            if (custom_link_spheres.count(ws.link_key) > 0) continue;
+            const auto local_sphs = esdf_detail::generate_shape_sphere_cover(*ws.shape);
+            for (const auto& [sc, sr] : local_sphs) {
+                LinkSphere sp;
+                sp.body_id = ws.body_id;
+                sp.shape_id = sid;
+                sp.ref_shape_id = sid;
+                sp.link_key = ws.link_key;
+                sp.shape_name = ws.name;
+                sp.ref_shape_center = sc;
+                sp.local_center = ws.local_frame.leftCols<3>() * sc + ws.local_frame.col(3);
+                sp.radius = sr;
+                sp.body_reach_radius = sp.local_center.norm();
+                sp.layer = ws.layer;
+                sp.mask = ws.mask;
+                link_spheres.push_back(std::move(sp));
+            }
+        }
+
+        // Append custom user-specified link spheres.
+        for (const auto& [lk, custom] : custom_link_spheres) {
+            int bid = -1;
+            int payload_sid = -1;
+            auto lit = link_index.find(lk);
+            if (lit != link_index.end()) {
+                bid = lit->second;
+            } else {
+                for (const int sid : mobile_shapes) {
+                    if (shapes[static_cast<size_t>(sid)].link_key == lk) {
+                        bid = shapes[static_cast<size_t>(sid)].body_id;
+                        payload_sid = sid;
+                        break;
+                    }
+                }
+            }
+            if (bid < 0 || bid >= B) continue;
+            const int ref_sid = payload_sid >= 0 ? payload_sid : body_ref_shape[static_cast<size_t>(bid)];
+            for (size_t k = 0; k < custom.spheres.size(); ++k) {
+                const Vec3& lc = custom.spheres[k].first;
+                const double lr = custom.spheres[k].second;
+                LinkSphere sp;
+                sp.body_id = bid;
+                sp.shape_id = -1;
+                sp.ref_shape_id = ref_sid;
+                sp.link_key = lk;
+                sp.shape_name = lk + "/sphere#" + std::to_string(k);
+                sp.local_center = lc;
+                if (payload_sid >= 0) {
+                    const auto& f = shapes[static_cast<size_t>(payload_sid)].local_frame;
+                    sp.ref_shape_center = lc;
+                    sp.local_center = f.leftCols<3>() * lc + f.col(3);
+                } else if (ref_sid >= 0) {
+                    const auto& rws = shapes[static_cast<size_t>(ref_sid)];
+                    sp.ref_shape_center = rws.local_frame.leftCols<3>().transpose() * (lc - rws.local_frame.col(3));
+                }
+                sp.radius = lr;
+                sp.body_reach_radius = sp.local_center.norm();
+                sp.layer = custom.layer;
+                sp.mask = custom.mask;
+                link_spheres.push_back(std::move(sp));
+            }
+        }
+        rebuild_esdf_spheres();
     }
 
     void rebuild_pairs() {
@@ -288,6 +427,7 @@ public:
                 break;
             }
         }
+        rebuild_link_spheres();
     }
 
     Eigen::VectorXd pair_margins(double margin, double world_margin) const {
@@ -323,6 +463,7 @@ public:
                         Eigen::Map<Vec3>(out_jaxis + (s * J + j) * 3) = jaxis[static_cast<size_t>(j)];
                     }
                 }
+                if (N == 0) continue;
                 double* sf = out_frames + s * N * 12;
                 for (int i = 0; i < N; ++i) {
                     const auto& ws = shapes[static_cast<size_t>(i)];
@@ -568,10 +709,144 @@ public:
         }
     }
 
+    // Compute world-space centers [S * esdf_spheres.size()] for active ESDF spheres.
+    // Reuses `frames` with zero extra FK whenever all spheres reference a mobile WorldShape;
+    // falls back to lightweight body FK for any custom sphere on a shapeless link.
+    void compute_esdf_sphere_centers(const double* q_samples, const double* frames, int64_t S,
+                                     std::vector<Vec3>& out_centers) const {
+        const size_t NS = esdf_spheres.size();
+        out_centers.resize(static_cast<size_t>(S) * NS);
+        if (S <= 0 || NS == 0) return;
+        const int64_t N_shapes = static_cast<int64_t>(shapes.size());
+        bool all_have_ref = (frames != nullptr);
+        if (all_have_ref) {
+            for (const auto& sp : esdf_spheres) {
+                if (sp.ref_shape_id < 0) { all_have_ref = false; break; }
+            }
+        }
+        if (all_have_ref) {
+            ThreadPool::instance().parallel_for(S, 32, [&](int64_t sb, int64_t se) {
+                for (int64_t s = sb; s < se; ++s) {
+                    const double* sf = frames + s * N_shapes * 12;
+                    Vec3* dst = out_centers.data() + static_cast<size_t>(s) * NS;
+                    for (size_t i = 0; i < NS; ++i) {
+                        const auto& sp = esdf_spheres[i];
+                        Eigen::Map<const Frame> f(sf + sp.ref_shape_id * 12);
+                        dst[i].noalias() = f.leftCols<3>() * sp.ref_shape_center + f.col(3);
+                    }
+                }
+            });
+            return;
+        }
+        if (q_samples == nullptr) {
+            throw std::invalid_argument("q_samples required when custom ESDF spheres lack a reference shape");
+        }
+        const int B = kin.num_bodies();
+        const int J = kin.num_joints();
+        ThreadPool::instance().parallel_for(S, 32, [&](int64_t sb, int64_t se) {
+            std::vector<Vec3> bpos(static_cast<size_t>(B));
+            std::vector<Mat3> brot(static_cast<size_t>(B));
+            for (int64_t s = sb; s < se; ++s) {
+                kin.fk_single(q_samples + s * J, bpos.data(), brot.data());
+                Vec3* dst = out_centers.data() + static_cast<size_t>(s) * NS;
+                for (size_t i = 0; i < NS; ++i) {
+                    const auto& sp = esdf_spheres[i];
+                    dst[i].noalias() = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                       bpos[static_cast<size_t>(sp.body_id)];
+                }
+            }
+        });
+    }
+
+    // Earliest discrete ESDF sphere violation on S samples. Returns {sample_row, -(sphere_idx + 1)}.
+    std::optional<std::pair<int64_t, int64_t>> first_esdf_violation_samples(
+        const double* q_samples, const double* frames, int64_t S, double esdf_margin) const {
+        if (S <= 0 || !has_esdf()) return std::nullopt;
+        const size_t NS = esdf_spheres.size();
+        const double req = std::max(0.0, esdf_margin - 1e-6);
+        std::vector<Vec3> centers;
+        compute_esdf_sphere_centers(q_samples, frames, S, centers);
+        std::atomic<int64_t> earliest(S);
+        std::mutex mtx;
+        std::optional<std::pair<int64_t, int64_t>> hit;
+        ThreadPool::instance().parallel_for(S, 32, [&](int64_t sb, int64_t se) {
+            for (int64_t s = sb; s < se; ++s) {
+                if (s >= earliest.load(std::memory_order_relaxed)) break;
+                const Vec3* row = centers.data() + static_cast<size_t>(s) * NS;
+                for (size_t i = 0; i < NS; ++i) {
+                    const double d = esdf->collision_distance(row[i]) - esdf_spheres[i].radius;
+                    if (!std::isfinite(d) || d < req) {
+                        std::lock_guard<std::mutex> lk(mtx);
+                        if (s < earliest.load(std::memory_order_relaxed)) {
+                            earliest.store(s, std::memory_order_relaxed);
+                            hit = std::make_pair(s, -static_cast<int64_t>(i + 1));
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+        return hit;
+    }
+
+    // All discrete ESDF sphere violations on S samples.
+    void violating_esdf_samples(
+        const double* q_samples, const double* frames, int64_t S, double esdf_margin,
+        std::vector<int64_t>& out_rows, std::vector<int64_t>& out_pids) const {
+        out_rows.clear();
+        out_pids.clear();
+        if (S <= 0 || !has_esdf()) return;
+        const size_t NS = esdf_spheres.size();
+        const double req = std::max(0.0, esdf_margin - 1e-6);
+        std::vector<Vec3> centers;
+        compute_esdf_sphere_centers(q_samples, frames, S, centers);
+        std::vector<int64_t> first_bad_sphere(static_cast<size_t>(S), -1);
+        ThreadPool::instance().parallel_for(S, 32, [&](int64_t sb, int64_t se) {
+            for (int64_t s = sb; s < se; ++s) {
+                const Vec3* row = centers.data() + static_cast<size_t>(s) * NS;
+                for (size_t i = 0; i < NS; ++i) {
+                    const double d = esdf->collision_distance(row[i]) - esdf_spheres[i].radius;
+                    if (!std::isfinite(d) || d < req) {
+                        first_bad_sphere[static_cast<size_t>(s)] = static_cast<int64_t>(i);
+                        break;
+                    }
+                }
+            }
+        });
+        for (int64_t s = 0; s < S; ++s) {
+            if (first_bad_sphere[static_cast<size_t>(s)] >= 0) {
+                out_rows.push_back(s);
+                out_pids.push_back(-(first_bad_sphere[static_cast<size_t>(s)] + 1));
+            }
+        }
+    }
+
+    // Signed sphere-to-ESDF clearances [S, esdf_spheres.size()] for a batch of configurations.
+    void query_esdf_sphere_distances(const double* q_batch, int64_t S, double* out_dists) const {
+        const size_t NS = esdf_spheres.size();
+        if (S <= 0 || NS == 0) return;
+        if (!has_esdf()) {
+            std::fill(out_dists, out_dists + static_cast<size_t>(S) * NS,
+                      std::numeric_limits<double>::infinity());
+            return;
+        }
+        std::vector<Vec3> centers;
+        compute_esdf_sphere_centers(q_batch, nullptr, S, centers);
+        ThreadPool::instance().parallel_for(S, 32, [&](int64_t sb, int64_t se) {
+            for (int64_t s = sb; s < se; ++s) {
+                const Vec3* row = centers.data() + static_cast<size_t>(s) * NS;
+                double* dst = out_dists + static_cast<size_t>(s) * NS;
+                for (size_t i = 0; i < NS; ++i) {
+                    dst[i] = esdf->collision_distance(row[i]) - esdf_spheres[i].radius;
+                }
+            }
+        });
+    }
+
     // Sound Conservative Advancement continuous clearance check using exact kinematic-chain
     // Lipschitz upper bounds (Schwarzer-Saha-Latombe) on point arc-length displacement.
-    // Supports BOTH linear joint interpolation (velocities == nullptr) and cubic Hermite
-    // curves (times != nullptr && velocities != nullptr), and BOTH convex and original meshes.
+    // Supports BOTH linear joint interpolation (velocities == nullptr) and cubic/quintic Hermite
+    // curves, BOTH convex and original meshes, AND trilinear 3D ESDF sphere-cover obstacles.
     // When strict == false (default), any undetected inter-sample dip below `margin` is bounded
     // strictly by `< 0.5 * disp_tol`. When strict == true, any interval that cannot be proven
     // safe within `disp_tol` is conservatively reported as a violation.
@@ -581,13 +856,16 @@ public:
         bool verify_original = false, double disp_tol = 5e-4,
         const double* times = nullptr, const double* velocities = nullptr,
         bool strict = false,
-        const double* accelerations = nullptr, int spline_order = 3) const {
+        const double* accelerations = nullptr, int spline_order = 3,
+        double esdf_margin = -1.0) const {
         if (T < 2) {
             throw std::invalid_argument("q_waypoints must have at least 2 waypoints");
         }
         if (substeps < 1) {
             throw std::invalid_argument("substeps must be >= 1");
         }
+        if (!(disp_tol > 0.0 && std::isfinite(disp_tol)))
+            throw std::invalid_argument("disp_tol must be finite and positive");
         if (spline_order != 3 && spline_order != 5) {
             throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
         }
@@ -612,11 +890,16 @@ public:
         const int64_t P = static_cast<int64_t>(pairs.size());
         const int64_t M = static_cast<int64_t>(mobile_shapes.size());
         const int64_t N = static_cast<int64_t>(shapes.size());
+        const bool check_esdf = has_esdf();
+        const int64_t NS = check_esdf ? static_cast<int64_t>(esdf_spheres.size()) : 0;
         const int J = kin.num_joints();
         const int B_links = kin.num_bodies();
         const int n_segs = T - 1;
-        const int64_t S = static_cast<int64_t>(n_segs * substeps + 1);
-        if (n_segs <= 0 || P == 0 || M == 0) return std::nullopt;
+        const int64_t S = static_cast<int64_t>(n_segs) * substeps + 1;
+        if (n_segs <= 0 || ((P == 0 || M == 0) && NS == 0)) return std::nullopt;
+        const double eff_esdf_margin = check_esdf ? resolve_esdf_margin(margins, esdf_margin) : 0.0;
+        const double esdf_req = std::max(0.0, eff_esdf_margin - 1e-6);
+        const double esdf_lip = check_esdf && esdf->from_occupancy ? esdf->lipschitz_bound : 1.0;
         const bool is_quintic = (spline_order == 5 && times != nullptr);
         const bool is_hermite = (spline_order == 3 && times != nullptr);
 
@@ -663,24 +946,35 @@ public:
                                        lip_weights.data() + m * J);
         }
 
-        // Compute per-sample moving AABBs in parallel.
-        std::vector<double> mlo(static_cast<size_t>(S * M * 3));
-        std::vector<double> mhi(static_cast<size_t>(S * M * 3));
-        ThreadPool::instance().parallel_for(S, 32, [&](int64_t s_beg, int64_t s_end) {
-            for (int64_t s = s_beg; s < s_end; ++s) {
-                const double* sf = frames + s * N * 12;
-                double* lo_s = mlo.data() + s * M * 3;
-                double* hi_s = mhi.data() + s * M * 3;
-                for (int64_t m = 0; m < M; ++m) {
-                    const int sid = mobile_shapes[static_cast<size_t>(m)];
-                    const auto& sh = *shapes[static_cast<size_t>(sid)].shape;
-                    if (sh.kind == 6) continue;
-                    const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
-                    const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
-                    transform_aabb(sf + sid * 12, lc, lh, lo_s + m * 3, hi_s + m * 3);
+        // Precompute exact kinematic-chain Lipschitz weights [NS, J] for ESDF link spheres.
+        std::vector<double> esdf_lip_weights(static_cast<size_t>(NS * J), 0.0);
+        for (int64_t si = 0; si < NS; ++si) {
+            const auto& sp = esdf_spheres[static_cast<size_t>(si)];
+            kin.body_lipschitz_weights(sp.body_id, sp.body_reach_radius,
+                                       q_abs_max.data(),
+                                       esdf_lip_weights.data() + si * J);
+        }
+
+        // Compute per-sample moving AABBs in parallel (only when Coal pairs exist).
+        std::vector<double> mlo(P > 0 ? static_cast<size_t>(S * M * 3) : 0);
+        std::vector<double> mhi(P > 0 ? static_cast<size_t>(S * M * 3) : 0);
+        if (P > 0 && M > 0) {
+            ThreadPool::instance().parallel_for(S, 32, [&](int64_t s_beg, int64_t s_end) {
+                for (int64_t s = s_beg; s < s_end; ++s) {
+                    const double* sf = frames + s * N * 12;
+                    double* lo_s = mlo.data() + s * M * 3;
+                    double* hi_s = mhi.data() + s * M * 3;
+                    for (int64_t m = 0; m < M; ++m) {
+                        const int sid = mobile_shapes[static_cast<size_t>(m)];
+                        const auto& sh = *shapes[static_cast<size_t>(sid)].shape;
+                        if (sh.kind == 6) continue;
+                        const Vec3& lc = verify_original ? sh.orig_center : sh.convex_center;
+                        const Vec3& lh = verify_original ? sh.orig_half : sh.convex_half;
+                        transform_aabb(sf + sid * 12, lc, lh, lo_s + m * 3, hi_s + m * 3);
+                    }
                 }
-            }
-        });
+            });
+        }
 
         auto aabb_gap_sq = [](const double* alo, const double* ahi,
                               const double* blo, const double* bhi) -> double {
@@ -740,12 +1034,11 @@ public:
             }
         };
 
-        // Exact/certified kinematic-chain displacement upper bound for pair (sa, sb) on [u0, u1] of segment `seg`.
-        auto pair_disp_bound = [&](int seg, double u0, double u1, int sa, int sb) -> double {
+        // Exact/certified kinematic-chain displacement upper bound for a weight vector on [u0, u1] of `seg`.
+        auto weights_disp_bound = [&](int seg, double u0, double u1,
+                                      const double* wa, const double* wb) -> double {
             const double* qa = q_waypoints + seg * J;
             const double* qb = q_waypoints + (seg + 1) * J;
-            const double* wa = (sa >= 0) ? (lip_weights.data() + sa * J) : nullptr;
-            const double* wb = (sb >= 0) ? (lip_weights.data() + sb * J) : nullptr;
             double total = 0.0;
             if (is_quintic) {
                 const double h = times[seg + 1] - times[seg];
@@ -794,7 +1087,42 @@ public:
             return total;
         };
 
+        auto pair_disp_bound = [&](int seg, double u0, double u1, int sa, int sb) -> double {
+            const double* wa = (sa >= 0) ? (lip_weights.data() + sa * J) : nullptr;
+            const double* wb = (sb >= 0) ? (lip_weights.data() + sb * J) : nullptr;
+            return weights_disp_bound(seg, u0, u1, wa, wb);
+        };
+
+        auto sphere_disp_bound = [&](int seg, double u0, double u1, int64_t si) -> double {
+            return weights_disp_bound(seg, u0, u1, esdf_lip_weights.data() + si * J, nullptr);
+        };
+
         const double inv_sub = 1.0 / static_cast<double>(substeps);
+
+        // Precompute ESDF sphere world centers at all S samples when ESDF CCD is active.
+        std::vector<Vec3> esdf_centers;
+        if (check_esdf) {
+            bool all_have_ref = (frames != nullptr);
+            if (all_have_ref) {
+                for (const auto& sp : esdf_spheres) {
+                    if (sp.ref_shape_id < 0) { all_have_ref = false; break; }
+                }
+            }
+            if (all_have_ref) {
+                compute_esdf_sphere_centers(nullptr, frames, S, esdf_centers);
+            } else {
+                std::vector<double> q_samp(static_cast<size_t>(S * J));
+                for (int seg = 0; seg < n_segs; ++seg) {
+                    for (int k = 0; k < substeps; ++k) {
+                        eval_q(seg, static_cast<double>(k) * inv_sub, q_samp.data() + (seg * substeps + k) * J);
+                    }
+                }
+                std::copy(q_waypoints + (T - 1) * J, q_waypoints + T * J,
+                          q_samp.data() + (S - 1) * J);
+                compute_esdf_sphere_centers(q_samp.data(), nullptr, S, esdf_centers);
+            }
+        }
+
         std::atomic<int64_t> earliest_s(S);
         std::mutex hit_mutex;
         std::optional<ContinuousViolation> best_hit;
@@ -979,6 +1307,100 @@ public:
                         }
                     }
                 }
+
+                // Sound Conservative Advancement continuous check for ESDF link spheres.
+                if (check_esdf) {
+                    for (int64_t si = 0; si < NS; ++si) {
+                        if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                        const auto& sp = esdf_spheres[static_cast<size_t>(si)];
+                        const int64_t pid = -(si + 1);
+                        const Vec3& p0 = esdf_centers[static_cast<size_t>(s * NS + si)];
+                        const Vec3& p1 = esdf_centers[static_cast<size_t>((s + 1) * NS + si)];
+                        const double d0 = esdf->collision_distance(p0) - sp.radius;
+                        if (!std::isfinite(d0) || d0 < esdf_req) {
+                            std::lock_guard<std::mutex> lk(hit_mutex);
+                            if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                earliest_s.store(s, std::memory_order_relaxed);
+                                best_hit = ContinuousViolation{seg, u_start, pid, d0};
+                            }
+                            break;
+                        }
+                        const double d1 = esdf->collision_distance(p1) - sp.radius;
+                        if (!std::isfinite(d1) || d1 < esdf_req) {
+                            std::lock_guard<std::mutex> lk(hit_mutex);
+                            if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                earliest_s.store(s, std::memory_order_relaxed);
+                                best_hit = ContinuousViolation{seg, u_end, pid, d1};
+                            }
+                            break;
+                        }
+                        const double delta_d = esdf_lip * sphere_disp_bound(seg, u_start, u_end, si);
+                        if ((d0 - esdf_req) + (d1 - esdf_req) > delta_d) continue;
+                        if (delta_d <= disp_tol) {
+                            if (strict) {
+                                std::lock_guard<std::mutex> lk(hit_mutex);
+                                if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                    earliest_s.store(s, std::memory_order_relaxed);
+                                    best_hit = ContinuousViolation{seg, 0.5 * (u_start + u_end), pid,
+                                                                   0.5 * (d0 + d1 - delta_d)};
+                                }
+                                break;
+                            }
+                            continue;
+                        }
+                        stack.clear();
+                        stack.push_back({u_start, u_end, d0, d1});
+                        while (!stack.empty()) {
+                            const Interval cur = stack.back();
+                            stack.pop_back();
+                            const double um = 0.5 * (cur.u0 + cur.u1);
+                            eval_q(seg, um, q_mid.data());
+                            kin.fk_single(q_mid.data(), bpos.data(), brot.data());
+                            const Vec3 pm = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                            bpos[static_cast<size_t>(sp.body_id)];
+                            const double dm = esdf->collision_distance(pm) - sp.radius;
+                            if (!std::isfinite(dm) || dm < esdf_req) {
+                                std::lock_guard<std::mutex> lk(hit_mutex);
+                                if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                    earliest_s.store(s, std::memory_order_relaxed);
+                                    best_hit = ContinuousViolation{seg, um, pid, dm};
+                                }
+                                stack.clear();
+                                break;
+                            }
+                            const double dL = esdf_lip * sphere_disp_bound(seg, cur.u0, um, si);
+                            if ((cur.d0 - esdf_req) + (dm - esdf_req) <= dL) {
+                                if (dL > disp_tol) {
+                                    stack.push_back({cur.u0, um, cur.d0, dm});
+                                } else if (strict) {
+                                    std::lock_guard<std::mutex> lk(hit_mutex);
+                                    if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                        earliest_s.store(s, std::memory_order_relaxed);
+                                        best_hit = ContinuousViolation{seg, 0.5 * (cur.u0 + um), pid,
+                                                                       0.5 * (cur.d0 + dm - dL)};
+                                    }
+                                    stack.clear();
+                                    break;
+                                }
+                            }
+                            const double dR = esdf_lip * sphere_disp_bound(seg, um, cur.u1, si);
+                            if ((dm - esdf_req) + (cur.d1 - esdf_req) <= dR) {
+                                if (dR > disp_tol) {
+                                    stack.push_back({um, cur.u1, dm, cur.d1});
+                                } else if (strict) {
+                                    std::lock_guard<std::mutex> lk(hit_mutex);
+                                    if (s < earliest_s.load(std::memory_order_relaxed)) {
+                                        earliest_s.store(s, std::memory_order_relaxed);
+                                        best_hit = ContinuousViolation{seg, 0.5 * (um + cur.u1), pid,
+                                                                       0.5 * (dm + cur.d1 - dR)};
+                                    }
+                                    stack.clear();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         };
 
@@ -1040,16 +1462,19 @@ public:
         ThreadPool::instance().parallel_for(K, 128, work);
     }
 
-    // All-in-one C++ SQP collision row evaluation (FK + AABB + Coal + analytic Jacobian).
+    // All-in-one C++ SQP collision row evaluation (FK + AABB + Coal + ESDF sphere-cover + analytic Jacobian).
     CollisionEvalResult eval_collision_rows(const double* q_batch, int64_t S,
                                             const double* opt_margins, const double* check_margins,
                                             double buffer, bool linearize, int64_t group_size,
-                                            bool segment_minimum) const {
+                                            bool segment_minimum,
+                                            double esdf_opt_margin = -1.0,
+                                            double esdf_check_margin = -1.0) const {
         CollisionEvalResult res;
         const int64_t N = static_cast<int64_t>(shapes.size());
         const int64_t P = static_cast<int64_t>(pairs.size());
+        const bool use_esdf = has_esdf();
         const int J = kin.num_joints();
-        const int64_t n_segs = (group_size > 0) ? (S / group_size) : S;
+        const int64_t n_segs = (group_size > 0 && S > 0) ? 1 + (S - 1) / group_size : S;
         res.seg_ok.assign(static_cast<size_t>(n_segs), 1);
         res.frames.resize(static_cast<size_t>(S * N * 12));
         std::vector<double> jorig, jaxis;
@@ -1060,119 +1485,255 @@ public:
         compute_frames(q_batch, S, res.frames.data(),
                        linearize ? jorig.data() : nullptr,
                        linearize ? jaxis.data() : nullptr);
-        if (P == 0) return res;
+        if (P == 0 && !use_esdf) return res;
 
-        std::vector<double> thresholds(static_cast<size_t>(P));
-        for (int64_t p = 0; p < P; ++p) thresholds[static_cast<size_t>(p)] = opt_margins[p] + buffer;
+        if (P > 0) {
+            std::vector<double> thresholds(static_cast<size_t>(P));
+            for (int64_t p = 0; p < P; ++p) thresholds[static_cast<size_t>(p)] = opt_margins[p] + buffer;
 
-        std::vector<int64_t> c_rows, c_pairs;
-        screen_aabbs(res.frames.data(), S, thresholds.data(), false, group_size, c_rows, c_pairs);
-        const int64_t C = static_cast<int64_t>(c_rows.size());
-        if (C == 0) return res;
+            std::vector<int64_t> c_rows, c_pairs;
+            screen_aabbs(res.frames.data(), S, thresholds.data(), false, group_size, c_rows, c_pairs);
+            const int64_t C = static_cast<int64_t>(c_rows.size());
+            if (C > 0) {
+                std::vector<double> data(static_cast<size_t>(C * 10));
+                query_distances_indexed(res.frames.data(), S, c_rows.data(), c_pairs.data(), C, false, data.data());
 
-        std::vector<double> data(static_cast<size_t>(C * 10));
-        query_distances_indexed(res.frames.data(), S, c_rows.data(), c_pairs.data(), C, false, data.data());
+                std::vector<int64_t> near;
+                near.reserve(static_cast<size_t>(C));
+                for (int64_t k = 0; k < C; ++k) {
+                    const int64_t pid = c_pairs[static_cast<size_t>(k)];
+                    const double dist = data[static_cast<size_t>(k * 10)];
+                    const double req_min = std::max(0.0, check_margins[pid] - 1e-6);
+                    if (!std::isfinite(dist) || dist < req_min) {
+                        if (group_size > 0) {
+                            res.seg_ok[static_cast<size_t>(c_rows[static_cast<size_t>(k)] / group_size)] = 0;
+                        }
+                    }
+                    const double r = opt_margins[pid] - dist;
+                    if (r > -buffer) near.push_back(k);
+                }
 
-        std::vector<int64_t> near;
-        near.reserve(static_cast<size_t>(C));
-        for (int64_t k = 0; k < C; ++k) {
-            const int64_t pid = c_pairs[static_cast<size_t>(k)];
-            const double dist = data[static_cast<size_t>(k * 10)];
-            const double req_min = std::max(0.0, check_margins[pid] - 1e-6);
-            if (!std::isfinite(dist) || dist < req_min) {
-                if (group_size > 0) {
-                    res.seg_ok[static_cast<size_t>(c_rows[static_cast<size_t>(k)] / group_size)] = 0;
+                if (segment_minimum && !near.empty() && group_size > 0) {
+                    struct Key { int64_t grp; double neg_res; int64_t idx; };
+                    std::vector<Key> items;
+                    items.reserve(near.size());
+                    for (const int64_t k : near) {
+                        const int64_t seg = c_rows[static_cast<size_t>(k)] / group_size;
+                        const int64_t pid = c_pairs[static_cast<size_t>(k)];
+                        const double r = opt_margins[pid] - data[static_cast<size_t>(k * 10)];
+                        items.push_back({seg * P + pid, -r, k});
+                    }
+                    std::stable_sort(items.begin(), items.end(), [](const Key& a, const Key& b) {
+                        if (a.grp != b.grp) return a.grp < b.grp;
+                        return a.neg_res < b.neg_res;
+                    });
+                    near.clear();
+                    int64_t last_grp = -1;
+                    for (const auto& it : items) {
+                        if (it.grp != last_grp) {
+                            near.push_back(it.idx);
+                            last_grp = it.grp;
+                        }
+                    }
+                    std::sort(near.begin(), near.end());
+                }
+
+                const int64_t K = static_cast<int64_t>(near.size());
+                res.rows.resize(static_cast<size_t>(K));
+                res.pair_ids.resize(static_cast<size_t>(K));
+                res.residuals.resize(static_cast<size_t>(K));
+                std::vector<double> near_data;
+                if (linearize && K > 0) near_data.resize(static_cast<size_t>(K * 10));
+                for (int64_t i = 0; i < K; ++i) {
+                    const int64_t k = near[static_cast<size_t>(i)];
+                    res.rows[static_cast<size_t>(i)] = c_rows[static_cast<size_t>(k)];
+                    res.pair_ids[static_cast<size_t>(i)] = c_pairs[static_cast<size_t>(k)];
+                    res.residuals[static_cast<size_t>(i)] = opt_margins[c_pairs[static_cast<size_t>(k)]] - data[static_cast<size_t>(k * 10)];
+                    if (linearize) {
+                        std::copy(data.data() + k * 10, data.data() + (k + 1) * 10, near_data.data() + i * 10);
+                    }
+                }
+                if (linearize && K > 0) {
+                    res.gradients.resize(static_cast<size_t>(K * J));
+                    res.witnesses.resize(static_cast<size_t>(K * 6));
+                    compute_analytic_gradients(res.frames.data(), jorig.data(), jaxis.data(),
+                                               res.rows.data(), res.pair_ids.data(), near_data.data(),
+                                               K, res.gradients.data(), res.witnesses.data());
                 }
             }
-            const double r = opt_margins[pid] - dist;
-            if (r > -buffer) near.push_back(k);
         }
 
-        if (segment_minimum && !near.empty() && group_size > 0) {
-            struct Key { int64_t grp; double neg_res; int64_t idx; };
-            std::vector<Key> items;
-            items.reserve(near.size());
-            for (const int64_t k : near) {
-                const int64_t seg = c_rows[static_cast<size_t>(k)] / group_size;
-                const int64_t pid = c_pairs[static_cast<size_t>(k)];
-                const double r = opt_margins[pid] - data[static_cast<size_t>(k * 10)];
-                items.push_back({seg * P + pid, -r, k});
-            }
-            std::stable_sort(items.begin(), items.end(), [](const Key& a, const Key& b) {
-                if (a.grp != b.grp) return a.grp < b.grp;
-                return a.neg_res < b.neg_res;
-            });
-            near.clear();
-            int64_t last_grp = -1;
-            for (const auto& it : items) {
-                if (it.grp != last_grp) {
-                    near.push_back(it.idx);
-                    last_grp = it.grp;
+        // Fast O(1) per-sphere 3D ESDF lookup + analytic trilinear Jacobian.
+        if (use_esdf && S > 0) {
+            const double opt_m = resolve_esdf_margin(opt_margins, esdf_opt_margin);
+            const double chk_m = resolve_esdf_margin(check_margins, esdf_check_margin);
+            const double req_min = std::max(0.0, chk_m - 1e-6);
+            const size_t NS = esdf_spheres.size();
+            std::vector<Vec3> centers;
+            compute_esdf_sphere_centers(q_batch, res.frames.data(), S, centers);
+
+            struct EsdfHit {
+                int64_t row;
+                int64_t sphere_idx;
+                double sdf_val;
+                double residual;
+            };
+            std::vector<EsdfHit> hits;
+            hits.reserve(static_cast<size_t>(std::min<int64_t>(S * static_cast<int64_t>(NS), 512)));
+            for (int64_t s = 0; s < S; ++s) {
+                const Vec3* crow = centers.data() + static_cast<size_t>(s) * NS;
+                for (size_t si = 0; si < NS; ++si) {
+                    const double sdf_val = esdf->collision_distance(crow[si]);
+                    const double dist = sdf_val - esdf_spheres[si].radius;
+                    if (!std::isfinite(dist) || dist < req_min) {
+                        if (group_size > 0) {
+                            res.seg_ok[static_cast<size_t>(s / group_size)] = 0;
+                        }
+                    }
+                    const double r = opt_m - dist;
+                    if (r > -buffer) {
+                        hits.push_back({s, static_cast<int64_t>(si), sdf_val, r});
+                    }
                 }
             }
-            std::sort(near.begin(), near.end());
-        }
 
-        const int64_t K = static_cast<int64_t>(near.size());
-        res.rows.resize(static_cast<size_t>(K));
-        res.pair_ids.resize(static_cast<size_t>(K));
-        res.residuals.resize(static_cast<size_t>(K));
-        std::vector<double> near_data;
-        if (linearize && K > 0) near_data.resize(static_cast<size_t>(K * 10));
-        for (int64_t i = 0; i < K; ++i) {
-            const int64_t k = near[static_cast<size_t>(i)];
-            res.rows[static_cast<size_t>(i)] = c_rows[static_cast<size_t>(k)];
-            res.pair_ids[static_cast<size_t>(i)] = c_pairs[static_cast<size_t>(k)];
-            res.residuals[static_cast<size_t>(i)] = opt_margins[c_pairs[static_cast<size_t>(k)]] - data[static_cast<size_t>(k * 10)];
-            if (linearize) {
-                std::copy(data.data() + k * 10, data.data() + (k + 1) * 10, near_data.data() + i * 10);
+            if (segment_minimum && !hits.empty() && group_size > 0) {
+                struct Key { int64_t grp; double neg_res; size_t idx; };
+                std::vector<Key> items;
+                items.reserve(hits.size());
+                const int64_t NS_i64 = static_cast<int64_t>(NS);
+                for (size_t k = 0; k < hits.size(); ++k) {
+                    const int64_t seg = hits[k].row / group_size;
+                    items.push_back({seg * NS_i64 + hits[k].sphere_idx, -hits[k].residual, k});
+                }
+                std::stable_sort(items.begin(), items.end(), [](const Key& a, const Key& b) {
+                    if (a.grp != b.grp) return a.grp < b.grp;
+                    return a.neg_res < b.neg_res;
+                });
+                std::vector<EsdfHit> reduced;
+                reduced.reserve(items.size());
+                int64_t last_grp = -1;
+                for (const auto& it : items) {
+                    if (it.grp != last_grp) {
+                        reduced.push_back(hits[it.idx]);
+                        last_grp = it.grp;
+                    }
+                }
+                hits = std::move(reduced);
             }
-        }
-        if (linearize && K > 0) {
-            res.gradients.resize(static_cast<size_t>(K * J));
-            res.witnesses.resize(static_cast<size_t>(K * 6));
-            compute_analytic_gradients(res.frames.data(), jorig.data(), jaxis.data(),
-                                       res.rows.data(), res.pair_ids.data(), near_data.data(),
-                                       K, res.gradients.data(), res.witnesses.data());
+
+            if (!hits.empty()) {
+                const size_t prev_K = res.rows.size();
+                const size_t add_K = hits.size();
+                res.rows.resize(prev_K + add_K);
+                res.pair_ids.resize(prev_K + add_K);
+                res.residuals.resize(prev_K + add_K);
+                if (linearize) {
+                    res.gradients.resize((prev_K + add_K) * static_cast<size_t>(J), 0.0);
+                    res.witnesses.resize((prev_K + add_K) * 6, 0.0);
+                }
+                const auto& anc = kin.body_ancestor();
+                const auto& pris = kin.joint_prismatic();
+                for (size_t i = 0; i < add_K; ++i) {
+                    const auto& h = hits[i];
+                    const size_t out_i = prev_K + i;
+                    res.rows[out_i] = h.row;
+                    res.pair_ids[out_i] = -(h.sphere_idx + 1);
+                    res.residuals[out_i] = h.residual;
+                    if (linearize) {
+                        const auto& sp = esdf_spheres[static_cast<size_t>(h.sphere_idx)];
+                        const Vec3& pw = centers[static_cast<size_t>(h.row) * NS + static_cast<size_t>(h.sphere_idx)];
+                        Vec3 g_sdf = Vec3::Zero();
+                        const double sv = esdf->collision_distance(pw, &g_sdf, true);
+                        const double g_norm = g_sdf.norm();
+                        const Vec3 n_hat = (g_norm > 1e-12) ? Vec3(g_sdf / g_norm) : Vec3(Vec3::UnitZ());
+                        const Vec3 wa = pw - sp.radius * n_hat;
+                        const Vec3 wb = pw - sv * n_hat;
+                        Eigen::Map<Vec3>(res.witnesses.data() + out_i * 6 + 0) = wa;
+                        Eigen::Map<Vec3>(res.witnesses.data() + out_i * 6 + 3) = wb;
+
+                        double* g = res.gradients.data() + out_i * static_cast<size_t>(J);
+                        const int ba = sp.body_id;
+                        for (int j = 0; j < J; ++j) {
+                            if (ba >= 0 && anc[static_cast<size_t>(ba * J + j)] != 0) {
+                                const Eigen::Map<const Vec3> oj(jorig.data() + (h.row * J + j) * 3);
+                                const Eigen::Map<const Vec3> aj(jaxis.data() + (h.row * J + j) * 3);
+                                if (pris[static_cast<size_t>(j)]) {
+                                    g[j] = -aj.dot(g_sdf);
+                                } else {
+                                    g[j] = -aj.cross(pw - oj).dot(g_sdf);
+                                }
+                            } else {
+                                g[j] = 0.0;
+                            }
+                        }
+                    }
+                }
+            }
         }
         return res;
     }
 
-    bool is_config_valid(const double* q, const Eigen::VectorXd& margins, bool verify_original) const {
+    bool is_config_valid(const double* q, const Eigen::VectorXd& margins, bool verify_original,
+                         double esdf_margin = -1.0) const {
         const int J = kin.num_joints();
         const auto& lo = kin.lower();
         const auto& hi = kin.upper();
         for (int j = 0; j < J; ++j) {
             if (!std::isfinite(q[j]) || q[j] < lo(j) || q[j] > hi(j)) return false;
         }
-        if (pairs.empty()) return true;
-        const int N = static_cast<int>(shapes.size());
-        std::vector<double> frame(static_cast<size_t>(N * 12));
-        compute_frames(q, 1, frame.data());
-        std::vector<int64_t> rows, pids;
-        screen_aabbs(frame.data(), 1, margins.data(), false, 1, rows, pids);
-        if (!rows.empty()) {
-            if (first_violation_indexed(frame.data(), 1, rows.data(), pids.data(),
-                                        static_cast<int64_t>(rows.size()), margins.data(), false).has_value())
-                return false;
-        }
-        if (verify_original && has_mesh) {
-            screen_aabbs(frame.data(), 1, margins.data(), true, 1, rows, pids);
+        const bool check_pairs = !pairs.empty();
+        const bool check_esdf = has_esdf();
+        if (!check_pairs && !check_esdf) return true;
+
+        if (check_pairs) {
+            const int N = static_cast<int>(shapes.size());
+            std::vector<double> frame(static_cast<size_t>(N * 12));
+            compute_frames(q, 1, frame.data());
+            std::vector<int64_t> rows, pids;
+            screen_aabbs(frame.data(), 1, margins.data(), false, 1, rows, pids);
             if (!rows.empty()) {
                 if (first_violation_indexed(frame.data(), 1, rows.data(), pids.data(),
-                                            static_cast<int64_t>(rows.size()), margins.data(), true).has_value())
+                                            static_cast<int64_t>(rows.size()), margins.data(), false).has_value())
                     return false;
             }
+            if (verify_original && has_mesh) {
+                screen_aabbs(frame.data(), 1, margins.data(), true, 1, rows, pids);
+                if (!rows.empty()) {
+                    if (first_violation_indexed(frame.data(), 1, rows.data(), pids.data(),
+                                                static_cast<int64_t>(rows.size()), margins.data(), true).has_value())
+                        return false;
+                }
+            }
+            if (check_esdf) {
+                const double em = resolve_esdf_margin(margins, esdf_margin);
+                if (first_esdf_violation_samples(q, frame.data(), 1, em).has_value()) return false;
+            }
+            return true;
+        }
+
+        // ESDF-only fast path (no shape frames needed).
+        const int B = kin.num_bodies();
+        std::vector<Vec3> bpos(static_cast<size_t>(B));
+        std::vector<Mat3> brot(static_cast<size_t>(B));
+        kin.fk_single(q, bpos.data(), brot.data());
+        const double req = std::max(0.0, resolve_esdf_margin(margins, esdf_margin) - 1e-6);
+        for (const auto& sp : esdf_spheres) {
+            const Vec3 pw = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                            bpos[static_cast<size_t>(sp.body_id)];
+            const double d = esdf->collision_distance(pw) - sp.radius;
+            if (!std::isfinite(d) || d < req) return false;
         }
         return true;
     }
 
     bool is_segment_valid(const Eigen::VectorXd& qa, const Eigen::VectorXd& qb,
-                          const Eigen::VectorXd& margins, double max_step, bool verify_original) const {
+                          const Eigen::VectorXd& margins, double max_step, bool verify_original,
+                          double esdf_margin = -1.0) const {
         const double dist = (qb - qa).norm();
         const int steps = std::max(1, static_cast<int>(std::ceil(dist / max_step)));
-        if (steps == 1) return is_config_valid(qb.data(), margins, verify_original);
-        if (!is_config_valid(qb.data(), margins, verify_original)) return false;
+        if (steps == 1) return is_config_valid(qb.data(), margins, verify_original, esdf_margin);
+        if (!is_config_valid(qb.data(), margins, verify_original, esdf_margin)) return false;
         std::vector<std::pair<int, int>> stack;
         stack.reserve(static_cast<size_t>(steps));
         stack.emplace_back(0, steps);
@@ -1184,7 +1745,7 @@ public:
             const int mid = (l + r) / 2;
             const double t = static_cast<double>(mid) / static_cast<double>(steps);
             q.noalias() = (1.0 - t) * qa + t * qb;
-            if (!is_config_valid(q.data(), margins, verify_original)) return false;
+            if (!is_config_valid(q.data(), margins, verify_original, esdf_margin)) return false;
             stack.emplace_back(l, mid);
             stack.emplace_back(mid, r);
         }
@@ -1204,9 +1765,15 @@ public:
         const int B_links = kin.num_bodies();
         const int N_shapes = static_cast<int>(shapes.size());
         const int P = static_cast<int>(pairs.size());
+        const bool use_esdf = has_esdf();
+        const int NS_esdf = use_esdf ? static_cast<int>(esdf_spheres.size()) : 0;
+        const int total_col = P + NS_esdf;
         const Eigen::VectorXd margins = pair_margins(margin, world_margin);
         const Eigen::VectorXd& lo = kin.lower();
         const Eigen::VectorXd& hi = kin.upper();
+        const double esdf_req = std::max(0.0, world_margin - 1e-6);
+        const auto& anc = kin.body_ancestor();
+        const auto& pris = kin.joint_prismatic();
 
         auto solve_one = [&](int idx) {
             const auto& prob = problems[static_cast<size_t>(idx)];
@@ -1272,6 +1839,18 @@ public:
                         }
                     }
                 }
+                if (use_esdf) {
+                    for (int si = 0; si < NS_esdf; ++si) {
+                        const auto& sp = esdf_spheres[static_cast<size_t>(si)];
+                        const Vec3 pw = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                        bpos[static_cast<size_t>(sp.body_id)];
+                        const double d = esdf->collision_distance(pw) - sp.radius;
+                        if (!std::isfinite(d) || d < esdf_req) {
+                            fail_reason = "IK ESDF clearance failed for " + pair_display_name(-static_cast<int64_t>(si + 1));
+                            return false;
+                        }
+                    }
+                }
                 return true;
             };
 
@@ -1282,9 +1861,9 @@ public:
                 return;
             }
 
-            Eigen::VectorXd dual = Eigen::VectorXd::Zero(P);
+            Eigen::VectorXd dual = Eigen::VectorXd::Zero(total_col);
             double penalty = 10.0;
-            const int outer_rounds = (P > 0) ? 5 : 1;
+            const int outer_rounds = (total_col > 0) ? 5 : 1;
             std::vector<double> thr(static_cast<size_t>(P));
             Eigen::VectorXd best_q = q;
             double best_obj = std::numeric_limits<double>::infinity();
@@ -1332,8 +1911,8 @@ public:
                         g_out->noalias() += J_t.transpose() * r_t;
                     }
                 }
+                if (ineq_out && total_col > 0) ineq_out->setConstant(total_col, -1.0);
                 if (P > 0) {
-                    if (ineq_out) ineq_out->setConstant(P, -1.0);
                     for (int p = 0; p < P; ++p) thr[static_cast<size_t>(p)] = margins(p) + dual(p) / penalty + 0.01;
                     screen_aabbs(frame.data(), 1, thr.data(), false, 1, cand_rows, cand_pairs);
                     const int64_t C = static_cast<int64_t>(cand_rows.size());
@@ -1381,11 +1960,45 @@ public:
                         }
                     }
                 }
+                if (use_esdf) {
+                    const double sqrt_pen = std::sqrt(penalty);
+                    Eigen::VectorXd g_row(J);
+                    for (int si = 0; si < NS_esdf; ++si) {
+                        const auto& sp = esdf_spheres[static_cast<size_t>(si)];
+                        const Vec3 pw = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                        bpos[static_cast<size_t>(sp.body_id)];
+                        Vec3 g_sdf = Vec3::Zero();
+                        const double sv = esdf->collision_distance(pw, need_jac ? &g_sdf : nullptr, true);
+                        const double viol = world_margin - (sv - sp.radius);
+                        const int slot = P + si;
+                        if (ineq_out) (*ineq_out)(slot) = viol;
+                        const double aug = viol + dual(slot) / penalty;
+                        if (aug > 0.0) {
+                            const double sr = sqrt_pen * aug;
+                            cost += sr * sr;
+                            if (need_jac) {
+                                g_row.setZero();
+                                const int ba = sp.body_id;
+                                for (int j = 0; j < J; ++j) {
+                                    if (ba >= 0 && anc[static_cast<size_t>(ba * J + j)] != 0) {
+                                        if (pris[static_cast<size_t>(j)]) {
+                                            g_row(j) = -jaxis[static_cast<size_t>(j)].dot(g_sdf);
+                                        } else {
+                                            g_row(j) = -jaxis[static_cast<size_t>(j)].cross(pw - jorig[static_cast<size_t>(j)]).dot(g_sdf);
+                                        }
+                                    }
+                                }
+                                H_out->noalias() += penalty * (g_row * g_row.transpose());
+                                g_out->noalias() += (sqrt_pen * sr) * g_row;
+                            }
+                        }
+                    }
+                }
                 return cost;
             };
 
             Eigen::MatrixXd H(J, J);
-            Eigen::VectorXd g(J), ineq(P);
+            Eigen::VectorXd g(J), ineq(total_col);
             for (int outer = 0; outer < outer_rounds; ++outer) {
                 double damping = 1e-3;
                 double cost = eval_merit(q, nullptr, nullptr);
@@ -1455,9 +2068,9 @@ public:
                     out.success = true;
                     return;
                 }
-                if (P > 0) {
+                if (total_col > 0) {
                     eval_merit(q, nullptr, nullptr, &ineq);
-                    for (int p = 0; p < P; ++p) {
+                    for (int p = 0; p < total_col; ++p) {
                         dual(p) = std::max(0.0, dual(p) + penalty * ineq(p));
                     }
                     penalty *= 10.0;
@@ -1488,11 +2101,11 @@ public:
         const Eigen::VectorXd& hi = kin.upper();
         const double check_res = std::min(0.05, step_size * 0.25);
 
-        if (!is_config_valid(start.data(), margins, verify_original) ||
-            !is_config_valid(goal.data(), margins, verify_original)) {
+        if (!is_config_valid(start.data(), margins, verify_original, world_margin) ||
+            !is_config_valid(goal.data(), margins, verify_original, world_margin)) {
             return out;
         }
-        if (is_segment_valid(start, goal, margins, check_res, verify_original)) {
+        if (is_segment_valid(start, goal, margins, check_res, verify_original, world_margin)) {
             out.success = true;
             out.waypoints = resample_path({start, goal}, output_waypoints);
             out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -1540,7 +2153,7 @@ public:
             if (d < 1e-9) return 2;
             const bool reached = (d <= step_size);
             Eigen::VectorXd q_new = reached ? target : (q_near + (step_size / d) * diff);
-            if (!is_segment_valid(q_near, q_new, margins, check_res, verify_original)) return 0;
+            if (!is_segment_valid(q_near, q_new, margins, check_res, verify_original, world_margin)) return 0;
             tree.push_back({std::move(q_new), near_id});
             return reached ? 2 : 1;
         };
@@ -1584,7 +2197,7 @@ public:
                         int i = static_cast<int>(rng() % static_cast<uint64_t>(n - 2));
                         int j = i + 2 + static_cast<int>(rng() % static_cast<uint64_t>(n - i - 2));
                         if (is_segment_valid(pa[static_cast<size_t>(i)], pa[static_cast<size_t>(j)],
-                                             margins, check_res, verify_original)) {
+                                             margins, check_res, verify_original, world_margin)) {
                             pa.erase(pa.begin() + i + 1, pa.begin() + j);
                         }
                     }
@@ -1647,6 +2260,8 @@ public:
         if (substeps < 1) {
             throw std::invalid_argument("substeps must be >= 1");
         }
+        if (!(disp_tol > 0.0 && std::isfinite(disp_tol)))
+            throw std::invalid_argument("disp_tol must be finite and positive");
         if (spline_order != 3 && spline_order != 5) {
             throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
         }
@@ -1672,31 +2287,44 @@ public:
         if (S != expected_S) {
             throw std::invalid_argument("samples row count must equal (T - 1) * substeps + 1");
         }
-        if (pairs.empty()) return {true, ""};
+        const bool check_pairs = !pairs.empty();
+        const bool check_esdf = has_esdf();
+        if (!check_pairs && !check_esdf) return {true, ""};
         const int64_t N = static_cast<int64_t>(shapes.size());
         const auto margins = pair_margins(margin, world_margin);
         std::vector<double> frames(static_cast<size_t>(S * N * 12));
         compute_frames(samples, S, frames.data());
 
         std::vector<int64_t> rows, pids;
-        screen_aabbs(frames.data(), S, margins.data(), false, substeps, rows, pids);
-        if (!rows.empty()) {
-            auto hit = first_violation_indexed(frames.data(), S, rows.data(), pids.data(),
-                                               static_cast<int64_t>(rows.size()), margins.data(), false);
-            if (hit.has_value()) {
-                const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
-                return {false, "convex clearance failed on segment " + std::to_string(seg)
-                               + ", pair " + pair_display_name(hit->second)};
+        if (check_pairs) {
+            screen_aabbs(frames.data(), S, margins.data(), false, substeps, rows, pids);
+            if (!rows.empty()) {
+                auto hit = first_violation_indexed(frames.data(), S, rows.data(), pids.data(),
+                                                   static_cast<int64_t>(rows.size()), margins.data(), false);
+                if (hit.has_value()) {
+                    const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
+                    return {false, "convex clearance failed on segment " + std::to_string(seg)
+                                   + ", pair " + pair_display_name(hit->second)};
+                }
+            }
+        }
+        if (check_esdf) {
+            auto ehit = first_esdf_violation_samples(samples, frames.data(), S, world_margin);
+            if (ehit.has_value()) {
+                const int seg = std::min(static_cast<int>(ehit->first / substeps), T - 2);
+                return {false, "ESDF clearance failed on segment " + std::to_string(seg)
+                               + ", pair " + pair_display_name(ehit->second)};
             }
         }
         auto ccd = first_violation_continuous(
             q_waypoints, T, substeps, frames.data(), margins.data(),
-            false, disp_tol, times, velocities, strict_ccd, accelerations, spline_order);
+            false, disp_tol, times, velocities, strict_ccd, accelerations, spline_order, world_margin);
         if (ccd.has_value()) {
-            return {false, "continuous convex clearance failed on segment " + std::to_string(ccd->seg)
+            const char* kind = (ccd->pair_id < 0) ? "ESDF" : "convex";
+            return {false, std::string("continuous ") + kind + " clearance failed on segment " + std::to_string(ccd->seg)
                            + ", pair " + pair_display_name(ccd->pair_id)};
         }
-        if (verify_original && has_mesh) {
+        if (check_pairs && verify_original && has_mesh) {
             rows.clear();
             pids.clear();
             screen_aabbs(frames.data(), S, margins.data(), true, substeps, rows, pids);
@@ -1711,7 +2339,7 @@ public:
             }
             auto ccd_m = first_violation_continuous(
                 q_waypoints, T, substeps, frames.data(), margins.data(),
-                true, disp_tol, times, velocities, strict_ccd, accelerations, spline_order);
+                true, disp_tol, times, velocities, strict_ccd, accelerations, spline_order, world_margin);
             if (ccd_m.has_value()) {
                 return {false, "continuous mesh clearance failed on segment " + std::to_string(ccd_m->seg)
                                + ", pair " + pair_display_name(ccd_m->pair_id)};
@@ -1741,6 +2369,9 @@ public:
     int num_pairs() const { return static_cast<int>(snapshot()->pairs.size()); }
     int self_pair_count() const { return snapshot()->self_pair_count; }
     bool has_mesh() const { return snapshot()->has_mesh; }
+    bool has_esdf() const { return snapshot()->has_esdf(); }
+    int num_link_spheres() const { return static_cast<int>(snapshot()->link_spheres.size()); }
+    int num_esdf_spheres() const { return static_cast<int>(snapshot()->esdf_spheres.size()); }
 
     void init_kinematics(
         std::vector<int> parent,
@@ -1811,6 +2442,7 @@ public:
         if (state_->shapes[static_cast<size_t>(idx)].body_id >= 0)
             throw std::invalid_argument("cannot remove robot/attached shape directly; detach first: " + name);
         auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->custom_link_spheres.erase("::" + name);
         next->shapes.erase(next->shapes.begin() + idx);
         next->shape_index.clear();
         for (size_t i = 0; i < next->shapes.size(); ++i) {
@@ -1917,6 +2549,148 @@ public:
         state_ = std::move(next);
     }
 
+    // --- Voxel / 3D ESDF & Link Sphere-Cover APIs ---
+
+    void set_occupancy_grid(const uint8_t* occupied, int nx, int ny, int nz,
+                            const Vec3& origin, double resolution,
+                            double max_distance = std::numeric_limits<double>::infinity(),
+                            double inflation_radius = 0.0,
+                            int collision_layer = 1, int collision_mask = 1) {
+        auto grid = VoxelESDF::from_occupancy_grid(
+            occupied, nx, ny, nz, origin, resolution, max_distance, inflation_radius,
+            collision_layer, collision_mask);
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->esdf = std::move(grid);
+        next->rebuild_esdf_spheres();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void set_point_cloud(const double* points_xyz, int64_t num_points, double resolution,
+                         const std::optional<Vec3>& origin = std::nullopt,
+                         const std::optional<std::array<int, 3>>& shape = std::nullopt,
+                         double padding = 0.2,
+                         double point_radius = 0.0,
+                         double max_distance = std::numeric_limits<double>::infinity(),
+                         int collision_layer = 1, int collision_mask = 1) {
+        auto grid = VoxelESDF::from_point_cloud(
+            points_xyz, num_points, resolution, origin, shape, padding, point_radius,
+            max_distance, collision_layer, collision_mask);
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->esdf = std::move(grid);
+        next->rebuild_esdf_spheres();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void set_esdf(const double* values, int nx, int ny, int nz,
+                  const Vec3& origin, double resolution,
+                  int collision_layer = 1, int collision_mask = 1) {
+        auto grid = VoxelESDF::from_esdf_array(
+            values, nx, ny, nz, origin, resolution, collision_layer, collision_mask);
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->esdf = std::move(grid);
+        next->rebuild_esdf_spheres();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void clear_esdf() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!state_->esdf) return;
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->esdf.reset();
+        next->esdf_spheres.clear();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void set_link_spheres(const std::string& link_key,
+                          const std::vector<std::pair<Vec3, double>>& spheres,
+                          int collision_layer = 1, int collision_mask = 1) {
+        for (const auto& [c, r] : spheres) {
+            if (!c.allFinite() || !std::isfinite(r) || r < 0.0) {
+                throw std::invalid_argument("link sphere center must be finite and radius must be non-negative");
+            }
+        }
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        bool valid_link = state_->link_index.count(link_key) > 0;
+        if (!valid_link) {
+            for (const auto& ws : state_->shapes) {
+                if (ws.body_id >= 0 && ws.link_key == link_key) {
+                    valid_link = true;
+                    break;
+                }
+            }
+        }
+        if (!valid_link) {
+            throw std::invalid_argument("unknown link for custom spheres: " + link_key);
+        }
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->custom_link_spheres[link_key] = CustomLinkSpheres{spheres, collision_layer, collision_mask};
+        next->rebuild_link_spheres();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    void clear_link_spheres(const std::string& link_key = "") {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (link_key.empty()) {
+            if (state_->custom_link_spheres.empty()) return;
+            auto next = std::make_shared<WorldSnapshot>(*state_);
+            next->custom_link_spheres.clear();
+            next->rebuild_link_spheres();
+            ++next->version;
+            state_ = std::move(next);
+            return;
+        }
+        if (state_->custom_link_spheres.count(link_key) == 0) return;
+        auto next = std::make_shared<WorldSnapshot>(*state_);
+        next->custom_link_spheres.erase(link_key);
+        next->rebuild_link_spheres();
+        ++next->version;
+        state_ = std::move(next);
+    }
+
+    std::vector<LinkSphere> link_spheres() const {
+        return snapshot()->link_spheres;
+    }
+
+    std::vector<LinkSphere> esdf_spheres() const {
+        return snapshot()->esdf_spheres;
+    }
+
+    void query_esdf(const double* points_xyz, int64_t N, double* out_dist, double* out_grad = nullptr) const {
+        auto snap = snapshot();
+        const auto& grid = snap->esdf;
+        if (!grid || !grid->valid() || grid->is_empty) {
+            std::fill(out_dist, out_dist + N, std::numeric_limits<double>::infinity());
+            if (out_grad != nullptr) std::fill(out_grad, out_grad + N * 3, 0.0);
+            return;
+        }
+        ThreadPool::instance().parallel_for(N, 256, [&](int64_t b, int64_t e) {
+            for (int64_t i = b; i < e; ++i) {
+                const Vec3 p(points_xyz[i * 3 + 0], points_xyz[i * 3 + 1], points_xyz[i * 3 + 2]);
+                if (out_grad != nullptr) {
+                    Vec3 g;
+                    out_dist[i] = grid->query(p, &g, false);
+                    out_grad[i * 3 + 0] = g(0);
+                    out_grad[i * 3 + 1] = g(1);
+                    out_grad[i * 3 + 2] = g(2);
+                } else {
+                    out_dist[i] = grid->query(p, nullptr, false);
+                }
+            }
+        });
+    }
+
+    void query_esdf_sphere_distances(const double* q_batch, int64_t S, double* out_dists) const {
+        snapshot()->query_esdf_sphere_distances(q_batch, S, out_dists);
+    }
+
     // Atomic batch synchronization: validates everything on a single CoW copy, rebuilds pairs
     // at most once when topology/filter changes, and publishes one new snapshot (or zero if no-op).
     // Strong exception guarantee: any validation error leaves state_ completely untouched.
@@ -1956,6 +2730,7 @@ public:
                 if (ws.body_id >= 0 || ws.is_attached) {
                     throw std::invalid_argument("sync remove: cannot remove robot/attached shape: " + name);
                 }
+                next->custom_link_spheres.erase("::" + name);
                 remove_mask[idx] = 1;
                 ++out.shapes_removed;
             }
@@ -2081,10 +2856,11 @@ public:
         const double* q_waypoints, int T, int substeps, const double* frames,
         const double* margins, bool verify_original = false, double disp_tol = 5e-4,
         const double* times = nullptr, const double* velocities = nullptr,
-        bool strict = false, const double* accelerations = nullptr, int spline_order = 3) const {
+        bool strict = false, const double* accelerations = nullptr, int spline_order = 3,
+        double esdf_margin = -1.0) const {
         return snapshot()->first_violation_continuous(
             q_waypoints, T, substeps, frames, margins, verify_original, disp_tol, times, velocities,
-            strict, accelerations, spline_order);
+            strict, accelerations, spline_order, esdf_margin);
     }
     void compute_analytic_gradients(const double* frames, const double* jorig, const double* jaxis,
                                     const int64_t* rows, const int64_t* pair_ids, const double* data,
@@ -2094,8 +2870,11 @@ public:
     CollisionEvalResult eval_collision_rows(const double* q_batch, int64_t S,
                                             const double* opt_margins, const double* check_margins,
                                             double buffer, bool linearize, int64_t group_size,
-                                            bool segment_minimum) const {
-        return snapshot()->eval_collision_rows(q_batch, S, opt_margins, check_margins, buffer, linearize, group_size, segment_minimum);
+                                            bool segment_minimum,
+                                            double esdf_opt_margin = -1.0,
+                                            double esdf_check_margin = -1.0) const {
+        return snapshot()->eval_collision_rows(q_batch, S, opt_margins, check_margins, buffer, linearize,
+                                               group_size, segment_minimum, esdf_opt_margin, esdf_check_margin);
     }
     std::vector<IKResultNative> solve_ik_batch(const std::vector<IKProblem>& problems,
                                                const std::vector<uint8_t>& active_mask,

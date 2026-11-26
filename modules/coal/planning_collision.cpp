@@ -19,6 +19,7 @@ bool gobot_planning_has_tbb() noexcept;
 
 namespace {
 using Input = py::array_t<double, py::array::c_style | py::array::forcecast>;
+using Uint8Input = py::array_t<uint8_t, py::array::c_style | py::array::forcecast>;
 using Indices = py::array_t<int64_t, py::array::c_style | py::array::forcecast>;
 using MaskInput = py::array_t<bool, py::array::c_style | py::array::forcecast>;
 
@@ -570,9 +571,21 @@ py::tuple snap_screen_aabbs(const gp::WorldSnapshot& snap, const Input& frames, 
     return py::make_tuple(r_arr, p_arr);
 }
 
+void check_coal_indices(const gp::WorldSnapshot& snap, int64_t samples,
+                        const Indices& rows, const Indices& ids) {
+    if (rows.ndim() != 1 || ids.ndim() != 1 || rows.size() != ids.size())
+        throw std::invalid_argument("rows and pair_ids must be matching 1D arrays");
+    for (py::ssize_t k = 0; k < rows.size(); ++k) {
+        if (rows.data()[k] < 0 || rows.data()[k] >= samples ||
+            ids.data()[k] < 0 || ids.data()[k] >= static_cast<int64_t>(snap.pairs.size()))
+            throw std::invalid_argument("sample or Coal pair index out of range");
+    }
+}
+
 py::array_t<double> snap_query_distances_indexed(const gp::WorldSnapshot& snap, const Input& frames,
                                                  const Indices& rows, const Indices& pair_ids, bool verify) {
     check_frames_shape(frames, static_cast<int64_t>(snap.shapes.size()));
+    check_coal_indices(snap, frames.shape(0), rows, pair_ids);
     const int64_t K = rows.size();
     const int64_t width = verify ? 1 : 10;
     py::array_t<double> out({K, width});
@@ -588,6 +601,7 @@ py::object snap_first_violation_indexed(const gp::WorldSnapshot& snap, const Inp
                                         const Indices& rows, const Indices& pair_ids,
                                         const Input& margins, bool verify) {
     check_frames_shape(frames, static_cast<int64_t>(snap.shapes.size()));
+    check_coal_indices(snap, frames.shape(0), rows, pair_ids);
     check_margins_shape(margins, static_cast<int64_t>(snap.pairs.size()));
     std::optional<std::pair<int64_t, int64_t>> hit;
     {
@@ -603,6 +617,7 @@ py::tuple snap_violating_pairs_indexed(const gp::WorldSnapshot& snap, const Inpu
                                        const Indices& rows, const Indices& pair_ids,
                                        const Input& margins, bool verify) {
     check_frames_shape(frames, static_cast<int64_t>(snap.shapes.size()));
+    check_coal_indices(snap, frames.shape(0), rows, pair_ids);
     check_margins_shape(margins, static_cast<int64_t>(snap.pairs.size()));
     std::vector<int64_t> out_rows, out_pairs;
     if (rows.size() > 0) {
@@ -623,7 +638,8 @@ py::object snap_first_violation_continuous(const gp::WorldSnapshot& snap, const 
                                            int substeps, const Input& frames, const Input& margins,
                                            bool verify, double disp_tol,
                                            py::object times_obj, py::object vel_obj, bool strict,
-                                           py::object acc_obj = py::none(), int spline_order = 3) {
+                                           py::object acc_obj = py::none(), int spline_order = 3,
+                                           double esdf_margin = -1.0) {
     if (spline_order != 3 && spline_order != 5)
         throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
     if (substeps < 1)
@@ -669,7 +685,8 @@ py::object snap_first_violation_continuous(const gp::WorldSnapshot& snap, const 
         py::gil_scoped_release release;
         hit = snap.first_violation_continuous(
             q_waypoints.data(), T,
-            substeps, frames.data(), margins.data(), verify, disp_tol, t_ptr, v_ptr, strict, a_ptr, spline_order);
+            substeps, frames.data(), margins.data(), verify, disp_tol, t_ptr, v_ptr, strict, a_ptr, spline_order,
+            esdf_margin);
     }
     if (!hit.has_value()) return py::none();
     return py::make_tuple(hit->seg, hit->u, hit->pair_id, hit->distance);
@@ -679,6 +696,7 @@ py::tuple snap_compute_analytic_gradients(const gp::WorldSnapshot& snap, const I
                                           const Input& jorig, const Input& jaxis,
                                           const Indices& rows, const Indices& pair_ids, const Input& data) {
     check_frames_shape(frames, static_cast<int64_t>(snap.shapes.size()));
+    check_coal_indices(snap, frames.shape(0), rows, pair_ids);
     const int64_t K = rows.size();
     const int J = snap.kin.num_joints();
     py::array_t<double> grad({K, static_cast<py::ssize_t>(J)});
@@ -694,7 +712,10 @@ py::tuple snap_compute_analytic_gradients(const gp::WorldSnapshot& snap, const I
 
 py::tuple snap_eval_collision_rows(const gp::WorldSnapshot& snap, const Input& q_arr,
                                    const Input& opt_margins, const Input& check_margins,
-                                   double buffer, bool linearize, int64_t group_size, bool segment_minimum) {
+                                   double buffer, bool linearize, int64_t group_size, bool segment_minimum,
+                                   double esdf_opt_margin = -1.0, double esdf_check_margin = -1.0) {
+    if (q_arr.ndim() != 2 || q_arr.shape(1) != snap.kin.num_joints())
+        throw std::invalid_argument("expected [S, J] joint array");
     check_margins_shape(opt_margins, static_cast<int64_t>(snap.pairs.size()));
     check_margins_shape(check_margins, static_cast<int64_t>(snap.pairs.size()));
     const int64_t S = q_arr.shape(0);
@@ -704,7 +725,8 @@ py::tuple snap_eval_collision_rows(const gp::WorldSnapshot& snap, const Input& q
     {
         py::gil_scoped_release release;
         res = snap.eval_collision_rows(q_arr.data(), S, opt_margins.data(), check_margins.data(),
-                                       buffer, linearize, group_size, segment_minimum);
+                                       buffer, linearize, group_size, segment_minimum,
+                                       esdf_opt_margin, esdf_check_margin);
     }
     const py::ssize_t K = static_cast<py::ssize_t>(res.rows.size());
     py::array_t<int64_t> rows_arr(K), pids_arr(K);
@@ -731,6 +753,106 @@ py::tuple snap_eval_collision_rows(const gp::WorldSnapshot& snap, const Input& q
     py::array_t<bool> ok_arr(static_cast<py::ssize_t>(res.seg_ok.size()));
     for (size_t i = 0; i < res.seg_ok.size(); ++i) ok_arr.mutable_data()[i] = (res.seg_ok[i] != 0);
     return py::make_tuple(rows_arr, pids_arr, res_arr, grad_obj, frames_arr, ok_arr, wit_obj);
+}
+
+py::object snap_esdf_info(const gp::WorldSnapshot& snap) {
+    if (!snap.esdf || !snap.esdf->valid()) return py::none();
+    const auto& g = *snap.esdf;
+    py::dict d;
+    d["origin"] = g.origin;
+    d["resolution"] = g.resolution;
+    d["shape"] = py::make_tuple(g.nx, g.ny, g.nz);
+    d["bounds_min"] = g.bounds_min();
+    d["bounds_max"] = g.bounds_max();
+    d["lipschitz_bound"] = g.lipschitz_bound;
+    d["min_value"] = g.min_value;
+    d["is_empty"] = g.is_empty;
+    d["collision_layer"] = g.collision_layer;
+    d["collision_mask"] = g.collision_mask;
+    return d;
+}
+
+py::list snap_link_spheres_list(const gp::WorldSnapshot& snap, bool esdf_only) {
+    const auto& spheres = esdf_only ? snap.esdf_spheres : snap.link_spheres;
+    py::list out;
+    for (const auto& sp : spheres) {
+        py::dict d;
+        d["body_id"] = sp.body_id;
+        d["link_key"] = sp.link_key;
+        d["shape_name"] = sp.shape_name;
+        const auto* ref = sp.ref_shape_id >= 0 ? &snap.shapes[sp.ref_shape_id] : nullptr;
+        d["center"] = ref && ref->is_attached && ref->link_key == sp.link_key
+                          ? sp.ref_shape_center : sp.local_center;
+        d["radius"] = sp.radius;
+        d["layer"] = sp.layer;
+        d["mask"] = sp.mask;
+        out.append(std::move(d));
+    }
+    return out;
+}
+
+py::object snap_query_esdf(const gp::WorldSnapshot& snap, const Input& pts, bool return_gradient) {
+    if (pts.ndim() != 2 || pts.shape(1) != 3) {
+        throw std::invalid_argument("points must have shape [N, 3]");
+    }
+    const int64_t N = pts.shape(0);
+    py::array_t<double> dist(N);
+    const auto& grid = snap.esdf;
+    if (!return_gradient) {
+        double* dp = dist.mutable_data();
+        const double* pp = pts.data();
+        {
+            py::gil_scoped_release release;
+            if (!grid || !grid->valid() || grid->is_empty) {
+                std::fill(dp, dp + N, std::numeric_limits<double>::infinity());
+            } else {
+                gp::ThreadPool::instance().parallel_for(N, 256, [&](int64_t b, int64_t e) {
+                    for (int64_t i = b; i < e; ++i) {
+                        dp[i] = grid->query(gp::Vec3(pp[i * 3 + 0], pp[i * 3 + 1], pp[i * 3 + 2]));
+                    }
+                });
+            }
+        }
+        return std::move(dist);
+    }
+    py::array_t<double> grad({N, py::ssize_t(3)});
+    double* dp = dist.mutable_data();
+    double* gp_ptr = grad.mutable_data();
+    const double* pp = pts.data();
+    {
+        py::gil_scoped_release release;
+        if (!grid || !grid->valid() || grid->is_empty) {
+            std::fill(dp, dp + N, std::numeric_limits<double>::infinity());
+            std::fill(gp_ptr, gp_ptr + N * 3, 0.0);
+        } else {
+            gp::ThreadPool::instance().parallel_for(N, 256, [&](int64_t b, int64_t e) {
+                for (int64_t i = b; i < e; ++i) {
+                    gp::Vec3 g;
+                    dp[i] = grid->query(gp::Vec3(pp[i * 3 + 0], pp[i * 3 + 1], pp[i * 3 + 2]), &g, false);
+                    gp_ptr[i * 3 + 0] = g(0);
+                    gp_ptr[i * 3 + 1] = g(1);
+                    gp_ptr[i * 3 + 2] = g(2);
+                }
+            });
+        }
+    }
+    return py::make_tuple(std::move(dist), std::move(grad));
+}
+
+py::array_t<double> snap_query_esdf_sphere_distances(const gp::WorldSnapshot& snap, const Input& q_arr) {
+    if (q_arr.ndim() != 2 || q_arr.shape(1) != snap.kin.num_joints()) {
+        throw std::invalid_argument("expected [S, J] joint array");
+    }
+    const int64_t S = q_arr.shape(0);
+    const py::ssize_t NS = static_cast<py::ssize_t>(snap.esdf_spheres.size());
+    py::array_t<double> out({S, NS});
+    if (S > 0 && NS > 0) {
+        double* op = out.mutable_data();
+        const double* qp = q_arr.data();
+        py::gil_scoped_release release;
+        snap.query_esdf_sphere_distances(qp, S, op);
+    }
+    return out;
 }
 
 py::tuple snap_eval_pose_constraints(const gp::WorldSnapshot& snap, const Input& q_vec,
@@ -1235,6 +1357,18 @@ PYBIND11_MODULE(_coal_native, module) {
         .def_property_readonly("num_joints", [](const PyWorldSnapshot& s) { return s.ptr->kin.num_joints(); })
         .def_property_readonly("self_pair_count", [](const PyWorldSnapshot& s) { return s.ptr->self_pair_count; })
         .def_property_readonly("has_mesh", [](const PyWorldSnapshot& s) { return s.ptr->has_mesh; })
+        .def_property_readonly("has_esdf", [](const PyWorldSnapshot& s) { return s.ptr->has_esdf(); })
+        .def_property_readonly("num_link_spheres", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->link_spheres.size()); })
+        .def_property_readonly("num_esdf_spheres", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->esdf_spheres.size()); })
+        .def("esdf_info", [](const PyWorldSnapshot& s) { return snap_esdf_info(*s.ptr); })
+        .def("link_spheres", [](const PyWorldSnapshot& s) { return snap_link_spheres_list(*s.ptr, false); })
+        .def("esdf_spheres", [](const PyWorldSnapshot& s) { return snap_link_spheres_list(*s.ptr, true); })
+        .def("query_esdf", [](const PyWorldSnapshot& s, const Input& pts, bool return_gradient) {
+            return snap_query_esdf(*s.ptr, pts, return_gradient);
+        }, py::arg("points"), py::arg("return_gradient") = false)
+        .def("query_esdf_sphere_distances", [](const PyWorldSnapshot& s, const Input& q_arr) {
+            return snap_query_esdf_sphere_distances(*s.ptr, q_arr);
+        }, py::arg("q"))
         .def_property_readonly("num_shapes", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->shapes.size()); })
         .def_property_readonly("num_pairs", [](const PyWorldSnapshot& s) { return static_cast<int>(s.ptr->pairs.size()); })
         .def_property_readonly("lower_limits", [](const PyWorldSnapshot& s) { return s.ptr->kin.lower(); })
@@ -1273,14 +1407,14 @@ PYBIND11_MODULE(_coal_native, module) {
                                               int substeps, const Input& frames, const Input& margins,
                                               bool verify, double disp_tol,
                                               py::object times_obj, py::object vel_obj, bool strict,
-                                              py::object acc_obj, int spline_order) {
+                                              py::object acc_obj, int spline_order, double esdf_margin) {
             return snap_first_violation_continuous(*s.ptr, q_waypoints, substeps, frames, margins,
                                                    verify, disp_tol, times_obj, vel_obj, strict,
-                                                   acc_obj, spline_order);
+                                                   acc_obj, spline_order, esdf_margin);
         }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
            py::arg("verify") = false, py::arg("disp_tol") = 5e-4,
            py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false,
-           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3, py::arg("esdf_margin") = -1.0)
         .def("compute_analytic_gradients", [](const PyWorldSnapshot& s, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
@@ -1288,10 +1422,14 @@ PYBIND11_MODULE(_coal_native, module) {
         })
         .def("eval_collision_rows", [](const PyWorldSnapshot& s, const Input& q_arr,
                                        const Input& opt_margins, const Input& check_margins,
-                                       double buffer, bool linearize, int64_t group_size, bool segment_minimum) {
+                                       double buffer, bool linearize, int64_t group_size, bool segment_minimum,
+                                       double esdf_opt_margin, double esdf_check_margin) {
             return snap_eval_collision_rows(*s.ptr, q_arr, opt_margins, check_margins,
-                                            buffer, linearize, group_size, segment_minimum);
-        })
+                                            buffer, linearize, group_size, segment_minimum,
+                                            esdf_opt_margin, esdf_check_margin);
+        }, py::arg("q"), py::arg("opt_margins"), py::arg("check_margins"), py::arg("buffer"),
+           py::arg("linearize"), py::arg("group_size"), py::arg("segment_minimum"),
+           py::arg("esdf_opt_margin") = -1.0, py::arg("esdf_check_margin") = -1.0)
         .def("eval_pose_constraints", [](const PyWorldSnapshot& s, const Input& q_vec,
                                          const std::vector<gp::PoseConstraintSpec>& specs, bool linearize) {
             return snap_eval_pose_constraints(*s.ptr, q_vec, specs, linearize);
@@ -1355,6 +1493,9 @@ PYBIND11_MODULE(_coal_native, module) {
         .def_property_readonly("num_joints", &gp::PlanningWorld::num_joints)
         .def_property_readonly("self_pair_count", &gp::PlanningWorld::self_pair_count)
         .def_property_readonly("has_mesh", &gp::PlanningWorld::has_mesh)
+        .def_property_readonly("has_esdf", &gp::PlanningWorld::has_esdf)
+        .def_property_readonly("num_link_spheres", &gp::PlanningWorld::num_link_spheres)
+        .def_property_readonly("num_esdf_spheres", &gp::PlanningWorld::num_esdf_spheres)
         .def_property_readonly("num_shapes", &gp::PlanningWorld::num_shapes)
         .def_property_readonly("num_pairs", &gp::PlanningWorld::num_pairs)
         .def("init_kinematics", [](gp::PlanningWorld& w,
@@ -1418,6 +1559,70 @@ PYBIND11_MODULE(_coal_native, module) {
             w.set_robot_base_pose(branch_idx, pos, rot);
         })
         .def("set_jerk_limits", &gp::PlanningWorld::set_jerk_limits)
+        .def("set_occupancy_grid", [](gp::PlanningWorld& w, const Uint8Input& occ,
+                                      const gp::Vec3& origin, double resolution,
+                                      double max_distance, double inflation_radius,
+                                      int collision_layer, int collision_mask) {
+            if (occ.ndim() != 3) throw std::invalid_argument("occupancy grid must be a 3D array [nx, ny, nz]");
+            const int nx = static_cast<int>(occ.shape(0));
+            const int ny = static_cast<int>(occ.shape(1));
+            const int nz = static_cast<int>(occ.shape(2));
+            const uint8_t* ptr = occ.data();
+            py::gil_scoped_release release;
+            w.set_occupancy_grid(ptr, nx, ny, nz, origin, resolution, max_distance, inflation_radius,
+                                 collision_layer, collision_mask);
+        }, py::arg("occupied"), py::arg("origin"), py::arg("resolution"),
+           py::arg("max_distance") = std::numeric_limits<double>::infinity(),
+           py::arg("inflation_radius") = 0.0,
+           py::arg("collision_layer") = 1, py::arg("collision_mask") = 1)
+        .def("set_point_cloud", [](gp::PlanningWorld& w, const Input& pts, double resolution,
+                                   py::object origin_obj, py::object shape_obj,
+                                   double padding, double point_radius, double max_distance,
+                                   int collision_layer, int collision_mask) {
+            if (pts.ndim() != 2 || pts.shape(1) != 3)
+                throw std::invalid_argument("points must have shape [N, 3]");
+            std::optional<gp::Vec3> org;
+            if (!origin_obj.is_none()) org = origin_obj.cast<gp::Vec3>();
+            std::optional<std::array<int, 3>> shp;
+            if (!shape_obj.is_none()) shp = shape_obj.cast<std::array<int, 3>>();
+            const int64_t N = pts.shape(0);
+            const double* ptr = pts.data();
+            py::gil_scoped_release release;
+            w.set_point_cloud(ptr, N, resolution, org, shp, padding, point_radius, max_distance,
+                              collision_layer, collision_mask);
+        }, py::arg("points"), py::arg("resolution"),
+           py::arg("origin") = py::none(), py::arg("shape") = py::none(),
+           py::arg("padding") = 0.2, py::arg("point_radius") = 0.0,
+           py::arg("max_distance") = std::numeric_limits<double>::infinity(),
+           py::arg("collision_layer") = 1, py::arg("collision_mask") = 1)
+        .def("set_esdf", [](gp::PlanningWorld& w, const Input& values,
+                            const gp::Vec3& origin, double resolution,
+                            int collision_layer, int collision_mask) {
+            if (values.ndim() != 3) throw std::invalid_argument("ESDF grid must be a 3D array [nx, ny, nz]");
+            const int nx = static_cast<int>(values.shape(0));
+            const int ny = static_cast<int>(values.shape(1));
+            const int nz = static_cast<int>(values.shape(2));
+            const double* ptr = values.data();
+            py::gil_scoped_release release;
+            w.set_esdf(ptr, nx, ny, nz, origin, resolution, collision_layer, collision_mask);
+        }, py::arg("values"), py::arg("origin"), py::arg("resolution"),
+           py::arg("collision_layer") = 1, py::arg("collision_mask") = 1)
+        .def("clear_esdf", &gp::PlanningWorld::clear_esdf)
+        .def("esdf_info", [](const gp::PlanningWorld& w) { return snap_esdf_info(*w.snapshot()); })
+        .def("set_link_spheres", [](gp::PlanningWorld& w, const std::string& link_key,
+                                    const std::vector<std::pair<gp::Vec3, double>>& spheres,
+                                    int collision_layer, int collision_mask) {
+            w.set_link_spheres(link_key, spheres, collision_layer, collision_mask);
+        }, py::arg("link_key"), py::arg("spheres"), py::arg("collision_layer") = 1, py::arg("collision_mask") = 1)
+        .def("clear_link_spheres", &gp::PlanningWorld::clear_link_spheres, py::arg("link_key") = "")
+        .def("link_spheres", [](const gp::PlanningWorld& w) { return snap_link_spheres_list(*w.snapshot(), false); })
+        .def("esdf_spheres", [](const gp::PlanningWorld& w) { return snap_link_spheres_list(*w.snapshot(), true); })
+        .def("query_esdf", [](const gp::PlanningWorld& w, const Input& pts, bool return_gradient) {
+            return snap_query_esdf(*w.snapshot(), pts, return_gradient);
+        }, py::arg("points"), py::arg("return_gradient") = false)
+        .def("query_esdf_sphere_distances", [](const gp::PlanningWorld& w, const Input& q_arr) {
+            return snap_query_esdf_sphere_distances(*w.snapshot(), q_arr);
+        }, py::arg("q"))
         .def("attached_shape_names", &gp::PlanningWorld::attached_shape_names)
         .def("shape_names", &gp::PlanningWorld::shape_names)
         .def("apply_sync_batch", [](gp::PlanningWorld& w,
@@ -1580,14 +1785,14 @@ PYBIND11_MODULE(_coal_native, module) {
                                               int substeps, const Input& frames, const Input& margins,
                                               bool verify, double disp_tol,
                                               py::object times_obj, py::object vel_obj, bool strict,
-                                              py::object acc_obj, int spline_order) -> py::object {
+                                              py::object acc_obj, int spline_order, double esdf_margin) -> py::object {
             return snap_first_violation_continuous(
                 *w.snapshot(), q_waypoints, substeps, frames, margins, verify, disp_tol,
-                times_obj, vel_obj, strict, acc_obj, spline_order);
+                times_obj, vel_obj, strict, acc_obj, spline_order, esdf_margin);
         }, py::arg("q_waypoints"), py::arg("substeps"), py::arg("frames"), py::arg("margins"),
            py::arg("verify") = false, py::arg("disp_tol") = 5e-4,
            py::arg("times") = py::none(), py::arg("velocities") = py::none(), py::arg("strict") = false,
-           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3, py::arg("esdf_margin") = -1.0)
         .def("compute_analytic_gradients", [](const gp::PlanningWorld& w, const Input& frames,
                                               const Input& jorig, const Input& jaxis,
                                               const Indices& rows, const Indices& pair_ids, const Input& data) {
@@ -1595,10 +1800,14 @@ PYBIND11_MODULE(_coal_native, module) {
         })
         .def("eval_collision_rows", [](const gp::PlanningWorld& w, const Input& q_arr,
                                        const Input& opt_margins, const Input& check_margins,
-                                       double buffer, bool linearize, int64_t group_size, bool segment_minimum) {
+                                       double buffer, bool linearize, int64_t group_size, bool segment_minimum,
+                                       double esdf_opt_margin, double esdf_check_margin) {
             return snap_eval_collision_rows(*w.snapshot(), q_arr, opt_margins, check_margins,
-                                            buffer, linearize, group_size, segment_minimum);
-        })
+                                            buffer, linearize, group_size, segment_minimum,
+                                            esdf_opt_margin, esdf_check_margin);
+        }, py::arg("q"), py::arg("opt_margins"), py::arg("check_margins"), py::arg("buffer"),
+           py::arg("linearize"), py::arg("group_size"), py::arg("segment_minimum"),
+           py::arg("esdf_opt_margin") = -1.0, py::arg("esdf_check_margin") = -1.0)
         .def("eval_pose_constraints", [](const gp::PlanningWorld& w, const Input& q_vec,
                                          const std::vector<gp::PoseConstraintSpec>& specs, bool linearize) {
             return snap_eval_pose_constraints(*w.snapshot(), q_vec, specs, linearize);

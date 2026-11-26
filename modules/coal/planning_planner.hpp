@@ -206,8 +206,11 @@ inline FinalizeResultNative finalize_trajectory(
     }
 
     const int P = static_cast<int>(snap.pairs.size());
+    const bool use_esdf = snap.has_esdf();
+    const bool has_col = (P > 0) || use_esdf;
+    const double eff_wm = cfg.effective_world_margin();
     const int N_shapes = static_cast<int>(snap.shapes.size());
-    const Eigen::VectorXd margins = (P > 0) ? snap.pair_margins(cfg.margin, cfg.effective_world_margin()) : Eigen::VectorXd();
+    const Eigen::VectorXd margins = (P > 0) ? snap.pair_margins(cfg.margin, eff_wm) : Eigen::VectorXd();
 
     RowMatrixXd positions = positions_in;
     std::vector<int> wp_indices(static_cast<size_t>(positions_in.rows()));
@@ -263,22 +266,36 @@ inline FinalizeResultNative finalize_trajectory(
                 }
             }
 
-            if (bad_segs.empty() && P > 0) {
+            if (bad_segs.empty() && has_col) {
                 frames.resize(static_cast<size_t>(S * N_shapes * 12));
                 snap.compute_frames(samples.data(), S, frames.data());
 
-                const int n_passes = snap.has_mesh ? 2 : 1;
+                const int n_passes = (P > 0 && snap.has_mesh) ? 2 : 1;
                 for (int pass = 0; pass < n_passes; ++pass) {
                     const bool verify_orig = (pass == 1);
                     const char* kind = verify_orig ? "mesh" : "convex";
-                    snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
-                    if (!screen_rows.empty()) {
-                        snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
-                                                     static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig,
-                                                     viol_rows, viol_pairs);
+                    if (P > 0) {
+                        snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
+                        if (!screen_rows.empty()) {
+                            snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
+                                                         static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig,
+                                                         viol_rows, viol_pairs);
+                            if (!viol_rows.empty()) {
+                                const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), T - 2);
+                                last_error = std::string("retimed Hermite ") + kind + " clearance failed on segment " +
+                                             std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
+                                for (const int64_t r : viol_rows) {
+                                    bad_segs.insert(std::min(static_cast<int>(r / substeps), T - 2));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!verify_orig && use_esdf) {
+                        snap.violating_esdf_samples(samples.data(), frames.data(), S, eff_wm, viol_rows, viol_pairs);
                         if (!viol_rows.empty()) {
                             const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), T - 2);
-                            last_error = std::string("retimed Hermite ") + kind + " clearance failed on segment " +
+                            last_error = std::string("retimed Hermite ESDF clearance failed on segment ") +
                                          std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
                             for (const int64_t r : viol_rows) {
                                 bad_segs.insert(std::min(static_cast<int>(r / substeps), T - 2));
@@ -290,9 +307,10 @@ inline FinalizeResultNative finalize_trajectory(
                         auto ccd_hit = snap.first_violation_continuous(
                             traj.positions.data(), T, substeps, frames.data(), margins.data(),
                             false, 1e-3, traj.times.data(), traj.velocities.data(),
-                            cfg.strict_ccd, traj.accelerations.data(), traj.spline_order);
+                            cfg.strict_ccd, traj.accelerations.data(), traj.spline_order, eff_wm);
                         if (ccd_hit.has_value()) {
-                            last_error = std::string("retimed Hermite continuous ") + kind + " clearance failed on segment " +
+                            const char* ckind = (ccd_hit->pair_id < 0) ? "ESDF" : kind;
+                            last_error = std::string("retimed Hermite continuous ") + ckind + " clearance failed on segment " +
                                          std::to_string(ccd_hit->seg) + ", pair " + snap.pair_display_name(ccd_hit->pair_id);
                             bad_segs.insert(ccd_hit->seg);
                             break;
@@ -373,7 +391,7 @@ inline FinalizeResultNative finalize_trajectory(
                     const double max_d = std::max(0.25, (qb - qa).norm());
                     if (manifold_detail::project_onto_manifold(
                             snap, *manifold_constraints, mask, q_seed, q_mid, max_d, 0.25, 25) &&
-                        (P == 0 || snap.is_config_valid(q_mid.data(), margins, true))) {
+                        (!has_col || snap.is_config_valid(q_mid.data(), margins, true, eff_wm))) {
                         next_rows.push_back(std::move(q_mid));
                         inserted = true;
                     }
@@ -545,25 +563,35 @@ private:
                 }
             }
         }
-        if (!snap.pairs.empty()) {
-            const Eigen::VectorXd margins = snap.pair_margins(cfg.margin, cfg.effective_world_margin());
+        if (snap.has_collision_checks()) {
+            const double eff_wm = cfg.effective_world_margin();
+            const Eigen::VectorXd margins = snap.pair_margins(cfg.margin, eff_wm);
             std::vector<double> ends(static_cast<size_t>(2 * J));
             std::copy(start_q.data(), start_q.data() + J, ends.data());
             std::copy(goal_q.data(), goal_q.data() + J, ends.data() + J);
             std::vector<double> frames(static_cast<size_t>(2 * snap.shapes.size() * 12));
             snap.compute_frames(ends.data(), 2, frames.data());
-            std::vector<int64_t> rows, pids;
-            const int n_passes = snap.has_mesh ? 2 : 1;
-            for (int pass = 0; pass < n_passes; ++pass) {
-                const bool verify = (pass == 1);
-                snap.screen_aabbs(frames.data(), 2, margins.data(), verify, 1, rows, pids);
-                if (!rows.empty()) {
-                    auto hit = snap.first_violation_indexed(frames.data(), 2, rows.data(), pids.data(),
-                                                            static_cast<int64_t>(rows.size()), margins.data(), verify);
-                    if (hit.has_value()) {
-                        const int seg = (hit->first == 0) ? 0 : (cfg.waypoints - 2);
-                        return "endpoint collision on segment " + std::to_string(seg) + ", pair " + snap.pair_display_name(hit->second);
+            if (!snap.pairs.empty()) {
+                std::vector<int64_t> rows, pids;
+                const int n_passes = snap.has_mesh ? 2 : 1;
+                for (int pass = 0; pass < n_passes; ++pass) {
+                    const bool verify = (pass == 1);
+                    snap.screen_aabbs(frames.data(), 2, margins.data(), verify, 1, rows, pids);
+                    if (!rows.empty()) {
+                        auto hit = snap.first_violation_indexed(frames.data(), 2, rows.data(), pids.data(),
+                                                                static_cast<int64_t>(rows.size()), margins.data(), verify);
+                        if (hit.has_value()) {
+                            const int seg = (hit->first == 0) ? 0 : (cfg.waypoints - 2);
+                            return "endpoint collision on segment " + std::to_string(seg) + ", pair " + snap.pair_display_name(hit->second);
+                        }
                     }
+                }
+            }
+            if (snap.has_esdf()) {
+                auto ehit = snap.first_esdf_violation_samples(ends.data(), frames.data(), 2, eff_wm);
+                if (ehit.has_value()) {
+                    const int seg = (ehit->first == 0) ? 0 : (cfg.waypoints - 2);
+                    return "endpoint ESDF collision on segment " + std::to_string(seg) + ", pair " + snap.pair_display_name(ehit->second);
                 }
             }
         }
@@ -621,6 +649,7 @@ private:
             sp.max_segment_length = cfg.max_segment_length;
             sp.iterations = cfg.iterations;
             sp.first_feasible = cfg.first_feasible;
+            sp.strict_ccd = cfg.strict_ccd;
             sp.velocity_scale = cfg.velocity_scale;
             sp.seed_strategy = strategy;
             sp.goal_index = goal_idx;

@@ -591,15 +591,14 @@ class MotionPlanner:
         return specs, (perf_counter() - t_seed) * 1000.0
 
     def _plan_warp_single(self, request: MotionPlanRequest, *, snap=None) -> PlanResult:
-        if request.manifold_constraints:
-            # Constrained global manifold planning uses the standalone C++ CBiRRT + continuous manifold verifier
-            # executed against the exact pinned snapshot when provided.
+        pinned = self.world._native.snapshot() if snap is None else snap
+        if request.manifold_constraints or pinned.has_esdf:
+            # Constrained global manifold planning and CPU voxel ESDF sphere-cover planning execute
+            # natively in C++ against the exact pinned snapshot.
             req_dict = _request_to_native_dict(self.world, request)
-            raw = (self._native_planner.plan(req_dict) if snap is None
-                   else self._native_planner.plan_with_snapshot(snap, req_dict))
+            raw = self._native_planner.plan_with_snapshot(pinned, req_dict)
             return _plan_result_from_native(raw)
         t_start = perf_counter()
-        pinned = self.world._native.snapshot() if snap is None else snap
         cfg = request.config
         fixed = 2 if cfg.stop_at_endpoints else 1
         if cfg.waypoints < 2 * fixed:
@@ -682,7 +681,7 @@ class MotionPlanner:
 
             for local_i, req in enumerate(chunk):
                 row_i = offset + local_i
-                if req.manifold_constraints:
+                if req.manifold_constraints or pinned.has_esdf:
                     all_results[row_i] = self._plan_warp_single(req, snap=pinned)
                     continue
                 cfg = req.config

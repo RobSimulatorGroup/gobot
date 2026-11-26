@@ -14,7 +14,7 @@ from .world import PlanningWorld
 @dataclass
 class CollisionBatchEval:
     rows: np.ndarray            # (K,) sample indices
-    pair_ids: np.ndarray        # (K,) active pair indices
+    pair_ids: np.ndarray        # (K,) Coal indices or -(active ESDF sphere index + 1)
     residuals: np.ndarray       # (K,) opt_margin - distance
     gradients: np.ndarray | None  # (K, J) when linearize=True
     frames: np.ndarray          # (S, N_shapes, 3, 4)
@@ -163,6 +163,9 @@ class MuJoCoWarpBackend:
             return np.empty((0, 10), dtype=np.float64)
         if count < _WARP_GPU_MIN_COUNT:
             return s.query_distances_indexed(frames, rows, pair_ids, False)
+        if (rows.shape != (count,) or pair_ids.shape != (count,) or np.any(rows < 0)
+                or np.any(rows >= len(frames)) or np.any(pair_ids < 0) or np.any(pair_ids >= s.num_pairs)):
+            raise ValueError("sample or Coal pair index out of range")
         wp = self._wp
         with _WARP_LOCK:
             self._sync_geometry(s)
@@ -228,13 +231,16 @@ class MuJoCoWarpBackend:
         snap=None,
     ) -> CollisionBatchEval:
         s = self.world._native.snapshot() if snap is None else snap
+        if s.has_esdf:
+            return CoalBackend(self.world).eval_rows(samples, opt_margins, check_margins, buffer,
+                                                     linearize, group_size, segment_minimum, snap=s)
         out = s.compute_frames(np.ascontiguousarray(samples, dtype=np.float64), linearize)
         if linearize:
             frames, jorig, jaxis = out
         else:
             (frames,) = out
             jorig = jaxis = None
-        n_segs = len(samples) // group_size if group_size > 0 else len(samples)
+        n_segs = (len(samples) + group_size - 1) // group_size if group_size > 0 else len(samples)
         seg_ok = np.ones(n_segs, dtype=np.bool_)
         if s.num_pairs == 0:
             empty_i = np.empty(0, dtype=np.int64)

@@ -1940,3 +1940,290 @@ TEST(MotionPlanningCpp, ManifoldReviewRegressionsFallbackDurationSameEndpointsRe
         EXPECT_THROW(planner.plan(req_z), std::invalid_argument);
     }
 }
+
+TEST(MotionPlanningCpp, VoxelEsdfExactEdtTrilinearGradientAndExteriorBounds) {
+    // 1. Single occupied voxel at (5, 5, 5) in an 11x11x11 grid, resolution = 0.1 m.
+    const int N = 11;
+    const double h = 0.1;
+    const gp::Vec3 origin(-0.55, -0.55, -0.55);  // center of (5,5,5) is (0, 0, 0)
+    std::vector<uint8_t> occ(static_cast<size_t>(N * N * N), 0);
+    occ[static_cast<size_t>((5 * N + 5) * N + 5)] = 1;
+
+    auto grid = gp::VoxelESDF::from_occupancy_grid(occ.data(), N, N, N, origin, h);
+    ASSERT_TRUE(grid->valid());
+    EXPECT_FALSE(grid->is_empty);
+    EXPECT_NEAR(grid->query(gp::Vec3(0.0, 0.0, 0.0)), -0.5 * h, 1e-6);
+    EXPECT_NEAR(grid->query(gp::Vec3(0.1, 0.0, 0.0)),  0.5 * h, 1e-6);
+    EXPECT_NEAR(grid->query(gp::Vec3(0.2, 0.0, 0.0)),  1.5 * h, 1e-6);
+    EXPECT_NEAR(grid->query(gp::Vec3(0.1, 0.1, 0.0)), (std::sqrt(2.0) - 0.5) * h, 1e-6);
+
+    // Exact zero-crossing at the face between (5,5,5) and (6,5,5) (x = +0.05) with d(sdf)/dx == +1.
+    gp::Vec3 grad_face;
+    const double d_face = grid->query(gp::Vec3(0.05, 0.0, 0.0), &grad_face);
+    EXPECT_NEAR(d_face, 0.0, 1e-6);
+    EXPECT_NEAR(grad_face(0), 1.0, 1e-5);
+
+    // On a planar occupied wall (ix == 5), the face gradient is purely (+1, 0, 0).
+    {
+        std::vector<uint8_t> wall_occ(static_cast<size_t>(N * N * N), 0);
+        for (int iy = 0; iy < N; ++iy) {
+            for (int iz = 0; iz < N; ++iz) {
+                wall_occ[static_cast<size_t>((5 * N + iy) * N + iz)] = 1;
+            }
+        }
+        auto wall_grid = gp::VoxelESDF::from_occupancy_grid(wall_occ.data(), N, N, N, origin, h);
+        gp::Vec3 gw;
+        const double dw = wall_grid->query(gp::Vec3(0.05, 0.0, 0.0), &gw);
+        EXPECT_NEAR(dw, 0.0, 1e-6);
+        EXPECT_NEAR(gw(0), 1.0, 1e-5);
+        EXPECT_NEAR(gw(1), 0.0, 1e-5);
+        EXPECT_NEAR(gw(2), 0.0, 1e-5);
+    }
+
+    // Finite-difference verification of analytic trilinear + exterior smooth gradient.
+    const std::vector<gp::Vec3> probe_pts = {
+        gp::Vec3(0.13, 0.07, -0.04),   // interior cell
+        gp::Vec3(0.85, 0.12, -0.03),   // outside +X face
+        gp::Vec3(0.85, 0.90, 0.80),    // outside 3D corner
+    };
+    const double eps = 1e-5;
+    for (const auto& p : probe_pts) {
+        gp::Vec3 g_ana;
+        grid->query(p, &g_ana);
+        for (int a = 0; a < 3; ++a) {
+            gp::Vec3 dp = gp::Vec3::Zero();
+            dp(a) = eps;
+            const double fd = (grid->query(p + dp) - grid->query(p - dp)) / (2.0 * eps);
+            EXPECT_NEAR(g_ana(a), fd, 1e-5) << "axis " << a << " at " << p.transpose();
+        }
+    }
+
+    // 2. All-occupied 5x5x5 grid: outer shell = -0.5*h, 1-in = -1.5*h, center = -2.5*h.
+    std::vector<uint8_t> full_occ(static_cast<size_t>(5 * 5 * 5), 1);
+    auto full_grid = gp::VoxelESDF::from_occupancy_grid(full_occ.data(), 5, 5, 5, gp::Vec3::Zero(), h);
+    EXPECT_NEAR(full_grid->query(gp::Vec3(0.05, 0.05, 0.05)), -0.5 * h, 1e-6);
+    EXPECT_NEAR(full_grid->query(gp::Vec3(0.15, 0.15, 0.15)), -1.5 * h, 1e-6);
+    EXPECT_NEAR(full_grid->query(gp::Vec3(0.25, 0.25, 0.25)), -2.5 * h, 1e-6);
+    // Exterior point just beyond x = 0 face (x = -0.02 -> 0.07 from cell center 0.05 -> -0.05 + 0.07 = +0.02).
+    EXPECT_NEAR(full_grid->query(gp::Vec3(-0.02, 0.25, 0.25)), 0.02, 1e-5);
+
+    // 3. Empty occupancy grid and empty point cloud return +inf.
+    std::vector<uint8_t> empty_occ(static_cast<size_t>(4 * 4 * 4), 0);
+    auto empty_grid = gp::VoxelESDF::from_occupancy_grid(empty_occ.data(), 4, 4, 4, gp::Vec3::Zero(), h);
+    EXPECT_TRUE(empty_grid->is_empty);
+    EXPECT_TRUE(std::isinf(empty_grid->query(gp::Vec3(0.1, 0.1, 0.1))));
+
+    auto empty_pc = gp::VoxelESDF::from_point_cloud(nullptr, 0, h);
+    EXPECT_TRUE(empty_pc->is_empty);
+
+    // 4. Point cloud with inflation radius.
+    const double pc_pts[3] = {0.25, 0.25, 0.25};
+    auto pc_grid = gp::VoxelESDF::from_point_cloud(pc_pts, 1, 0.1, std::nullopt, std::nullopt, 0.2, 0.03);
+    EXPECT_FALSE(pc_grid->is_empty);
+    EXPECT_LT(pc_grid->query(gp::Vec3(0.25, 0.25, 0.25)), -0.04);
+
+    // 5. Custom ESDF array with slope 2.0 computes certified lipschitz_bound >= 2.0.
+    std::vector<double> custom_vals(static_cast<size_t>(5 * 5 * 5), 0.0);
+    for (int ix = 0; ix < 5; ++ix) {
+        for (int iy = 0; iy < 5; ++iy) {
+            for (int iz = 0; iz < 5; ++iz) {
+                custom_vals[static_cast<size_t>((ix * 5 + iy) * 5 + iz)] = 2.0 * (static_cast<double>(ix) * h);
+            }
+        }
+    }
+    auto custom_grid = gp::VoxelESDF::from_esdf_array(custom_vals.data(), 5, 5, 5, gp::Vec3::Zero(), h);
+    EXPECT_GE(custom_grid->lipschitz_bound, 2.0 - 1e-5);
+}
+
+TEST(MotionPlanningCpp, LinkSphereCoverConservativeAndEsdfPlanningEndToEnd) {
+    // 1. Verify conservative sphere-cover encloses every corner/extremum for Sphere, Capsule, Cylinder, Box, Mesh.
+    auto check_encloses = [](const std::vector<std::pair<gp::Vec3, double>>& sphs, const gp::Vec3& p) {
+        for (const auto& [c, r] : sphs) {
+            if ((p - c).norm() <= r + 1e-9) return true;
+        }
+        return false;
+    };
+    {
+        gp::CollisionShape box_sh;
+        box_sh.kind = 1;
+        box_sh.box_half_size = gp::Vec3(0.03, 0.04, 0.18);
+        const auto sphs = gp::esdf_detail::generate_shape_sphere_cover(box_sh);
+        EXPECT_GE(sphs.size(), 3u);
+        for (int sx : {-1, 1}) for (int sy : {-1, 1}) for (int sz : {-1, 1}) {
+            EXPECT_TRUE(check_encloses(sphs, gp::Vec3(sx * 0.03, sy * 0.04, sz * 0.18)));
+        }
+    }
+    {
+        gp::CollisionShape cap_sh;
+        cap_sh.kind = 4;
+        cap_sh.radius = 0.05;
+        cap_sh.height = 0.30;
+        const auto sphs = gp::esdf_detail::generate_shape_sphere_cover(cap_sh);
+        EXPECT_GE(sphs.size(), 2u);
+        for (double z : {-0.15, -0.075, 0.0, 0.075, 0.15}) {
+            EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.05, 0.0, z)));
+            EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.0, -0.05, z)));
+        }
+        EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.0, 0.0, 0.20)));
+        EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.0, 0.0, -0.20)));
+    }
+    {
+        gp::CollisionShape cyl_sh;
+        cyl_sh.kind = 3;
+        cyl_sh.radius = 0.04;
+        cyl_sh.height = 0.24;
+        const auto sphs = gp::esdf_detail::generate_shape_sphere_cover(cyl_sh);
+        EXPECT_GE(sphs.size(), 2u);
+        EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.04, 0.0, 0.12)));
+        EXPECT_TRUE(check_encloses(sphs, gp::Vec3(0.0, 0.04, -0.12)));
+    }
+    {
+        gp::CollisionShape mesh_sh;
+        mesh_sh.kind = 5;
+        mesh_sh.hull_points = {
+            gp::Vec3(-0.02, -0.02, -0.15), gp::Vec3(0.02, -0.02, -0.15),
+            gp::Vec3(-0.02,  0.02, -0.15), gp::Vec3(0.02,  0.02, -0.15),
+            gp::Vec3(-0.02, -0.02,  0.15), gp::Vec3(0.02, -0.02,  0.15),
+            gp::Vec3(-0.02,  0.02,  0.15), gp::Vec3(0.02,  0.02,  0.15),
+        };
+        const auto sphs = gp::esdf_detail::generate_shape_sphere_cover(mesh_sh);
+        EXPECT_GE(sphs.size(), 2u);
+        for (const auto& v : mesh_sh.hull_points) {
+            EXPECT_TRUE(check_encloses(sphs, v));
+        }
+    }
+
+    // 2. End-to-end ESDF-only planning (zero static Coal pairs!) on the 4-DOF arm.
+    auto world = make_upright_cup_arm_world();
+    ASSERT_EQ(world->num_pairs(), 0);
+    EXPECT_GT(world->num_link_spheres(), 0);
+    auto snap_before = world->snapshot();
+    const uint64_t ver_before = world->version();
+
+    // Place a vertical voxel pillar centered at (x=0.70, y=0.0, z in [0.0, 0.8]) directly blocking yaw sweep from -0.8 to +0.8!
+    const int nx = 30, ny = 30, nz = 20;
+    const double res = 0.04;
+    const gp::Vec3 origin(0.10, -0.60, 0.0);
+    std::vector<uint8_t> occ(static_cast<size_t>(nx * ny * nz), 0);
+    for (int ix = 0; ix < nx; ++ix) {
+        const double x = origin(0) + (ix + 0.5) * res;
+        for (int iy = 0; iy < ny; ++iy) {
+            const double y = origin(1) + (iy + 0.5) * res;
+            if (std::abs(x - 0.72) <= 0.07 && std::abs(y) <= 0.07) {
+                for (int iz = 0; iz < nz; ++iz) {
+                    occ[static_cast<size_t>((ix * ny + iy) * nz + iz)] = 1;
+                }
+            }
+        }
+    }
+    world->set_occupancy_grid(occ.data(), nx, ny, nz, origin, res);
+    EXPECT_TRUE(world->has_esdf());
+    EXPECT_FALSE(snap_before->has_esdf());  // immutable CoW snapshot isolation!
+    EXPECT_GT(world->version(), ver_before);
+
+    Eigen::VectorXd q_start(4), q_goal(4);
+    q_start << -0.75, -0.4, 0.8, -0.4;
+    q_goal  <<  0.75, -0.4, 0.8, -0.4;
+
+    // Straight line through the ESDF pillar must be rejected by validate_trajectory_collision!
+    {
+        auto snap = world->snapshot();
+        gp::RowMatrixXd straight(2, 4);
+        straight.row(0) = q_start.transpose();
+        straight.row(1) = q_goal.transpose();
+        std::vector<double> samples;
+        gp::detail::build_segment_samples(straight, 1, true, samples);
+        // Even with substeps=1 (endpoints free, mid-segment passes through pillar), ESDF continuous CCD catches it!
+        const auto vres = snap->validate_trajectory_collision(
+            straight.data(), 2, samples.data(), 2, 1, 0.002, 0.01, true, 5e-4,
+            nullptr, nullptr, true);
+        EXPECT_FALSE(vres.valid);
+        EXPECT_NE(vres.reason.find("esdf"), std::string::npos) << vres.reason;
+    }
+
+    // MotionPlannerNative plans a smooth collision-free detour around the ESDF pillar (quintic + strict_ccd)!
+    gp::MotionPlannerNative planner(world);
+    gp::MotionPlanRequestNative req;
+    req.start_q = q_start;
+    req.goal_qs = {q_goal};
+    req.config.waypoints = 14;
+    req.config.margin = 0.002;
+    req.config.has_world_margin = true;
+    req.config.world_margin = 0.015;
+    req.config.spline_order = 5;
+    req.config.strict_ccd = true;
+    req.config.rrt_timeout_s = 1.5;
+
+    const auto plan_res = planner.plan(req);
+    ASSERT_TRUE(plan_res.success) << plan_res.reason;
+    EXPECT_EQ(plan_res.world_version, world->version());
+
+    // Independent strict_ccd verification + direct sphere ESDF clearance check.
+    {
+        auto snap = world->snapshot();
+        std::vector<double> samples;
+        plan_res.trajectory.sample_segments(8, samples);
+        const int64_t S = static_cast<int64_t>(samples.size() / 4);
+        const auto vres = snap->validate_trajectory_collision(
+            plan_res.trajectory.positions.data(), plan_res.trajectory.num_waypoints(),
+            samples.data(), S, 8, 0.002, 0.015, true, 5e-4,
+            plan_res.trajectory.times.data(), plan_res.trajectory.velocities.data(), true,
+            plan_res.trajectory.accelerations.data(), plan_res.trajectory.spline_order);
+        EXPECT_TRUE(vres.valid) << vres.reason;
+
+        std::vector<double> sdists(static_cast<size_t>(S) * snap->esdf_spheres.size());
+        snap->query_esdf_sphere_distances(samples.data(), S, sdists.data());
+        for (double d : sdists) {
+            EXPECT_GE(d, 0.015 - 1e-4);
+        }
+    }
+
+    // 3. ACM override disabling ESDF on cup link allows straight-line path; re-enabling blocks it again.
+    world->set_collision_enabled("cup_arm::cup", "::esdf", false);
+    EXPECT_EQ(world->num_esdf_spheres(), 0);
+    world->set_collision_enabled("cup_arm::cup", "::esdf", true);
+    EXPECT_GT(world->num_esdf_spheres(), 0);
+
+    // 4. Custom link spheres override and clear_esdf.
+    world->set_link_spheres("cup_arm::cup", {{gp::Vec3::Zero(), 0.06}});
+    EXPECT_EQ(world->num_esdf_spheres(), 1);
+    world->clear_link_spheres("cup_arm::cup");
+    EXPECT_EQ(world->num_esdf_spheres(), 1);  // auto sphere restored
+    world->clear_esdf();
+    EXPECT_FALSE(world->has_esdf());
+}
+
+TEST(MotionPlanningCpp, OccupiedVoxelClearanceBoundsAnalyticBoxes) {
+    const double h = 0.1;
+    const gp::Vec3 origin(-0.2, 0.1, 0.3);
+    // Both a boundary cell and an internal cell. Probe edges, faces, corners and exterior.
+    std::array<uint8_t, 27> occupied{};
+    occupied[0] = occupied[13] = 1;
+    const auto grid = gp::VoxelESDF::from_occupancy_grid(occupied.data(), 3, 3, 3, origin, h);
+    for (int x = -3; x <= 16; ++x) for (int y = -3; y <= 16; ++y) for (int z = -3; z <= 16; ++z) {
+        const gp::Vec3 p = origin + 0.25 * h * gp::Vec3(x, y, z);
+        double exact = std::numeric_limits<double>::infinity();
+        for (int i : {0, 1}) {
+            const gp::Vec3 center = origin + gp::Vec3::Constant((i + 0.5) * h);
+            const gp::Vec3 gap = (p - center).cwiseAbs().array() - 0.5 * h;
+            exact = std::min(exact, gap.cwiseMax(0.0).norm());
+        }
+        ASSERT_LE(grid->collision_distance(p), exact + 1e-12) << p.transpose();
+    }
+    const auto inflated = gp::VoxelESDF::from_occupancy_grid(occupied.data(), 1, 1, 1, origin, h, 0.01, 0.2);
+    const gp::Vec3 inside_inflation = origin + gp::Vec3(0.22, 0.05, 0.05);
+    EXPECT_LT(inflated->query(inside_inflation), 0.0);
+    EXPECT_LT(inflated->collision_distance(inside_inflation), 0.0);
+    const std::array<int, 3> too_large{1 << 22, 1 << 22, 1 << 22};
+    EXPECT_THROW(gp::VoxelESDF::from_point_cloud(nullptr, 0, h, origin, too_large), std::invalid_argument);
+
+    gp::CollisionShape tiny;
+    tiny.kind = 4;
+    tiny.radius = 1e-6;
+    tiny.height = 8e-7;
+    const gp::Vec3 tip(0, 0, tiny.radius + 0.5 * tiny.height);
+    const auto cover = gp::esdf_detail::generate_shape_sphere_cover(tiny);
+    EXPECT_TRUE(std::any_of(cover.begin(), cover.end(), [&](const auto& sphere) {
+        return (tip - sphere.first).norm() <= sphere.second;
+    }));
+}
