@@ -249,3 +249,122 @@ class BatchPlanResult:
     reasons: tuple[str | None, ...]
     initial_positions: np.ndarray
     world_version: int = 0
+
+
+@dataclass(frozen=True)
+class CartesianWaypoint:
+    """Target waypoint for linear (MoveL) or directed circular arc (MoveC) Cartesian path planning."""
+
+    position: Sequence[float] | np.ndarray
+    rotation: Sequence[Sequence[float]] | np.ndarray | None = None
+    motion_type: str = "linear"
+    via_position: Sequence[float] | np.ndarray | None = None
+    blend_radius: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.motion_type not in ("linear", "circular"):
+            raise ValueError("motion_type must be 'linear' or 'circular'")
+        pos = np.asarray(self.position, dtype=np.float64)
+        if pos.shape != (3,) or not np.isfinite(pos).all():
+            raise ValueError("CartesianWaypoint position must be a finite 3-vector")
+        if self.rotation is not None:
+            rot = np.asarray(self.rotation, dtype=np.float64)
+            if rot.shape != (3, 3) or not np.isfinite(rot).all():
+                raise ValueError("CartesianWaypoint rotation must be a finite 3x3 matrix")
+        if self.motion_type == "circular":
+            if self.via_position is None:
+                raise ValueError("circular CartesianWaypoint requires via_position")
+            via = np.asarray(self.via_position, dtype=np.float64)
+            if via.shape != (3,) or not np.isfinite(via).all():
+                raise ValueError("CartesianWaypoint via_position must be a finite 3-vector")
+        elif self.via_position is not None:
+            raise ValueError("via_position is only valid when motion_type='circular'")
+        if not math.isfinite(self.blend_radius) or self.blend_radius < 0.0:
+            raise ValueError("blend_radius must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
+class CartesianPlanConfig:
+    """Configuration for Cartesian TCP path planning, continuity IK, retiming, and continuous verification."""
+
+    max_step: float = 0.01
+    max_rot_step: float = 0.05
+    max_pos_error: float = 1e-3
+    max_rot_error: float = 1e-2
+    jump_threshold_revolute: float = 0.5
+    jump_threshold_prismatic: float = 0.2
+    max_subdivision_depth: int = 4
+    ik_iterations: int = 30
+    ik_damping: float = 1e-3
+    avoid_collisions: bool = True
+    margin: float = 0.002
+    world_margin: float | None = None
+    strict_ccd: bool = False
+    collision_substeps: int = 4
+    spline_order: int = 3
+    velocity_scale: float = 1.0
+    acceleration_scale: float = 1.0
+    jerk_scale: float = 1.0
+    stop_at_endpoints: bool = True
+    hold_orientation: bool = False
+    verify_original: bool = True
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.max_step) or self.max_step <= 0.0:
+            raise ValueError("max_step must be finite and positive")
+        if not math.isfinite(self.max_rot_step) or self.max_rot_step <= 0.0:
+            raise ValueError("max_rot_step must be finite and positive")
+        if not math.isfinite(self.max_pos_error) or self.max_pos_error <= 0.0:
+            raise ValueError("max_pos_error must be finite and positive")
+        if not math.isfinite(self.max_rot_error) or self.max_rot_error <= 0.0:
+            raise ValueError("max_rot_error must be finite and positive")
+        if math.isnan(self.jump_threshold_revolute) or self.jump_threshold_revolute <= 0.0:
+            raise ValueError("jump_threshold_revolute must be positive (or +inf)")
+        if math.isnan(self.jump_threshold_prismatic) or self.jump_threshold_prismatic <= 0.0:
+            raise ValueError("jump_threshold_prismatic must be positive (or +inf)")
+        if self.max_subdivision_depth < 0:
+            raise ValueError("max_subdivision_depth must be >= 0")
+        if self.ik_iterations < 1:
+            raise ValueError("ik_iterations must be >= 1")
+        if not math.isfinite(self.ik_damping) or self.ik_damping < 0.0:
+            raise ValueError("ik_damping must be finite and nonnegative")
+        if not math.isfinite(self.margin) or self.margin < 0.0:
+            raise ValueError("margin must be finite and nonnegative")
+        if self.world_margin is not None and (not math.isfinite(self.world_margin) or self.world_margin < 0.0):
+            raise ValueError("world_margin must be finite and nonnegative")
+        if self.collision_substeps < 1:
+            raise ValueError("collision_substeps must be >= 1")
+        if self.spline_order not in (3, 5):
+            raise ValueError("spline_order must be 3 (cubic Hermite) or 5 (quintic Hermite)")
+        if not math.isfinite(self.velocity_scale) or self.velocity_scale <= 0.0:
+            raise ValueError("velocity_scale must be finite and positive")
+        if not math.isfinite(self.acceleration_scale) or self.acceleration_scale <= 0.0:
+            raise ValueError("acceleration_scale must be finite and positive")
+        if not math.isfinite(self.jerk_scale) or self.jerk_scale <= 0.0:
+            raise ValueError("jerk_scale must be finite and positive")
+
+    @property
+    def effective_world_margin(self) -> float:
+        return self.margin if self.world_margin is None else self.world_margin
+
+
+@dataclass(frozen=True)
+class CartesianPlanResult:
+    """Verified executable Cartesian path result with monotone progress fraction."""
+
+    trajectory: Trajectory | None
+    fraction: float = 0.0
+    completed_waypoints: int = 0
+    max_pos_error: float = 0.0
+    max_rot_error: float = 0.0
+    reason: str | None = None
+    diagnostics: PlanDiagnostics = field(default_factory=PlanDiagnostics)
+    world_version: int = 0
+
+    @property
+    def success(self) -> bool:
+        return self.trajectory is not None and self.fraction >= 1.0 - 1e-9 and self.reason is None
+
+    @property
+    def positions(self) -> np.ndarray | None:
+        return None if self.trajectory is None else self.trajectory.positions

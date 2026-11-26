@@ -803,3 +803,686 @@ TEST(MotionPlanningCpp, QuinticNearZeroC5AccelerationPeakLimitLengthsZeroDtAndSp
         EXPECT_FALSE(chk_lo.ok);
     }
 }
+
+TEST(MotionPlanningCpp, CartesianLinearCircularArcAndTcpOffset) {
+    auto world = make_planar_arm_world();
+    auto snap = world->snapshot();
+    gp::MotionPlannerNative planner(world);
+
+    // Non-trivial TCP offset on arm::tip (body 3)
+    const gp::Vec3 tcp_pos(0.05, 0.02, 0.0);
+    const double ang_off = 0.35;
+    gp::Mat3 tcp_rot = gp::Mat3::Identity();
+    tcp_rot << std::cos(ang_off), -std::sin(ang_off), 0.0,
+               std::sin(ang_off),  std::cos(ang_off), 0.0,
+               0.0,                0.0,               1.0;
+
+    auto eval_tcp = [&](const Eigen::VectorXd& q) {
+        std::vector<gp::Vec3> bp(static_cast<size_t>(snap->kin.num_bodies()));
+        std::vector<gp::Mat3> br(static_cast<size_t>(snap->kin.num_bodies()));
+        snap->kin.fk_single(q.data(), bp.data(), br.data());
+        return std::make_pair(gp::Vec3(bp[3] + br[3] * tcp_pos), gp::Mat3(br[3] * tcp_rot));
+    };
+
+    const Eigen::VectorXd q_start = (Eigen::VectorXd(2) << 0.4, 0.9).finished();
+    const auto [p0, r0] = eval_tcp(q_start);
+
+    // 1. Linear MoveL + Directed Circular Arc MoveC for both cubic (order=3) and quintic (order=5).
+    const gp::Vec3 p1 = p0 + gp::Vec3(-0.18, 0.14, 0.0);
+    // Directed circular arc from p1 through p_via to p2 (radius ~0.12 m in XY plane).
+    const gp::Vec3 arc_c = p1 + gp::Vec3(-0.12, 0.0, 0.0);
+    const gp::Vec3 p_via = arc_c + gp::Vec3(0.0, 0.12, 0.0);
+    const gp::Vec3 p2 = arc_c + gp::Vec3(-0.12, 0.0, 0.0);
+
+    for (int order : {3, 5}) {
+        gp::CartesianPlanRequestNative req;
+        req.start_q = q_start;
+        req.link_id = 3;
+        req.tcp_offset_position = tcp_pos;
+        req.tcp_offset_rotation = tcp_rot;
+        req.config.max_step = 0.02;
+        req.config.max_pos_error = 1e-3;
+        req.config.spline_order = order;
+        req.config.avoid_collisions = false;
+
+        gp::CartesianWaypointNative wp0;
+        wp0.motion_type = gp::CartesianMotionType::Linear;
+        wp0.position = p1;
+        wp0.blend_radius = 0.0;
+
+        gp::CartesianWaypointNative wp1;
+        wp1.motion_type = gp::CartesianMotionType::Circular;
+        wp1.via_position = p_via;
+        wp1.has_via_position = true;
+        wp1.position = p2;
+        wp1.blend_radius = 0.0;
+
+        req.waypoints = {wp0, wp1};
+        const auto res = planner.plan_cartesian_path(req);
+        ASSERT_TRUE(res.success) << "order=" << order << " reason=" << res.reason;
+        ASSERT_TRUE(res.has_trajectory);
+        EXPECT_DOUBLE_EQ(res.fraction, 1.0);
+        EXPECT_EQ(res.completed_waypoints, 2);
+        EXPECT_EQ(res.world_version, snap->version);
+        EXPECT_LE(res.max_pos_error, req.config.max_pos_error + 1e-6);
+
+        // Dense independent verification along the actual played spline: every point lies on line p0->p1 or arc p1->p_via->p2.
+        const int S = 160;
+        bool passed_near_via = false;
+        const double T_dur = res.trajectory.duration();
+        for (int i = 0; i <= S; ++i) {
+            const double t = T_dur * static_cast<double>(i) / static_cast<double>(S);
+            Eigen::VectorXd q_s;
+            res.trajectory.sample_single(t, q_s);
+            const auto [pt, rt] = eval_tcp(q_s);
+            (void)rt;
+            // Distance to line segment [p0, p1]
+            const gp::Vec3 d_lin = p1 - p0;
+            const double u_lin = std::clamp((pt - p0).dot(d_lin) / d_lin.squaredNorm(), 0.0, 1.0);
+            const double err_lin = (pt - (p0 + u_lin * d_lin)).norm();
+            // Distance to upper semicircle arc around arc_c with radius 0.12 (y >= arc_c.y)
+            const gp::Vec3 rel = pt - arc_c;
+            double err_arc = std::abs(rel.head<2>().norm() - 0.12) + std::abs(rel.z());
+            if (rel.y() < -1e-3) err_arc += 1.0;  // Must be on the directed upper arc passing p_via!
+            if ((pt - p_via).norm() < 0.015) passed_near_via = true;
+            EXPECT_LE(std::min(err_lin, err_arc), req.config.max_pos_error + 1e-4)
+                << "order=" << order << " sample=" << i;
+        }
+        EXPECT_TRUE(passed_near_via);
+        const auto bchk = gp::check_trajectory_bounds(
+            res.trajectory, snap->kin.velocity_limit(), snap->kin.acceleration_limit(),
+            true, true, 1e-5, &snap->kin.lower(), &snap->kin.upper(), &snap->kin.jerk_limit(), order == 5);
+        EXPECT_TRUE(bchk.ok) << bchk.reason;
+    }
+
+    // 2. Degenerate / collinear / duplicate circular arcs must throw std::invalid_argument.
+    {
+        gp::CartesianPlanRequestNative bad;
+        bad.start_q = q_start;
+        bad.link_id = 3;
+        bad.tcp_offset_position = tcp_pos;
+        bad.tcp_offset_rotation = tcp_rot;
+        gp::CartesianWaypointNative wp;
+        wp.motion_type = gp::CartesianMotionType::Circular;
+        wp.has_via_position = true;
+        // Collinear triplet
+        wp.via_position = p0 + gp::Vec3(0.05, 0.0, 0.0);
+        wp.position = p0 + gp::Vec3(0.10, 0.0, 0.0);
+        bad.waypoints = {wp};
+        EXPECT_THROW(planner.plan_cartesian_path(bad), std::invalid_argument);
+        // Duplicate via == start
+        wp.via_position = p0;
+        wp.position = p0 + gp::Vec3(0.05, 0.05, 0.0);
+        bad.waypoints = {wp};
+        EXPECT_THROW(planner.plan_cartesian_path(bad), std::invalid_argument);
+    }
+}
+
+TEST(MotionPlanningCpp, CartesianCornerHandlingAndSplineDeviationGuard) {
+    auto world = make_planar_arm_world();
+    auto snap = world->snapshot();
+    gp::MotionPlannerNative planner(world);
+
+    auto eval_tip = [&](const Eigen::VectorXd& q) {
+        std::vector<gp::Vec3> bp(static_cast<size_t>(snap->kin.num_bodies()));
+        std::vector<gp::Mat3> br(static_cast<size_t>(snap->kin.num_bodies()));
+        snap->kin.fk_single(q.data(), bp.data(), br.data());
+        return bp[3];
+    };
+
+    const Eigen::VectorXd q_start = (Eigen::VectorXd(2) << 0.25, 1.1).finished();
+    const gp::Vec3 p0 = eval_tip(q_start);
+    const gp::Vec3 p_corner = p0 + gp::Vec3(-0.18, 0.0, 0.0);
+    const gp::Vec3 p_end = p_corner + gp::Vec3(0.0, 0.18, 0.0);
+
+    // 1. Sharp corner (blend_radius == 0): must come to exact zero velocity at corner and never cut it.
+    gp::CartesianPlanRequestNative req_sharp;
+    req_sharp.start_q = q_start;
+    req_sharp.link_id = 3;
+    req_sharp.config.max_step = 0.03;
+    req_sharp.config.max_pos_error = 1e-3;
+    req_sharp.config.avoid_collisions = false;
+    req_sharp.config.spline_order = 5;
+    req_sharp.waypoints = {
+        {gp::CartesianMotionType::Linear, p_corner, false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+        {gp::CartesianMotionType::Linear, p_end,    false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+    };
+    const auto res_sharp = planner.plan_cartesian_path(req_sharp);
+    ASSERT_TRUE(res_sharp.success) << res_sharp.reason;
+
+    int corner_knot = -1;
+    double best_corner_d = 1e9;
+    for (int k = 0; k < res_sharp.trajectory.num_waypoints(); ++k) {
+        const double d = (eval_tip(res_sharp.trajectory.positions.row(k).transpose()) - p_corner).norm();
+        if (d < best_corner_d) { best_corner_d = d; corner_knot = k; }
+    }
+    ASSERT_GT(corner_knot, 0);
+    ASSERT_LT(corner_knot, res_sharp.trajectory.num_waypoints() - 1);
+    EXPECT_LT(best_corner_d, 1e-3);
+    EXPECT_LT(res_sharp.trajectory.velocities.row(corner_knot).norm(), 1e-12);
+    EXPECT_LT(res_sharp.trajectory.accelerations.row(corner_knot).norm(), 1e-12);
+
+    // 2. Blended corner (blend_radius = 0.05): non-zero speed through blend and bounded corner distance.
+    gp::CartesianPlanRequestNative req_blend = req_sharp;
+    req_blend.waypoints[0].blend_radius = 0.05;
+    const auto res_blend = planner.plan_cartesian_path(req_blend);
+    ASSERT_TRUE(res_blend.success) << res_blend.reason;
+    double min_dist_to_corner = 1e9;
+    double speed_at_closest = 0.0;
+    for (int i = 0; i <= 100; ++i) {
+        const double t = res_blend.trajectory.duration() * static_cast<double>(i) / 100.0;
+        Eigen::VectorXd qs, vs;
+        res_blend.trajectory.sample_single(t, qs, &vs);
+        const double d = (eval_tip(qs) - p_corner).norm();
+        if (d < min_dist_to_corner) {
+            min_dist_to_corner = d;
+            speed_at_closest = vs.norm();
+        }
+    }
+    EXPECT_GT(min_dist_to_corner, 0.005);   // Actually rounded the corner
+    EXPECT_LE(min_dist_to_corner, 0.05);    // Strictly inside blend_radius
+    EXPECT_GT(speed_at_closest, 1e-3);      // Smooth motion through blend (no full stop)
+
+    // 3. Direct counterexample: all IK knots lie EXACTLY on the line (error == 0 at knots),
+    // yet mid-segment spline bows off the line by > 10 mm -> verify_spline_tcp_deviation MUST reject it,
+    // and plan_cartesian_path with coarse max_step MUST automatically refine it!
+    {
+        const Eigen::VectorXd q_a = q_start;
+        const gp::Vec3 p_b = p0 + gp::Vec3(-0.32, 0.10, 0.0);
+        // Solve exact IK for endpoint p_b.
+        gp::PoseConstraintSpec target;
+        target.link_id = 3;
+        target.has_position = true;
+        target.position = p_b;
+        target.pos_tol = gp::Vec3::Constant(1e-6);
+        const auto ik_b = planner.solve_ik({target}, &q_a, nullptr, 0.0, 0.0, 40, 1, false, 0);
+        ASSERT_TRUE(ik_b.success);
+
+        gp::TrajectoryNative coarse_traj;
+        coarse_traj.spline_order = 3;
+        coarse_traj.times = (Eigen::VectorXd(2) << 0.0, 1.0).finished();
+        coarse_traj.positions.resize(2, 2);
+        coarse_traj.positions.row(0) = q_a.transpose();
+        coarse_traj.positions.row(1) = ik_b.q.transpose();
+        coarse_traj.velocities = gp::RowMatrixXd::Zero(2, 2);
+        coarse_traj.accelerations = gp::RowMatrixXd::Zero(2, 2);
+
+        gp::cartesian_detail::CartesianPrimitive lin_prim;
+        lin_prim.kind = gp::cartesian_detail::CartesianPrimitive::Kind::Linear;
+        lin_prim.p0 = p0;
+        lin_prim.p1 = p_b;
+        lin_prim.arc_length = (p_b - p0).norm();
+        const auto chk = gp::cartesian_detail::verify_spline_tcp_deviation(
+            *snap, 3, gp::Vec3::Zero(), gp::Mat3::Identity(),
+            coarse_traj, {lin_prim}, {0}, {0.0}, {1.0}, 1e-3, 1e-2);
+        EXPECT_FALSE(chk.ok);
+        EXPECT_GT(chk.max_pos_err, 5e-3);
+
+        // Now ask plan_cartesian_path with huge max_step=1.0 (initially 1 segment) and tight max_pos_error=1e-3:
+        gp::CartesianPlanRequestNative req_coarse;
+        req_coarse.start_q = q_a;
+        req_coarse.link_id = 3;
+        req_coarse.config.max_step = 1.0;
+        req_coarse.config.max_pos_error = 1e-3;
+        req_coarse.config.max_subdivision_depth = 6;
+        req_coarse.config.avoid_collisions = false;
+        req_coarse.waypoints = {
+            {gp::CartesianMotionType::Linear, p_b, false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res_ref = planner.plan_cartesian_path(req_coarse);
+        ASSERT_TRUE(res_ref.success) << res_ref.reason;
+        EXPECT_GT(res_ref.trajectory.num_waypoints(), 2);
+        EXPECT_LE(res_ref.max_pos_error, 1e-3 + 1e-6);
+    }
+}
+
+TEST(MotionPlanningCpp, CartesianObstaclePartialPrefixJumpAndUnwrap) {
+    // 1. Obstacle blocking middle of linear path -> monotone verified partial prefix (0 < fraction < 1).
+    auto world = make_planar_arm_world();
+    auto eval_tip = [&](const gp::WorldSnapshot& s, const Eigen::VectorXd& q) {
+        std::vector<gp::Vec3> bp(static_cast<size_t>(s.kin.num_bodies()));
+        std::vector<gp::Mat3> br(static_cast<size_t>(s.kin.num_bodies()));
+        s.kin.fk_single(q.data(), bp.data(), br.data());
+        return bp[3];
+    };
+    const Eigen::VectorXd q_start = (Eigen::VectorXd(2) << 0.25, 1.1).finished();
+    const gp::Vec3 p0 = eval_tip(*world->snapshot(), q_start);
+    const gp::Vec3 p_end = p0 + gp::Vec3(-0.30, 0.0, 0.0);
+    // Put a blocking box halfway along the line p0 -> p_end.
+    add_box_obstacle(*world, "blocker", gp::Vec3(0.08, 0.20, 0.20), p0 + gp::Vec3(-0.18, 0.0, 0.0));
+
+    gp::MotionPlannerNative planner(world);
+    gp::CartesianPlanRequestNative req;
+    req.start_q = q_start;
+    req.link_id = 3;
+    req.config.max_step = 0.02;
+    req.config.max_pos_error = 1e-3;
+    req.config.avoid_collisions = true;
+    req.config.margin = 0.002;
+    req.config.has_world_margin = true;
+    req.config.world_margin = 0.005;
+    req.config.strict_ccd = true;
+    req.waypoints = {
+        {gp::CartesianMotionType::Linear, p_end, false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+    };
+    const auto res = planner.plan_cartesian_path(req);
+    EXPECT_FALSE(res.success);
+    ASSERT_TRUE(res.has_trajectory);
+    EXPECT_GT(res.fraction, 0.1);
+    EXPECT_LT(res.fraction, 0.9);
+    EXPECT_EQ(res.completed_waypoints, 0);
+    EXPECT_FALSE(res.reason.empty());
+
+    // Verify the returned partial trajectory passes strict continuous CCD!
+    auto snap = world->snapshot();
+    std::vector<double> samples;
+    res.trajectory.sample_segments(8, samples);
+    const auto vres = snap->validate_trajectory_collision(
+        res.trajectory.positions.data(), res.trajectory.num_waypoints(),
+        samples.data(), static_cast<int64_t>(samples.size() / 2), 8,
+        req.config.margin, req.config.effective_world_margin(), true, 5e-4,
+        res.trajectory.times.data(), res.trajectory.velocities.data(), true,
+        res.trajectory.accelerations.data(), res.trajectory.spline_order);
+    EXPECT_TRUE(vres.valid) << vres.reason;
+
+    // 2. Tight jump_threshold_revolute fails when max_subdivision_depth=0, succeeds when adaptive subdivision enabled.
+    auto clear_world = make_planar_arm_world();
+    gp::MotionPlannerNative clear_planner(clear_world);
+    gp::CartesianPlanRequestNative jreq;
+    jreq.start_q = q_start;
+    jreq.link_id = 3;
+    jreq.config.max_step = 0.25;  // coarse step producing > 0.2 rad jump
+    jreq.config.jump_threshold_revolute = 0.15;
+    jreq.config.max_subdivision_depth = 0;
+    jreq.config.avoid_collisions = false;
+    jreq.waypoints = {
+        {gp::CartesianMotionType::Linear, p_end, false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+    };
+    const auto j_fail = clear_planner.plan_cartesian_path(jreq);
+    EXPECT_FALSE(j_fail.success);
+    EXPECT_LT(j_fail.fraction, 1.0);
+
+    jreq.config.max_subdivision_depth = 5;
+    const auto j_ok = clear_planner.plan_cartesian_path(jreq);
+    EXPECT_TRUE(j_ok.success) << j_ok.reason;
+    EXPECT_DOUBLE_EQ(j_ok.fraction, 1.0);
+
+    // 3. Continuous revolute unwrapping across +pi without a 2*pi flip.
+    {
+        Eigen::VectorXd q_prev(2), q_wrapped(2), lo(2), hi(2);
+        q_prev << 3.10, 0.5;
+        q_wrapped << -3.08, 0.5;  // equivalent to +3.2032 rad (only +0.1032 rad away from 3.10!)
+        lo << -2.0 * M_PI, -M_PI;
+        hi <<  2.0 * M_PI,  M_PI;
+        std::vector<uint8_t> is_pris = {0, 0};
+        std::vector<uint8_t> mask = {1, 1};
+        gp::cartesian_detail::unwrap_revolute_near(q_wrapped, q_prev, lo, hi, is_pris, mask);
+        EXPECT_NEAR(q_wrapped(0), -3.08 + 2.0 * M_PI, 1e-12);
+    }
+}
+
+TEST(MotionPlanningCpp, CartesianReviewCounterexamplesMoveCViaBlendRotPureRotAndFirstSegPrefix) {
+    // 1. P1: Small near-full YZ circular arc (R=1.5 mm) on an XY-only arm MUST NOT skip via_position and report success!
+    {
+        auto world = make_planar_arm_world();
+        auto snap = world->snapshot();
+        gp::MotionPlannerNative planner(world);
+        const Eigen::VectorXd q0 = (Eigen::VectorXd(2) << 0.4, 0.9).finished();
+        std::vector<gp::Vec3> bp(static_cast<size_t>(snap->kin.num_bodies()));
+        std::vector<gp::Mat3> br(static_cast<size_t>(snap->kin.num_bodies()));
+        snap->kin.fk_single(q0.data(), bp.data(), br.data());
+        const gp::Vec3 p0 = bp[3];
+
+        // Circle in YZ plane centered at p0 + (0, 0, 1.5mm) with radius 1.5 mm.
+        // p0 is at bottom (0, 0, 0); via is at top (0, 0, +3mm); end is near bottom (0, -0.3mm, +0.03mm) -> ~348 deg arc!
+        const double R = 0.0015;
+        const gp::Vec3 c = p0 + gp::Vec3(0.0, 0.0, R);
+        const gp::Vec3 p_via = c + gp::Vec3(0.0, 0.0, R);  // +3.0 mm in unreachable Z
+        const double ang_end = -0.5 * M_PI + 2.0 * M_PI - 0.15;
+        const gp::Vec3 p_end = c + gp::Vec3(0.0, R * std::cos(ang_end), R * std::sin(ang_end));
+
+        gp::CartesianPlanRequestNative req;
+        req.start_q = q0;
+        req.link_id = 3;
+        req.config.max_step = 0.01;
+        req.config.max_pos_error = 1e-3;
+        req.config.avoid_collisions = false;
+        req.waypoints = {
+            {gp::CartesianMotionType::Circular, p_end, false, gp::Mat3::Identity(), true, p_via, 0.0},
+        };
+        const auto res = planner.plan_cartesian_path(req);
+        EXPECT_FALSE(res.success);
+        EXPECT_LT(res.fraction, 1.0);
+        EXPECT_EQ(res.completed_waypoints, 0);
+    }
+
+    // 2. P1: Blended transition from constrained orientation to free orientation MUST reach the specified orientation!
+    // Build a 3-DOF X-Y-Yaw planar robot (independent slide X, slide Y, revolute Z).
+    {
+        auto world = std::make_shared<gp::PlanningWorld>();
+        std::vector<int> parent = {-1, 0, 1, 2};
+        std::vector<int> kinds = {4, 3, 3, 1};
+        std::vector<int> joint_idx = {-1, 0, 1, 2};
+        const gp::Mat3 I3 = gp::Mat3::Identity();
+        std::vector<gp::Mat3> a_rot(4, I3), b_rot(4, I3);
+        std::vector<gp::Vec3> a_pos(4, gp::Vec3::Zero()), b_pos(4, gp::Vec3::Zero());
+        std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitX(), gp::Vec3::UnitY(), gp::Vec3::UnitZ()};
+        std::vector<gp::KinematicsModel::Branch> branches = {{"xyyaw", 0, gp::Vec3::Zero(), I3}};
+        std::vector<std::string> bnames = {"xyyaw::base", "xyyaw::bx", "xyyaw::by", "xyyaw::tip"};
+        std::vector<std::string> jnames = {"xyyaw::jx", "xyyaw::jy", "xyyaw::jyaw"};
+        Eigen::VectorXd lo(3), hi(3), vel(3), acc(3), qinit(3);
+        lo << -2.0, -2.0, -3.14;
+        hi <<  2.0,  2.0,  3.14;
+        vel << 2.0, 2.0, 3.0;
+        acc << 6.0, 6.0, 10.0;
+        qinit << 0.0, 0.0, 0.0;
+        std::unordered_map<std::string, int> lidx = {
+            {"xyyaw::base", 0}, {"xyyaw::bx", 1}, {"xyyaw::by", 2}, {"xyyaw::tip", 3},
+        };
+        world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes,
+                               branches, bnames, jnames, lo, hi, vel, acc, qinit, lidx);
+
+        gp::MotionPlannerNative planner(world);
+        const double yaw_target = 1.0;
+        gp::Mat3 r_target = gp::Mat3::Identity();
+        r_target << std::cos(yaw_target), -std::sin(yaw_target), 0.0,
+                    std::sin(yaw_target),  std::cos(yaw_target), 0.0,
+                    0.0,                   0.0,                  1.0;
+
+        gp::CartesianPlanRequestNative req;
+        req.start_q = qinit;
+        req.link_id = 3;
+        req.config.max_step = 0.02;
+        req.config.max_rot_step = 0.05;
+        req.config.max_pos_error = 1e-3;
+        req.config.max_rot_error = 1e-2;
+        req.config.avoid_collisions = false;
+        req.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.4, 0.0, 0.0), true, r_target, false, gp::Vec3::Zero(), 0.15},
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.4, 0.4, 0.0), false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res = planner.plan_cartesian_path(req);
+        ASSERT_TRUE(res.success) << res.reason;
+
+        // Verify the played trajectory actually reaches yaw_target within max_rot_error = 0.01 rad!
+        double min_rot_err = 1e9;
+        for (int i = 0; i <= 200; ++i) {
+            const double t = res.trajectory.duration() * static_cast<double>(i) / 200.0;
+            Eigen::VectorXd qs;
+            res.trajectory.sample_single(t, qs);
+            min_rot_err = std::min(min_rot_err, std::abs(qs(2) - yaw_target));
+        }
+        EXPECT_LE(min_rot_err, req.config.max_rot_error);
+    }
+
+    // 3. P2: Pure-rotation second waypoint after a free-orientation arc failing IK must NOT report fraction=1 or completed_waypoints=2!
+    {
+        auto world = make_planar_arm_world();
+        auto snap = world->snapshot();
+        gp::MotionPlannerNative planner(world);
+        const Eigen::VectorXd q0 = (Eigen::VectorXd(2) << 0.4, 0.9).finished();
+        std::vector<gp::Vec3> bp(static_cast<size_t>(snap->kin.num_bodies()));
+        std::vector<gp::Mat3> br(static_cast<size_t>(snap->kin.num_bodies()));
+        snap->kin.fk_single(q0.data(), bp.data(), br.data());
+        const gp::Vec3 p0 = bp[3];
+        const gp::Mat3 r0 = br[3];
+
+        // Segment 0: free-orientation circular arc in XY plane (succeeds, changes tip yaw away from r0).
+        const gp::Vec3 arc_c = p0 + gp::Vec3(-0.10, 0.0, 0.0);
+        const gp::Vec3 p_via = arc_c + gp::Vec3(0.0, 0.10, 0.0);
+        const gp::Vec3 p1 = arc_c + gp::Vec3(-0.10, 0.0, 0.0);
+        // Segment 1: pure rotation in place back to r0 (impossible for 2-DOF arm while holding position p1!).
+        gp::CartesianPlanRequestNative req;
+        req.start_q = q0;
+        req.link_id = 3;
+        req.config.max_step = 0.02;
+        req.config.max_pos_error = 1e-3;
+        req.config.max_rot_error = 1e-2;
+        req.config.avoid_collisions = false;
+        req.waypoints = {
+            {gp::CartesianMotionType::Circular, p1, false, gp::Mat3::Identity(), true, p_via, 0.0},
+            {gp::CartesianMotionType::Linear,   p1, true,  r0,                   false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res = planner.plan_cartesian_path(req);
+        EXPECT_FALSE(res.success);
+        ASSERT_TRUE(res.has_trajectory);
+        EXPECT_EQ(res.completed_waypoints, 1);
+        EXPECT_LT(res.fraction, 1.0);
+        EXPECT_GT(res.fraction, 0.2);
+    }
+
+    // 4. P2: Collision inside the FIRST single IK segment (1.4 m with coarse max_step) must still bisect and recover executable prefix!
+    {
+        auto world = std::make_shared<gp::PlanningWorld>();
+        std::vector<int> parent = {-1, 0};
+        std::vector<int> kinds = {4, 3};
+        std::vector<int> joint_idx = {-1, 0};
+        const gp::Mat3 I3 = gp::Mat3::Identity();
+        std::vector<gp::Mat3> a_rot(2, I3), b_rot(2, I3);
+        std::vector<gp::Vec3> a_pos(2, gp::Vec3::Zero()), b_pos(2, gp::Vec3::Zero());
+        std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitX()};
+        std::vector<gp::KinematicsModel::Branch> branches = {{"slider", 0, gp::Vec3::Zero(), I3}};
+        std::vector<std::string> bnames = {"slider::base", "slider::tip"};
+        std::vector<std::string> jnames = {"slider::jx"};
+        Eigen::VectorXd lo(1), hi(1), vel(1), acc(1), qinit(1);
+        lo << -1.0; hi << 2.0; vel << 2.0; acc << 6.0; qinit << 0.0;
+        std::unordered_map<std::string, int> lidx = {{"slider::base", 0}, {"slider::tip", 1}};
+        world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes,
+                               branches, bnames, jnames, lo, hi, vel, acc, qinit, lidx);
+
+        auto sh = std::make_shared<gp::CollisionShape>();
+        sh->label = "tip_sphere";
+        sh->kind = 2;
+        sh->radius = 0.04;
+        sh->convex = std::make_shared<coal::Sphere>(0.04);
+        sh->finalize_bounds();
+        gp::WorldShape tip_ws;
+        tip_ws.name = "slider/tip/sphere";
+        tip_ws.link_key = "slider::tip";
+        tip_ws.body_id = 1;
+        tip_ws.local_frame.setZero();
+        tip_ws.local_frame.leftCols<3>() = I3;
+        tip_ws.shape = sh;
+        world->add_shape(tip_ws);
+
+        // Place thin blocking wall at x = 0.36 m (width 0.04 -> face at x = 0.34, tip radius 0.04 -> hits at x = 0.30).
+        // Notice: start (0.0), midpoint (0.70), and end (1.40) are ALL collision-free, so IK produces 1 segment [0, 1.4],
+        // and continuous CCD fails on seg 0! Sub-segment bisection MUST recover the ~0.29 m executable prefix!
+        add_box_obstacle(*world, "wall", gp::Vec3(0.04, 0.30, 0.30), gp::Vec3(0.36, 0.0, 0.0));
+
+        gp::MotionPlannerNative planner(world);
+        gp::CartesianPlanRequestNative req;
+        req.start_q = qinit;
+        req.link_id = 1;
+        req.config.max_step = 2.0;  // single nominal IK segment spanning 1.4 m
+        req.config.jump_threshold_prismatic = 5.0;
+        req.config.max_subdivision_depth = 0;
+        req.config.avoid_collisions = true;
+        req.config.margin = 0.002;
+        req.config.has_world_margin = true;
+        req.config.world_margin = 0.005;
+        req.config.strict_ccd = true;
+        req.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(1.4, 0.0, 0.0), false, gp::Mat3::Identity(), false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res = planner.plan_cartesian_path(req);
+        EXPECT_FALSE(res.success);
+        ASSERT_TRUE(res.has_trajectory) << res.reason;
+        EXPECT_GT(res.fraction, 0.15);  // > 0.21 m out of 1.4 m
+        EXPECT_LT(res.fraction, 0.25);  // < 0.35 m out of 1.4 m
+        EXPECT_EQ(res.completed_waypoints, 0);
+
+        auto snap = world->snapshot();
+        std::vector<double> samples;
+        res.trajectory.sample_segments(8, samples);
+        const auto vres = snap->validate_trajectory_collision(
+            res.trajectory.positions.data(), res.trajectory.num_waypoints(),
+            samples.data(), static_cast<int64_t>(samples.size()), 8,
+            req.config.margin, req.config.effective_world_margin(), true, 5e-4,
+            res.trajectory.times.data(), res.trajectory.velocities.data(), true,
+            res.trajectory.accelerations.data(), res.trajectory.spline_order);
+        EXPECT_TRUE(vres.valid) << vres.reason;
+    }
+
+    // 5. P1: 180-deg hairpin reversal blend (forward 30 mm, back 30 mm, blend_radius=6 mm) MUST reach the 27 mm apex!
+    {
+        auto world = std::make_shared<gp::PlanningWorld>();
+        std::vector<int> parent = {-1, 0};
+        std::vector<int> kinds = {4, 3};
+        std::vector<int> joint_idx = {-1, 0};
+        const gp::Mat3 I3 = gp::Mat3::Identity();
+        std::vector<gp::Mat3> a_rot(2, I3), b_rot(2, I3);
+        std::vector<gp::Vec3> a_pos(2, gp::Vec3::Zero()), b_pos(2, gp::Vec3::Zero());
+        std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitX()};
+        std::vector<gp::KinematicsModel::Branch> branches = {{"slider", 0, gp::Vec3::Zero(), I3}};
+        std::vector<std::string> bnames = {"slider::base", "slider::tip"};
+        std::vector<std::string> jnames = {"slider::jx"};
+        Eigen::VectorXd lo(1), hi(1), vel(1), acc(1), qinit(1);
+        lo << -1.0; hi << 2.0; vel << 2.0; acc << 6.0; qinit << 0.0;
+        std::unordered_map<std::string, int> lidx = {{"slider::base", 0}, {"slider::tip", 1}};
+        world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes,
+                               branches, bnames, jnames, lo, hi, vel, acc, qinit, lidx);
+
+        gp::MotionPlannerNative planner(world);
+        for (int order : {3, 5}) {
+            gp::CartesianPlanRequestNative req;
+            req.start_q = qinit;
+            req.link_id = 1;
+            req.config.max_step = 0.01;
+            req.config.max_pos_error = 1e-3;
+            req.config.spline_order = order;
+            req.config.avoid_collisions = false;
+            req.waypoints = {
+                {gp::CartesianMotionType::Linear, gp::Vec3(0.030, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.006},
+                {gp::CartesianMotionType::Linear, gp::Vec3(0.000, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.0},
+            };
+            const auto res = planner.plan_cartesian_path(req);
+            ASSERT_TRUE(res.success) << "order=" << order << " reason=" << res.reason;
+            double max_x = -1.0;
+            for (int i = 0; i <= 200; ++i) {
+                Eigen::VectorXd qs;
+                res.trajectory.sample_single(res.trajectory.duration() * static_cast<double>(i) / 200.0, qs);
+                max_x = std::max(max_x, qs(0));
+            }
+            // Bezier apex is at 24mm + 0.5*6mm = 27mm; playback must reach within max_pos_error (1mm) of 27mm!
+            EXPECT_NEAR(max_x, 0.027, 1e-3) << "order=" << order;
+        }
+
+        // P2: 200 mm hairpin reversal with 38 mm blend and max_step=10 mm -> EVERY adjacent IK knot pair
+        // must have TCP spacing <= max_step (within IK tolerance) via de Casteljau control-polygon length bound!
+        gp::CartesianPlanRequestNative req_big_blend;
+        req_big_blend.start_q = qinit;
+        req_big_blend.link_id = 1;
+        req_big_blend.config.max_step = 0.01;
+        req_big_blend.config.max_pos_error = 1e-3;
+        req_big_blend.config.avoid_collisions = false;
+        req_big_blend.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.200, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.038},
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.000, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res_big = planner.plan_cartesian_path(req_big_blend);
+        ASSERT_TRUE(res_big.success) << res_big.reason;
+        double max_knot_step = 0.0;
+        for (int k = 0; k + 1 < res_big.trajectory.num_waypoints(); ++k) {
+            max_knot_step = std::max(max_knot_step,
+                                     std::abs(res_big.trajectory.positions(k + 1, 0) - res_big.trajectory.positions(k, 0)));
+        }
+        EXPECT_LE(max_knot_step, req_big_blend.config.max_step + 0.5 * req_big_blend.config.max_pos_error);
+    }
+
+    // 6. P2: IK collision exhausting subdivision depth on the first interval still bisects to recover executable prefix;
+    //        P2: Later IK failure must NOT overwrite earlier collision truncation reason;
+    //        P3: Zero-length wp[0] == start preserves completed_waypoints=1 when wp[1] fails!
+    {
+        auto world = std::make_shared<gp::PlanningWorld>();
+        std::vector<int> parent = {-1, 0};
+        std::vector<int> kinds = {4, 3};
+        std::vector<int> joint_idx = {-1, 0};
+        const gp::Mat3 I3 = gp::Mat3::Identity();
+        std::vector<gp::Mat3> a_rot(2, I3), b_rot(2, I3);
+        std::vector<gp::Vec3> a_pos(2, gp::Vec3::Zero()), b_pos(2, gp::Vec3::Zero());
+        std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitX()};
+        std::vector<gp::KinematicsModel::Branch> branches = {{"slider", 0, gp::Vec3::Zero(), I3}};
+        std::vector<std::string> bnames = {"slider::base", "slider::tip"};
+        std::vector<std::string> jnames = {"slider::jx"};
+        Eigen::VectorXd lo(1), hi(1), vel(1), acc(1), qinit(1);
+        lo << -1.0; hi << 2.0; vel << 2.0; acc << 6.0; qinit << 0.0;
+        std::unordered_map<std::string, int> lidx = {{"slider::base", 0}, {"slider::tip", 1}};
+        world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes,
+                               branches, bnames, jnames, lo, hi, vel, acc, qinit, lidx);
+
+        auto sh = std::make_shared<gp::CollisionShape>();
+        sh->label = "tip_sphere";
+        sh->kind = 2;
+        sh->radius = 0.04;
+        sh->convex = std::make_shared<coal::Sphere>(0.04);
+        sh->finalize_bounds();
+        gp::WorldShape tip_ws;
+        tip_ws.name = "slider/tip/sphere";
+        tip_ws.link_key = "slider::tip";
+        tip_ws.body_id = 1;
+        tip_ws.local_frame.setZero();
+        tip_ws.local_frame.leftCols<3>() = I3;
+        tip_ws.shape = sh;
+        world->add_shape(tip_ws);
+
+        // Obstacle covering x=0.0875 (first depth-4 subdivision node of 1.4 m!) while leaving first ~25 mm clear:
+        // box center x=0.11, size_x=0.08 -> face at 0.07, sphere r=0.04 + margin 0.005 -> hits at x=0.025 m!
+        add_box_obstacle(*world, "near_wall", gp::Vec3(0.08, 0.30, 0.30), gp::Vec3(0.11, 0.0, 0.0));
+
+        gp::MotionPlannerNative planner(world);
+        gp::CartesianPlanRequestNative req_ik_col;
+        req_ik_col.start_q = qinit;
+        req_ik_col.link_id = 1;
+        req_ik_col.config.max_step = 2.0;
+        req_ik_col.config.jump_threshold_prismatic = 5.0;
+        req_ik_col.config.max_subdivision_depth = 4;
+        req_ik_col.config.avoid_collisions = true;
+        req_ik_col.config.margin = 0.002;
+        req_ik_col.config.has_world_margin = true;
+        req_ik_col.config.world_margin = 0.005;
+        req_ik_col.config.strict_ccd = true;
+        req_ik_col.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(1.4, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res_ik_col = planner.plan_cartesian_path(req_ik_col);
+        EXPECT_FALSE(res_ik_col.success);
+        ASSERT_TRUE(res_ik_col.has_trajectory) << res_ik_col.reason;
+        EXPECT_GT(res_ik_col.fraction, 0.01);
+        EXPECT_LT(res_ik_col.fraction, 0.03);
+
+        // Now move wall to x=0.36 (thin width 0.04 -> seg 0 passes coarse IK, fails CCD verification at ~0.295 m)
+        // AND add unreachable wp[1] in Z -> reason MUST report seg 0 collision/clearance, NOT wp[1] IK pose error!
+        gp::Frame f_wall = gp::Frame::Zero();
+        f_wall.leftCols<3>() = I3;
+        f_wall.col(3) = gp::Vec3(0.36, 0.0, 0.0);
+        world->remove_obstacle("near_wall");
+        add_box_obstacle(*world, "thin_wall", gp::Vec3(0.04, 0.30, 0.30), gp::Vec3(0.36, 0.0, 0.0));
+        gp::CartesianPlanRequestNative req_reason = req_ik_col;
+        req_reason.config.max_subdivision_depth = 0;
+        req_reason.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(1.4, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.0},
+            {gp::CartesianMotionType::Linear, gp::Vec3(1.4, 0.0, 0.2), false, I3, false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res_reason = planner.plan_cartesian_path(req_reason);
+        EXPECT_FALSE(res_reason.success);
+        ASSERT_TRUE(res_reason.has_trajectory);
+        EXPECT_NE(res_reason.reason.find("clearance"), std::string::npos) << "got reason: " << res_reason.reason;
+        EXPECT_NE(res_reason.reason.find("thin_wall"), std::string::npos) << "got reason: " << res_reason.reason;
+
+        // P3: wp[0] == start pose, wp[1] unreachable in Z -> fraction == 0, completed_waypoints == 1!
+        gp::CartesianPlanRequestNative req_zero0;
+        req_zero0.start_q = qinit;
+        req_zero0.link_id = 1;
+        req_zero0.config.avoid_collisions = false;
+        req_zero0.waypoints = {
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.0, 0.0, 0.0), false, I3, false, gp::Vec3::Zero(), 0.0},
+            {gp::CartesianMotionType::Linear, gp::Vec3(0.0, 0.0, 0.2), false, I3, false, gp::Vec3::Zero(), 0.0},
+        };
+        const auto res_zero0 = planner.plan_cartesian_path(req_zero0);
+        EXPECT_FALSE(res_zero0.success);
+        EXPECT_FALSE(res_zero0.has_trajectory);
+        EXPECT_DOUBLE_EQ(res_zero0.fraction, 0.0);
+        EXPECT_EQ(res_zero0.completed_waypoints, 1);
+    }
+}

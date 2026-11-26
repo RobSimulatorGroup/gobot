@@ -6,6 +6,9 @@ from .retime import retime_trajectory
 from .types import (
     BatchIKResult,
     BatchPlanResult,
+    CartesianPlanConfig,
+    CartesianPlanResult,
+    CartesianWaypoint,
     IKResult,
     JointName,
     Link,
@@ -24,6 +27,9 @@ from .world import PlanningWorld
 __all__ = [
     "BatchIKResult",
     "BatchPlanResult",
+    "CartesianPlanConfig",
+    "CartesianPlanResult",
+    "CartesianWaypoint",
     "CoalBackend",
     "CollisionBackend",
     "IKResult",

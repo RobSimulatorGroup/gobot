@@ -1,5 +1,6 @@
 #pragma once
 
+#include "planning_cartesian.hpp"
 #include "planning_retime.hpp"
 #include "planning_sqp.hpp"
 #include "planning_world.hpp"
@@ -332,6 +333,11 @@ public:
     PlanResultNative plan(const MotionPlanRequestNative& req) const {
         auto snap = world_->snapshot();
         return plan_on_snapshot(*snap, req);
+    }
+
+    CartesianPlanResultNative plan_cartesian_path(const CartesianPlanRequestNative& req) const {
+        auto snap = world_->snapshot();
+        return plan_cartesian_path_on_snapshot(*snap, req);
     }
 
     std::vector<PlanResultNative> plan_batch(const std::vector<MotionPlanRequestNative>& requests,

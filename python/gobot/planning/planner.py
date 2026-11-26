@@ -14,7 +14,11 @@ from .sqp import SQPJobSpec, run_sqp_batch
 from .types import (
     BatchIKResult,
     BatchPlanResult,
+    CartesianPlanConfig,
+    CartesianPlanResult,
+    CartesianWaypoint,
     IKResult,
+    JointConfig,
     Link,
     MotionPlanRequest,
     PathConstraint,
@@ -305,6 +309,105 @@ class MotionPlanner:
         reasons = tuple(r.reason for r in final_results)
         world_ver = final_results[0].world_version if final_results else self.world.version
         return BatchPlanResult(final_results, positions, success, reasons, init_pos, world_version=world_ver)
+
+    def plan_cartesian_path(
+        self,
+        start: JointConfig,
+        waypoints: Sequence[CartesianWaypoint],
+        *,
+        link: Link,
+        tcp_offset_position: Sequence[float] | np.ndarray | None = None,
+        tcp_offset_rotation: Sequence[Sequence[float]] | np.ndarray | None = None,
+        group: str | PlanningGroup | Sequence[tuple[str, str]] | None = None,
+        config: CartesianPlanConfig | None = None,
+    ) -> CartesianPlanResult:
+        """Plan a verified linear/circular-arc Cartesian TCP path in C++ against an immutable WorldSnapshot."""
+        if not waypoints:
+            raise ValueError("provide at least one CartesianWaypoint")
+        if link not in self.world.links:
+            raise KeyError(f"unknown link {link!r}")
+        cfg = CartesianPlanConfig() if config is None else config
+        start_q = self.world.configuration(start)
+        mask = self.world.group_mask(group)
+
+        tcp_pos = None
+        if tcp_offset_position is not None:
+            tcp_pos = np.asarray(tcp_offset_position, dtype=np.float64)
+            if tcp_pos.shape != (3,) or not np.isfinite(tcp_pos).all():
+                raise ValueError("tcp_offset_position must be a finite 3-vector")
+        tcp_rot = None
+        if tcp_offset_rotation is not None:
+            tcp_rot = np.asarray(tcp_offset_rotation, dtype=np.float64)
+            if tcp_rot.shape != (3, 3) or not np.isfinite(tcp_rot).all():
+                raise ValueError("tcp_offset_rotation must be a finite 3x3 matrix")
+
+        native_wps = []
+        for wp in waypoints:
+            if not isinstance(wp, CartesianWaypoint):
+                raise TypeError(f"expected CartesianWaypoint, got {type(wp).__name__}")
+            native_wps.append({
+                "motion_type": str(wp.motion_type),
+                "position": np.asarray(wp.position, dtype=np.float64),
+                "rotation": None if wp.rotation is None else np.asarray(wp.rotation, dtype=np.float64),
+                "via_position": None if wp.via_position is None else np.asarray(wp.via_position, dtype=np.float64),
+                "blend_radius": float(wp.blend_radius),
+            })
+
+        req_dict = {
+            "start_q": np.ascontiguousarray(start_q, dtype=np.float64),
+            "link_id": int(self.world.links[link]),
+            "tcp_offset_position": tcp_pos,
+            "tcp_offset_rotation": tcp_rot,
+            "active_mask": np.ascontiguousarray(mask, dtype=np.bool_),
+            "waypoints": native_wps,
+            "config": {
+                "max_step": float(cfg.max_step),
+                "max_rot_step": float(cfg.max_rot_step),
+                "max_pos_error": float(cfg.max_pos_error),
+                "max_rot_error": float(cfg.max_rot_error),
+                "jump_threshold_revolute": float(cfg.jump_threshold_revolute),
+                "jump_threshold_prismatic": float(cfg.jump_threshold_prismatic),
+                "max_subdivision_depth": int(cfg.max_subdivision_depth),
+                "ik_iterations": int(cfg.ik_iterations),
+                "ik_damping": float(cfg.ik_damping),
+                "avoid_collisions": bool(cfg.avoid_collisions),
+                "margin": float(cfg.margin),
+                "world_margin": None if cfg.world_margin is None else float(cfg.world_margin),
+                "strict_ccd": bool(cfg.strict_ccd),
+                "collision_substeps": int(cfg.collision_substeps),
+                "spline_order": int(cfg.spline_order),
+                "velocity_scale": float(cfg.velocity_scale),
+                "acceleration_scale": float(cfg.acceleration_scale),
+                "jerk_scale": float(cfg.jerk_scale),
+                "stop_at_endpoints": bool(cfg.stop_at_endpoints),
+                "hold_orientation": bool(cfg.hold_orientation),
+                "verify_original": bool(cfg.verify_original),
+            },
+        }
+        raw = self._native_planner.plan_cartesian_path(req_dict)
+        diag_d = raw["diagnostics"]
+        diag = PlanDiagnostics(
+            total_ms=float(diag_d["total_ms"]),
+            ik_ms=float(diag_d["ik_ms"]),
+            seed_ms=float(diag_d["seed_ms"]),
+            sqp_ms=float(diag_d["sqp_ms"]),
+            validate_ms=float(diag_d["validate_ms"]),
+            retime_ms=float(diag_d["retime_ms"]),
+            qp_calls=int(diag_d["qp_calls"]),
+            sqp_iterations=int(diag_d["sqp_iterations"]),
+            seed_strategy=str(diag_d["seed_strategy"]),
+            witnesses=diag_d["witnesses"],
+        )
+        return CartesianPlanResult(
+            trajectory=_trajectory_from_native(raw["trajectory"]),
+            fraction=float(raw["fraction"]),
+            completed_waypoints=int(raw["completed_waypoints"]),
+            max_pos_error=float(raw["max_pos_error"]),
+            max_rot_error=float(raw["max_rot_error"]),
+            reason=raw["reason"],
+            diagnostics=diag,
+            world_version=int(raw["world_version"]),
+        )
 
     # --- Experimental MuJoCo Warp path (shares C++ IK, BiRRT, QP, and unified C++ finalize_trajectory) ---
 

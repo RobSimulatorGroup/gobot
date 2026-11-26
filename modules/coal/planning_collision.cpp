@@ -246,6 +246,109 @@ py::dict plan_result_to_dict(const gp::PlanResultNative& r) {
     return d;
 }
 
+gp::CartesianPlanConfigNative parse_cartesian_config(const py::dict& d) {
+    gp::CartesianPlanConfigNative cfg;
+    if (d.contains("max_step")) cfg.max_step = d["max_step"].cast<double>();
+    if (d.contains("max_rot_step")) cfg.max_rot_step = d["max_rot_step"].cast<double>();
+    if (d.contains("max_pos_error")) cfg.max_pos_error = d["max_pos_error"].cast<double>();
+    if (d.contains("max_rot_error")) cfg.max_rot_error = d["max_rot_error"].cast<double>();
+    if (d.contains("jump_threshold_revolute")) cfg.jump_threshold_revolute = d["jump_threshold_revolute"].cast<double>();
+    if (d.contains("jump_threshold_prismatic")) cfg.jump_threshold_prismatic = d["jump_threshold_prismatic"].cast<double>();
+    if (d.contains("max_subdivision_depth")) cfg.max_subdivision_depth = d["max_subdivision_depth"].cast<int>();
+    if (d.contains("ik_iterations")) cfg.ik_iterations = d["ik_iterations"].cast<int>();
+    if (d.contains("ik_damping")) cfg.ik_damping = d["ik_damping"].cast<double>();
+    if (d.contains("avoid_collisions")) cfg.avoid_collisions = d["avoid_collisions"].cast<bool>();
+    if (d.contains("margin")) cfg.margin = d["margin"].cast<double>();
+    if (d.contains("world_margin") && !d["world_margin"].is_none()) {
+        cfg.has_world_margin = true;
+        cfg.world_margin = d["world_margin"].cast<double>();
+    }
+    if (d.contains("strict_ccd")) cfg.strict_ccd = d["strict_ccd"].cast<bool>();
+    if (d.contains("collision_substeps")) cfg.collision_substeps = d["collision_substeps"].cast<int>();
+    if (d.contains("spline_order")) cfg.spline_order = d["spline_order"].cast<int>();
+    if (d.contains("velocity_scale")) cfg.velocity_scale = d["velocity_scale"].cast<double>();
+    if (d.contains("acceleration_scale")) cfg.acceleration_scale = d["acceleration_scale"].cast<double>();
+    if (d.contains("jerk_scale")) cfg.jerk_scale = d["jerk_scale"].cast<double>();
+    if (d.contains("stop_at_endpoints")) cfg.stop_at_endpoints = d["stop_at_endpoints"].cast<bool>();
+    if (d.contains("hold_orientation")) cfg.hold_orientation = d["hold_orientation"].cast<bool>();
+    if (d.contains("verify_original")) cfg.verify_original = d["verify_original"].cast<bool>();
+    return cfg;
+}
+
+gp::CartesianPlanRequestNative parse_cartesian_request(const py::dict& d, int J) {
+    gp::CartesianPlanRequestNative req;
+    req.start_q = d["start_q"].cast<Eigen::VectorXd>();
+    req.link_id = d["link_id"].cast<int>();
+    if (d.contains("tcp_offset_position") && !d["tcp_offset_position"].is_none()) {
+        req.tcp_offset_position = d["tcp_offset_position"].cast<gp::Vec3>();
+    }
+    if (d.contains("tcp_offset_rotation") && !d["tcp_offset_rotation"].is_none()) {
+        req.tcp_offset_rotation = d["tcp_offset_rotation"].cast<gp::Mat3>();
+    }
+    if (d.contains("active_mask") && !d["active_mask"].is_none()) {
+        const MaskInput m_in = d["active_mask"].cast<MaskInput>();
+        if (m_in.size() != J) {
+            throw std::invalid_argument("active_mask length must match num_joints");
+        }
+        req.active_mask.assign(static_cast<size_t>(J), 1);
+        for (int j = 0; j < J; ++j) req.active_mask[static_cast<size_t>(j)] = m_in.data()[j] ? 1 : 0;
+    }
+    const py::list wps = d["waypoints"].cast<py::list>();
+    req.waypoints.reserve(wps.size());
+    for (const auto& item : wps) {
+        const py::dict wd = item.cast<py::dict>();
+        gp::CartesianWaypointNative wp;
+        const std::string mt = wd["motion_type"].cast<std::string>();
+        if (mt == "linear") {
+            wp.motion_type = gp::CartesianMotionType::Linear;
+        } else if (mt == "circular") {
+            wp.motion_type = gp::CartesianMotionType::Circular;
+        } else {
+            throw std::invalid_argument("motion_type must be 'linear' or 'circular'");
+        }
+        wp.position = wd["position"].cast<gp::Vec3>();
+        if (wd.contains("rotation") && !wd["rotation"].is_none()) {
+            wp.has_rotation = true;
+            wp.rotation = wd["rotation"].cast<gp::Mat3>();
+        }
+        if (wd.contains("via_position") && !wd["via_position"].is_none()) {
+            wp.has_via_position = true;
+            wp.via_position = wd["via_position"].cast<gp::Vec3>();
+        }
+        if (wd.contains("blend_radius") && !wd["blend_radius"].is_none()) {
+            wp.blend_radius = wd["blend_radius"].cast<double>();
+        }
+        req.waypoints.push_back(std::move(wp));
+    }
+    req.config = parse_cartesian_config(d["config"].cast<py::dict>());
+    return req;
+}
+
+py::dict cartesian_result_to_dict(const gp::CartesianPlanResultNative& r) {
+    py::dict d;
+    d["success"] = r.success;
+    d["trajectory"] = r.has_trajectory ? py::object(trajectory_to_dict(r.trajectory)) : py::none();
+    d["fraction"] = r.fraction;
+    d["completed_waypoints"] = r.completed_waypoints;
+    d["max_pos_error"] = r.max_pos_error;
+    d["max_rot_error"] = r.max_rot_error;
+    d["world_version"] = r.world_version;
+    d["reason"] = r.success ? py::none() : py::object(py::str(r.reason));
+    py::dict diag;
+    diag["total_ms"] = r.total_ms;
+    diag["ik_ms"] = r.ik_ms;
+    diag["seed_ms"] = 0.0;
+    diag["sqp_ms"] = 0.0;
+    diag["validate_ms"] = r.validate_ms;
+    diag["retime_ms"] = r.retime_ms;
+    diag["qp_calls"] = 0;
+    diag["sqp_iterations"] = 0;
+    diag["seed_strategy"] = "cartesian";
+    diag["witnesses"] = py::none();
+    d["diagnostics"] = std::move(diag);
+    return d;
+}
+
 // Standalone forward_kinematics kept for gobot._kinematics.SceneKinematics CPU acceleration.
 py::tuple forward_kinematics(const Indices& parent, const Indices& kinds, const Indices& joint_idx,
                              const Input& parent_joint, const Input& joint_child, const Input& axes,
@@ -1523,5 +1626,15 @@ PYBIND11_MODULE(_coal_native, module) {
             py::list out;
             for (const auto& r : res) out.append(plan_result_to_dict(r));
             return out;
-        }, py::arg("requests"), py::arg("chunk_size") = 64);
+        }, py::arg("requests"), py::arg("chunk_size") = 64)
+        .def("plan_cartesian_path", [](const gp::MotionPlannerNative& planner, const py::dict& req_dict) {
+            const int J = planner.world()->num_joints();
+            const auto req = parse_cartesian_request(req_dict, J);
+            gp::CartesianPlanResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = planner.plan_cartesian_path(req);
+            }
+            return cartesian_result_to_dict(res);
+        }, py::arg("request"));
 }
