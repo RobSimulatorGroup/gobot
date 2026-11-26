@@ -128,8 +128,26 @@ Goal: enable millisecond-level obstacle avoidance against live depth/point-cloud
    - Tightened SQP with asymmetric `fixed_start`/`fixed_end`, exact fixed-`dt` first-segment linear acceleration constraint $|q_{1,j} - q_{0,j} - h v_{0,j}| \le \tfrac{1}{2} a_{\max,j} h^2$, suffix-derived `dt_start_smooth` virtual predecessor smoothness, and affine segment-0 Hermite tangent-arc collision linearization plus minimum-distance braking-knot recovery in `finalize_trajectory`.
    - Implemented exact Hermite suffix slicing (`slice_trajectory_suffix`), reversal/pause ambiguity-aware anchor matching (`find_anchor_on_trajectory`), and 3-tier `MotionPlanner.replan(q_now, dq_now, prev_traj, goal=None, *, ddq_now=None, t_on_prev=None, reuse_if_valid=True, time_budget_s=None, ...)` on one pinned `WorldSnapshot`: **strict exact-suffix reuse (`reused_prev`) → shifted warm-start SQP (`warm_start`) → time-budgeted global BiRRT/CBiRRT fallback** with unified atomic verification (`bounds + strict_ccd + manifold`) and total `time_budget_s` enforcement (`PlanDiagnostics.timed_out`).
    - The [Panda demo](../examples/reactive_replanning/demo.py) verifies the old command through the next scheduled switch on each perception snapshot and measures the wall time for that tick. In a local 20 Hz simulation run with strict CCD, all three modes reached the goal with zero missed switches. Full-tick P50/P95 were 2.47/12.55 ms for Coal cubic (59 ticks), 3.74/11.14 ms for ESDF cubic (60 ticks), and 4.47/16.34 ms for Coal quintic (64 ticks). Each run had nine warm starts and reused a verified suffix on the remaining ticks.
-3. **Full GPU-Resident Batch Optimizer (Follow-up)**
-   - Keep FK, sphere-to-ESDF collision/gradients, and a branchless parallel optimizer (L-BFGS / MPPI) resident in GPU memory with zero per-step PCIe transfers so large batches (`B >= 64..1024`) genuinely outperform 16-thread CPU Coal.
+3. **Full GPU-Resident Batch Optimizer (`gpu_batch`, Completed)**
+   - Kept `libgobot_planning.so` pure C++ with zero CUDA dependency: added `WorldSnapshot::export_gpu_scene()` (flat kinematics, exact conservative ESDF spheres, zero-protrusion/zero-inset surface samples for mobile boxes, ACM/layer/touch-links filtered self & individual static primitive pairs, and immutable `VoxelESDF` view) plus request-level TBB-parallel `MotionPlannerNative::finalize_candidates_batch(...)` verifying full request semantics (start/goal endpoints, locked `PlanningGroup` joints, `start_velocity`/`start_acceleration`, pre- and post-retime `joint_targets` & `pose_constraints` via `waypoint_indices`, Hermite retiming, continuous Coal/ESDF CCD, and optional `cpu_fallback_on_fail`) over ranked top-$M$ (default `top_k_verify=4`) GPU candidates per request.
+   - Implemented pure-Warp GPU-resident kernels ([`_gpu_kernels.py`](../python/gobot/planning/_gpu_kernels.py)) and [`GpuBatchOptimizer` / `GpuBatchBackend`](../python/gobot/planning/gpu_batch.py) exposed via independent `MotionPlanner(world, backend="gpu_batch", gpu_config=GpuBatchConfig(...))` dispatch: per-`(sample, sphere)` CSR parallel collision evaluation (ESDF with exact `VoxelESDF::collision_distance` parity + individual static analytic primitives + symmetric self-collision sphere pairs), waypoint `PoseConstraint` analytic Jacobians, projected L-BFGS with actual projected-step Armijo backtracking and outer penalty continuation, VRAM-budgeted chunking, grow-only GPU scene caches, and CUDA Graph capture keyed by exact launch config + device buffer pointers (auto-invalidating on reallocation while remaining valid across in-place `version`-only sphere/ESDF updates).
+   - Rebuilt and benchmarked on Ryzen 7 3700X (16 threads) and RTX 4070 using `benchmark_gpu_batch.py --strict-ccd`. The independent check matches each trajectory to the requested joint start, goal and mapped intermediate targets, then verifies the actual spline. Timings include transfers, optimization and native acceptance. GPU timings are warm medians of three runs. Panda CPU timings at batch sizes of 256 and above are single measurements. Successful and verified counts below are from the final timed run.
+
+     | Scene | Batch | Coal time | Coal verified | GPU time with fallback enabled | GPU verified | CPU fallbacks |
+     | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+     | Panda + 64³ ESDF | 1 | 526.5 ms | 1/1 | 19.7 ms | 1/1 | 0 |
+     | Panda + 64³ ESDF | 16 | 780.4 ms | 16/16 | 54.8 ms | 16/16 | 0 |
+     | Panda + 64³ ESDF | 64 | 2,550.1 ms | 64/64 | 149.7 ms | 64/64 | 0 |
+     | Panda + 64³ ESDF | 256 | 9,150.3 ms | 256/256 | 389.3 ms | 256/256 | 0 |
+     | Panda + 64³ ESDF | 512 | 18,221.6 ms | 512/512 | 721.4 ms | 512/512 | 0 |
+     | Panda + 64³ ESDF | 1024 | 36,269.4 ms | 1024/1024 | 1,444.7 ms | 1024/1024 | 0 |
+     | Container, 14 mm world clearance | 1 | 58.3 ms | 1/1 | 31.5 ms | 1/1 | 0 |
+     | Container | 16 | 300.0 ms | 15/16 | 307.5 ms | 15/16 | 9 |
+     | Container | 64 | 1,155.9 ms | 59/64 | 1,108.9 ms | 61/64 | 33 |
+     | Container | 128 | 2,321.3 ms | 117/128 | 2,048.3 ms | 121/128 | 70 |
+
+   - Panda reached 708.8 verified trajectories/s at `B=1024, K=4` and finished the `B=1, K=64` case in 42.3 ms. For the container at `B=128`, disabling CPU fallback gave 52/128 verified in 853.5 ms. With fallback enabled, 58 GPU candidates passed and native planning recovered 63 of the remaining 70 requests. All 121 returned paths passed the independent check. Candidate pass counts vary between runs. The benchmark estimates verification and fallback wall-time shares from their accumulated parallel task times.
+   - MPPI remains deferred. These runs measure the multi-seed L-BFGS implementation.
 
 ---
 

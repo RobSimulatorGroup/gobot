@@ -223,11 +223,11 @@ def _request_to_native_dict(world: PlanningWorld, req: MotionPlanRequest) -> dic
 
 
 class MotionPlanner:
-    """High-level single and batch motion planner backed by standalone C++ gobot_planning."""
+    """High-level single and batch motion planner backed by standalone C++ gobot_planning and optional GPU batch optimizer."""
 
-    def __init__(self, world: PlanningWorld, *, backend: str = "coal") -> None:
+    def __init__(self, world: PlanningWorld, *, backend: str = "coal", gpu_config=None) -> None:
         self.world = world
-        self.backend: CollisionBackend = make_backend(world, backend)
+        self.backend: CollisionBackend = make_backend(world, backend, gpu_config=gpu_config)
         self._native_planner = _coal_native.MotionPlanner(world._native)
 
     def solve_ik(
@@ -325,6 +325,8 @@ class MotionPlanner:
         if self.backend.name == "coal":
             raw = self._native_planner.plan(_request_to_native_dict(self.world, request))
             return _plan_result_from_native(raw)
+        if self.backend.name == "gpu_batch":
+            return self.backend.plan_single(self._native_planner, request)
         return self._plan_warp_single(request)
 
     def replan(
@@ -422,6 +424,8 @@ class MotionPlanner:
             native_reqs = [_request_to_native_dict(self.world, req) for req in requests]
             raw_list = self._native_planner.plan_batch(native_reqs, int(chunk_size))
             final_results = tuple(_plan_result_from_native(item) for item in raw_list)
+        elif self.backend.name == "gpu_batch":
+            final_results = self.backend.plan_batch(self._native_planner, requests, chunk_size=chunk_size)
         else:
             final_results = self._plan_warp_batch(requests, chunk_size=chunk_size)
 

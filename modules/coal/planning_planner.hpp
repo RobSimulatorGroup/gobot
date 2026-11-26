@@ -138,6 +138,27 @@ struct PlanResultNative {
     PlanDiagnosticsNative diagnostics;
 };
 
+struct CandidatePathNative {
+    RowMatrixXd positions;
+    int goal_index = 0;
+    std::string seed_strategy = "gpu_lbfgs";
+    bool has_initial_positions = false;
+    RowMatrixXd initial_positions;
+};
+
+struct CandidateBatchItemNative {
+    MotionPlanRequestNative request;
+    std::vector<CandidatePathNative> candidates;
+};
+
+struct CandidateBatchResultNative {
+    PlanResultNative plan;
+    int accepted_candidate_index = -1;  // 0..M-1 if a GPU candidate passed, -1 if none passed
+    bool used_cpu_fallback = false;
+    double verify_ms = 0.0;
+    double fallback_ms = 0.0;
+};
+
 struct FinalizeResultNative {
     bool success = false;
     TrajectoryNative trajectory;
@@ -633,9 +654,15 @@ public:
 
     std::vector<PlanResultNative> plan_batch(const std::vector<MotionPlanRequestNative>& requests,
                                              int chunk_size = 64) const {
+        auto snap = world_->snapshot();
+        return plan_batch_with_snapshot(*snap, requests, chunk_size);
+    }
+
+    std::vector<PlanResultNative> plan_batch_with_snapshot(const WorldSnapshot& snap,
+                                                           const std::vector<MotionPlanRequestNative>& requests,
+                                                           int chunk_size = 64) const {
         if (requests.empty()) throw std::invalid_argument("provide at least one MotionPlanRequest");
         if (chunk_size < 1) throw std::invalid_argument("chunk_size must be >= 1");
-        auto snap = world_->snapshot();
         const int B = static_cast<int>(requests.size());
         std::vector<PlanResultNative> results(static_cast<size_t>(B));
 
@@ -649,11 +676,37 @@ public:
                 while (true) {
                     const int loc = next_idx.fetch_add(1, std::memory_order_relaxed);
                     if (loc >= count) break;
-                    results[static_cast<size_t>(offset + loc)] = plan_on_snapshot(*snap, requests[static_cast<size_t>(offset + loc)]);
+                    results[static_cast<size_t>(offset + loc)] = plan_on_snapshot(snap, requests[static_cast<size_t>(offset + loc)]);
                 }
             });
         }
         return results;
+    }
+
+    // Request-level TBB-parallel verification & Hermite finalization over ranked candidate paths
+    // (e.g. top-M GPU batch candidates per request) on a single pinned WorldSnapshot.
+    // Verifies start/goal endpoints, locked joints, start velocity/acceleration, joint targets,
+    // pose constraints (both pre-retime and post-retime via waypoint_indices), manifold constraints,
+    // and full continuous Hermite bounds + Coal/ESDF CCD. Optionally falls back to C++ plan_on_snapshot.
+    std::vector<CandidateBatchResultNative> finalize_candidates_batch(
+        const WorldSnapshot& snap,
+        const std::vector<CandidateBatchItemNative>& items,
+        bool cpu_fallback_on_fail = true) const {
+        const int B = static_cast<int>(items.size());
+        std::vector<CandidateBatchResultNative> out(static_cast<size_t>(B));
+        if (B == 0) return out;
+
+        std::atomic<int> next_idx{0};
+        const int workers = std::min<int>(B, static_cast<int>(ThreadPool::instance().max_threads()));
+        ThreadPool::instance().parallel_for(workers, 1, [&](int64_t, int64_t) {
+            while (true) {
+                const int idx = next_idx.fetch_add(1, std::memory_order_relaxed);
+                if (idx >= B) break;
+                out[static_cast<size_t>(idx)] =
+                    verify_and_finalize_item(snap, items[static_cast<size_t>(idx)], cpu_fallback_on_fail);
+            }
+        });
+        return out;
     }
 
 private:
@@ -1675,6 +1728,297 @@ private:
 
         last_res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
         return last_res;
+    }
+
+    static CandidateBatchResultNative verify_and_finalize_item(
+        const WorldSnapshot& snap,
+        const CandidateBatchItemNative& item,
+        bool cpu_fallback_on_fail) {
+        using Clock = std::chrono::steady_clock;
+        const auto t_ver0 = Clock::now();
+        CandidateBatchResultNative out;
+        out.plan.world_version = snap.version;
+
+        const auto& req = item.request;
+        const auto& cfg = req.config;
+        const int J = snap.kin.num_joints();
+        const int B = snap.kin.num_bodies();
+        const bool has_start_bc = req.has_start_velocity || req.has_start_acceleration;
+        const int fixed_start = has_start_bc ? 1 : (cfg.stop_at_endpoints ? 2 : 1);
+        const int fixed_end = cfg.stop_at_endpoints ? 2 : 1;
+        if (cfg.spline_order != 3 && cfg.spline_order != 5) {
+            throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+        }
+        if (cfg.waypoints < fixed_start + fixed_end) {
+            throw std::invalid_argument("waypoints must be >= fixed_start + fixed_end");
+        }
+        const auto mask = resolve_mask(snap, req.active_mask.empty() ? nullptr : &req.active_mask);
+        const Eigen::VectorXd* v0_ptr = req.has_start_velocity ? &req.start_velocity : nullptr;
+        const Eigen::VectorXd* a0_ptr = req.has_start_acceleration ? &req.start_acceleration : nullptr;
+        const std::vector<PoseConstraintSpec>* mc_ptr =
+            req.manifold_constraints.empty() ? nullptr : &req.manifold_constraints;
+        if (mc_ptr != nullptr) {
+            manifold_detail::validate_manifold_specs(snap, *mc_ptr);
+        }
+
+        const std::string bc_err = validate_start_boundary(snap, cfg, mask, v0_ptr, a0_ptr);
+        if (!bc_err.empty()) {
+            out.verify_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ver0).count();
+            out.plan.reason = bc_err;
+            out.plan.diagnostics.validate_ms = out.verify_ms;
+            out.plan.diagnostics.total_ms = out.verify_ms;
+            return out;
+        }
+
+        const Eigen::VectorXd start_lock_ref = req.start_is_pose
+            ? (req.has_start_seed ? req.start_seed : snap.kin.initial_q())
+            : req.start_q;
+
+        std::vector<Vec3> bpos(static_cast<size_t>(B));
+        std::vector<Mat3> brot(static_cast<size_t>(B));
+        Eigen::VectorXd r_tmp;
+
+        auto check_pose_list = [&](const double* q_row, const std::vector<PoseConstraintSpec>& specs) -> bool {
+            snap.kin.fk_single(q_row, bpos.data(), brot.data());
+            for (const auto& cs : specs) {
+                if (!snap.kin.eval_pose_constraint(cs, bpos.data(), brot.data(), nullptr, nullptr, r_tmp, nullptr)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        // At large unwrapped coordinates a single fp32 ULP can exceed 1e-4.
+        // Only accept that extra rounding for joints restored exactly before retiming.
+        auto matches_boundary = [](double actual, double expected, double tolerance) {
+            return std::abs(actual - expected) <= tolerance || actual == static_cast<float>(expected);
+        };
+
+        auto check_request_on_knots = [&](const RowMatrixXd& knots, const std::vector<int>& wp_map,
+                                          int goal_index, std::string& err) -> bool {
+            const int K_rows = static_cast<int>(knots.rows());
+            if (K_rows < 2 || knots.cols() != J || !knots.allFinite()) {
+                err = "candidate trajectory has invalid shape or non-finite values";
+                return false;
+            }
+            if (static_cast<int>(wp_map.size()) != cfg.waypoints) {
+                err = "waypoint_indices size mismatch";
+                return false;
+            }
+            // 1. Start endpoint.
+            if (!req.start_is_pose) {
+                if (req.start_q.size() != J) {
+                    err = "request.start size must match num_joints";
+                    return false;
+                }
+                for (int j = 0; j < J; ++j) {
+                    if (!matches_boundary(knots(0, j), req.start_q(j), 1e-4)) {
+                        err = "candidate start configuration does not match request.start";
+                        return false;
+                    }
+                }
+            } else {
+                if (!check_pose_list(knots.data(), req.start_poses) ||
+                    (mc_ptr != nullptr && !check_pose_list(knots.data(), *mc_ptr))) {
+                    err = "candidate start pose violates request.start pose constraints";
+                    return false;
+                }
+            }
+            // 2. Locked inactive joints across all knots.
+            for (int j = 0; j < J; ++j) {
+                if (mask[static_cast<size_t>(j)]) continue;
+                const double ref_j = start_lock_ref(j);
+                for (int t = 0; t < K_rows; ++t) {
+                    if (!matches_boundary(knots(t, j), ref_j, 1e-5)) {
+                        err = "locked joint moved out of active PlanningGroup at knot " + std::to_string(t);
+                        return false;
+                    }
+                }
+            }
+            // 3. Goal endpoint for the selected goal_index.
+            const double* last_row = knots.data() + static_cast<size_t>(K_rows - 1) * static_cast<size_t>(J);
+            if (!req.goal_is_pose) {
+                if (goal_index < 0 || goal_index >= static_cast<int>(req.goal_qs.size())) {
+                    err = "candidate goal_index out of range";
+                    return false;
+                }
+                const auto& goal = req.goal_qs[static_cast<size_t>(goal_index)];
+                for (int j = 0; j < J; ++j) {
+                    const double expected = mask[static_cast<size_t>(j)] ? goal(j) : start_lock_ref(j);
+                    if (!matches_boundary(last_row[j], expected, 1e-4)) {
+                        err = "candidate goal configuration does not match request.goal";
+                        return false;
+                    }
+                }
+            } else {
+                if (goal_index < 0 || goal_index >= static_cast<int>(req.goal_pose_sets.size())) {
+                    err = "candidate goal_index out of range";
+                    return false;
+                }
+                if (!check_pose_list(last_row, req.goal_pose_sets[static_cast<size_t>(goal_index)]) ||
+                    (mc_ptr != nullptr && !check_pose_list(last_row, *mc_ptr))) {
+                    err = "candidate goal pose violates request.goal pose constraints";
+                    return false;
+                }
+            }
+            // 4. Waypoint joint_targets via wp_map.
+            for (const auto& [idx, tgt] : req.joint_targets) {
+                if (idx < 0 || idx >= static_cast<int>(wp_map.size())) {
+                    err = "joint_target waypoint index out of range";
+                    return false;
+                }
+                const int mapped = wp_map[static_cast<size_t>(idx)];
+                if (mapped < 0 || mapped >= K_rows) {
+                    err = "mapped waypoint index out of range";
+                    return false;
+                }
+                if ((knots.row(mapped).transpose() - tgt).lpNorm<Eigen::Infinity>() > 1e-4) {
+                    err = "joint position tolerance at waypoint " + std::to_string(idx);
+                    return false;
+                }
+            }
+            // 5. Waypoint & path pose_constraints via wp_map.
+            for (const auto& [idx, specs] : req.pose_constraints) {
+                if (idx < 0 || idx >= static_cast<int>(wp_map.size())) {
+                    err = "pose_constraint waypoint index out of range";
+                    return false;
+                }
+                const int mapped = wp_map[static_cast<size_t>(idx)];
+                if (mapped < 0 || mapped >= K_rows) {
+                    err = "mapped waypoint index out of range";
+                    return false;
+                }
+                if (!check_pose_list(knots.data() + static_cast<size_t>(mapped) * static_cast<size_t>(J), specs)) {
+                    err = "pose tolerance at waypoint " + std::to_string(idx);
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        std::vector<int> id_map(static_cast<size_t>(cfg.waypoints));
+        for (int k = 0; k < cfg.waypoints; ++k) id_map[static_cast<size_t>(k)] = k;
+
+        std::string last_reason = item.candidates.empty() ? "no GPU candidates provided" : "";
+        double accum_retime_ms = 0.0;
+        for (int c_idx = 0; c_idx < static_cast<int>(item.candidates.size()); ++c_idx) {
+            const auto& cand = item.candidates[static_cast<size_t>(c_idx)];
+            if (cand.positions.rows() != cfg.waypoints || cand.positions.cols() != J) {
+                last_reason = "candidate waypoint count does not match request.config.waypoints";
+                continue;
+            }
+            std::string pre_err;
+            if (!check_request_on_knots(cand.positions, id_map, cand.goal_index, pre_err)) {
+                last_reason = std::move(pre_err);
+                continue;
+            }
+            // GPU knots are fp32. Restore the requested fp64 boundaries before
+            // checking joint limits, clearance and the actual Hermite segments.
+            RowMatrixXd positions = cand.positions;
+            if (!req.start_is_pose) {
+                // Preserve repeated knots of a stationary prefix after the fp32 round trip.
+                for (int t = 0; t < positions.rows() - 1 && cand.positions.row(t) == cand.positions.row(0); ++t) {
+                    positions.row(t) = req.start_q.transpose();
+                }
+            }
+            if (!req.goal_is_pose) {
+                const auto& goal = req.goal_qs[static_cast<size_t>(cand.goal_index)];
+                const int last = cfg.waypoints - 1;
+                for (int t = last; t > 0 && cand.positions.row(t) == cand.positions.row(last); --t) {
+                    positions.row(t) = goal.transpose();
+                }
+            }
+            for (int j = 0; j < J; ++j) {
+                if (!mask[static_cast<size_t>(j)]) positions.col(j).setConstant(start_lock_ref(j));
+            }
+            last_reason = validate_endpoints(snap, positions.row(0).transpose(), positions.bottomRows(1).transpose(),
+                                             cfg, fixed_start, fixed_end, req.manifold_constraints);
+            if (!last_reason.empty()) continue;
+            FinalizeResultNative fin = finalize_trajectory(snap, positions, cfg, mc_ptr, &mask, v0_ptr, a0_ptr);
+            accum_retime_ms += fin.retime_ms;
+            if (!fin.success) {
+                last_reason = std::move(fin.reason);
+                continue;
+            }
+            std::string post_err;
+            if (!check_request_on_knots(fin.trajectory.positions, fin.waypoint_indices, cand.goal_index, post_err)) {
+                last_reason = std::move(post_err);
+                continue;
+            }
+            // Verify locked joints remain stationary (zero velocity & acceleration) along the retimed spline.
+            bool lock_deriv_ok = true;
+            const int K_fin = fin.trajectory.num_waypoints();
+            for (int j = 0; j < J && lock_deriv_ok; ++j) {
+                if (mask[static_cast<size_t>(j)]) continue;
+                for (int t = 0; t < K_fin; ++t) {
+                    if (std::abs(fin.trajectory.velocities(t, j)) > 1e-6 ||
+                        std::abs(fin.trajectory.accelerations(t, j)) > 1e-6) {
+                        lock_deriv_ok = false;
+                        last_reason = "locked joint has non-zero velocity or acceleration on retimed spline";
+                        break;
+                    }
+                }
+            }
+            if (!lock_deriv_ok) continue;
+            if (cfg.stop_at_endpoints) {
+                if (fin.trajectory.velocities.row(K_fin - 1).lpNorm<Eigen::Infinity>() > 1e-6 ||
+                    (!has_start_bc && fin.trajectory.velocities.row(0).lpNorm<Eigen::Infinity>() > 1e-6)) {
+                    last_reason = "retimed trajectory failed stop_at_endpoints velocity check";
+                    continue;
+                }
+            }
+
+            out.accepted_candidate_index = c_idx;
+            out.verify_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ver0).count();
+            out.plan.success = true;
+            out.plan.trajectory = std::move(fin.trajectory);
+            out.plan.waypoint_indices = std::move(fin.waypoint_indices);
+            out.plan.goal_index = cand.goal_index;
+            out.plan.world_version = snap.version;
+            if (cand.has_initial_positions) {
+                out.plan.has_initial_positions = true;
+                out.plan.initial_positions = cand.initial_positions;
+            } else {
+                out.plan.has_initial_positions = true;
+                out.plan.initial_positions = cand.positions;
+            }
+            out.plan.diagnostics.retime_ms = accum_retime_ms;
+            out.plan.diagnostics.validate_ms = std::max(0.0, out.verify_ms - accum_retime_ms);
+            out.plan.diagnostics.total_ms = out.verify_ms;
+            out.plan.diagnostics.seed_strategy = cand.seed_strategy.empty() ? "gpu_lbfgs" : cand.seed_strategy;
+            return out;
+        }
+
+        out.verify_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ver0).count();
+        if (cpu_fallback_on_fail) {
+            const auto t_fb0 = Clock::now();
+            PlanResultNative fb = plan_on_snapshot(snap, req);
+            out.fallback_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_fb0).count();
+            out.used_cpu_fallback = true;
+            if (fb.success) {
+                fb.diagnostics.seed_strategy = "gpu_fallback_cpu:" + fb.diagnostics.seed_strategy;
+            }
+            fb.diagnostics.validate_ms += out.verify_ms;
+            fb.diagnostics.total_ms = out.verify_ms + out.fallback_ms;
+            out.plan = std::move(fb);
+            return out;
+        }
+
+        out.plan.success = false;
+        out.plan.reason = last_reason.empty() ? "all GPU candidates failed C++ verification" : last_reason;
+        out.plan.world_version = snap.version;
+        if (!item.candidates.empty()) {
+            const auto& first = item.candidates.front();
+            out.plan.has_initial_positions = true;
+            out.plan.initial_positions = first.has_initial_positions ? first.initial_positions : first.positions;
+            out.plan.goal_index = first.goal_index;
+        }
+        out.plan.diagnostics.retime_ms = accum_retime_ms;
+        out.plan.diagnostics.validate_ms = std::max(0.0, out.verify_ms - accum_retime_ms);
+        out.plan.diagnostics.total_ms = out.verify_ms;
+        out.plan.diagnostics.seed_strategy =
+            item.candidates.empty() ? "gpu_lbfgs" : item.candidates.front().seed_strategy;
+        return out;
     }
 
     std::shared_ptr<PlanningWorld> world_;

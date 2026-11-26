@@ -54,6 +54,64 @@ struct ContinuousViolation {
     double distance = 0.0;
 };
 
+struct GpuSceneExport {
+    uint64_t version = 0;
+    uint64_t topology_version = 0;
+    int num_bodies = 0;
+    int num_joints = 0;
+    int num_branches = 0;
+
+    // Kinematics (flat C-order arrays ready for float32/int32 GPU upload).
+    std::vector<int32_t> parent;           // [B]
+    std::vector<int32_t> kinds;            // [B]
+    std::vector<int32_t> joint_idx;        // [B]
+    std::vector<int32_t> body_branch;      // [B]
+    std::vector<float> a_rot;              // [B * 9]
+    std::vector<float> a_pos;              // [B * 3]
+    std::vector<float> b_rot;              // [B * 9]
+    std::vector<float> b_pos;              // [B * 3]
+    std::vector<float> axes;               // [B * 3]
+    std::vector<float> root_pos;           // [N_br * 3]
+    std::vector<float> root_rot;           // [N_br * 9]
+    std::vector<uint8_t> body_ancestor;    // [B * J]
+    std::vector<uint8_t> joint_prismatic;  // [J]
+    std::vector<float> lower;              // [J]
+    std::vector<float> upper;              // [J]
+    std::vector<float> velocity_limit;     // [J]
+    std::vector<float> acceleration_limit; // [J]
+
+    // Link spheres (all mobile link/payload spheres in body_id frame).
+    int num_spheres = 0;
+    std::vector<int32_t> sphere_body;      // [NS]
+    std::vector<float> sphere_center;      // [NS * 3]
+    std::vector<float> sphere_radius;      // [NS]
+    std::vector<uint8_t> sphere_esdf_active;  // [NS]
+
+    // Self-collision sphere pairs filtered by ACM, layer/mask, and attached_touch_links.
+    std::vector<int32_t> self_sphere_pairs;   // [N_self * 2]
+
+    // Static obstacles (exported individually; static meshes use tight PCA-OBB box proxies).
+    int num_static = 0;
+    std::vector<int32_t> static_kind;         // [N_stat] 1=box/OBB, 2=sphere, 3=cyl, 4=cap, 6=plane
+    std::vector<float> static_pos;            // [N_stat * 3]
+    std::vector<float> static_rot;            // [N_stat * 9]
+    std::vector<float> static_size;           // [N_stat * 3]
+    std::vector<int32_t> static_sphere_pairs; // [N_sp_stat * 2] (sphere_idx, static_idx)
+
+    // 3D ESDF snapshot (shared immutable float32 grid).
+    bool has_esdf = false;
+    int esdf_nx = 0;
+    int esdf_ny = 0;
+    int esdf_nz = 0;
+    std::array<float, 3> esdf_origin{0.0f, 0.0f, 0.0f};
+    float esdf_resolution = 0.05f;
+    int32_t esdf_from_occupancy = 0;
+    float esdf_inflation_radius = 0.0f;
+    float esdf_max_distance = 1e30f;
+    float esdf_lipschitz_bound = 1.0f;
+    std::shared_ptr<const VoxelESDF> esdf_grid;
+};
+
 struct SyncBaseUpdate {
     int branch_idx = 0;
     Vec3 pos = Vec3::Zero();
@@ -2346,6 +2404,357 @@ public:
             }
         }
         return {true, ""};
+    }
+
+    // Export immutable kinematics, link spheres, ACM-filtered self/static collision pairs,
+    // individual static analytic primitives, and ESDF metadata for GPU-resident batch optimizers.
+    GpuSceneExport export_gpu_scene() const {
+        GpuSceneExport out;
+        out.version = version;
+        out.topology_version = topology_version;
+        const int B = kin.num_bodies();
+        const int J = kin.num_joints();
+        const int N_br = static_cast<int>(kin.branches().size());
+        out.num_bodies = B;
+        out.num_joints = J;
+        out.num_branches = N_br;
+
+        out.parent.resize(static_cast<size_t>(B));
+        out.kinds.resize(static_cast<size_t>(B));
+        out.joint_idx.resize(static_cast<size_t>(B));
+        out.body_branch.resize(static_cast<size_t>(B));
+        out.a_rot.resize(static_cast<size_t>(B) * 9);
+        out.a_pos.resize(static_cast<size_t>(B) * 3);
+        out.b_rot.resize(static_cast<size_t>(B) * 9);
+        out.b_pos.resize(static_cast<size_t>(B) * 3);
+        out.axes.resize(static_cast<size_t>(B) * 3);
+
+        for (int i = 0; i < B; ++i) {
+            const size_t si = static_cast<size_t>(i);
+            out.parent[si] = static_cast<int32_t>(kin.parent()[si]);
+            out.kinds[si] = static_cast<int32_t>(kin.kinds()[si]);
+            out.joint_idx[si] = static_cast<int32_t>(kin.joint_idx()[si]);
+            out.body_branch[si] = static_cast<int32_t>(kin.body_branch()[si]);
+            for (int r = 0; r < 3; ++r) {
+                out.a_pos[si * 3 + static_cast<size_t>(r)] = static_cast<float>(kin.a_pos()[si](r));
+                out.b_pos[si * 3 + static_cast<size_t>(r)] = static_cast<float>(kin.b_pos()[si](r));
+                out.axes[si * 3 + static_cast<size_t>(r)] = static_cast<float>(kin.axes()[si](r));
+                for (int c = 0; c < 3; ++c) {
+                    out.a_rot[si * 9 + static_cast<size_t>(r * 3 + c)] = static_cast<float>(kin.a_rot()[si](r, c));
+                    out.b_rot[si * 9 + static_cast<size_t>(r * 3 + c)] = static_cast<float>(kin.b_rot()[si](r, c));
+                }
+            }
+        }
+
+        out.root_pos.resize(static_cast<size_t>(N_br) * 3);
+        out.root_rot.resize(static_cast<size_t>(N_br) * 9);
+        for (int br = 0; br < N_br; ++br) {
+            const size_t sb = static_cast<size_t>(br);
+            const auto& branch = kin.branches()[sb];
+            for (int r = 0; r < 3; ++r) {
+                out.root_pos[sb * 3 + static_cast<size_t>(r)] = static_cast<float>(branch.root_pos(r));
+                for (int c = 0; c < 3; ++c) {
+                    out.root_rot[sb * 9 + static_cast<size_t>(r * 3 + c)] = static_cast<float>(branch.root_rot(r, c));
+                }
+            }
+        }
+
+        out.body_ancestor = kin.body_ancestor();
+        out.joint_prismatic = kin.joint_prismatic();
+        out.lower.resize(static_cast<size_t>(J));
+        out.upper.resize(static_cast<size_t>(J));
+        out.velocity_limit.resize(static_cast<size_t>(J));
+        out.acceleration_limit.resize(static_cast<size_t>(J));
+        for (int j = 0; j < J; ++j) {
+            const size_t sj = static_cast<size_t>(j);
+            out.lower[sj] = static_cast<float>(kin.lower()(j));
+            out.upper[sj] = static_cast<float>(kin.upper()(j));
+            out.velocity_limit[sj] = static_cast<float>(kin.velocity_limit()(j));
+            out.acceleration_limit[sj] = static_cast<float>(kin.acceleration_limit()(j));
+        }
+
+        // Link spheres for GPU optimization:
+        //  1) Conservative ESDF spheres (exact match to snap.esdf_spheres / world.esdf_distances).
+        //  2) Tight non-bloated spheres for static-primitive & self-collision checks (mobile boxes use
+        //     flush inset corner/edge/face spheres with 0.0 mm protrusion; fixed-base bodies with zero
+        //     movable ancestors are omitted from static checks so bolted bases never corrupt ranking).
+        const bool esdf_ok = has_esdf();
+        const int J_kin = kin.num_joints();
+        std::vector<uint8_t> body_movable(static_cast<size_t>(B), 0);
+        for (int b = 0; b < B; ++b) {
+            for (int j = 0; j < J_kin; ++j) {
+                if (kin.body_ancestor()[static_cast<size_t>(b * J_kin + j)] != 0) {
+                    body_movable[static_cast<size_t>(b)] = 1;
+                    break;
+                }
+            }
+        }
+
+        auto source_shape_for = [&](const LinkSphere& sp) -> const WorldShape* {
+            if (sp.shape_id >= 0 && sp.shape_id < static_cast<int>(shapes.size())) {
+                return &shapes[static_cast<size_t>(sp.shape_id)];
+            }
+            if (sp.ref_shape_id >= 0 && sp.ref_shape_id < static_cast<int>(shapes.size()) &&
+                shapes[static_cast<size_t>(sp.ref_shape_id)].link_key == sp.link_key) {
+                return &shapes[static_cast<size_t>(sp.ref_shape_id)];
+            }
+            return nullptr;
+        };
+
+        struct GpuOptSphere {
+            int body_id = -1;
+            Vec3 local_center = Vec3::Zero();
+            double radius = 0.0;
+            int layer = 1;
+            int mask = 1;
+            std::string link_key;
+            const WorldShape* src = nullptr;
+            bool esdf_active = false;
+            bool geom_active = false;
+        };
+
+        std::vector<GpuOptSphere> all_spheres;
+        all_spheres.reserve(link_spheres.size() * 2);
+
+        // Identify which mobile shapes are boxes (kind == 1) without custom_link_spheres so they get
+        // exact flush surface spheres (0.0 mm protrusion) for static/self checks while keeping exact
+        // conservative snap.link_spheres for ESDF parity.
+        std::unordered_set<int> flush_box_shapes;
+        for (const int sid : mobile_shapes) {
+            const auto& ws = shapes[static_cast<size_t>(sid)];
+            if (ws.body_id >= 0 && ws.shape && ws.shape->kind == 1 && custom_link_spheres.count(ws.link_key) == 0) {
+                flush_box_shapes.insert(sid);
+            }
+        }
+
+        for (const auto& sp : link_spheres) {
+            const WorldShape* src = source_shape_for(sp);
+            const bool is_esdf = esdf_ok && sp.body_id >= 0 &&
+                (((sp.layer & esdf->collision_mask) != 0) || ((sp.mask & esdf->collision_layer) != 0)) &&
+                !is_pair_disabled_by_acm(sp.link_key, "::esdf");
+            const bool replaced_by_flush = (sp.shape_id >= 0 && flush_box_shapes.count(sp.shape_id) > 0);
+            if (!is_esdf && replaced_by_flush) continue;
+            GpuOptSphere gs;
+            gs.body_id = sp.body_id;
+            gs.local_center = sp.local_center;
+            gs.radius = sp.radius;
+            gs.layer = sp.layer;
+            gs.mask = sp.mask;
+            gs.link_key = sp.link_key;
+            gs.src = src;
+            gs.esdf_active = is_esdf;
+            gs.geom_active = !replaced_by_flush;
+            all_spheres.push_back(std::move(gs));
+        }
+
+        // Emit exact flush surface samples (0.0 mm protrusion AND 0.0 mm corner inset gap)
+        // for mobile Box shapes: 8 exact corners (r=0), 12 exact edge midpoints (r=0),
+        // and inscribed face-tangent spheres (r=min_h).
+        for (const int sid : mobile_shapes) {
+            if (flush_box_shapes.count(sid) == 0) continue;
+            const auto& ws = shapes[static_cast<size_t>(sid)];
+            const Vec3 h = ws.shape->box_half_size;
+            const double min_h = std::min({h(0), h(1), h(2)});
+            if (min_h <= 1e-6) continue;
+            auto emit = [&](const Vec3& sc, double sr) {
+                GpuOptSphere gs;
+                gs.body_id = ws.body_id;
+                gs.local_center = ws.local_frame.leftCols<3>() * sc + ws.local_frame.col(3);
+                gs.radius = sr;
+                gs.layer = ws.layer;
+                gs.mask = ws.mask;
+                gs.link_key = ws.link_key;
+                gs.src = &ws;
+                gs.esdf_active = false;
+                gs.geom_active = true;
+                all_spheres.push_back(std::move(gs));
+            };
+            // 8 exact corner points (r = 0 -> exact vertex-to-obstacle distance).
+            for (int sx : {-1, 1}) {
+                for (int sy : {-1, 1}) {
+                    for (int sz : {-1, 1}) {
+                        emit(Vec3(sx * h(0), sy * h(1), sz * h(2)), 0.0);
+                    }
+                }
+            }
+            // Edge midpoint points (r = 0) along edges longer than 8 cm.
+            if (h(0) > 0.04) {
+                for (int sy : {-1, 1}) for (int sz : {-1, 1}) emit(Vec3(0.0, sy * h(1), sz * h(2)), 0.0);
+            }
+            if (h(1) > 0.04) {
+                for (int sx : {-1, 1}) for (int sz : {-1, 1}) emit(Vec3(sx * h(0), 0.0, sz * h(2)), 0.0);
+            }
+            if (h(2) > 0.04) {
+                for (int sx : {-1, 1}) for (int sy : {-1, 1}) emit(Vec3(sx * h(0), sy * h(1), 0.0), 0.0);
+            }
+            // Face-tangent inscribed spheres strictly inside the box (0.0 mm protrusion).
+            const double rf = min_h;
+            bool emitted_inscribed = false;
+            if (h(0) > rf + 1e-4) {
+                emit(Vec3(h(0) - rf, 0.0, 0.0), rf);
+                emit(Vec3(-(h(0) - rf), 0.0, 0.0), rf);
+                emitted_inscribed = true;
+            }
+            if (h(1) > rf + 1e-4) {
+                emit(Vec3(0.0, h(1) - rf, 0.0), rf);
+                emit(Vec3(0.0, -(h(1) - rf), 0.0), rf);
+                emitted_inscribed = true;
+            }
+            if (h(2) > rf + 1e-4) {
+                emit(Vec3(0.0, 0.0, h(2) - rf), rf);
+                emit(Vec3(0.0, 0.0, -(h(2) - rf)), rf);
+                emitted_inscribed = true;
+            }
+            if (!emitted_inscribed) {
+                emit(Vec3::Zero(), rf);
+            }
+        }
+
+        const int NS = static_cast<int>(all_spheres.size());
+        out.num_spheres = NS;
+        out.sphere_body.resize(static_cast<size_t>(NS));
+        out.sphere_center.resize(static_cast<size_t>(NS) * 3);
+        out.sphere_radius.resize(static_cast<size_t>(NS));
+        out.sphere_esdf_active.assign(static_cast<size_t>(NS), 0);
+
+        for (int i = 0; i < NS; ++i) {
+            const size_t si = static_cast<size_t>(i);
+            const auto& gs = all_spheres[si];
+            out.sphere_body[si] = static_cast<int32_t>(gs.body_id);
+            out.sphere_center[si * 3 + 0] = static_cast<float>(gs.local_center(0));
+            out.sphere_center[si * 3 + 1] = static_cast<float>(gs.local_center(1));
+            out.sphere_center[si * 3 + 2] = static_cast<float>(gs.local_center(2));
+            out.sphere_radius[si] = static_cast<float>(gs.radius);
+            out.sphere_esdf_active[si] = gs.esdf_active ? 1 : 0;
+        }
+
+        // Self-collision sphere pairs filtered by ACM, touch_links, and layer/mask.
+        for (int a = 0; a < NS; ++a) {
+            const auto& sa = all_spheres[static_cast<size_t>(a)];
+            if (!sa.geom_active || sa.body_id < 0) continue;
+            for (int b = a + 1; b < NS; ++b) {
+                const auto& sb = all_spheres[static_cast<size_t>(b)];
+                if (!sb.geom_active || sb.body_id < 0 || sa.body_id == sb.body_id || sa.link_key == sb.link_key) continue;
+                if (!body_movable[static_cast<size_t>(sa.body_id)] && !body_movable[static_cast<size_t>(sb.body_id)]) continue;
+                if (sa.src != nullptr && sa.src->is_attached && sa.src->attached_touch_links.count(sb.link_key) > 0) continue;
+                if (sb.src != nullptr && sb.src->is_attached && sb.src->attached_touch_links.count(sa.link_key) > 0) continue;
+                if (is_pair_disabled_by_acm(sa.link_key, sb.link_key)) continue;
+                if (((sa.layer & sb.mask) == 0) && ((sb.layer & sa.mask) == 0)) continue;
+                out.self_sphere_pairs.push_back(static_cast<int32_t>(a));
+                out.self_sphere_pairs.push_back(static_cast<int32_t>(b));
+            }
+        }
+
+        // Export individual static shapes (never merging multi-shape concave assets into one OBB).
+        std::vector<int> static_shape_ids;
+        for (int i = 0; i < static_cast<int>(shapes.size()); ++i) {
+            if (shapes[static_cast<size_t>(i)].body_id < 0 && shapes[static_cast<size_t>(i)].shape) {
+                static_shape_ids.push_back(i);
+            }
+        }
+        const int N_stat = static_cast<int>(static_shape_ids.size());
+        out.num_static = N_stat;
+        out.static_kind.resize(static_cast<size_t>(N_stat));
+        out.static_pos.resize(static_cast<size_t>(N_stat) * 3);
+        out.static_rot.resize(static_cast<size_t>(N_stat) * 9);
+        out.static_size.resize(static_cast<size_t>(N_stat) * 3);
+
+        for (int k = 0; k < N_stat; ++k) {
+            const size_t sk = static_cast<size_t>(k);
+            const auto& ws = shapes[static_cast<size_t>(static_shape_ids[sk])];
+            const auto& sh = *ws.shape;
+            Mat3 R = ws.local_frame.leftCols<3>();
+            Vec3 p = ws.local_frame.col(3);
+            Vec3 sz = Vec3::Zero();
+            int32_t gkind = static_cast<int32_t>(sh.kind);
+
+            if (sh.kind == 1) {
+                sz = sh.box_half_size;
+            } else if (sh.kind == 2) {
+                sz = Vec3(sh.radius, 0.0, 0.0);
+            } else if (sh.kind == 3 || sh.kind == 4) {
+                sz = Vec3(sh.radius, 0.5 * sh.height, 0.0);
+            } else if (sh.kind == 5) {
+                // Static mesh -> tight PCA-OBB box proxy (exact Coal mesh verified in C++ finalize).
+                gkind = 1;
+                if (sh.hull_points.size() >= 3) {
+                    Vec3 mean = Vec3::Zero();
+                    for (const auto& pt : sh.hull_points) mean += pt;
+                    mean /= static_cast<double>(sh.hull_points.size());
+                    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+                    for (const auto& pt : sh.hull_points) {
+                        const Vec3 d = pt - mean;
+                        cov.noalias() += d * d.transpose();
+                    }
+                    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig(cov);
+                    Mat3 basis = Mat3::Identity();
+                    if (eig.info() == Eigen::Success) {
+                        basis = eig.eigenvectors();
+                        if (basis.determinant() < 0.0) basis.col(0) = -basis.col(0);
+                    }
+                    Vec3 lo = Vec3::Constant(std::numeric_limits<double>::infinity());
+                    Vec3 hi = Vec3::Constant(-std::numeric_limits<double>::infinity());
+                    for (const auto& pt : sh.hull_points) {
+                        const Vec3 lp = basis.transpose() * (pt - mean);
+                        lo = lo.cwiseMin(lp);
+                        hi = hi.cwiseMax(lp);
+                    }
+                    const Vec3 obb_local_c = mean + basis * (0.5 * (lo + hi));
+                    p = p + R * obb_local_c;
+                    R = R * basis;
+                    sz = 0.5 * (hi - lo);
+                } else {
+                    p = p + R * sh.convex_center;
+                    sz = sh.convex_half;
+                }
+            } else if (sh.kind == 6) {
+                sz = Vec3::Zero();
+            }
+
+            out.static_kind[sk] = gkind;
+            for (int r = 0; r < 3; ++r) {
+                out.static_pos[sk * 3 + static_cast<size_t>(r)] = static_cast<float>(p(r));
+                out.static_size[sk * 3 + static_cast<size_t>(r)] = static_cast<float>(sz(r));
+                for (int c = 0; c < 3; ++c) {
+                    out.static_rot[sk * 9 + static_cast<size_t>(r * 3 + c)] = static_cast<float>(R(r, c));
+                }
+            }
+        }
+
+        // Active (sphere_idx, static_idx) pairs filtered by ACM, touch_links, layer/mask, and movability.
+        for (int a = 0; a < NS; ++a) {
+            const auto& sa = all_spheres[static_cast<size_t>(a)];
+            if (!sa.geom_active || sa.body_id < 0 || !body_movable[static_cast<size_t>(sa.body_id)]) continue;
+            for (int k = 0; k < N_stat; ++k) {
+                const auto& wb = shapes[static_cast<size_t>(static_shape_ids[static_cast<size_t>(k)])];
+                if (sa.link_key == wb.link_key) continue;
+                if (sa.src != nullptr && sa.src->is_attached && sa.src->attached_touch_links.count(wb.link_key) > 0) continue;
+                if (is_pair_disabled_by_acm(sa.link_key, wb.link_key)) continue;
+                if (((sa.layer & wb.mask) == 0) && ((wb.layer & sa.mask) == 0)) continue;
+                out.static_sphere_pairs.push_back(static_cast<int32_t>(a));
+                out.static_sphere_pairs.push_back(static_cast<int32_t>(k));
+            }
+        }
+
+        // ESDF metadata and shared grid reference.
+        out.has_esdf = esdf_ok;
+        if (esdf_ok) {
+            out.esdf_nx = esdf->nx;
+            out.esdf_ny = esdf->ny;
+            out.esdf_nz = esdf->nz;
+            out.esdf_origin = {static_cast<float>(esdf->origin(0)),
+                               static_cast<float>(esdf->origin(1)),
+                               static_cast<float>(esdf->origin(2))};
+            out.esdf_resolution = static_cast<float>(esdf->resolution);
+            out.esdf_from_occupancy = esdf->from_occupancy ? 1 : 0;
+            out.esdf_inflation_radius = static_cast<float>(esdf->inflation_radius);
+            out.esdf_max_distance = std::isfinite(esdf->max_distance)
+                ? static_cast<float>(std::min(esdf->max_distance, 1e30))
+                : 1e30f;
+            out.esdf_lipschitz_bound = static_cast<float>(esdf->lipschitz_bound);
+            out.esdf_grid = esdf;
+        }
+        return out;
     }
 };
 
