@@ -659,6 +659,12 @@ public:
     const std::vector<int>& parent() const { return parent_; }
     const std::vector<int>& kinds() const { return kinds_; }
     const std::vector<int>& joint_idx() const { return joint_idx_; }
+    const std::vector<Mat3>& a_rot() const { return a_rot_; }
+    const std::vector<Vec3>& a_pos() const { return a_pos_; }
+    const std::vector<Mat3>& b_rot() const { return b_rot_; }
+    const std::vector<Vec3>& b_pos() const { return b_pos_; }
+    const std::vector<Vec3>& axes() const { return axes_; }
+    const std::vector<int>& body_branch() const { return body_branch_; }
     const std::vector<std::string>& body_names() const { return body_names_; }
     const std::vector<std::string>& joint_names() const { return joint_names_; }
     const std::vector<Branch>& branches() const { return branches_; }

@@ -2508,3 +2508,190 @@ TEST(MotionPlanningCpp, ReactiveReplanningHierarchyFallbackAndBudget) {
         EXPECT_NE(tres.reason.find("budget"), std::string::npos);
     }
 }
+
+TEST(MotionPlanningCpp, GpuSceneExportMatchesSnapshot) {
+    auto world = make_upright_cup_arm_world();
+    add_box_obstacle(*world, "box_obs", gp::Vec3(0.20, 0.20, 0.40), gp::Vec3(0.70, 0.15, 0.30));
+
+    // Attach an occupancy grid ESDF.
+    std::vector<uint8_t> occ(8 * 8 * 8, 0);
+    occ[(4 * 8 + 4) * 8 + 4] = 1;
+    world->set_occupancy_grid(occ.data(), 8, 8, 8, gp::Vec3(-0.2, -0.2, 0.0), 0.1, 1.0, 0.02);
+
+    auto snap = world->snapshot();
+    const auto exp = snap->export_gpu_scene();
+    EXPECT_EQ(exp.version, snap->version);
+    EXPECT_EQ(exp.topology_version, snap->topology_version);
+    EXPECT_EQ(exp.num_bodies, snap->kin.num_bodies());
+    EXPECT_EQ(exp.num_joints, snap->kin.num_joints());
+    EXPECT_GE(exp.num_spheres, static_cast<int>(snap->link_spheres.size()));
+    int esdf_active_cnt = 0;
+    for (uint8_t flag : exp.sphere_esdf_active) esdf_active_cnt += (flag != 0 ? 1 : 0);
+    EXPECT_EQ(esdf_active_cnt, static_cast<int>(snap->esdf_spheres.size()));
+    EXPECT_EQ(exp.num_static, 1);
+    EXPECT_TRUE(exp.has_esdf);
+    EXPECT_EQ(exp.esdf_nx, 8);
+    EXPECT_EQ(exp.esdf_ny, 8);
+    EXPECT_EQ(exp.esdf_nz, 8);
+    EXPECT_EQ(exp.esdf_from_occupancy, 1);
+    EXPECT_NEAR(exp.esdf_inflation_radius, 0.02f, 1e-6f);
+    EXPECT_FALSE(exp.static_sphere_pairs.empty());
+
+    // Disabling a link against the static obstacle via ACM must remove its pairs in GPU export too.
+    const size_t pairs_before = exp.static_sphere_pairs.size();
+    ASSERT_FALSE(snap->link_spheres.empty());
+    std::string static_lk;
+    for (const auto& ws : snap->shapes) {
+        if (ws.body_id < 0) { static_lk = ws.link_key; break; }
+    }
+    ASSERT_FALSE(static_lk.empty());
+    world->set_collision_enabled(snap->link_spheres[0].link_key, static_lk, false);
+    const auto exp2 = world->snapshot()->export_gpu_scene();
+    EXPECT_LT(exp2.static_sphere_pairs.size(), pairs_before);
+}
+
+TEST(MotionPlanningCpp, BatchCandidateVerificationEnforcesFullRequest) {
+    // 2-DOF prismatic arm: joint 0 moves along X, joint 1 moves along Y.
+    auto world = std::make_shared<gp::PlanningWorld>();
+    std::vector<int> parent = {-1, 0, 1};
+    std::vector<int> kinds = {0, 3, 3};
+    std::vector<int> joint_idx = {-1, 0, 1};
+    std::vector<gp::Mat3> a_rot(3, gp::Mat3::Identity());
+    std::vector<gp::Vec3> a_pos(3, gp::Vec3::Zero());
+    std::vector<gp::Mat3> b_rot(3, gp::Mat3::Identity());
+    std::vector<gp::Vec3> b_pos(3, gp::Vec3::Zero());
+    std::vector<gp::Vec3> axes = {gp::Vec3::Zero(), gp::Vec3::UnitX(), gp::Vec3::UnitY()};
+    std::vector<gp::KinematicsModel::Branch> branches = {{"slide", 0, gp::Vec3::Zero(), gp::Mat3::Identity()}};
+    std::vector<std::string> body_names = {"slide::base", "slide::car_x", "slide::ee"};
+    std::vector<std::string> joint_names = {"slide::jx", "slide::jy"};
+    Eigen::VectorXd lo(2), hi(2), vmax(2), amax(2), q0(2);
+    lo << -1.0, -1.0;
+    hi << 1.0, 1.0;
+    vmax << 2.0, 2.0;
+    amax << 4.0, 4.0;
+    q0 << -0.8, 0.0;
+    std::unordered_map<std::string, int> link_index = {{"slide::base", 0}, {"slide::car_x", 1}, {"slide::ee", 2}};
+    world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes, branches,
+                           body_names, joint_names, lo, hi, vmax, amax, q0, link_index);
+
+    auto ee_shape = std::make_shared<gp::CollisionShape>();
+    ee_shape->label = "ee_sphere";
+    ee_shape->kind = 2;
+    ee_shape->radius = 0.04;
+    ee_shape->convex = std::make_shared<coal::Sphere>(0.04);
+    ee_shape->finalize_bounds();
+    gp::WorldShape ws;
+    ws.name = "slide/ee/sphere";
+    ws.link_key = "slide::ee";
+    ws.body_id = 2;
+    ws.local_frame = gp::Frame::Zero();
+    ws.local_frame.leftCols<3>().setIdentity();
+    ws.shape = ee_shape;
+    world->add_shape(std::move(ws));
+
+    gp::MotionPlannerNative planner(world);
+    auto snap = world->snapshot();
+
+    gp::MotionPlanRequestNative req;
+    req.start_q = Eigen::Vector2d(-0.8, 0.0);
+    req.goal_qs = {Eigen::Vector2d(0.2, 0.0)};
+    req.config.waypoints = 6;
+    req.config.strict_ccd = true;
+    req.config.margin = 0.005;
+    req.config.world_margin = 0.005;
+    // Specify intermediate waypoint 2 at x = -0.45 m.
+    req.joint_targets.emplace_back(2, Eigen::Vector2d(-0.45, 0.0));
+
+    // Candidate 0: collision-free, valid endpoints, but misses waypoint 2 by 10 cm (x = -0.55 m).
+    gp::RowMatrixXd bad_via(6, 2);
+    bad_via << -0.80, 0.0,
+               -0.68, 0.0,
+               -0.55, 0.0,
+               -0.30, 0.0,
+               -0.05, 0.0,
+                0.20, 0.0;
+
+    // Candidate 1: satisfies waypoint 2 exactly (x = -0.45 m).
+    gp::RowMatrixXd good_via(6, 2);
+    good_via << -0.80, 0.0,
+                -0.62, 0.0,
+                -0.45, 0.0,
+                -0.23, 0.0,
+                -0.01, 0.0,
+                 0.20, 0.0;
+
+    // 1. Only bad candidate with cpu_fallback_on_fail=false -> must be strictly rejected!
+    {
+        gp::CandidateBatchItemNative item;
+        item.request = req;
+        item.candidates.push_back({bad_via, 0, "gpu_lbfgs", false, {}});
+        const auto res = planner.finalize_candidates_batch(*snap, {item}, false);
+        ASSERT_EQ(res.size(), 1u);
+        EXPECT_FALSE(res[0].plan.success);
+        EXPECT_EQ(res[0].accepted_candidate_index, -1);
+        EXPECT_FALSE(res[0].used_cpu_fallback);
+        EXPECT_NE(res[0].plan.reason.find("waypoint 2"), std::string::npos);
+    }
+
+    // 2. Ranked [bad_via, good_via] -> rejects candidate 0 and accepts candidate 1 without CPU fallback!
+    {
+        gp::CandidateBatchItemNative item;
+        item.request = req;
+        item.candidates.push_back({bad_via, 0, "gpu_lbfgs", false, {}});
+        item.candidates.push_back({good_via, 0, "gpu_lbfgs", false, {}});
+        const auto res = planner.finalize_candidates_batch(*snap, {item}, false);
+        ASSERT_EQ(res.size(), 1u);
+        ASSERT_TRUE(res[0].plan.success) << res[0].plan.reason;
+        EXPECT_EQ(res[0].accepted_candidate_index, 1);
+        EXPECT_FALSE(res[0].used_cpu_fallback);
+        const int wp2 = res[0].plan.waypoint_indices[2];
+        EXPECT_NEAR(res[0].plan.trajectory.positions(wp2, 0), -0.45, 1e-4);
+    }
+
+    // FP32 clamping cannot turn an out-of-bounds request into a valid endpoint.
+    for (bool test_start : {true, false}) {
+        gp::CandidateBatchItemNative item;
+        item.request = req;
+        gp::RowMatrixXd knots = good_via;
+        if (test_start) {
+            item.request.start_q(0) = -1.00005;
+            knots(0, 0) = -1.;
+        } else {
+            item.request.goal_qs.front()(0) = 1.00005;
+            knots(knots.rows() - 1, 0) = 1.;
+        }
+        item.candidates.push_back({knots, 0, "gpu_lbfgs", false, {}});
+        const auto res = planner.finalize_candidates_batch(*snap, {item}, false);
+        EXPECT_FALSE(res.front().plan.success);
+        EXPECT_NE(res.front().plan.reason.find("joint limits"), std::string::npos);
+    }
+
+    // 3. Locked inactive joint moved -> strictly rejected even if collision-free.
+    {
+        gp::MotionPlanRequestNative lock_req = req;
+        lock_req.joint_targets.clear();
+        lock_req.active_mask = {1, 0};  // lock jy at 0.0
+        gp::RowMatrixXd drifted = good_via;
+        drifted(2, 1) = 0.05;
+        gp::CandidateBatchItemNative item;
+        item.request = lock_req;
+        item.candidates.push_back({drifted, 0, "gpu_lbfgs", false, {}});
+        const auto res = planner.finalize_candidates_batch(*snap, {item}, false);
+        EXPECT_FALSE(res[0].plan.success);
+        EXPECT_NE(res[0].plan.reason.find("locked joint"), std::string::npos);
+    }
+
+    // 4. All candidates fail + cpu_fallback_on_fail=true -> falls back cleanly to C++ planner.
+    {
+        gp::CandidateBatchItemNative item;
+        item.request = req;
+        item.candidates.push_back({bad_via, 0, "gpu_lbfgs", false, {}});
+        const auto res = planner.finalize_candidates_batch(*snap, {item}, true);
+        ASSERT_EQ(res.size(), 1u);
+        ASSERT_TRUE(res[0].plan.success) << res[0].plan.reason;
+        EXPECT_EQ(res[0].accepted_candidate_index, -1);
+        EXPECT_TRUE(res[0].used_cpu_fallback);
+        const int wp2 = res[0].plan.waypoint_indices[2];
+        EXPECT_NEAR(res[0].plan.trajectory.positions(wp2, 0), -0.45, 1e-4);
+    }
+}

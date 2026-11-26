@@ -1,6 +1,7 @@
 """Unified C++-backed motion planning for Gobot scenes (Coal CPU & MuJoCo Warp GPU)."""
 
 from .backends import CoalBackend, CollisionBackend, MuJoCoWarpBackend, make_backend
+from .gpu_batch import GpuBatchBackend, GpuBatchConfig, GpuBatchOptimizer, GpuBatchStats
 from .planner import MotionPlanner
 from .retime import retime_trajectory, slice_trajectory_suffix
 from .types import (
@@ -33,6 +34,10 @@ __all__ = [
     "CartesianWaypoint",
     "CoalBackend",
     "CollisionBackend",
+    "GpuBatchBackend",
+    "GpuBatchConfig",
+    "GpuBatchOptimizer",
+    "GpuBatchStats",
     "IKResult",
     "JointName",
     "Link",

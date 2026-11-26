@@ -899,6 +899,109 @@ py::list snap_link_spheres_list(const gp::WorldSnapshot& snap, bool esdf_only) {
     return out;
 }
 
+py::dict snap_export_gpu_scene(const gp::WorldSnapshot& snap) {
+    gp::GpuSceneExport exp;
+    {
+        py::gil_scoped_release release;
+        exp = snap.export_gpu_scene();
+    }
+    auto to_i32_1d = [](const std::vector<int32_t>& v) {
+        py::array_t<int32_t> arr(static_cast<py::ssize_t>(v.size()));
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_i32_2d = [](const std::vector<int32_t>& v, py::ssize_t cols) {
+        const py::ssize_t rows = cols > 0 ? static_cast<py::ssize_t>(v.size()) / cols : 0;
+        py::array_t<int32_t> arr({rows, cols});
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_u8_1d = [](const std::vector<uint8_t>& v) {
+        py::array_t<uint8_t> arr(static_cast<py::ssize_t>(v.size()));
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_u8_2d = [](const std::vector<uint8_t>& v, py::ssize_t rows, py::ssize_t cols) {
+        py::array_t<uint8_t> arr({rows, cols});
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_f32_1d = [](const std::vector<float>& v) {
+        py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_f32_2d = [](const std::vector<float>& v, py::ssize_t rows, py::ssize_t cols) {
+        py::array_t<float> arr({rows, cols});
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+    auto to_f32_3d = [](const std::vector<float>& v, py::ssize_t d0, py::ssize_t d1, py::ssize_t d2) {
+        py::array_t<float> arr({d0, d1, d2});
+        if (!v.empty()) std::copy(v.begin(), v.end(), arr.mutable_data());
+        return arr;
+    };
+
+    py::dict d;
+    d["version"] = exp.version;
+    d["topology_version"] = exp.topology_version;
+    d["num_bodies"] = exp.num_bodies;
+    d["num_joints"] = exp.num_joints;
+    d["num_branches"] = exp.num_branches;
+
+    d["parent"] = to_i32_1d(exp.parent);
+    d["kinds"] = to_i32_1d(exp.kinds);
+    d["joint_idx"] = to_i32_1d(exp.joint_idx);
+    d["body_branch"] = to_i32_1d(exp.body_branch);
+    d["a_rot"] = to_f32_3d(exp.a_rot, exp.num_bodies, 3, 3);
+    d["a_pos"] = to_f32_2d(exp.a_pos, exp.num_bodies, 3);
+    d["b_rot"] = to_f32_3d(exp.b_rot, exp.num_bodies, 3, 3);
+    d["b_pos"] = to_f32_2d(exp.b_pos, exp.num_bodies, 3);
+    d["axes"] = to_f32_2d(exp.axes, exp.num_bodies, 3);
+    d["root_pos"] = to_f32_2d(exp.root_pos, exp.num_branches, 3);
+    d["root_rot"] = to_f32_3d(exp.root_rot, exp.num_branches, 3, 3);
+    d["body_ancestor"] = to_u8_2d(exp.body_ancestor, exp.num_bodies, exp.num_joints);
+    d["joint_prismatic"] = to_u8_1d(exp.joint_prismatic);
+    d["lower"] = to_f32_1d(exp.lower);
+    d["upper"] = to_f32_1d(exp.upper);
+    d["velocity_limit"] = to_f32_1d(exp.velocity_limit);
+    d["acceleration_limit"] = to_f32_1d(exp.acceleration_limit);
+
+    d["num_spheres"] = exp.num_spheres;
+    d["sphere_body"] = to_i32_1d(exp.sphere_body);
+    d["sphere_center"] = to_f32_2d(exp.sphere_center, exp.num_spheres, 3);
+    d["sphere_radius"] = to_f32_1d(exp.sphere_radius);
+    d["sphere_esdf_active"] = to_u8_1d(exp.sphere_esdf_active);
+    d["self_sphere_pairs"] = to_i32_2d(exp.self_sphere_pairs, 2);
+
+    d["num_static"] = exp.num_static;
+    d["static_kind"] = to_i32_1d(exp.static_kind);
+    d["static_pos"] = to_f32_2d(exp.static_pos, exp.num_static, 3);
+    d["static_rot"] = to_f32_3d(exp.static_rot, exp.num_static, 3, 3);
+    d["static_size"] = to_f32_2d(exp.static_size, exp.num_static, 3);
+    d["static_sphere_pairs"] = to_i32_2d(exp.static_sphere_pairs, 2);
+
+    d["has_esdf"] = exp.has_esdf;
+    d["esdf_origin"] = py::array_t<float>(3, exp.esdf_origin.data());
+    d["esdf_resolution"] = exp.esdf_resolution;
+    d["esdf_from_occupancy"] = exp.esdf_from_occupancy;
+    d["esdf_inflation_radius"] = exp.esdf_inflation_radius;
+    d["esdf_max_distance"] = exp.esdf_max_distance;
+    d["esdf_lipschitz_bound"] = exp.esdf_lipschitz_bound;
+    if (exp.has_esdf && exp.esdf_grid && !exp.esdf_grid->sdf.empty()) {
+        py::array_t<float> sdf_arr({static_cast<py::ssize_t>(exp.esdf_nx),
+                                    static_cast<py::ssize_t>(exp.esdf_ny),
+                                    static_cast<py::ssize_t>(exp.esdf_nz)});
+        std::copy(exp.esdf_grid->sdf.begin(), exp.esdf_grid->sdf.end(), sdf_arr.mutable_data());
+        d["esdf_sdf"] = std::move(sdf_arr);
+    } else {
+        py::array_t<float> empty_sdf({py::ssize_t(1), py::ssize_t(1), py::ssize_t(1)});
+        *empty_sdf.mutable_data(0, 0, 0) = 1e30f;
+        d["esdf_sdf"] = std::move(empty_sdf);
+    }
+    return d;
+}
+
 py::object snap_query_esdf(const gp::WorldSnapshot& snap, const Input& pts, bool return_gradient) {
     if (pts.ndim() != 2 || pts.shape(1) != 3) {
         throw std::invalid_argument("points must have shape [N, 3]");
@@ -1514,6 +1617,7 @@ PYBIND11_MODULE(_coal_native, module) {
             return snap_pair_margins(*s.ptr, margin, world_margin);
         }, py::arg("margin"), py::arg("world_margin"))
         .def("export_warp_geometry", [](const PyWorldSnapshot& s) { return snap_export_warp_geometry(*s.ptr); })
+        .def("export_gpu_scene", [](const PyWorldSnapshot& s) { return snap_export_gpu_scene(*s.ptr); })
         .def("compute_frames", [](const PyWorldSnapshot& s, const Input& q_arr, bool return_joints) {
             return snap_compute_frames(*s.ptr, q_arr, return_joints);
         }, py::arg("q"), py::arg("return_joints") = false)
@@ -2157,6 +2261,80 @@ PYBIND11_MODULE(_coal_native, module) {
             for (const auto& r : res) out.append(plan_result_to_dict(r));
             return out;
         }, py::arg("requests"), py::arg("chunk_size") = 64)
+        .def("plan_batch_with_snapshot", [](const gp::MotionPlannerNative& planner,
+                                            const PyWorldSnapshot& snap,
+                                            const py::list& req_list, int chunk_size) {
+            const int J = snap.ptr->kin.num_joints();
+            std::vector<gp::MotionPlanRequestNative> reqs;
+            reqs.reserve(req_list.size());
+            for (const auto& item : req_list) {
+                reqs.push_back(parse_plan_request(item.cast<py::dict>(), J));
+            }
+            std::vector<gp::PlanResultNative> res;
+            {
+                py::gil_scoped_release release;
+                res = planner.plan_batch_with_snapshot(*snap.ptr, reqs, chunk_size);
+            }
+            py::list out;
+            for (const auto& r : res) out.append(plan_result_to_dict(r));
+            return out;
+        }, py::arg("snapshot"), py::arg("requests"), py::arg("chunk_size") = 64)
+        .def("finalize_candidates_batch", [](const gp::MotionPlannerNative& planner,
+                                             const PyWorldSnapshot& snap,
+                                             const py::list& items_in,
+                                             bool cpu_fallback_on_fail) {
+            const int J = snap.ptr->kin.num_joints();
+            std::vector<gp::CandidateBatchItemNative> items;
+            items.reserve(items_in.size());
+            for (const auto& raw_item : items_in) {
+                const py::dict d = raw_item.cast<py::dict>();
+                gp::CandidateBatchItemNative item;
+                item.request = parse_plan_request(d["request"].cast<py::dict>(), J);
+                const py::list cands = d["candidates"].cast<py::list>();
+                item.candidates.reserve(cands.size());
+                for (const auto& raw_c : cands) {
+                    const py::dict cd = raw_c.cast<py::dict>();
+                    gp::CandidatePathNative cp;
+                    const Input pos_arr = cd["positions"].cast<Input>();
+                    if (pos_arr.ndim() != 2 || pos_arr.shape(1) != J) {
+                        throw std::invalid_argument("candidate positions must have shape [T, J]");
+                    }
+                    cp.positions.resize(pos_arr.shape(0), J);
+                    std::copy(pos_arr.data(), pos_arr.data() + pos_arr.shape(0) * J, cp.positions.data());
+                    cp.goal_index = cd.contains("goal_index") ? cd["goal_index"].cast<int>() : 0;
+                    if (cd.contains("seed_strategy") && !cd["seed_strategy"].is_none()) {
+                        cp.seed_strategy = cd["seed_strategy"].cast<std::string>();
+                    }
+                    if (cd.contains("initial_positions") && !cd["initial_positions"].is_none()) {
+                        const Input init_arr = cd["initial_positions"].cast<Input>();
+                        if (init_arr.ndim() == 2 && init_arr.shape(1) == J) {
+                            cp.has_initial_positions = true;
+                            cp.initial_positions.resize(init_arr.shape(0), J);
+                            std::copy(init_arr.data(), init_arr.data() + init_arr.shape(0) * J,
+                                      cp.initial_positions.data());
+                        }
+                    }
+                    item.candidates.push_back(std::move(cp));
+                }
+                items.push_back(std::move(item));
+            }
+            std::vector<gp::CandidateBatchResultNative> res;
+            {
+                py::gil_scoped_release release;
+                res = planner.finalize_candidates_batch(*snap.ptr, items, cpu_fallback_on_fail);
+            }
+            py::list out;
+            for (const auto& r : res) {
+                py::dict item;
+                item["result"] = plan_result_to_dict(r.plan);
+                item["accepted_candidate_index"] = r.accepted_candidate_index;
+                item["used_cpu_fallback"] = r.used_cpu_fallback;
+                item["verify_ms"] = r.verify_ms;
+                item["fallback_ms"] = r.fallback_ms;
+                out.append(std::move(item));
+            }
+            return out;
+        }, py::arg("snapshot"), py::arg("items"), py::arg("cpu_fallback_on_fail") = true)
         .def("plan_cartesian_path", [](const gp::MotionPlannerNative& planner, const py::dict& req_dict) {
             const int J = planner.world()->num_joints();
             const auto req = parse_cartesian_request(req_dict, J);

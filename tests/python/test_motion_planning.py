@@ -2878,3 +2878,371 @@ def test_replan_anchor_on_nonuniform_loop(simple_snapshot, order):
     automatic = planner.replan(q, v, prev, config=cfg)
     assert automatic.success, automatic.reason
     assert automatic.diagnostics.seed_strategy != "reused_prev"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.3: GPU-Resident Batch Optimizer & Request-Level C++ Batch Verification
+# ---------------------------------------------------------------------------
+
+def _has_warp_cuda() -> bool:
+    try:
+        import warp as wp
+        wp.init()
+        return len(wp.get_cuda_devices()) > 0
+    except Exception:
+        return False
+
+
+def test_batch_candidate_verification_enforces_full_request(simple_snapshot):
+    """P1: collision-free candidate missing a specified waypoint or moving a locked joint must be rejected."""
+    from gobot.planning.planner import _request_to_native_dict
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    snap = world._native.snapshot()
+
+    q0 = np.array([-0.7, 0.4, 0.0])
+    q1 = np.array([0.2, 0.4, 0.0])
+    via_target = np.array([-0.45, 0.4, 0.0])
+    cfg = SolverConfig(waypoints=6, margin=0.002, world_margin=0.005, strict_ccd=True)
+    req = MotionPlanRequest(start=q0, goal=q1, waypoint_targets={2: via_target}, config=cfg)
+    req_dict = _request_to_native_dict(world, req)
+
+    # Candidate 0 is collision-free but misses waypoint 2 by 10 cm (x = -0.55 vs -0.45).
+    bad_via = np.linspace(q0, q1, 6)
+    bad_via[2, 0] = -0.55
+    good_via = np.linspace(q0, q1, 6)
+    good_via[2] = via_target
+
+    out_bad = planner._native_planner.finalize_candidates_batch(
+        snap, [{"request": req_dict, "candidates": [{"positions": bad_via, "goal_index": 0}]}], False,
+    )
+    assert out_bad[0]["result"]["trajectory"] is None
+    assert out_bad[0]["accepted_candidate_index"] == -1
+    assert not out_bad[0]["used_cpu_fallback"]
+    assert "waypoint 2" in out_bad[0]["result"]["reason"]
+
+    # Ranked [bad_via, good_via] must reject 0 and accept 1 without CPU fallback.
+    out_ranked = planner._native_planner.finalize_candidates_batch(
+        snap,
+        [{"request": req_dict, "candidates": [
+            {"positions": bad_via, "goal_index": 0},
+            {"positions": good_via, "goal_index": 0},
+        ]}],
+        False,
+    )
+    assert out_ranked[0]["result"]["trajectory"] is not None
+    assert out_ranked[0]["accepted_candidate_index"] == 1
+    assert not out_ranked[0]["used_cpu_fallback"]
+    wp_idx = out_ranked[0]["result"]["waypoint_indices"]
+    np.testing.assert_allclose(out_ranked[0]["result"]["trajectory"]["positions"][wp_idx[2]], via_target, atol=1e-4)
+
+    # Locked joint drift must also be strictly rejected even if collision-free.
+    req_lock = MotionPlanRequest(start=q0, goal=np.array([0.2, 0.4, 0.0]), group=[("planning", "x")], config=cfg)
+    drifted = np.linspace(q0, np.array([0.2, 0.4, 0.0]), 6)
+    drifted[2, 1] = 0.45
+    out_lock = planner._native_planner.finalize_candidates_batch(
+        snap,
+        [{"request": _request_to_native_dict(world, req_lock), "candidates": [{"positions": drifted, "goal_index": 0}]}],
+        False,
+    )
+    assert out_lock[0]["result"]["trajectory"] is None
+    assert "locked joint" in out_lock[0]["result"]["reason"]
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+def test_gpu_batch_fk_esdf_and_gradient_parity(simple_snapshot):
+    """GPU FK, occupancy ESDF (with allowance/inflation), supplied ESDF (with Lipschitz), and gradients match C++."""
+    from gobot.planning import GpuBatchConfig
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    occ = np.zeros((20, 20, 12), dtype=np.uint8)
+    occ[9:12, 8:12, 4:8] = 1
+    world.set_occupancy_grid(occ, origin=[-0.6, -0.4, 0.15], resolution=0.06, inflation_radius=0.015)
+
+    planner = MotionPlanner(world, backend="gpu_batch", gpu_config=GpuBatchConfig(num_seeds=4))
+    opt = planner.backend.optimizer
+
+    rng = np.random.default_rng(11)
+    qs = rng.uniform([-0.55, -0.3, -1.0], [0.55, 0.5, 1.0], size=(12, world.num_joints))
+    bpos, brot, d_gpu, g_gpu = opt.eval_fk_and_esdf(qs)
+    d_cpp = world.esdf_distances(qs)
+    exp = world._native.snapshot().export_gpu_scene()
+    act = exp["sphere_esdf_active"].astype(bool)
+
+    # FK parity on both moving links (prismatic left_tip and revolute right_tip).
+    for ee_link in (("planning", "left_tip"), ("planning", "right_tip")):
+        p_cpp, r_cpp = world.link_pose(qs, ee_link)
+        bid = world.links[ee_link]
+        np.testing.assert_allclose(bpos[:, bid], p_cpp, atol=2e-5)
+        np.testing.assert_allclose(brot[:, bid], r_cpp, atol=2e-5)
+    # Occupancy ESDF conservative clearance parity.
+    np.testing.assert_allclose(d_gpu[:, act], d_cpp, atol=1e-4)
+
+    # Finite-difference check on GPU ESDF analytic joint gradient.
+    eps = 1e-3
+    q_test = np.array([[-0.32, 0.27, 0.15]], dtype=np.float64)
+    _, _, _, g0 = opt.eval_fk_and_esdf(q_test)
+    for j in range(world.num_joints):
+        qp = q_test.copy(); qp[0, j] += eps
+        qm = q_test.copy(); qm[0, j] -= eps
+        _, _, dp, _ = opt.eval_fk_and_esdf(qp)
+        _, _, dm, _ = opt.eval_fk_and_esdf(qm)
+        fd = (dp[0, act] - dm[0, act]) / (2.0 * eps)
+        np.testing.assert_allclose(g0[0, act, j], fd, atol=2e-3)
+
+    # Supplied non-unit-Lipschitz ESDF parity (validates Lipschitz division + cache update on set_esdf).
+    xs = np.linspace(-0.5, 0.5, 14)
+    ys = np.linspace(-0.4, 0.4, 12)
+    zs = np.linspace(0.2, 0.8, 10)
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    supplied = 2.0 * (np.sqrt(X * X + Y * Y + (Z - 0.5) ** 2) - 0.15)
+    res_s = float(xs[1] - xs[0])
+    world.set_esdf(supplied, origin=[xs[0] - 0.5 * res_s, ys[0] - 0.5 * res_s, zs[0] - 0.5 * res_s], resolution=res_s)
+    _, _, d_gpu2, _ = opt.eval_fk_and_esdf(qs)
+    d_cpp2 = world.esdf_distances(qs)
+    act2 = world._native.snapshot().export_gpu_scene()["sphere_esdf_active"].astype(bool)
+    np.testing.assert_allclose(d_gpu2[:, act2], d_cpp2, atol=2e-4)
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+def test_gpu_batch_cuda_graph_invalidation_across_sphere_and_esdf_changes(simple_snapshot):
+    """P1: changing link spheres and ESDF grid shape (same B,K,T,J, version-only bump) must stay exact with Graph ON."""
+    from gobot.planning import GpuBatchConfig
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    occ1 = np.zeros((16, 16, 12), dtype=np.uint8)
+    occ1[7:9, 10:12, 4:8] = 1
+    world.set_occupancy_grid(occ1, origin=[-0.5, -0.3, 0.15], resolution=0.06)
+
+    cfg_graph = GpuBatchConfig(num_seeds=6, top_k_verify=4, use_cuda_graph=True, cpu_fallback_on_fail=False, rng_seed=7)
+    cfg_eager = GpuBatchConfig(num_seeds=6, top_k_verify=4, use_cuda_graph=False, cpu_fallback_on_fail=False, rng_seed=7)
+    p_graph = MotionPlanner(world, backend="gpu_batch", gpu_config=cfg_graph)
+    p_eager = MotionPlanner(world, backend="gpu_batch", gpu_config=cfg_eager)
+
+    scfg = SolverConfig(waypoints=12, margin=0.002, world_margin=0.01, collision_substeps=4, strict_ccd=True)
+    reqs = [
+        MotionPlanRequest(start=[-0.45, 0.35, 0.0], goal=[0.45, 0.35, 0.0], config=scfg),
+        MotionPlanRequest(start=[-0.45, 0.25, 0.0], goal=[0.45, 0.45, 0.0], config=scfg),
+    ]
+
+    r1_g = p_graph.plan_batch(reqs)
+    assert p_graph.backend.last_stats.graph_captured
+    r2_g = p_graph.plan_batch(reqs)
+    assert p_graph.backend.last_stats.graph_reused
+    r1_e = p_eager.plan_batch(reqs)
+    assert r1_g.success.all() and r2_g.success.all() and r1_e.success.all()
+    for rg, re in zip(r2_g.results, r1_e.results):
+        assert abs(rg.trajectory.duration - re.trajectory.duration) < 0.05
+        np.testing.assert_allclose(rg.positions, re.positions, atol=2e-2)
+
+    # Mutate link_spheres (grow sphere count!) AND replace ESDF with a larger 3D grid that blocks r1_g (version-only bump).
+    world.set_link_spheres(("planning", "left_tip"), [([0.0, 0.0, 0.0], 0.045), ([0.01, 0.0, 0.0], 0.035), ([-0.01, 0.0, 0.0], 0.035)])
+    occ2 = np.zeros((32, 32, 20), dtype=np.uint8)
+    occ2[13:19, 13:21, 6:14] = 1
+    world.set_occupancy_grid(occ2, origin=[-0.6, -0.35, 0.1], resolution=0.04)
+
+    # Confirm the old graph-cached trajectory would violate the newly installed larger ESDF.
+    old_ok = [world.validate_trajectory(res.trajectory, margin=0.002, world_margin=0.01, strict_ccd=True)[0] for res in r1_g.results]
+    assert not all(old_ok), "expected enlarged ESDF to invalidate at least one previous trajectory"
+
+    r3_g = p_graph.plan_batch(reqs)
+    r3_e = p_eager.plan_batch(reqs)
+    assert r3_g.success.all() and r3_e.success.all()
+    assert r3_g.world_version == world.version
+    for rg, re in zip(r3_g.results, r3_e.results):
+        assert abs(rg.trajectory.duration - re.trajectory.duration) < 0.05
+        ok, reason = world.validate_trajectory(rg.trajectory, margin=0.002, world_margin=0.01, strict_ccd=True)
+        assert ok, reason
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+def test_gpu_batch_features_narrow_passage_group_goalset_dt_and_quintic(simple_snapshot):
+    """End-to-end GPU batch tests: narrow multi-piece slot, PlanningGroup, GoalSet, waypoint/pose targets, dt, quintic."""
+    from gobot.planning import GpuBatchConfig
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Two separate static walls forming a passable slot around y = 0.35, z = 0.50 (a single enclosing OBB would seal it!).
+    world.add_box("wall_upper", [0.10, 0.24, 0.30], [0.0, 0.62, 0.5])
+    world.add_box("wall_lower", [0.10, 0.20, 0.30], [0.0, 0.10, 0.5])
+
+    gpu_cfg = GpuBatchConfig(
+        num_seeds=8, top_k_verify=4, cpu_fallback_on_fail=False, use_cuda_graph=True,
+        world_margin_cushion=0.001,
+    )
+    planner = MotionPlanner(world, backend="gpu_batch", gpu_config=gpu_cfg)
+
+    # 1. Narrow passage (must pass strictly through the slot without CPU fallback).
+    cfg_slot = SolverConfig(waypoints=14, margin=0.002, world_margin=0.005, collision_substeps=5, strict_ccd=True)
+    res_slot = planner.plan(MotionPlanRequest(start=[-0.4, 0.45, 0.0], goal=[0.4, 0.25, 0.0], config=cfg_slot))
+    assert res_slot.success, res_slot.reason
+    assert planner.backend.last_stats.cpu_fallback_count == 0
+    ok, reason = world.validate_trajectory(res_slot.trajectory, margin=0.002, world_margin=0.005, strict_ccd=True)
+    assert ok, reason
+
+    # 2. PlanningGroup locked joint + GoalSet + quintic C^2 + stop_at_endpoints + fixed dt.
+    cfg_q5 = SolverConfig(
+        waypoints=12, dt=0.15, retime=True, margin=0.002, world_margin=0.005,
+        stop_at_endpoints=True, spline_order=5, strict_ccd=True,
+    )
+    req_gs = MotionPlanRequest(
+        start=[-0.4, 0.35, 0.25],
+        goal=[[0.4, 0.35, 0.9], [0.25, 0.35, 0.25]],
+        group=[("planning", "x"), ("planning", "y")],  # lock hinge joint at 0.25
+        config=cfg_q5,
+    )
+    res_gs = planner.plan(req_gs)
+    assert res_gs.success, res_gs.reason
+    assert res_gs.trajectory.spline_order == 5
+    ts = np.linspace(0.0, res_gs.trajectory.duration, 41)
+    q_s, v_s, _ = res_gs.trajectory.sample(ts)
+    np.testing.assert_allclose(q_s[:, 2], 0.25, atol=1e-5)
+    np.testing.assert_allclose(v_s[0], 0.0, atol=1e-6)
+    np.testing.assert_allclose(v_s[-1], 0.0, atol=1e-6)
+    ok, reason = world.validate_trajectory(res_gs.trajectory, margin=0.002, world_margin=0.005, strict_ccd=True)
+    assert ok, reason
+
+    # 3. Waypoint PoseConstraint verified end-to-end.
+    via_q = np.array([0.0, 0.35, 0.0])
+    via_p, _ = world.link_pose(via_q, ("planning", "left_tip"))
+    req_wp = MotionPlanRequest(
+        start=[-0.4, 0.40, 0.0],
+        goal=[0.4, 0.30, 0.0],
+        waypoint_targets={6: PoseConstraint(("planning", "left_tip"), via_p, position_tolerance=2e-3)},
+        config=cfg_slot,
+    )
+    res_wp = planner.plan(req_wp)
+    assert res_wp.success, res_wp.reason
+    p_mid, _ = world.link_pose(res_wp.trajectory.positions[int(res_wp.waypoint_indices[6])], ("planning", "left_tip"))
+    assert np.linalg.norm(p_mid - via_p) <= 2e-3 + 1e-6
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+@pytest.mark.parametrize("use_graph", [False, True])
+def test_gpu_converged_iterate_and_exact_joint_endpoints(simple_snapshot, use_graph):
+    from gobot.planning import GpuBatchConfig
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="gpu_batch", gpu_config=GpuBatchConfig(
+        num_seeds=1, cpu_fallback_on_fail=False, use_cuda_graph=use_graph,
+    ))
+    cfg = SolverConfig(waypoints=8, strict_ccd=True)
+    q = np.array([-0.65, 0.35, 0.0])
+    goal = np.array([-0.65, 0.35, 4.0])
+    r = planner.plan(MotionPlanRequest(q, goal, config=cfg))
+    assert r.success, r.reason
+    np.testing.assert_array_equal(r.positions[[0, -1]], [q, goal])
+
+    for hold in (goal, q):
+        r = planner.plan(MotionPlanRequest(hold, hold, config=cfg))
+        assert r.success, r.reason
+        np.testing.assert_array_equal(r.positions[[0, -1]], [hold, hold])
+        np.testing.assert_array_equal(r.positions, np.broadcast_to(hold, r.positions.shape))
+        np.testing.assert_array_equal(r.trajectory.velocities, np.zeros_like(r.positions))
+
+    # A single fp32 ULP here is larger than the endpoint comparison tolerance.
+    unwrapped = np.array([-0.65, 0.35, 10000.0002])
+    r = planner.plan(MotionPlanRequest(unwrapped, unwrapped, config=cfg))
+    assert r.success, r.reason
+    np.testing.assert_array_equal(r.positions, np.broadcast_to(unwrapped, r.positions.shape))
+
+    invalid = np.array([-1.00005, 0.35, 0.0])
+    for start, end in ((invalid, q), (q, invalid)):
+        r = planner.plan(MotionPlanRequest(start, end, config=cfg))
+        assert not r.success and "joint limits" in r.reason
+    r = planner.plan(MotionPlanRequest(q, [invalid, goal], config=cfg))
+    assert r.success and r.goal_index == 1
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+def test_gpu_pose_goal_multiseed_and_endpoint_fallback(simple_snapshot):
+    from dataclasses import replace
+    from gobot.planning import GpuBatchConfig
+
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    start = np.array([-0.65, 0.35, 0.0])
+    target_link = ("planning", "right_tip")
+    xyz, _ = world.link_pose([*start[:2], np.pi], target_link)
+    req = MotionPlanRequest(start, [PoseConstraint(target_link, xyz, position_tolerance=1e-4)],
+                            config=SolverConfig(waypoints=8, strict_ccd=True, num_seeds=8))
+    planner = MotionPlanner(world, backend="gpu_batch", gpu_config=GpuBatchConfig(cpu_fallback_on_fail=False))
+    r = planner.plan(req)
+    assert r.success, r.reason
+    assert planner.backend.last_stats.cpu_fallback_count == 0
+    assert np.linalg.norm(world.link_pose(r.positions[-1], target_link)[0] - xyz) <= 1e-4
+
+    unreachable = replace(req, goal=[PoseConstraint(target_link, [10, 10, 10])])
+    for fallback in (False, True):
+        planner = MotionPlanner(world, backend="gpu_batch", gpu_config=GpuBatchConfig(cpu_fallback_on_fail=fallback))
+        r = planner.plan(unreachable)
+        assert not r.success and "IK" in r.reason
+        assert planner.backend.last_stats.cpu_fallback_count == int(fallback)
+
+
+@pytest.mark.skipif(not _has_warp_cuda(), reason="CUDA Warp device unavailable")
+def test_gpu_pose_cost_gradient_and_isotropic_violation():
+    import warp as wp
+    from gobot.planning._gpu_kernels import eval_pose_constraints_kernel
+
+    with wp.ScopedDevice("cuda:0"):
+        def arr(data, dtype):
+            return wp.array(np.asarray(data), dtype=dtype)
+
+        def evaluate(rotvec, rot_tol, *, position_only=False):
+            # One free interior knot and a single revolute joint about the world Z-axis.
+            rotation = Rotation.from_rotvec(rotvec).as_matrix()
+            position = [0.0008, 0.0008, 0.]
+            flags = 1 if position_only else 2
+            origins = arr([[position], [position]], wp.vec3)
+            orientations = arr([[rotation], [rotation]], wp.mat33)
+            axes = arr([[[0., 0., 1.]], [[0., 0., 1.]]], wp.vec3)
+            cost = wp.zeros(1)
+            violation = wp.zeros(1)
+            gradient = wp.zeros((1, 3, 1))
+            wp.launch(eval_pose_constraints_kernel, dim=1, inputs=[
+                1, 2, 1, 3, 1, 1, 1, 1, 0, arr([0], int), origins, orientations, origins, axes,
+                arr([[1]], wp.uint8), arr([0], wp.uint8), arr([[1]], wp.uint8),
+                arr([0], int), arr([1], int), arr([0], int), arr([flags], int),
+                arr([[0., 0., 0.]], wp.vec3), arr([np.eye(3)], wp.mat33),
+                arr([[0.001]*3], wp.vec3), arr([rot_tol], wp.vec3),
+                arr([1.], float), arr([1.]*14, float), cost, violation, gradient,
+            ])
+            return cost.numpy()[0], gradient.numpy()[0, 1, 0], violation.numpy()[0]
+
+        for angle in np.deg2rad([30, 90, 120, 179]):
+            tol = [-1., 0.001, 0.001]
+            _, grad, _ = evaluate([0., 0., angle], tol)
+            eps = 0.001
+            plus = evaluate([0., 0., angle + eps], tol)[0]
+            minus = evaluate([0., 0., angle - eps], tol)[0]
+            assert grad == pytest.approx((plus - minus) / (2 * eps), abs=5e-4)
+
+        error = [0.0008, 0.0008, 0.]
+        for position_only in (False, True):
+            _, _, violation = evaluate(error, [0.001]*3, position_only=position_only)
+            assert violation == pytest.approx(np.linalg.norm(error) - 0.001, abs=1e-7)
+
+
+def test_gpu_benchmark_verifier_checks_endpoints_and_waypoint_mapping(simple_snapshot):
+    from dataclasses import replace
+
+    script = Path(__file__).resolve().parents[2] / "examples/gpu_batch_benchmark/benchmark_gpu_batch.py"
+    independent_verify = runpy.run_path(str(script))["_independent_verify"]
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    start, goal = [-0.65, 0.35, 0.], [-0.4, 0.35, 0.]
+    cfg = SolverConfig(waypoints=8, strict_ccd=True)
+    req = MotionPlanRequest(start, goal, config=cfg)
+    result = MotionPlanner(world).plan(req)
+    assert result.success, result.reason
+
+    def verify(request, candidate=result):
+        return independent_verify(world, request, candidate, margin=cfg.margin, world_margin=cfg.margin,
+                                  substeps=4, strict_ccd=True)
+
+    assert verify(req)
+    assert not verify(replace(req, goal=[-0.8, 0.35, 0.]))
+    assert not verify(replace(req, start=goal))
+    via = replace(req, waypoint_targets={2: result.positions[result.waypoint_indices[2]]})
+    assert verify(via)
+    assert not verify(via, replace(result, waypoint_indices=None))
+    assert not verify(replace(req, waypoint_targets={2: start}))

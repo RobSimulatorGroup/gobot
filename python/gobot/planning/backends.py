@@ -280,9 +280,12 @@ class MuJoCoWarpBackend:
         return CollisionBatchEval(rows_n, pairs_n, res_n, grad, frames, seg_ok, wit)
 
 
-def make_backend(world: PlanningWorld, backend: str = "coal") -> CollisionBackend:
+def make_backend(world: PlanningWorld, backend: str = "coal", *, gpu_config=None) -> CollisionBackend:
     if backend == "coal":
         return CoalBackend(world)
     if backend == "mujoco_warp":
         return MuJoCoWarpBackend(world)
-    raise ValueError("collision backend must be 'coal' or 'mujoco_warp'")
+    if backend == "gpu_batch":
+        from .gpu_batch import GpuBatchBackend
+        return GpuBatchBackend(world, config=gpu_config)
+    raise ValueError("collision backend must be 'coal', 'gpu_batch', or 'mujoco_warp'")
