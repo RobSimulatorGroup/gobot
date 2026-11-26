@@ -2,7 +2,7 @@
 
 from .backends import CoalBackend, CollisionBackend, MuJoCoWarpBackend, make_backend
 from .planner import MotionPlanner
-from .retime import retime_trajectory
+from .retime import retime_trajectory, slice_trajectory_suffix
 from .types import (
     BatchIKResult,
     BatchPlanResult,
@@ -51,4 +51,5 @@ __all__ = [
     "Trajectory",
     "make_backend",
     "retime_trajectory",
+    "slice_trajectory_suffix",
 ]

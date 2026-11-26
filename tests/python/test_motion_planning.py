@@ -2570,3 +2570,311 @@ def test_esdf_attached_sphere_uses_payload_frame(simple_snapshot):
     world.detach_object("payload", q)
     assert not world.link_spheres("payload")
     assert "payload" in [s["link_key"].removeprefix("::") for s in old.esdf_spheres()]
+
+
+def test_start_boundary_retime_and_counterexamples():
+    """Phase 3.2: start-velocity/acceleration retiming, exact slicing, and boundary counterexamples."""
+    from gobot.planning import retime_trajectory, slice_trajectory_suffix
+    from gobot.planning.retime import check_trajectory_bounds
+
+    vmax = np.array([2.0, 2.0], dtype=np.float64)
+    amax = np.array([6.0, 6.0], dtype=np.float64)
+    jmax = np.array([40.0, 40.0], dtype=np.float64)
+    lo = np.array([-3.0, -3.0], dtype=np.float64)
+    hi = np.array([3.0, 3.0], dtype=np.float64)
+    pos = np.array([[0.0, 0.0], [0.4, 0.2], [0.8, 0.5], [1.2, 0.8]], dtype=np.float64)
+
+    # Cubic & quintic with fixed start boundary.
+    v0 = np.array([0.9, -0.5], dtype=np.float64)
+    a0 = np.array([1.2, -0.8], dtype=np.float64)
+    traj3 = retime_trajectory(pos, vmax, amax, spline_order=3, start_velocity=v0, lower_limits=lo, upper_limits=hi)
+    p0, v_eval, _ = traj3.sample(0.0)
+    np.testing.assert_allclose(p0, pos[0], atol=1e-12)
+    np.testing.assert_allclose(v_eval, v0, atol=1e-12)
+    ok3, reason3, _ = check_trajectory_bounds(traj3, vmax, amax, lower_limits=lo, upper_limits=hi)
+    assert ok3, reason3
+
+    traj5 = retime_trajectory(
+        pos, vmax, amax, jerk_limits=jmax, spline_order=5,
+        start_velocity=v0, start_acceleration=a0, lower_limits=lo, upper_limits=hi,
+    )
+    p0_5, v0_5, a0_5 = traj5.sample(0.0)
+    np.testing.assert_allclose(p0_5, pos[0], atol=1e-12)
+    np.testing.assert_allclose(v0_5, v0, atol=1e-12)
+    np.testing.assert_allclose(a0_5, a0, atol=1e-12)
+    ok5, reason5, _ = check_trajectory_bounds(
+        traj5, vmax, amax, lower_limits=lo, upper_limits=hi, jerk_limits=jmax, check_jerk=True,
+    )
+    assert ok5, reason5
+
+    # Exact Hermite suffix slicing equivalence for both cubic and quintic.
+    for traj in (traj3, traj5):
+        t_cut = 0.42 * traj.duration
+        suf = slice_trajectory_suffix(traj, t_cut)
+        assert suf.times[0] == 0.0
+        assert suf.duration == pytest.approx(traj.duration - t_cut, abs=1e-12)
+        dts = np.linspace(0.0, suf.duration, 20)
+        po, vo, ao = traj.sample(t_cut + dts)
+        ps, vs, a_s = suf.sample(dts)
+        np.testing.assert_allclose(ps, po, atol=1e-11)
+        np.testing.assert_allclose(vs, vo, atol=1e-10)
+        if traj.spline_order == 5:
+            np.testing.assert_allclose(a_s, ao, atol=1e-9)
+
+    # Counterexample 1: duplicate first waypoint (q1 == q0) with non-zero start_velocity must preserve v0.
+    dup = np.array([[0.0, 0.0], [0.0, 0.0], [0.5, 0.3]], dtype=np.float64)
+    traj_dup = retime_trajectory(dup, vmax, amax, spline_order=3, start_velocity=v0, lower_limits=lo, upper_limits=hi)
+    np.testing.assert_allclose(traj_dup.sample(0.0)[1], v0, atol=1e-12)
+    ok_dup, reason_dup, _ = check_trajectory_bounds(traj_dup, vmax, amax, lower_limits=lo, upper_limits=hi)
+    assert ok_dup, reason_dup
+
+    # Counterexample 2: start_acceleration on spline_order == 3 must raise ValueError.
+    with pytest.raises(ValueError, match="spline_order == 5"):
+        retime_trajectory(pos, vmax, amax, spline_order=3, start_velocity=v0, start_acceleration=a0)
+    with pytest.raises(ValueError, match="spline_order == 5"):
+        MotionPlanRequest(
+            start=pos[0], goal=pos[-1], start_velocity=v0, start_acceleration=a0,
+            config=SolverConfig(spline_order=3),
+        )
+
+    # Counterexample 3: deterministic infeasible quintic boundary (v0 == +vmax, a0 > 0) must fail bounds check.
+    v_lim = np.array([2.0, 0.0], dtype=np.float64)
+    a_pos = np.array([1.0, 0.0], dtype=np.float64)
+    with pytest.raises(ValueError, match="velocity limit"):
+        retime_trajectory(pos, vmax, amax, jerk_limits=jmax, spline_order=5,
+                          start_velocity=v_lim, start_acceleration=a_pos, lower_limits=lo, upper_limits=hi)
+
+
+def test_fixed_dt_start_acceleration_and_locked_joint_boundary(simple_snapshot):
+    """Phase 3.2: fixed-dt 1/2 a h^2 first-segment bound and locked-joint start_velocity rejection."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    world.define_group("xy_only", [("planning", "x"), ("planning", "y")])
+    planner = MotionPlanner(world, backend="coal")
+
+    q0 = np.array([-0.6, 0.35, 0.0], dtype=np.float64)
+    qg = np.array([0.4, 0.35, 0.0], dtype=np.float64)
+    h = 0.25
+    v0 = np.array([0.8, 0.0, 0.0], dtype=np.float64)
+
+    res = planner.plan(MotionPlanRequest(
+        start=q0, goal=qg, start_velocity=v0,
+        config=SolverConfig(waypoints=10, dt=h, stop_at_endpoints=True, margin=0.01, world_margin=0.01),
+    ))
+    assert res.success, res.reason
+    assert res.trajectory is not None
+    p_s, v_s, _ = res.trajectory.sample(0.0)
+    np.testing.assert_allclose(p_s, q0, atol=1e-9)
+    np.testing.assert_allclose(v_s, v0, atol=1e-9)
+    # First segment must satisfy |q1 - q0 - h * v0| <= 0.5 * a_max * h^2.
+    amax = world.acceleration_limits
+    diff = np.abs(res.trajectory.positions[1] - res.trajectory.positions[0] - h * v0)
+    assert np.all(diff <= 0.5 * amax * h * h * (1.0 + 1e-5))
+
+    # Non-zero start_velocity on locked inactive joint (index 2) must fail with boundary conflict.
+    res_lock = planner.plan(MotionPlanRequest(
+        start=q0, goal=qg, group="xy_only",
+        start_velocity=np.array([0.2, 0.0, 0.5], dtype=np.float64),
+        config=SolverConfig(waypoints=10, margin=0.01, world_margin=0.01),
+    ))
+    assert not res_lock.success
+    assert res_lock.reason is not None and "locked joint" in res_lock.reason.lower()
+
+
+def test_reactive_replan_reuse_drift_ambiguity_fallback_and_stale_world(simple_snapshot):
+    """Phase 3.2: replan reuse/drift/ambiguity/BiRRT-fallback/timeout and stale world_version detection."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+
+    q_start = np.array([-0.6, 0.40, 0.0], dtype=np.float64)
+    q_goal = np.array([0.6, 0.40, 0.0], dtype=np.float64)
+    cfg = SolverConfig(waypoints=12, margin=0.005, world_margin=0.01, stop_at_endpoints=True, strict_ccd=True)
+
+    init = planner.plan(MotionPlanRequest(start=q_start, goal=q_goal, config=cfg))
+    assert init.success and init.trajectory is not None
+    t_cut = 0.35 * init.trajectory.duration
+    q_now, dq_now, _ = init.trajectory.sample(t_cut)
+
+    # 1. Exact state + goal=None (keeps prev_traj final config) -> reused_prev.
+    r_reuse = planner.replan(q_now, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut, config=cfg)
+    assert r_reuse.success and r_reuse.trajectory is not None
+    assert r_reuse.diagnostics.seed_strategy == "reused_prev"
+    assert r_reuse.world_version == world.version
+    np.testing.assert_allclose(r_reuse.trajectory.positions[-1], q_goal, atol=1e-9)
+
+    # 2. Small drift beyond rounding tolerance -> warm_start SQP matching exact (q_now, dq_now).
+    q_drift = q_now + np.array([0.0, 0.012, 0.0])
+    r_drift = planner.replan(q_drift, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut, config=cfg)
+    assert r_drift.success and r_drift.trajectory is not None
+    assert r_drift.diagnostics.seed_strategy == "warm_start"
+    np.testing.assert_allclose(r_drift.trajectory.sample(0.0)[0], q_drift, atol=1e-9)
+    np.testing.assert_allclose(r_drift.trajectory.sample(0.0)[1], dq_now, atol=1e-9)
+
+    # 3. Reversal trajectory without t_on_prev -> ambiguity disables direct reuse, still succeeds via warm_start.
+    from gobot.planning import retime_trajectory
+    rev_knots = np.array([
+        [-0.6, 0.40, 0.0],
+        [0.0, 0.40, 0.0],
+        [0.6, 0.40, 0.0],
+        [0.0, 0.40, 0.0],
+        [-0.6, 0.40, 0.0],
+    ], dtype=np.float64)
+    rev_traj = retime_trajectory(rev_knots, world.velocity_limits, world.acceleration_limits, stop_at_endpoints=True)
+    r_ambig = planner.replan(
+        np.array([0.0, 0.40, 0.0]),
+        np.array([0.0, 0.0, 0.0]),
+        prev_traj=rev_traj,
+        t_on_prev=None,
+        config=cfg,
+    )
+    assert r_ambig.success and r_ambig.trajectory is not None
+    assert r_ambig.diagnostics.seed_strategy != "reused_prev"
+
+    # 4. New waypoint_targets or spline_order mismatch disables direct reuse.
+    cfg5 = SolverConfig(waypoints=12, margin=0.005, world_margin=0.01, stop_at_endpoints=True, spline_order=5, strict_ccd=True)
+    r_ord = planner.replan(q_now, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut, config=cfg5)
+    assert r_ord.success and r_ord.trajectory is not None
+    assert r_ord.diagnostics.seed_strategy != "reused_prev"
+    assert r_ord.trajectory.spline_order == 5
+
+    # 5. Dynamic obstacle blocks previous path + stale world_version detection before handoff.
+    tip_mid, _ = world.link_pose(np.array([0.22, 0.42, 0.0]), ("planning", "left_tip"))
+    world.add_box("blocker", (0.14, 0.14, 0.25), tip_mid)
+    # Previously planned r_reuse is now stale (world_version mismatch) and invalid on the updated world!
+    assert r_reuse.world_version != world.version
+    ok_stale, _ = world.validate_trajectory(r_reuse.trajectory, margin=0.005, world_margin=0.01, strict_ccd=True)
+    assert not ok_stale
+
+    # Replan on updated world detours around blocker while preserving exact (q_now, dq_now).
+    r_detour = planner.replan(q_now, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut, time_budget_s=0.5, config=cfg)
+    assert r_detour.success and r_detour.trajectory is not None, r_detour.reason
+    assert r_detour.world_version == world.version
+    assert r_detour.diagnostics.seed_strategy != "reused_prev"
+    np.testing.assert_allclose(r_detour.trajectory.sample(0.0)[0], q_now, atol=1e-9)
+    np.testing.assert_allclose(r_detour.trajectory.sample(0.0)[1], dq_now, atol=1e-9)
+    ok_det, err_det = world.validate_trajectory(r_detour.trajectory, margin=0.005, world_margin=0.01, strict_ccd=True)
+    assert ok_det, err_det
+
+    # 6. Global BiRRT fallback preserving exact start velocity when warm-start SQP is trapped by a wall.
+    world.update_obstacle_pose("blocker", tip_mid + np.array([0.0, 0.0, 0.0]))
+    world.add_box("wall_extra", (0.12, 0.42, 0.25), tip_mid + np.array([0.0, -0.14, 0.0]))
+    r_fb = planner.replan(
+        q_now, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut,
+        time_budget_s=1.0, config=SolverConfig(
+            waypoints=14, margin=0.005, world_margin=0.01, stop_at_endpoints=True,
+            iterations=15, use_global_seeding=True, strict_ccd=True, rrt_timeout_s=0.6,
+        ),
+    )
+    assert r_fb.success and r_fb.trajectory is not None, r_fb.reason
+    assert r_fb.diagnostics.seed_strategy == "birrt"
+    np.testing.assert_allclose(r_fb.trajectory.sample(0.0)[0], q_now, atol=1e-9)
+    np.testing.assert_allclose(r_fb.trajectory.sample(0.0)[1], dq_now, atol=1e-9)
+    ok_fb, err_fb = world.validate_trajectory(r_fb.trajectory, margin=0.005, world_margin=0.01, strict_ccd=True)
+    assert ok_fb, err_fb
+
+    # 7. Exhausted time_budget_s reports timed_out=True cleanly.
+    r_to = planner.replan(q_now, dq_now, prev_traj=init.trajectory, t_on_prev=t_cut, time_budget_s=1e-6, config=cfg)
+    assert not r_to.success
+    assert r_to.diagnostics.timed_out
+
+
+def test_panda_closed_loop_reactive_replanning_coal_and_esdf(panda_snapshot):
+    """Phase 3.2 Acceptance: 7-DOF Panda 20 Hz closed-loop reactive replanning (Coal, ESDF, Quintic C^2)."""
+    import importlib.util
+
+    demo_path = Path(__file__).resolve().parents[2] / "examples" / "reactive_replanning" / "demo.py"
+    spec = importlib.util.spec_from_file_location("reactive_replanning_demo", demo_path)
+    assert spec is not None and spec.loader is not None
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+
+    for mode, order in (("coal", 3), ("esdf", 3), ("coal", 5)):
+        summary = demo.run_demo(mode=mode, hz=20.0, spline_order=order, strict_ccd=True, max_ticks=90, verbose=False)
+        assert summary["reached_goal"], f"{mode} (order={order}) demo did not reach goal: {summary}"
+        assert summary["success_rate"] >= 0.90, f"{mode} (order={order}) low success rate: {summary}"
+        assert summary["max_pos_jump"] <= 1e-6, f"{mode} pos jump {summary['max_pos_jump']}"
+        assert summary["max_vel_jump"] <= 1e-5, f"{mode} vel jump {summary['max_vel_jump']}"
+        if order == 5:
+            assert summary["max_acc_jump"] <= 1e-4, f"{mode} acc jump {summary['max_acc_jump']}"
+        assert "reused_prev" in summary["paths"]
+        assert ("warm_start" in summary["paths"]) or ("global_fallback" in summary["paths"])
+
+
+def test_reactive_retime_rejects_infeasible_boundary_and_preserves_short_knots():
+    from gobot.planning import slice_trajectory_suffix
+
+    for order in (3, 5):
+        with pytest.raises(ValueError, match="velocity"):
+            retime_trajectory([[0.], [.5]], [1.], [2.], dt=.1, start_velocity=[2.], spline_order=order)
+        times = np.array([0., 5e-13, 1.])
+        q = np.array([[0.], [1.], [0.]])
+        prev = Trajectory(times, q, np.zeros_like(q), np.zeros_like(q), spline_order=order)
+        suffix = slice_trajectory_suffix(prev, 0.)
+        np.testing.assert_array_equal(suffix.times, times)
+        np.testing.assert_array_equal(suffix.sample(times)[0], prev.sample(times)[0])
+        bad = Trajectory(times[::-1], q, np.zeros_like(q), np.zeros_like(q), spline_order=order)
+        with pytest.raises(ValueError, match="non-decreasing"):
+            slice_trajectory_suffix(bad, 0.)
+
+
+def test_short_quintic_acceleration_check_is_translation_invariant():
+    from gobot.planning.retime import check_trajectory_bounds
+
+    for offset in (0., .5):
+        positions = np.full((2, 1), offset)
+        prev = Trajectory(np.array([0., 1e-16]), positions, np.full_like(positions, .1),
+                          np.zeros_like(positions), spline_order=5)
+        assert abs(prev.sample(2.5e-17)[2][0]) > 1e15
+        ok, reason, bad_segments = check_trajectory_bounds(prev, np.ones(1), np.ones(1))
+        assert not ok and "acceleration" in reason and bad_segments == [0]
+
+
+def test_replan_reuse_respects_deadline_state_and_locked_quintic_joint(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world)
+    q = np.array([-.5, .4, 0.])
+    goal = q + [.15, 0., 0.]
+    cfg = SolverConfig(waypoints=10, strict_ccd=True, stop_at_endpoints=True, spline_order=5)
+    pos = np.stack([q, goal, goal])
+    prev = Trajectory(np.arange(3.), pos, np.zeros_like(pos), np.zeros_like(pos), spline_order=5)
+    res = planner.replan(q, np.zeros(3), prev, config=cfg, t_on_prev=0.)
+    assert res.success and res.diagnostics.seed_strategy == "reused_prev"
+    assert len(res.waypoint_indices) == cfg.waypoints
+    assert res.waypoint_indices[-1] == 2
+
+    late = planner.replan(q, np.zeros(3), prev, config=cfg, t_on_prev=0., time_budget_s=1e-9)
+    assert not late.success and late.diagnostics.timed_out
+    drift = q + [0., 5e-7, 0.]
+    corrected = planner.replan(drift, np.zeros(3), prev, config=cfg, t_on_prev=0.)
+    assert corrected.success and corrected.diagnostics.seed_strategy != "reused_prev"
+    np.testing.assert_allclose(corrected.trajectory.positions[0], drift, atol=1e-14, rtol=0.)
+    # Equal positions and zero velocities at every knot still allow a quintic joint excursion.
+    prev.accelerations[1, 1] = .4
+    assert abs(prev.sample(.5)[0][1] - q[1]) > .001
+    locked = planner.replan(q, np.zeros(3), prev, config=cfg, group=[("planning", "x")], t_on_prev=0.)
+    assert locked.success and locked.diagnostics.seed_strategy != "reused_prev"
+    np.testing.assert_allclose(locked.trajectory.sample(np.linspace(0., locked.trajectory.duration, 31))[0][:, 1], q[1])
+
+
+@pytest.mark.parametrize("order", [3, 5])
+def test_replan_anchor_on_nonuniform_loop(simple_snapshot, order):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world)
+    cfg = SolverConfig(waypoints=10, spline_order=order, strict_ccd=True)
+    times = np.array([0., 1., 3., 4., 5., 80.])
+    positions = np.zeros((len(times), 3))
+    positions[:, 0] = [-.375, -.25, -.421875, -.296875, -.20, -.20]
+    positions[:, 1] = .4
+    velocities = np.zeros_like(positions)
+    velocities[:4, 0] = .125
+    prev = Trajectory(times, positions, velocities, np.zeros_like(positions), spline_order=order)
+
+    # The initial state occurs a second time inside the short constant-velocity segment.
+    q, v, _ = prev.sample(0.)
+    t_repeat = 3.375
+    np.testing.assert_allclose(prev.sample(t_repeat)[:2], (q, v), atol=1e-14, rtol=0.)
+    explicit = planner.replan(q, v, prev, t_on_prev=t_repeat, config=cfg)
+    assert explicit.success and explicit.diagnostics.seed_strategy == "reused_prev"
+    assert explicit.trajectory.duration == times[-1] - t_repeat
+    automatic = planner.replan(q, v, prev, config=cfg)
+    assert automatic.success, automatic.reason
+    assert automatic.diagnostics.seed_strategy != "reused_prev"

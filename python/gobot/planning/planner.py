@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from time import perf_counter
 
 import numpy as np
@@ -17,6 +17,7 @@ from .types import (
     CartesianPlanConfig,
     CartesianPlanResult,
     CartesianWaypoint,
+    GoalSpec,
     IKResult,
     JointConfig,
     Link,
@@ -28,6 +29,7 @@ from .types import (
     PoseConstraint,
     SolverConfig,
     Trajectory,
+    _validate_manifold_constraints,
 )
 from .world import PlanningWorld
 
@@ -49,8 +51,11 @@ def _linear_seed(start: np.ndarray, goal: np.ndarray, waypoints: int, fixed: int
                            np.repeat(goal[None, :], fixed, axis=0)), axis=0)
 
 
-def _expand_path_constraints(world: PlanningWorld, waypoints: int, fixed: int,
-                             waypoint_targets, path_constraints: Sequence[PathConstraint]):
+def _expand_path_constraints(world: PlanningWorld, waypoints: int, fixed_start: int,
+                             waypoint_targets, path_constraints: Sequence[PathConstraint],
+                             fixed_end: int | None = None):
+    if fixed_end is None:
+        fixed_end = fixed_start
     pose_map: dict[int, list] = {}
     joint_map: dict[int, np.ndarray] = {}
     for idx, target in (waypoint_targets or {}).items():
@@ -66,7 +71,7 @@ def _expand_path_constraints(world: PlanningWorld, waypoints: int, fixed: int,
     for pc in path_constraints:
         compiled = world.compile_pose_constraint(pc.constraint)
         if pc.timesteps is None:
-            indices = range(fixed, waypoints - fixed)
+            indices = range(fixed_start, waypoints - fixed_end)
         elif isinstance(pc.timesteps, slice):
             indices = range(*pc.timesteps.indices(waypoints))
         else:
@@ -117,6 +122,24 @@ def _trajectory_from_native(d: dict | None) -> Trajectory | None:
     )
 
 
+def _trajectory_to_native_dict(traj: Trajectory) -> dict:
+    return {
+        "times": np.ascontiguousarray(traj.times, dtype=np.float64),
+        "positions": np.ascontiguousarray(traj.positions, dtype=np.float64),
+        "velocities": np.ascontiguousarray(traj.velocities, dtype=np.float64),
+        "accelerations": np.ascontiguousarray(traj.accelerations, dtype=np.float64),
+        "dt": None if traj.dt is None else float(traj.dt),
+        "spline_order": int(traj.spline_order),
+    }
+
+
+def _joint_vector(world: PlanningWorld, values: JointConfig, name: str) -> np.ndarray:
+    arr = np.ascontiguousarray(np.asarray(values, dtype=np.float64))
+    if arr.shape != (world.num_joints,):
+        raise ValueError(f"{name} must have shape ({world.num_joints},), got {arr.shape}")
+    return arr
+
+
 def _plan_result_from_native(d: dict) -> PlanResult:
     diag_d = d["diagnostics"]
     diag = PlanDiagnostics(
@@ -130,6 +153,7 @@ def _plan_result_from_native(d: dict) -> PlanResult:
         sqp_iterations=int(diag_d["sqp_iterations"]),
         seed_strategy=str(diag_d["seed_strategy"]),
         witnesses=diag_d["witnesses"],
+        timed_out=bool(diag_d.get("timed_out", False)),
     )
     return PlanResult(
         trajectory=_trajectory_from_native(d["trajectory"]),
@@ -144,12 +168,14 @@ def _plan_result_from_native(d: dict) -> PlanResult:
 
 def _request_to_native_dict(world: PlanningWorld, req: MotionPlanRequest) -> dict:
     cfg = req.config
-    fixed = 2 if cfg.stop_at_endpoints else 1
-    if cfg.waypoints < 2 * fixed:
-        raise ValueError(f"waypoints must be >= {2 * fixed}")
+    has_start_bc = (req.start_velocity is not None) or (req.start_acceleration is not None)
+    fixed_start = 1 if has_start_bc else (2 if cfg.stop_at_endpoints else 1)
+    fixed_end = 2 if cfg.stop_at_endpoints else 1
+    if cfg.waypoints < fixed_start + fixed_end:
+        raise ValueError(f"waypoints must be >= {fixed_start + fixed_end}")
     mask = world.group_mask(req.group)
     pose_map, joint_map = _expand_path_constraints(
-        world, cfg.waypoints, fixed, req.waypoint_targets, req.path_constraints,
+        world, cfg.waypoints, fixed_start, req.waypoint_targets, req.path_constraints, fixed_end=fixed_end,
     )
 
     compiled_manifold = [world.compile_pose_constraint(c) for c in req.manifold_constraints]
@@ -159,6 +185,8 @@ def _request_to_native_dict(world: PlanningWorld, req: MotionPlanRequest) -> dic
         "manifold_constraints": compiled_manifold,
         "joint_targets": {k: np.ascontiguousarray(v, dtype=np.float64) for k, v in joint_map.items()},
         "active_mask": np.ascontiguousarray(mask, dtype=np.bool_),
+        "start_velocity": None if req.start_velocity is None else _joint_vector(world, req.start_velocity, "start_velocity"),
+        "start_acceleration": None if req.start_acceleration is None else _joint_vector(world, req.start_acceleration, "start_acceleration"),
     }
     if _is_pose_sequence(req.start):
         out["start_is_pose"] = True
@@ -298,6 +326,89 @@ class MotionPlanner:
             raw = self._native_planner.plan(_request_to_native_dict(self.world, request))
             return _plan_result_from_native(raw)
         return self._plan_warp_single(request)
+
+    def replan(
+        self,
+        q_now: JointConfig,
+        dq_now: JointConfig,
+        prev_traj: Trajectory | None = None,
+        goal: GoalSpec | None = None,
+        *,
+        ddq_now: JointConfig | None = None,
+        t_on_prev: float | None = None,
+        reuse_if_valid: bool = True,
+        time_budget_s: float | None = None,
+        waypoint_targets: Mapping[int, PoseConstraint | JointConfig] | None = None,
+        path_constraints: Sequence[PathConstraint] = (),
+        manifold_constraints: Sequence[PoseConstraint] = (),
+        goal_seed: JointConfig | None = None,
+        group: str | PlanningGroup | Sequence[tuple[str, str]] | None = None,
+        config: SolverConfig | None = None,
+    ) -> PlanResult:
+        """Reactively replan from a live moving state ``(q_now, dq_now[, ddq_now])``.
+
+        Hierarchy on one pinned ``WorldSnapshot``:
+        1. Exact Hermite suffix reuse from ``prev_traj`` at ``t_on_prev`` (or unambiguous anchor match)
+           when goal, constraints, timing, spline order, and measured state all match and atomic validation passes.
+        2. Shifted warm-start SQP seeded from ``prev_traj`` with exact start-boundary enforcement.
+        3. Time-budgeted global BiRRT/CBiRRT fallback preserving the exact start boundary.
+
+        When ``goal is None``, the goal defaults to ``prev_traj.positions[-1]``.
+        """
+        cfg = SolverConfig() if config is None else config
+        if ddq_now is not None and cfg.spline_order != 5:
+            raise ValueError("ddq_now (start_acceleration) is only supported when config.spline_order == 5")
+        if prev_traj is None and goal is None:
+            raise ValueError("replan requires either goal or prev_traj")
+        if manifold_constraints:
+            _validate_manifold_constraints(manifold_constraints)
+        fixed_start = 1
+        fixed_end = 2 if cfg.stop_at_endpoints else 1
+        if cfg.waypoints < fixed_start + fixed_end:
+            raise ValueError(f"waypoints must be >= {fixed_start + fixed_end}")
+
+        mask = self.world.group_mask(group)
+        pose_map, joint_map = _expand_path_constraints(
+            self.world, cfg.waypoints, fixed_start, waypoint_targets, path_constraints, fixed_end=fixed_end,
+        )
+        compiled_manifold = [self.world.compile_pose_constraint(c) for c in manifold_constraints]
+
+        req_dict: dict = {
+            "config": _config_to_native_dict(cfg),
+            "q_now": self.world.configuration(q_now),
+            "dq_now": _joint_vector(self.world, dq_now, "dq_now"),
+            "ddq_now": None if ddq_now is None else _joint_vector(self.world, ddq_now, "ddq_now"),
+            "prev_traj": None if prev_traj is None else _trajectory_to_native_dict(prev_traj),
+            "t_on_prev": None if t_on_prev is None else float(t_on_prev),
+            "reuse_if_valid": bool(reuse_if_valid),
+            "time_budget_s": 0.0 if time_budget_s is None else float(time_budget_s),
+            "pose_constraints": pose_map,
+            "manifold_constraints": compiled_manifold,
+            "joint_targets": {k: np.ascontiguousarray(v, dtype=np.float64) for k, v in joint_map.items()},
+            "active_mask": np.ascontiguousarray(mask, dtype=np.bool_),
+            "goal_seed": None if goal_seed is None else self.world.configuration(goal_seed),
+        }
+        if goal is None:
+            req_dict["has_goal"] = False
+        else:
+            req_dict["has_goal"] = True
+            if _is_pose_sequence(goal):
+                req_dict["goal_is_pose"] = True
+                req_dict["goal_pose_sets"] = [[self.world.compile_pose_constraint(t) for t in goal]]
+            elif (isinstance(goal, Sequence) and not isinstance(goal, (str, bytes, np.ndarray))
+                  and len(goal) > 0 and _is_pose_sequence(goal[0])):
+                req_dict["goal_is_pose"] = True
+                req_dict["goal_pose_sets"] = [[self.world.compile_pose_constraint(t) for t in ts] for ts in goal]
+            elif (isinstance(goal, Sequence) and not isinstance(goal, (str, bytes, np.ndarray))
+                  and len(goal) > 0 and not isinstance(goal[0], (int, float, np.number))):
+                req_dict["goal_is_pose"] = False
+                req_dict["goal_qs"] = [self.world.configuration(gq) for gq in goal]
+            else:
+                req_dict["goal_is_pose"] = False
+                req_dict["goal_qs"] = [self.world.configuration(goal)]
+
+        raw = self._native_planner.replan(req_dict)
+        return _plan_result_from_native(raw)
 
     def plan_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int = 64) -> BatchPlanResult:
         """Plan independent requests. Use each successful result's trajectory for playback."""
@@ -592,9 +703,10 @@ class MotionPlanner:
 
     def _plan_warp_single(self, request: MotionPlanRequest, *, snap=None) -> PlanResult:
         pinned = self.world._native.snapshot() if snap is None else snap
-        if request.manifold_constraints or pinned.has_esdf:
-            # Constrained global manifold planning and CPU voxel ESDF sphere-cover planning execute
-            # natively in C++ against the exact pinned snapshot.
+        if (request.manifold_constraints or pinned.has_esdf
+                or request.start_velocity is not None or request.start_acceleration is not None):
+            # Constrained global manifold planning, CPU voxel ESDF sphere-cover planning, and
+            # fixed start-boundary planning execute natively in C++ against the exact pinned snapshot.
             req_dict = _request_to_native_dict(self.world, request)
             raw = self._native_planner.plan_with_snapshot(pinned, req_dict)
             return _plan_result_from_native(raw)
@@ -681,7 +793,8 @@ class MotionPlanner:
 
             for local_i, req in enumerate(chunk):
                 row_i = offset + local_i
-                if req.manifold_constraints or pinned.has_esdf:
+                if (req.manifold_constraints or pinned.has_esdf
+                        or req.start_velocity is not None or req.start_acceleration is not None):
                     all_results[row_i] = self._plan_warp_single(req, snap=pinned)
                     continue
                 cfg = req.config

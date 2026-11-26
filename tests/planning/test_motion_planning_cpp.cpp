@@ -2227,3 +2227,284 @@ TEST(MotionPlanningCpp, OccupiedVoxelClearanceBoundsAnalyticBoxes) {
         return (tip - sphere.first).norm() <= sphere.second;
     }));
 }
+
+TEST(MotionPlanningCpp, StartBoundaryRetimeCubicQuinticAndCounterexamples) {
+    const Eigen::VectorXd vmax = (Eigen::VectorXd(2) << 2.0, 2.0).finished();
+    const Eigen::VectorXd amax = (Eigen::VectorXd(2) << 6.0, 6.0).finished();
+    const Eigen::VectorXd jmax = (Eigen::VectorXd(2) << 40.0, 40.0).finished();
+    const Eigen::VectorXd lo = (Eigen::VectorXd(2) << -3.0, -3.0).finished();
+    const Eigen::VectorXd hi = (Eigen::VectorXd(2) << 3.0, 3.0).finished();
+
+    gp::RowMatrixXd pos(4, 2);
+    pos << 0.0, 0.0,
+           0.4, 0.2,
+           0.8, 0.5,
+           1.2, 0.8;
+
+    // 1. Cubic TOPP with aligned, transverse, and braking start velocities.
+    const std::vector<Eigen::Vector2d> test_v0s = {
+        Eigen::Vector2d(1.2, 0.6),
+        Eigen::Vector2d(0.0, -1.0),
+        Eigen::Vector2d(-1.4, -0.5),
+    };
+    for (const auto& v0_2 : test_v0s) {
+        Eigen::VectorXd v0 = v0_2;
+        const auto traj = gp::retime_trajectory(
+            pos, vmax, amax, true, false, 0.0, nullptr, nullptr, 3, &v0, nullptr, &lo, &hi);
+        Eigen::VectorXd p0(2), v_eval(2), a_eval(2);
+        traj.sample_single(0.0, p0, &v_eval, &a_eval);
+        EXPECT_LT((p0 - pos.row(0).transpose()).lpNorm<Eigen::Infinity>(), 1e-12);
+        EXPECT_LT((v_eval - v0).lpNorm<Eigen::Infinity>(), 1e-12);
+        const auto chk = gp::check_trajectory_bounds(traj, vmax, amax, true, true, 1e-5, &lo, &hi);
+        EXPECT_TRUE(chk.ok) << chk.reason;
+    }
+
+    // 2. Quintic with fixed start_velocity and optional start_acceleration (C^2 continuity at t=0).
+    {
+        Eigen::VectorXd v0 = (Eigen::VectorXd(2) << 0.8, -0.4).finished();
+        Eigen::VectorXd a0 = (Eigen::VectorXd(2) << 1.5, -1.0).finished();
+        const auto traj = gp::retime_trajectory(
+            pos, vmax, amax, true, false, 0.0, nullptr, &jmax, 5, &v0, &a0, &lo, &hi);
+        Eigen::VectorXd p0(2), v_eval(2), a_eval(2);
+        traj.sample_single(0.0, p0, &v_eval, &a_eval);
+        EXPECT_LT((p0 - pos.row(0).transpose()).lpNorm<Eigen::Infinity>(), 1e-12);
+        EXPECT_LT((v_eval - v0).lpNorm<Eigen::Infinity>(), 1e-12);
+        EXPECT_LT((a_eval - a0).lpNorm<Eigen::Infinity>(), 1e-12);
+        const auto chk = gp::check_trajectory_bounds(traj, vmax, amax, true, true, 1e-5, &lo, &hi, &jmax, true);
+        EXPECT_TRUE(chk.ok) << chk.reason;
+    }
+
+    // 3. Counterexample: duplicate first waypoint (q1 == q0) with non-zero start_velocity must NOT zero v(0).
+    {
+        gp::RowMatrixXd dup_pos(3, 2);
+        dup_pos << 0.0, 0.0,
+                   0.0, 0.0,
+                   0.6, 0.4;
+        Eigen::VectorXd v0 = (Eigen::VectorXd(2) << 0.8, -0.5).finished();
+        const auto traj_c = gp::retime_trajectory(
+            dup_pos, vmax, amax, true, false, 0.0, nullptr, nullptr, 3, &v0, nullptr, &lo, &hi);
+        EXPECT_LT((traj_c.velocities.row(0).transpose() - v0).lpNorm<Eigen::Infinity>(), 1e-12);
+        const auto chk_c = gp::check_trajectory_bounds(traj_c, vmax, amax, true, true, 1e-5, &lo, &hi);
+        EXPECT_TRUE(chk_c.ok) << chk_c.reason;
+
+        const auto traj_q = gp::retime_trajectory(
+            dup_pos, vmax, amax, true, false, 0.0, nullptr, &jmax, 5, &v0, nullptr, &lo, &hi);
+        EXPECT_LT((traj_q.velocities.row(0).transpose() - v0).lpNorm<Eigen::Infinity>(), 1e-12);
+        const auto chk_q = gp::check_trajectory_bounds(traj_q, vmax, amax, true, true, 1e-5, &lo, &hi, &jmax, true);
+        EXPECT_TRUE(chk_q.ok) << chk_q.reason;
+    }
+
+    // 4. Counterexample: start_acceleration on cubic spline_order == 3 must throw invalid_argument.
+    {
+        Eigen::VectorXd v0 = (Eigen::VectorXd(2) << 0.5, 0.0).finished();
+        Eigen::VectorXd a0 = (Eigen::VectorXd(2) << 1.0, 0.0).finished();
+        EXPECT_THROW(
+            gp::retime_trajectory(pos, vmax, amax, true, false, 0.0, nullptr, nullptr, 3, &v0, &a0),
+            std::invalid_argument);
+    }
+
+    // 5. Deterministic infeasible counterexample: joint already at +vmax with fixed a0 > 0
+    // cannot have any C^2 curve within velocity limits, proving boundaries are preserved and rejected.
+    {
+        Eigen::VectorXd v0 = (Eigen::VectorXd(2) << 2.0, 0.0).finished();
+        Eigen::VectorXd a0 = (Eigen::VectorXd(2) << 1.0, 0.0).finished();
+        EXPECT_THROW(gp::retime_trajectory(pos, vmax, amax, true, false, 0.0, nullptr, &jmax,
+                                           5, &v0, &a0, &lo, &hi), std::invalid_argument);
+    }
+}
+
+TEST(MotionPlanningCpp, ExactHermiteSuffixSlicingAndAmbiguityDetection) {
+    const Eigen::VectorXd vmax = (Eigen::VectorXd(2) << 2.0, 2.0).finished();
+    const Eigen::VectorXd amax = (Eigen::VectorXd(2) << 6.0, 6.0).finished();
+    const Eigen::VectorXd jmax = (Eigen::VectorXd(2) << 40.0, 40.0).finished();
+
+    gp::RowMatrixXd pos(5, 2);
+    pos << 0.0, 0.0,
+           0.3, 0.4,
+           0.7, 0.2,
+           1.1, 0.8,
+           1.4, 0.6;
+
+    for (int order : {3, 5}) {
+        const auto traj = gp::retime_trajectory(pos, vmax, amax, true, false, 0.0, nullptr, &jmax, order);
+        const double t_anchor = 0.37 * traj.duration();
+        const auto suffix = gp::slice_trajectory_suffix(traj, t_anchor);
+        EXPECT_DOUBLE_EQ(suffix.times(0), 0.0);
+        EXPECT_NEAR(suffix.duration(), traj.duration() - t_anchor, 1e-12);
+
+        Eigen::VectorXd p_orig(2), v_orig(2), a_orig(2);
+        Eigen::VectorXd p_suf(2), v_suf(2), a_suf(2);
+        for (int k = 0; k <= 25; ++k) {
+            const double dt = suffix.duration() * (static_cast<double>(k) / 25.0);
+            traj.sample_single(t_anchor + dt, p_orig, &v_orig, &a_orig);
+            suffix.sample_single(dt, p_suf, &v_suf, &a_suf);
+            EXPECT_LT((p_orig - p_suf).lpNorm<Eigen::Infinity>(), 1e-11);
+            EXPECT_LT((v_orig - v_suf).lpNorm<Eigen::Infinity>(), 1e-10);
+            if (order == 5) {
+                EXPECT_LT((a_orig - a_suf).lpNorm<Eigen::Infinity>(), 1e-9);
+            }
+        }
+    }
+
+    // Reversal trajectory (0 -> 1 -> 0) queried with q=0.5, dq=0.0 produces multiple matches -> ambiguous == true!
+    gp::RowMatrixXd rev_pos(5, 2);
+    rev_pos << 0.0, 0.0,
+               0.5, 0.0,
+               1.0, 0.0,
+               0.5, 0.0,
+               0.0, 0.0;
+    const auto rev_traj = gp::retime_trajectory(rev_pos, vmax, amax, true, false, 0.0, nullptr, nullptr, 3);
+    const Eigen::VectorXd q_mid = (Eigen::VectorXd(2) << 0.5, 0.0).finished();
+    const Eigen::VectorXd dq_zero = Eigen::VectorXd::Zero(2);
+    const auto match = gp::find_anchor_on_trajectory(rev_traj, q_mid, dq_zero);
+    EXPECT_TRUE(match.ambiguous);
+}
+
+TEST(MotionPlanningCpp, AnchorDistinguishesLoopsPausesAndUniqueStates) {
+    // q(u) = (u-1/4)(u-1/2)(u-3/4) passes through the same (q,dq) twice
+    // inside one segment. At the middle crossing the velocity has opposite sign.
+    gp::TrajectoryNative traj;
+    traj.times = Eigen::Vector2d(0., 1.);
+    traj.positions = Eigen::Vector2d(-3./32., 3./32.);
+    traj.velocities = Eigen::Vector2d::Constant(11./16.);
+    traj.accelerations = Eigen::Vector2d(-3., 3.);
+    Eigen::VectorXd q, dq;
+    for (int order : {3, 5}) {
+        traj.spline_order = order;
+        traj.sample_single(0.25, q, &dq);
+        EXPECT_TRUE(gp::find_anchor_on_trajectory(traj, q, dq).ambiguous);
+        traj.sample_single(0.5, q, &dq);
+        auto unique = gp::find_anchor_on_trajectory(traj, q, dq);
+        EXPECT_FALSE(unique.ambiguous);
+        EXPECT_NEAR(unique.t_anchor, 0.5, 1e-13);
+    }
+    traj.positions.setZero();
+    traj.velocities.setZero();
+    traj.accelerations.setZero();
+    traj.sample_single(0., q, &dq);
+    EXPECT_TRUE(gp::find_anchor_on_trajectory(traj, q, dq).ambiguous);
+    traj.times.setZero();
+    EXPECT_FALSE(gp::find_anchor_on_trajectory(traj, q, dq).ambiguous);
+}
+
+TEST(MotionPlanningCpp, ReactiveReplanningHierarchyFallbackAndBudget) {
+    auto world = make_upright_cup_arm_world();
+    gp::MotionPlannerNative planner(world);
+
+    const Eigen::VectorXd start = (Eigen::VectorXd(4) << -0.75, -0.4, 0.8, -0.4).finished();
+    const Eigen::VectorXd goal = (Eigen::VectorXd(4) << 0.75, -0.4, 0.8, -0.4).finished();
+
+    gp::MotionPlanRequestNative init_req;
+    init_req.start_q = start;
+    init_req.goal_qs = {goal};
+    init_req.config.waypoints = 14;
+    init_req.config.margin = 0.002;
+    init_req.config.has_world_margin = true;
+    init_req.config.world_margin = 0.01;
+    init_req.config.stop_at_endpoints = true;
+    init_req.config.strict_ccd = true;
+    const auto init_res = planner.plan(init_req);
+    ASSERT_TRUE(init_res.success) << init_res.reason;
+
+    const double t_cut = 0.30 * init_res.trajectory.duration();
+    Eigen::VectorXd q_now(4), dq_now(4), ddq_now(4);
+    init_res.trajectory.sample_single(t_cut, q_now, &dq_now, &ddq_now);
+
+    // 1. Exact state + unchanged world -> direct exact Hermite suffix reuse.
+    {
+        gp::ReplanRequestNative rreq;
+        rreq.q_now = q_now;
+        rreq.dq_now = dq_now;
+        rreq.has_prev_traj = true;
+        rreq.prev_traj = init_res.trajectory;
+        rreq.has_t_on_prev = true;
+        rreq.t_on_prev = t_cut;
+        rreq.config = init_req.config;
+        const auto rres = planner.replan(rreq);
+        ASSERT_TRUE(rres.success) << rres.reason;
+        EXPECT_EQ(rres.diagnostics.seed_strategy, "reused_prev");
+        EXPECT_EQ(rres.world_version, world->version());
+        Eigen::VectorXd p0(4), v0(4);
+        rres.trajectory.sample_single(0.0, p0, &v0);
+        EXPECT_LT((p0 - q_now).lpNorm<Eigen::Infinity>(), 1e-6);
+        EXPECT_LT((v0 - dq_now).lpNorm<Eigen::Infinity>(), 1e-5);
+    }
+
+    // 2. Measured state drift beyond numerical tolerance -> disables reuse, runs warm-start SQP from exact q_now, dq_now.
+    {
+        Eigen::VectorXd q_drifted = q_now;
+        q_drifted(1) += 0.015;
+        gp::ReplanRequestNative rreq;
+        rreq.q_now = q_drifted;
+        rreq.dq_now = dq_now;
+        rreq.has_prev_traj = true;
+        rreq.prev_traj = init_res.trajectory;
+        rreq.has_t_on_prev = true;
+        rreq.t_on_prev = t_cut;
+        rreq.config = init_req.config;
+        const auto rres = planner.replan(rreq);
+        ASSERT_TRUE(rres.success) << rres.reason;
+        EXPECT_EQ(rres.diagnostics.seed_strategy, "warm_start");
+        Eigen::VectorXd p0(4), v0(4);
+        rres.trajectory.sample_single(0.0, p0, &v0);
+        EXPECT_LT((p0 - q_drifted).lpNorm<Eigen::Infinity>(), 1e-9);
+        EXPECT_LT((v0 - dq_now).lpNorm<Eigen::Infinity>(), 1e-9);
+    }
+
+    // 3. Locked inactive joint with non-zero start_velocity -> boundary conflict failure.
+    {
+        gp::ReplanRequestNative rreq;
+        rreq.q_now = q_now;
+        rreq.dq_now = dq_now;
+        rreq.dq_now(3) = 0.25;
+        rreq.has_prev_traj = true;
+        rreq.prev_traj = init_res.trajectory;
+        rreq.active_mask = {1, 1, 1, 0};
+        rreq.config = init_req.config;
+        const auto rres = planner.replan(rreq);
+        EXPECT_FALSE(rres.success);
+        EXPECT_NE(rres.reason.find("locked joint"), std::string::npos);
+    }
+
+    // 4. Dynamic obstacle spawns right on the old path -> replans smoothly around it while preserving (q_now, dq_now).
+    {
+        add_box_obstacle(*world, "dynamic_wall", gp::Vec3(0.14, 0.14, 0.60), gp::Vec3(0.72, 0.0, 0.40));
+
+        gp::ReplanRequestNative rreq;
+        rreq.q_now = q_now;
+        rreq.dq_now = dq_now;
+        rreq.has_prev_traj = true;
+        rreq.prev_traj = init_res.trajectory;
+        rreq.has_t_on_prev = true;
+        rreq.t_on_prev = t_cut;
+        rreq.config = init_req.config;
+        rreq.time_budget_s = 0.5;
+        const auto rres = planner.replan(rreq);
+        ASSERT_TRUE(rres.success) << rres.reason;
+        EXPECT_NE(rres.diagnostics.seed_strategy, "reused_prev");
+        EXPECT_EQ(rres.world_version, world->version());
+        Eigen::VectorXd p0(4), v0(4);
+        rres.trajectory.sample_single(0.0, p0, &v0);
+        EXPECT_LT((p0 - q_now).lpNorm<Eigen::Infinity>(), 1e-9);
+        EXPECT_LT((v0 - dq_now).lpNorm<Eigen::Infinity>(), 1e-9);
+
+        // Verify strict_ccd on the replanned trajectory!
+        auto snap = world->snapshot();
+        std::vector<double> samples;
+        rres.trajectory.sample_segments(8, samples);
+        const int64_t S = static_cast<int64_t>(samples.size() / 4);
+        const auto vchk = snap->validate_trajectory_collision(
+            rres.trajectory.positions.data(), rres.trajectory.num_waypoints(),
+            samples.data(), S, 8, 0.002, 0.01, true, 5e-4,
+            rres.trajectory.times.data(), rres.trajectory.velocities.data(), true,
+            rres.trajectory.accelerations.data(), rres.trajectory.spline_order);
+        EXPECT_TRUE(vchk.valid) << vchk.reason;
+
+        // 5. Tiny time_budget_s expires cleanly with timed_out == true.
+        rreq.time_budget_s = 1e-6;
+        const auto tres = planner.replan(rreq);
+        EXPECT_FALSE(tres.success);
+        EXPECT_TRUE(tres.diagnostics.timed_out);
+        EXPECT_NE(tres.reason.find("budget"), std::string::npos);
+    }
+}
