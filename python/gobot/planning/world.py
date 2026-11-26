@@ -18,6 +18,7 @@ from .retime import check_trajectory_bounds
 from .types import (
     JointName,
     Link,
+    LinkSphere,
     PlanningGroup,
     PoseConstraint,
     SyncResult,
@@ -779,6 +780,28 @@ class PlanningWorld:
         return bool(self._native.has_mesh)
 
     @property
+    def has_esdf(self) -> bool:
+        return bool(self._native.has_esdf)
+
+    @property
+    def esdf_info(self) -> dict | None:
+        info = self._native.esdf_info()
+        if info is None:
+            return None
+        return {
+            "origin": np.asarray(info["origin"], dtype=np.float64),
+            "resolution": float(info["resolution"]),
+            "shape": tuple(int(v) for v in info["shape"]),
+            "bounds_min": np.asarray(info["bounds_min"], dtype=np.float64),
+            "bounds_max": np.asarray(info["bounds_max"], dtype=np.float64),
+            "lipschitz_bound": float(info["lipschitz_bound"]),
+            "min_value": float(info["min_value"]),
+            "is_empty": bool(info["is_empty"]),
+            "collision_layer": int(info["collision_layer"]),
+            "collision_mask": int(info["collision_mask"]),
+        }
+
+    @property
     def collision_pairs(self) -> tuple[tuple[str, str], ...]:
         return tuple(self._native.pair_shape_names())
 
@@ -880,6 +903,210 @@ class PlanningWorld:
         with self._write_lock:
             self._native.set_jerk_limits(arr)
             self.jerk_limits = arr.copy()
+
+    # --- Voxel / 3D ESDF & Link Sphere-Cover Obstacles ---
+
+    def set_occupancy_grid(
+        self,
+        occupied: np.ndarray,
+        origin: Sequence[float] | np.ndarray,
+        resolution: float,
+        *,
+        max_distance: float = math.inf,
+        inflation_radius: float = 0.0,
+        collision_layer: int = 1,
+        collision_mask: int = 1,
+    ) -> None:
+        """Build a voxel-center signed distance field from a binary occupancy grid ``[nx, ny, nz]``.
+
+        Voxel ``(ix, iy, iz)`` spans ``[origin + (ix, iy, iz) * resolution, origin + (ix+1, iy+1, iz+1) * resolution]``
+        with voxel center at ``origin + (ix + 0.5, iy + 0.5, iz + 0.5) * resolution``.
+        Atomically publishes a new immutable snapshot and increments ``world.version``.
+        """
+        arr = np.asarray(occupied)
+        if arr.ndim != 3:
+            raise ValueError("occupied must be a 3D array with shape [nx, ny, nz]")
+        occ_u8 = np.ascontiguousarray(arr != 0, dtype=np.uint8)
+        org = np.asarray(origin, dtype=np.float64)
+        if org.shape != (3,) or not np.isfinite(org).all():
+            raise ValueError("origin must be a finite 3-vector")
+        with self._write_lock:
+            self._native.set_occupancy_grid(
+                occ_u8, org, float(resolution), float(max_distance), float(inflation_radius),
+                int(collision_layer), int(collision_mask),
+            )
+
+    def set_point_cloud(
+        self,
+        points: Sequence[Sequence[float]] | np.ndarray,
+        resolution: float,
+        *,
+        origin: Sequence[float] | np.ndarray | None = None,
+        shape: Sequence[int] | None = None,
+        padding: float = 0.2,
+        point_radius: float = 0.0,
+        max_distance: float = math.inf,
+        collision_layer: int = 1,
+        collision_mask: int = 1,
+    ) -> None:
+        """Voxelize a 3D point cloud ``[N, 3]`` and build a voxel-center signed distance field in C++.
+
+        If ``origin`` / ``shape`` are omitted, a tight axis-aligned grid padded by
+        ``max(padding, 2 * resolution)`` is fitted around the point cloud automatically.
+        Passing fixed ``origin`` and ``shape`` is recommended for high-rate live sensor updates.
+        """
+        pts = np.asarray(points, dtype=np.float64)
+        if pts.shape == (0,):
+            pts = np.empty((0, 3), dtype=np.float64)
+        elif pts.ndim != 2 or pts.shape[1] != 3:
+            raise ValueError("points must have shape [N, 3]")
+        pts = np.ascontiguousarray(pts, dtype=np.float64)
+        org_arg = None
+        if origin is not None:
+            org_arg = np.asarray(origin, dtype=np.float64)
+            if org_arg.shape != (3,) or not np.isfinite(org_arg).all():
+                raise ValueError("origin must be a finite 3-vector")
+        shape_arg = None
+        if shape is not None:
+            if len(shape) != 3:
+                raise ValueError("shape must be a 3-tuple (nx, ny, nz)")
+            shape_arg = (int(shape[0]), int(shape[1]), int(shape[2]))
+        with self._write_lock:
+            self._native.set_point_cloud(
+                pts, float(resolution), org_arg, shape_arg, float(padding),
+                float(point_radius), float(max_distance), int(collision_layer), int(collision_mask),
+            )
+
+    def set_esdf(
+        self,
+        values: np.ndarray,
+        origin: Sequence[float] | np.ndarray,
+        resolution: float,
+        *,
+        collision_layer: int = 1,
+        collision_mask: int = 1,
+    ) -> None:
+        """Install a precomputed 3D signed distance grid ``[nx, ny, nz]`` (meters; positive = free).
+
+        Grid cell ``(ix, iy, iz)`` holds the signed distance at voxel center
+        ``origin + (ix + 0.5, iy + 0.5, iz + 0.5) * resolution``.
+        """
+        arr = np.ascontiguousarray(values, dtype=np.float64)
+        if arr.ndim != 3:
+            raise ValueError("values must be a 3D array with shape [nx, ny, nz]")
+        org = np.asarray(origin, dtype=np.float64)
+        if org.shape != (3,) or not np.isfinite(org).all():
+            raise ValueError("origin must be a finite 3-vector")
+        with self._write_lock:
+            self._native.set_esdf(arr, org, float(resolution), int(collision_layer), int(collision_mask))
+
+    def clear_esdf(self) -> None:
+        """Remove any active voxel / 3D ESDF field from this world."""
+        with self._write_lock:
+            self._native.clear_esdf()
+
+    def query_esdf(
+        self,
+        points: Sequence[float] | Sequence[Sequence[float]] | np.ndarray,
+        *,
+        return_gradient: bool = False,
+    ) -> np.ndarray | float | tuple[np.ndarray | float, np.ndarray]:
+        """Query the interpolated center-sampled field and its optional world-space gradient.
+
+        Use ``esdf_distances(q)`` for the sphere clearances used by planning and validation.
+        """
+        arr = np.asarray(points, dtype=np.float64)
+        if arr.ndim == 0 or not np.isfinite(arr).all():
+            raise ValueError("expected finite 3D points")
+        single = arr.ndim == 1
+        if single:
+            if arr.shape != (3,):
+                raise ValueError("point must have shape (3,)")
+            flat = np.ascontiguousarray(arr[None, :])
+            batch_shape: tuple[int, ...] = ()
+        else:
+            if arr.shape[-1] != 3:
+                raise ValueError("points must have trailing dimension 3")
+            batch_shape = arr.shape[:-1]
+            flat = np.ascontiguousarray(arr.reshape(-1, 3))
+        if return_gradient:
+            dist, grad = self._native.query_esdf(flat, True)
+            if single:
+                return float(dist[0]), grad[0]
+            return dist.reshape(batch_shape), grad.reshape(*batch_shape, 3)
+        dist = self._native.query_esdf(flat, False)
+        if single:
+            return float(dist[0])
+        return dist.reshape(batch_shape)
+
+    def esdf_distances(self, q: Sequence[float] | np.ndarray) -> np.ndarray:
+        """Return the planner's conservative clearance for each active sphere, in meters.
+
+        Occupancy fields allow for up to ``(sqrt(1.5) - 0.5) * resolution`` of voxel
+        interpolation error. Supplied fields use their Lipschitz bound to measure
+        clearance to the interpolated zero surface. Both account for the sphere radius.
+        """
+        arr = np.asarray(q, dtype=np.float64)
+        if arr.ndim == 0 or arr.shape[-1] != self.num_joints or not np.isfinite(arr).all():
+            raise ValueError("expected finite joint configurations with trailing dimension J")
+        batch_shape = arr.shape[:-1]
+        flat = np.ascontiguousarray(arr.reshape(math.prod(batch_shape), self.num_joints))
+        d = self._native.query_esdf_sphere_distances(flat)
+        return d.reshape(*batch_shape, d.shape[-1])
+
+    def link_spheres(self, link: Link | str | None = None, *, esdf_only: bool = False) -> tuple[LinkSphere, ...]:
+        """Return the active conservative link sphere-cover (optionally filtered to one link or ESDF-active spheres)."""
+        raw = self._native.esdf_spheres() if esdf_only else self._native.link_spheres()
+        filter_key = None
+        if link is not None:
+            filter_key = _link_key(link) if isinstance(link, tuple) else f"::{link}"
+        out: list[LinkSphere] = []
+        for item in raw:
+            lk = str(item["link_key"])
+            if filter_key is not None and lk != filter_key:
+                continue
+            if lk.startswith("::"):
+                parsed_link: Link | str = lk[2:]
+            elif "::" in lk:
+                rname, lname = lk.split("::", 1)
+                parsed_link = (rname, lname)
+            else:
+                parsed_link = lk
+            out.append(LinkSphere(
+                link=parsed_link,
+                shape_name=str(item["shape_name"]),
+                center=np.asarray(item["center"], dtype=np.float64).copy(),
+                radius=float(item["radius"]),
+                collision_layer=int(item["layer"]),
+                collision_mask=int(item["mask"]),
+            ))
+        return tuple(out)
+
+    def set_link_spheres(
+        self,
+        link: Link | str,
+        spheres: Sequence[tuple[Sequence[float] | np.ndarray, float]],
+        *,
+        collision_layer: int = 1,
+        collision_mask: int = 1,
+    ) -> None:
+        """Override the sphere cover with centers in the named link or attached object frame."""
+        lk = _link_key(link) if isinstance(link, tuple) else f"::{link}"
+        compiled: list[tuple[np.ndarray, float]] = []
+        for center, radius in spheres:
+            c = np.asarray(center, dtype=np.float64)
+            r = float(radius)
+            if c.shape != (3,) or not np.isfinite(c).all() or not math.isfinite(r) or r < 0.0:
+                raise ValueError("each sphere must be (finite 3-vector center, nonnegative finite radius)")
+            compiled.append((c, r))
+        with self._write_lock:
+            self._native.set_link_spheres(lk, compiled, int(collision_layer), int(collision_mask))
+
+    def clear_link_spheres(self, link: Link | str | None = None) -> None:
+        """Reset custom link sphere override(s) back to automatic conservative sphere-cover generation."""
+        lk = "" if link is None else (_link_key(link) if isinstance(link, tuple) else f"::{link}")
+        with self._write_lock:
+            self._native.clear_link_spheres(lk)
 
     # --- Incremental Scene Synchronization ---
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 import runpy
+from time import perf_counter
 
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ from gobot.planning import (
     CartesianWaypoint,
     MotionPlanner,
     MotionPlanRequest,
+    MuJoCoWarpBackend,
     PathConstraint,
     PlanningWorld,
     PoseConstraint,
@@ -2304,3 +2306,267 @@ def test_manifold_free_slide_and_allowed_near_antipodal_pose(simple_snapshot):
         assert valid == expected, reason
         result = planner.plan(MotionPlanRequest(q, q, manifold_constraints=[rotation], config=SolverConfig(waypoints=2)))
         assert result.success == expected, result.reason
+
+
+def test_voxel_esdf_occupancy_point_cloud_and_custom_esdf_api(simple_snapshot):
+    """Phase 3.1: CPU 3D ESDF APIs (occupancy grid, point cloud, custom ESDF), automatic & custom link spheres,
+    ESDF-only SQP/IK/Cartesian/CCD collision avoidance, ACM override, and scene-sync preservation."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    # Remove any static Coal obstacles so collision avoidance is driven purely by the ESDF.
+    for sname in list(world._native.shape_names()):
+        if not sname.startswith("planning/"):
+            world.remove_obstacle(sname)
+    assert not world.has_esdf
+    assert world.esdf_info is None
+    auto_spheres = world.link_spheres()
+    assert len(auto_spheres) >= 2
+
+    v0 = world.version
+    world.clear_esdf()
+    assert world.version == v0  # no-op clear_esdf does not bump version
+
+    # 1. Occupancy grid ESDF: exact distance & analytic trilinear gradient check.
+    occ = np.zeros((25, 25, 15), dtype=np.uint8)
+    origin = np.array([-0.625, -0.05, 0.15], dtype=np.float64)
+    res = 0.05
+    # Place a blocking voxel pillar around x in [-0.125, +0.125], y in [0.35, 0.55], z in [0.15, 0.90].
+    occ[10:15, 8:12, :] = 1
+    world.set_occupancy_grid(occ, origin, res)
+    assert world.has_esdf
+    assert world.version == v0 + 1
+    info = world.esdf_info
+    assert info is not None and info["shape"] == (25, 25, 15) and not info["is_empty"]
+
+    probe = np.array([0.23, 0.44, 0.52], dtype=np.float64)
+    d_val, g_val = world.query_esdf(probe, return_gradient=True)
+    eps = 1e-5
+    for a in range(3):
+        dp = np.zeros(3)
+        dp[a] = eps
+        fd = (world.query_esdf(probe + dp) - world.query_esdf(probe - dp)) / (2.0 * eps)
+        assert abs(g_val[a] - fd) < 1e-5
+
+    # 2. Straight chord across the ESDF pillar is rejected by validate_trajectory (even with substeps=1 via CCD!).
+    planner = MotionPlanner(world, backend="coal")
+    q_start = np.array([-0.55, 0.45, 0.0], dtype=np.float64)
+    q_goal = np.array([0.55, 0.45, 0.0], dtype=np.float64)
+    ok_bad, err_bad = world.validate_trajectory(
+        np.vstack([q_start, q_goal]),
+        margin=0.002,
+        world_margin=0.01,
+        collision_substeps=1,
+        strict_ccd=True,
+    )
+    assert not ok_bad and err_bad is not None and "esdf" in err_bad.lower()
+
+    # 3. MotionPlanner plans a smooth detour around the ESDF pillar (quintic + strict_ccd)!
+    plan_res = planner.plan(MotionPlanRequest(
+        start=q_start,
+        goal=q_goal,
+        config=SolverConfig(waypoints=14, margin=0.002, world_margin=0.015, spline_order=5, strict_ccd=True),
+    ))
+    assert plan_res.success, plan_res.reason
+    assert plan_res.trajectory is not None
+    assert plan_res.world_version == world.version
+    ok_v, err_v = world.validate_trajectory(plan_res.trajectory, margin=0.002, world_margin=0.015, strict_ccd=True)
+    assert ok_v, err_v
+    ts = np.linspace(plan_res.trajectory.times[0], plan_res.trajectory.times[-1], 80)
+    q_dense, _, _ = plan_res.trajectory.sample(ts)
+    assert float(world.esdf_distances(q_dense).min()) >= 0.015 - 1e-4
+
+    # 4. Cartesian path planner stops cleanly before the ESDF pillar and recovers a verified partial prefix!
+    tip = ("planning", "left_tip")
+    p_start, _ = world.link_pose(q_start, tip)
+    p_goal, _ = world.link_pose(q_goal, tip)
+    cart_res = planner.plan_cartesian_path(
+        q_start,
+        [CartesianWaypoint(p_goal)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.05, avoid_collisions=True, world_margin=0.01, strict_ccd=True),
+    )
+    assert not cart_res.success
+    assert cart_res.trajectory is not None
+    assert 0.1 < cart_res.fraction < 0.6
+    ok_c, err_c = world.validate_trajectory(cart_res.trajectory, margin=0.002, world_margin=0.01, strict_ccd=True)
+    assert ok_c, err_c
+
+    # 5. Custom ESDF & custom link spheres override + ACM disable + sync_from_snapshot preserves ESDF!
+    custom_sdf = np.full((5, 5, 5), 0.5, dtype=np.float64)
+    world.set_esdf(custom_sdf, origin=(-1.0, -1.0, 0.0), resolution=0.5)
+    assert world.has_esdf
+    assert world.query_esdf(np.array([0.0, 0.0, 0.5])) == pytest.approx(0.5, abs=1e-5)
+
+    world.set_link_spheres(tip, [([0.0, 0.0, 0.0], 0.08)])
+    tip_spheres = world.link_spheres(tip)
+    assert len(tip_spheres) == 1 and tip_spheres[0].radius == pytest.approx(0.08)
+    world.clear_link_spheres(tip)
+    assert len(world.link_spheres(tip)) >= 1
+
+    # ACM disables ESDF checks on left_tip.
+    n_before = len(world.link_spheres(esdf_only=True))
+    world.set_collision_enabled(tip, "esdf", False)
+    assert len(world.link_spheres(esdf_only=True)) < n_before
+    world.set_collision_enabled(tip, "esdf", True)
+    assert len(world.link_spheres(esdf_only=True)) == n_before
+
+    # Point cloud with empty array clears obstacles without crashing.
+    world.set_point_cloud(np.empty((0, 3), dtype=np.float64), resolution=0.05)
+    assert not world.has_esdf
+    assert np.isinf(world.query_esdf(np.array([0.0, 0.0, 0.5])))
+    world.clear_esdf()
+    assert world.esdf_info is None
+
+
+def test_panda_point_cloud_esdf_obstacle_avoidance_and_speed(panda_snapshot):
+    """Phase 3.1 Acceptance: 7-DOF Panda avoids a 3D point-cloud pillar via C++ ESDF + auto link sphere-cover."""
+    snap, (start_xyz, goal_xyz, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    world = PlanningWorld.from_snapshot(
+        snap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    # Remove the static Coal pillar obstacle and replace it with a dense 3D point cloud of the pillar!
+    pillar_names = [n for n in world._native.shape_names() if "pillar" in n.lower() or "obstacle" in n.lower()]
+    for pname in pillar_names:
+        world.remove_obstacle(pname)
+    # Disable ESDF on panda_link0 (bolted to the table) just like a real perception pipeline.
+    world.set_collision_enabled(("panda", "panda_link0"), "esdf", False)
+
+    # Sample a dense 3D point cloud on the central pillar between start_xyz and goal_xyz.
+    mid_xy = 0.5 * (start_xyz[:2] + goal_xyz[:2])
+    xs = np.linspace(mid_xy[0] - 0.04, mid_xy[0] + 0.04, 6)
+    ys = np.linspace(mid_xy[1] - 0.04, mid_xy[1] + 0.04, 6)
+    zs = np.linspace(0.15, 0.70, 22)
+    gx, gy, gz = np.meshgrid(xs, ys, zs, indexing="ij")
+    cloud = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=-1)
+
+    t0 = perf_counter()
+    world.set_point_cloud(cloud, resolution=0.025, padding=0.25, point_radius=0.005)
+    esdf_build_ms = (perf_counter() - t0) * 1000.0
+    assert world.has_esdf
+    assert esdf_build_ms < 250.0, f"point cloud ESDF build took {esdf_build_ms:.1f} ms"
+    assert len(world.link_spheres(esdf_only=True)) >= 8
+
+    planner = MotionPlanner(world, backend="coal")
+    hand = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    seed = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+
+    ik_s = planner.solve_ik(
+        [PoseConstraint(hand, start_xyz, down, position_tolerance=1e-4, rotation_tolerance=1e-2)],
+        seed=seed, margin=0.002, world_margin=0.015,
+    )
+    ik_g = planner.solve_ik(
+        [PoseConstraint(hand, goal_xyz, down, position_tolerance=1e-4, rotation_tolerance=1e-2)],
+        seed=seed, margin=0.002, world_margin=0.015,
+    )
+    assert ik_s.success and ik_g.success, (ik_s.reason, ik_g.reason)
+
+    # Plan around the point-cloud pillar with quintic C^2 spline + strict_ccd!
+    res = planner.plan(MotionPlanRequest(
+        start=ik_s.positions,
+        goal=ik_g.positions,
+        config=SolverConfig(
+            waypoints=16,
+            margin=0.002,
+            world_margin=0.015,
+            spline_order=5,
+            strict_ccd=True,
+            rrt_timeout_s=2.0,
+        ),
+    ))
+    assert res.success, res.reason
+    assert res.trajectory is not None
+    ok_v, err_v = world.validate_trajectory(res.trajectory, margin=0.002, world_margin=0.015, strict_ccd=True)
+    assert ok_v, err_v
+
+    ts = np.linspace(res.trajectory.times[0], res.trajectory.times[-1], 100)
+    q_dense, _, _ = res.trajectory.sample(ts)
+    min_esdf_clear = float(world.esdf_distances(q_dense).min())
+    assert min_esdf_clear >= 0.015 - 1e-4, f"min sphere ESDF clearance {min_esdf_clear:.5f} m < 0.015 m"
+
+    # Benchmark 64^3 CPU 3D EDT speed (should be well under 50 ms on multi-core CPU).
+    occ64 = np.zeros((64, 64, 64), dtype=np.uint8)
+    occ64[28:36, 28:36, 10:54] = 1
+    t1 = perf_counter()
+    world.set_occupancy_grid(occ64, origin=(-1.0, -1.0, 0.0), resolution=0.03)
+    edt64_ms = (perf_counter() - t1) * 1000.0
+    assert edt64_ms < 200.0, f"64^3 3D EDT took {edt64_ms:.1f} ms"
+
+
+def test_esdf_corner_clearance_and_partial_collision_group(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    q_safe = np.array([-.4, .4, 0.])
+    q_corner = np.array([.299, .299, 0.])
+    tip = ("planning", "left_tip")
+    p, _ = world.link_pose(q_corner, tip)
+    occ = np.zeros((5, 5, 5), dtype=np.uint8)
+    occ[2, 2, 2] = 1
+    world.set_occupancy_grid(occ, p - .299, .1)
+    # Each coordinate is 1 mm inside the occupied voxel. The tip sphere has radius 45 mm.
+    assert world.query_esdf(p) > .045
+    assert world.esdf_distances(q_corner).min() < 0
+    ok, reason = world.validate_trajectory(np.stack([q_safe, q_corner]), margin=0, strict_ccd=True)
+    assert not ok and "ESDF" in reason
+
+    snap = world._native.snapshot()
+    q = np.stack([q_safe, q_safe, q_corner])
+    margins = np.zeros(snap.num_pairs)
+    rows, ids, _, _, frames, groups_ok, _ = snap.eval_collision_rows(q, margins, margins, 0., True, 2, True)
+    np.testing.assert_array_equal(groups_ok, [True, False])
+    # The CPU ESDF fallback must also work through the public Warp evaluator.
+    warp = object.__new__(MuJoCoWarpBackend)
+    warp.world = world
+    warp_rows = warp.eval_rows(q, margins, margins, 0., True, 2, True, snap=snap)
+    np.testing.assert_array_equal(warp_rows.seg_ok, groups_ok)
+    assert (warp_rows.pair_ids < 0).any()
+    hit = snap.first_violation_continuous(q, 1, frames, margins, verify=True, strict=True)
+    assert hit is not None and hit[2] < 0
+    esdf_hits = ids < 0
+    assert esdf_hits.any()
+    with pytest.raises(ValueError, match="Coal pair"):
+        snap.query_distances_indexed(frames, rows[esdf_hits], ids[esdf_hits], False)
+
+    assert world.esdf_distances(np.empty((0, 2, 3))).shape == (0, 2, len(world.link_spheres(esdf_only=True)))
+    with pytest.raises(ValueError):
+        world.esdf_distances(np.zeros(6))
+    with pytest.raises(ValueError):
+        world.query_esdf([np.nan, 0, 0])
+    v = world.version
+    with pytest.raises(ValueError, match="safety limit"):
+        world.set_point_cloud([], .1, shape=(1 << 22,) * 3)
+    with pytest.raises(ValueError, match="float"):
+        world.set_esdf(np.full((2, 2, 2), 1e100), (0, 0, 0), .1)
+    assert world.version == v
+
+    # A supplied field with slope four crosses zero 2 cm from the tip center.
+    # The 4.5 cm sphere intersects that plane even though the raw value is 8 cm.
+    h = .01
+    values = np.broadcast_to((4 * (np.arange(11) - 5) * h)[:, None, None], (11, 3, 3))
+    world.set_esdf(values, p - [7.5 * h, 1.5 * h, 1.5 * h], h)
+    assert world.query_esdf(p) == pytest.approx(.08)
+    assert world.esdf_distances(q_corner).min() < 0
+    ok, reason = world.validate_trajectory(np.stack([q_corner, q_corner]), margin=0, strict_ccd=True)
+    assert not ok and "ESDF" in reason
+
+
+def test_esdf_attached_sphere_uses_payload_frame(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    tip = ("planning", "left_tip")
+    q = np.array([-.4, .4, 0.])
+    pos, rot = world.link_pose(q, tip)
+    offset = np.array([.2, .15, .1])
+    local_rot = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    world.add_box("payload", (.02, .02, .02), pos)
+    world.attach_object("payload", tip, local_position=offset, local_rotation=local_rot)
+    center = np.array([.05, 0, 0])
+    world.set_link_spheres("payload", [(center, .005)])
+    np.testing.assert_allclose(world.link_spheres("payload")[0].center, center)
+    p = pos + rot @ (offset + local_rot @ center)
+    world.set_point_cloud([p], .01)
+    ok, reason = world.validate_trajectory(np.stack([q, q]), margin=0, strict_ccd=True)
+    assert not ok and "payload" in reason and "ESDF" in reason
+    old = world._native.snapshot()
+    world.detach_object("payload", q)
+    assert not world.link_spheres("payload")
+    assert "payload" in [s["link_key"].removeprefix("::") for s in old.esdf_spheres()]

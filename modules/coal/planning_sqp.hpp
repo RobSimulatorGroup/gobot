@@ -28,6 +28,7 @@ struct SQPJobSpecNative {
     double max_segment_length = 0.0;  // <= 0 means disabled
     int iterations = 40;
     bool first_feasible = true;
+    bool strict_ccd = false;
     double velocity_scale = 1.0;
     std::string seed_strategy = "straight";
     int goal_index = 0;
@@ -110,14 +111,20 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     const int N_shapes = static_cast<int>(snap.shapes.size());
     const int B_links = snap.kin.num_bodies();
     const int P = static_cast<int>(snap.pairs.size());
+    const bool use_esdf = snap.has_esdf();
+    const bool has_col = (P > 0) || use_esdf;
     const bool has_mesh = snap.has_mesh;
 
     const Eigen::VectorXd& lower = snap.kin.lower();
     const Eigen::VectorXd& upper = snap.kin.upper();
     const Eigen::VectorXd vmax = snap.kin.velocity_limit() * spec.velocity_scale;
     const Eigen::VectorXd margins = snap.pair_margins(spec.margin, spec.world_margin);
-    const Eigen::VectorXd opt_margins_cushion = margins.array() + 5e-4;
-    const Eigen::VectorXd opt_margins_extra = margins.array() + 8e-4;
+    const double cushion = spec.strict_ccd ? 1.0e-3 : 5e-4;
+    const double extra_cushion = spec.strict_ccd ? 1.5e-3 : 8e-4;
+    const Eigen::VectorXd opt_margins_cushion = margins.array() + cushion;
+    const Eigen::VectorXd opt_margins_extra = margins.array() + extra_cushion;
+    const double esdf_margin_cushion = spec.world_margin + cushion;
+    const double esdf_margin_extra = spec.world_margin + extra_cushion;
 
     // Precompute fixed goal frame once for fast validation reuse.
     std::vector<double> goal_frame(static_cast<size_t>(N_shapes * 12));
@@ -230,7 +237,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 }
             }
             if (!check_targets(pos)) break;
-            if (P == 0) {
+            if (!has_col) {
                 failure.clear();
                 ok = true;
                 break;
@@ -238,6 +245,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             const int substeps = detail::grid_substeps(pos, validation_substeps, spec.max_segment_length);
             const int64_t S_total = static_cast<int64_t>((T - 1) * substeps + 1);
             bool skip_convex = false;
+            bool have_val_samples = false;
             if (seg_eval != nullptr && seg_eval_substeps == substeps &&
                 static_cast<int64_t>(seg_eval->frames.size()) == (S_total - 1) * N_shapes * 12) {
                 val_frames.resize(static_cast<size_t>(S_total * N_shapes * 12));
@@ -246,10 +254,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 skip_convex = seg_eval_convex_ok;
             } else {
                 detail::build_segment_samples(pos, substeps, true, val_samples);
+                have_val_samples = true;
                 val_frames.resize(static_cast<size_t>(S_total * N_shapes * 12));
                 snap.compute_frames(val_samples.data(), S_total, val_frames.data());
             }
-            if (!skip_convex) {
+            if (!skip_convex && P > 0) {
                 auto hit = check_frames(val_frames.data(), S_total, substeps, false);
                 if (hit.has_value()) {
                     const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
@@ -257,10 +266,23 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                     break;
                 }
             }
-            // Sound kinematic-chain Conservative Advancement check (convex hull; implies d_orig >= d_convex >= margin).
+            if (!skip_convex && use_esdf) {
+                if (!have_val_samples) {
+                    detail::build_segment_samples(pos, substeps, true, val_samples);
+                    have_val_samples = true;
+                }
+                auto ehit = snap.first_esdf_violation_samples(val_samples.data(), val_frames.data(), S_total, spec.world_margin);
+                if (ehit.has_value()) {
+                    const int seg = std::min(static_cast<int>(ehit->first / substeps), T - 2);
+                    failure = "ESDF clearance on segment " + std::to_string(seg) + ", pair " + pair_name(ehit->second);
+                    break;
+                }
+            }
+            // Sound kinematic-chain Conservative Advancement check (convex hull + ESDF sphere-cover).
             {
                 auto ccd_hit = snap.first_violation_continuous(
-                    pos.data(), T, substeps, val_frames.data(), margins.data(), false, 1e-3);
+                    pos.data(), T, substeps, val_frames.data(), margins.data(), false, 1e-3,
+                    nullptr, nullptr, spec.strict_ccd, nullptr, 3, spec.world_margin);
                 if (ccd_hit.has_value()) {
                     failure = "continuous collision clearance on segment " + std::to_string(ccd_hit->seg) +
                               ", pair " + pair_name(ccd_hit->pair_id);
@@ -274,7 +296,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                     break;
                 }
             }
-            if (has_mesh) {
+            if (P > 0 && has_mesh) {
                 auto hit = check_frames(val_frames.data(), S_total, substeps, true);
                 if (hit.has_value()) {
                     const int seg = std::min(static_cast<int>(hit->first / substeps), T - 2);
@@ -386,9 +408,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         detail::build_segment_samples(q, substeps, false, eval_samples);
         const int64_t S = static_cast<int64_t>((T - 1) * substeps);
         const Eigen::VectorXd& opt_m = use_cushion ? opt_margins_cushion : margins;
+        const double opt_esdf_m = use_cushion ? esdf_margin_cushion : spec.world_margin;
         const double buffer = linearize ? detail::kCollisionLinearizationBufferM : 0.0;
         ep.col = snap.eval_collision_rows(eval_samples.data(), S, opt_m.data(), margins.data(),
-                                          buffer, linearize, substeps, segment_minimum);
+                                          buffer, linearize, substeps, segment_minimum,
+                                          opt_esdf_m, spec.world_margin);
 
         bool all_seg_ok = true;
         for (uint8_t b : ep.col.seg_ok) if (!b) { all_seg_ok = false; break; }
@@ -402,7 +426,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         // Evaluate any adaptive CCD extra sample points injected for tunneling segments.
         CollisionEvalResult extra_col;
         int n_extra_rows = 0;
-        if (!extra_samples.empty() && P > 0) {
+        if (!extra_samples.empty() && has_col) {
             const int64_t E = static_cast<int64_t>(extra_samples.size());
             std::vector<double> extra_q(static_cast<size_t>(E * J));
             for (int64_t e = 0; e < E; ++e) {
@@ -412,8 +436,10 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 for (int j = 0; j < J; ++j) extra_q[static_cast<size_t>(e * J + j)] = w * q(seg, j) + u * q(seg + 1, j);
             }
             const Eigen::VectorXd& extra_opt = use_cushion ? opt_margins_extra : opt_margins_cushion;
+            const double extra_esdf_opt = use_cushion ? esdf_margin_extra : esdf_margin_cushion;
             extra_col = snap.eval_collision_rows(extra_q.data(), E, extra_opt.data(), margins.data(),
-                                                 buffer, linearize, 1, false);
+                                                 buffer, linearize, 1, false,
+                                                 extra_esdf_opt, spec.world_margin);
             for (uint8_t b : extra_col.seg_ok) if (!b) { all_seg_ok = false; break; }
             n_extra_rows = static_cast<int>(extra_col.rows.size());
         }
@@ -733,7 +759,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
 
     struct AttemptCfg { int substeps; bool seg_min; bool cushion; };
     std::vector<AttemptCfg> attempts;
-    if (spec.first_feasible && P > 0) attempts.push_back({validation_substeps, true, true});
+    if (spec.first_feasible && has_col) attempts.push_back({validation_substeps, true, true});
     attempts.push_back({spec.collision_substeps, false, true});
     attempts.push_back({validation_substeps, false, false});
 
@@ -749,7 +775,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             out.cost = ar.cost;
             break;
         }
-        if (P == 0) break;
+        if (!has_col) break;
         // Avoid propagating a trapped seg_min local minimum into full-sample attempts.
         if (ac.seg_min) {
             seed_cur = q_init;

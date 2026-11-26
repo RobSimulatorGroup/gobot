@@ -608,9 +608,15 @@ inline StepIKResult solve_cartesian_step_ik(
     const int B = snap.kin.num_bodies();
     const int N_shapes = static_cast<int>(snap.shapes.size());
     const int P = static_cast<int>(snap.pairs.size());
+    const bool use_esdf = snap.has_esdf();
+    const int NS_esdf = use_esdf ? static_cast<int>(snap.esdf_spheres.size()) : 0;
+    const int total_col = P + NS_esdf;
+    const double eff_wm = cfg.effective_world_margin();
+    const double esdf_req = std::max(0.0, eff_wm - 1e-6);
     const auto& lo = snap.kin.lower();
     const auto& hi = snap.kin.upper();
     const auto& is_pris = snap.kin.joint_prismatic();
+    const auto& anc = snap.kin.body_ancestor();
 
     std::vector<Vec3> bpos(static_cast<size_t>(B)), jorig(static_cast<size_t>(J)), jaxis(static_cast<size_t>(J));
     std::vector<Mat3> brot(static_cast<size_t>(B));
@@ -630,24 +636,39 @@ inline StepIKResult solve_cartesian_step_ik(
     };
 
     auto eval_collision = [&](const Eigen::VectorXd& qc, std::string& col_reason) -> bool {
-        if (!cfg.avoid_collisions || P == 0) return true;
-        snap.compute_frames(qc.data(), 1, frame.data());
-        snap.screen_aabbs(frame.data(), 1, margins.data(), false, 1, cand_rows, cand_pairs);
-        if (!cand_rows.empty()) {
-            auto hit = snap.first_violation_indexed(frame.data(), 1, cand_rows.data(), cand_pairs.data(),
-                                                    static_cast<int64_t>(cand_rows.size()), margins.data(), false);
-            if (hit.has_value()) {
-                col_reason = "Cartesian IK collision on pair " + snap.pair_display_name(hit->second);
-                return false;
-            }
-        }
-        if (cfg.verify_original && snap.has_mesh) {
-            snap.screen_aabbs(frame.data(), 1, margins.data(), true, 1, cand_rows, cand_pairs);
+        if (!cfg.avoid_collisions || total_col == 0) return true;
+        if (P > 0) {
+            snap.compute_frames(qc.data(), 1, frame.data());
+            snap.screen_aabbs(frame.data(), 1, margins.data(), false, 1, cand_rows, cand_pairs);
             if (!cand_rows.empty()) {
                 auto hit = snap.first_violation_indexed(frame.data(), 1, cand_rows.data(), cand_pairs.data(),
-                                                        static_cast<int64_t>(cand_rows.size()), margins.data(), true);
+                                                        static_cast<int64_t>(cand_rows.size()), margins.data(), false);
                 if (hit.has_value()) {
-                    col_reason = "Cartesian IK original mesh collision on pair " + snap.pair_display_name(hit->second);
+                    col_reason = "Cartesian IK collision on pair " + snap.pair_display_name(hit->second);
+                    return false;
+                }
+            }
+            if (cfg.verify_original && snap.has_mesh) {
+                snap.screen_aabbs(frame.data(), 1, margins.data(), true, 1, cand_rows, cand_pairs);
+                if (!cand_rows.empty()) {
+                    auto hit = snap.first_violation_indexed(frame.data(), 1, cand_rows.data(), cand_pairs.data(),
+                                                            static_cast<int64_t>(cand_rows.size()), margins.data(), true);
+                    if (hit.has_value()) {
+                        col_reason = "Cartesian IK original mesh collision on pair " + snap.pair_display_name(hit->second);
+                        return false;
+                    }
+                }
+            }
+        }
+        if (use_esdf) {
+            snap.kin.fk_single(qc.data(), bpos.data(), brot.data());
+            for (int si = 0; si < NS_esdf; ++si) {
+                const auto& sp = snap.esdf_spheres[static_cast<size_t>(si)];
+                const Vec3 pw = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                bpos[static_cast<size_t>(sp.body_id)];
+                const double d = snap.esdf->collision_distance(pw) - sp.radius;
+                if (!std::isfinite(d) || d < esdf_req) {
+                    col_reason = "Cartesian IK ESDF collision on pair " + snap.pair_display_name(-static_cast<int64_t>(si + 1));
                     return false;
                 }
             }
@@ -663,15 +684,15 @@ inline StepIKResult solve_cartesian_step_ik(
         const double w_rot = has_rot ? (1.0 / std::max(rot_tol, 1e-6)) : 0.0;
         // Very mild continuity pull so redundant DOFs stay close to q_prev without sacrificing pose accuracy.
         const double w_stay = with_collision ? 0.5 : 1e-2;
-        const int outer_rounds = (with_collision && P > 0) ? 4 : 1;
-        Eigen::VectorXd dual = Eigen::VectorXd::Zero(P);
+        const int outer_rounds = (with_collision && total_col > 0) ? 4 : 1;
+        Eigen::VectorXd dual = Eigen::VectorXd::Zero(total_col);
         double penalty = 50.0;
         std::vector<double> thr(static_cast<size_t>(P));
 
         Eigen::MatrixXd Jp(3, J), Jw(3, J);
         Eigen::MatrixXd H(J, J);
         Eigen::VectorXd g(J);
-        Eigen::VectorXd ineq(P);
+        Eigen::VectorXd ineq(total_col);
 
         auto eval_merit = [&](const Eigen::VectorXd& qc, Eigen::MatrixXd* H_out, Eigen::VectorXd* g_out,
                               Eigen::VectorXd* ineq_out = nullptr) -> double {
@@ -722,66 +743,102 @@ inline StepIKResult solve_cartesian_step_ik(
                     g_out->noalias() += Jr.transpose() * rr;
                 }
             }
-            // Optional collision avoidance (augmented Lagrangian)
-            if (with_collision && P > 0) {
-                for (int i = 0; i < N_shapes; ++i) {
-                    const auto& ws = snap.shapes[static_cast<size_t>(i)];
-                    Eigen::Map<Frame> dst(frame.data() + i * 12);
-                    if (ws.body_id >= 0) {
-                        dst.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
-                        dst.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) +
-                                               bpos[static_cast<size_t>(ws.body_id)];
-                    } else {
-                        dst = ws.local_frame;
+            // Optional collision avoidance (augmented Lagrangian: Coal pairs + ESDF spheres)
+            if (with_collision && total_col > 0) {
+                if (ineq_out) ineq_out->setConstant(total_col, -1.0);
+                if (P > 0) {
+                    for (int i = 0; i < N_shapes; ++i) {
+                        const auto& ws = snap.shapes[static_cast<size_t>(i)];
+                        Eigen::Map<Frame> dst(frame.data() + i * 12);
+                        if (ws.body_id >= 0) {
+                            dst.leftCols<3>().noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.leftCols<3>();
+                            dst.col(3).noalias() = brot[static_cast<size_t>(ws.body_id)] * ws.local_frame.col(3) +
+                                                   bpos[static_cast<size_t>(ws.body_id)];
+                        } else {
+                            dst = ws.local_frame;
+                        }
+                    }
+                    for (int p = 0; p < P; ++p) thr[static_cast<size_t>(p)] = margins(p) + dual(p) / penalty + 0.01;
+                    snap.screen_aabbs(frame.data(), 1, thr.data(), false, 1, cand_rows, cand_pairs);
+                    const int64_t C = static_cast<int64_t>(cand_rows.size());
+                    if (C > 0) {
+                        dist_data.resize(static_cast<size_t>(C * 10));
+                        for (int64_t k = 0; k < C; ++k) {
+                            const auto& pr = snap.pairs[static_cast<size_t>(cand_pairs[static_cast<size_t>(k)])];
+                            eval_coal_distance(*snap.shapes[static_cast<size_t>(pr.shape_a)].shape,
+                                               *snap.shapes[static_cast<size_t>(pr.shape_b)].shape,
+                                               frame.data() + pr.shape_a * 12, frame.data() + pr.shape_b * 12,
+                                               false, std::numeric_limits<double>::infinity(),
+                                               dist_data.data() + k * 10);
+                        }
+                        std::vector<int64_t> act_rows, act_pairs;
+                        std::vector<double> act_data, act_res;
+                        const double sqrt_pen = std::sqrt(penalty);
+                        for (int64_t k = 0; k < C; ++k) {
+                            const int64_t pid = cand_pairs[static_cast<size_t>(k)];
+                            const double viol = margins(pid) - dist_data[static_cast<size_t>(k * 10)];
+                            if (ineq_out) (*ineq_out)(pid) = viol;
+                            const double aug = viol + dual(pid) / penalty;
+                            if (aug > 0.0) {
+                                const double sr = sqrt_pen * aug;
+                                cost += sr * sr;
+                                if (need_jac) {
+                                    act_rows.push_back(0);
+                                    act_pairs.push_back(pid);
+                                    act_res.push_back(sr);
+                                    act_data.insert(act_data.end(), dist_data.data() + k * 10,
+                                                    dist_data.data() + (k + 1) * 10);
+                                }
+                            }
+                        }
+                        if (need_jac && !act_rows.empty()) {
+                            const int64_t K = static_cast<int64_t>(act_rows.size());
+                            col_grad.resize(static_cast<size_t>(K * J));
+                            snap.compute_analytic_gradients(frame.data(),
+                                                            reinterpret_cast<const double*>(jorig.data()),
+                                                            reinterpret_cast<const double*>(jaxis.data()),
+                                                            act_rows.data(), act_pairs.data(), act_data.data(),
+                                                            K, col_grad.data());
+                            Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> Jc(
+                                col_grad.data(), K, J);
+                            Eigen::Map<Eigen::VectorXd> rc(act_res.data(), K);
+                            H_out->noalias() += penalty * (Jc.transpose() * Jc);
+                            g_out->noalias() += sqrt_pen * (Jc.transpose() * rc);
+                        }
                     }
                 }
-                if (ineq_out) ineq_out->setConstant(P, -1.0);
-                for (int p = 0; p < P; ++p) thr[static_cast<size_t>(p)] = margins(p) + dual(p) / penalty + 0.01;
-                snap.screen_aabbs(frame.data(), 1, thr.data(), false, 1, cand_rows, cand_pairs);
-                const int64_t C = static_cast<int64_t>(cand_rows.size());
-                if (C > 0) {
-                    dist_data.resize(static_cast<size_t>(C * 10));
-                    for (int64_t k = 0; k < C; ++k) {
-                        const auto& pr = snap.pairs[static_cast<size_t>(cand_pairs[static_cast<size_t>(k)])];
-                        eval_coal_distance(*snap.shapes[static_cast<size_t>(pr.shape_a)].shape,
-                                           *snap.shapes[static_cast<size_t>(pr.shape_b)].shape,
-                                           frame.data() + pr.shape_a * 12, frame.data() + pr.shape_b * 12,
-                                           false, std::numeric_limits<double>::infinity(),
-                                           dist_data.data() + k * 10);
-                    }
-                    std::vector<int64_t> act_rows, act_pairs;
-                    std::vector<double> act_data, act_res;
+                if (use_esdf) {
                     const double sqrt_pen = std::sqrt(penalty);
-                    for (int64_t k = 0; k < C; ++k) {
-                        const int64_t pid = cand_pairs[static_cast<size_t>(k)];
-                        const double viol = margins(pid) - dist_data[static_cast<size_t>(k * 10)];
-                        if (ineq_out) (*ineq_out)(pid) = viol;
-                        const double aug = viol + dual(pid) / penalty;
+                    Eigen::VectorXd g_row(J);
+                    for (int si = 0; si < NS_esdf; ++si) {
+                        const auto& sp = snap.esdf_spheres[static_cast<size_t>(si)];
+                        const Vec3 pw = brot[static_cast<size_t>(sp.body_id)] * sp.local_center +
+                                        bpos[static_cast<size_t>(sp.body_id)];
+                        Vec3 g_sdf = Vec3::Zero();
+                        const double sv = snap.esdf->collision_distance(pw, need_jac ? &g_sdf : nullptr, true);
+                        const double viol = eff_wm - (sv - sp.radius);
+                        const int slot = P + si;
+                        if (ineq_out) (*ineq_out)(slot) = viol;
+                        const double aug = viol + dual(slot) / penalty;
                         if (aug > 0.0) {
                             const double sr = sqrt_pen * aug;
                             cost += sr * sr;
                             if (need_jac) {
-                                act_rows.push_back(0);
-                                act_pairs.push_back(pid);
-                                act_res.push_back(sr);
-                                act_data.insert(act_data.end(), dist_data.data() + k * 10,
-                                                dist_data.data() + (k + 1) * 10);
+                                g_row.setZero();
+                                const int ba = sp.body_id;
+                                for (int j = 0; j < J; ++j) {
+                                    if (ba >= 0 && anc[static_cast<size_t>(ba * J + j)] != 0) {
+                                        if (is_pris[static_cast<size_t>(j)]) {
+                                            g_row(j) = -jaxis[static_cast<size_t>(j)].dot(g_sdf);
+                                        } else {
+                                            g_row(j) = -jaxis[static_cast<size_t>(j)].cross(pw - jorig[static_cast<size_t>(j)]).dot(g_sdf);
+                                        }
+                                    }
+                                }
+                                H_out->noalias() += penalty * (g_row * g_row.transpose());
+                                g_out->noalias() += (sqrt_pen * sr) * g_row;
                             }
                         }
-                    }
-                    if (need_jac && !act_rows.empty()) {
-                        const int64_t K = static_cast<int64_t>(act_rows.size());
-                        col_grad.resize(static_cast<size_t>(K * J));
-                        snap.compute_analytic_gradients(frame.data(),
-                                                        reinterpret_cast<const double*>(jorig.data()),
-                                                        reinterpret_cast<const double*>(jaxis.data()),
-                                                        act_rows.data(), act_pairs.data(), act_data.data(),
-                                                        K, col_grad.data());
-                        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> Jc(
-                            col_grad.data(), K, J);
-                        Eigen::Map<Eigen::VectorXd> rc(act_res.data(), K);
-                        H_out->noalias() += penalty * (Jc.transpose() * Jc);
-                        g_out->noalias() += sqrt_pen * (Jc.transpose() * rc);
                     }
                 }
             }
@@ -849,12 +906,12 @@ inline StepIKResult solve_cartesian_step_ik(
                 }
                 if (!accepted) break;
             }
-            if (with_collision && P > 0) {
+            if (with_collision && total_col > 0) {
                 double pe = 0.0, re = 0.0;
                 std::string col_err;
                 if (eval_pose_err(q, pe, re) && eval_collision(q, col_err)) break;
                 eval_merit(q, nullptr, nullptr, &ineq);
-                for (int p = 0; p < P; ++p) {
+                for (int p = 0; p < total_col; ++p) {
                     dual(p) = std::max(0.0, dual(p) + penalty * ineq(p));
                 }
                 penalty = std::min(1e5, penalty * 5.0);
@@ -1279,24 +1336,41 @@ inline PrefixVerifyResult finalize_and_verify_cartesian_prefix(
             }
 
             // 2. Discrete + continuous CCD collision verification.
-            if (bad_segs.empty() && cfg.avoid_collisions && P > 0) {
+            const bool use_esdf = snap.has_esdf();
+            const bool has_col = (P > 0) || use_esdf;
+            const double eff_wm = cfg.effective_world_margin();
+            if (bad_segs.empty() && cfg.avoid_collisions && has_col) {
                 traj.sample_segments(substeps, samples);
                 const int64_t S = static_cast<int64_t>((K - 1) * substeps + 1);
                 frames.resize(static_cast<size_t>(S * N_shapes * 12));
                 snap.compute_frames(samples.data(), S, frames.data());
 
-                const int n_passes = (cfg.verify_original && snap.has_mesh) ? 2 : 1;
+                const int n_passes = (P > 0 && cfg.verify_original && snap.has_mesh) ? 2 : 1;
                 for (int pass = 0; pass < n_passes; ++pass) {
                     const bool verify_orig = (pass == 1);
                     const char* kind = verify_orig ? "mesh" : "convex";
-                    snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
-                    if (!screen_rows.empty()) {
-                        snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
-                                                     static_cast<int64_t>(screen_rows.size()), margins.data(),
-                                                     verify_orig, viol_rows, viol_pairs);
+                    if (P > 0) {
+                        snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
+                        if (!screen_rows.empty()) {
+                            snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
+                                                         static_cast<int64_t>(screen_rows.size()), margins.data(),
+                                                         verify_orig, viol_rows, viol_pairs);
+                            if (!viol_rows.empty()) {
+                                const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), K - 2);
+                                last_error = std::string("Cartesian spline ") + kind + " clearance failed on segment " +
+                                             std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
+                                for (const int64_t r : viol_rows) {
+                                    bad_segs.insert(std::min(static_cast<int>(r / substeps), K - 2));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!verify_orig && use_esdf) {
+                        snap.violating_esdf_samples(samples.data(), frames.data(), S, eff_wm, viol_rows, viol_pairs);
                         if (!viol_rows.empty()) {
                             const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), K - 2);
-                            last_error = std::string("Cartesian spline ") + kind + " clearance failed on segment " +
+                            last_error = std::string("Cartesian spline ESDF clearance failed on segment ") +
                                          std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
                             for (const int64_t r : viol_rows) {
                                 bad_segs.insert(std::min(static_cast<int>(r / substeps), K - 2));
@@ -1308,9 +1382,10 @@ inline PrefixVerifyResult finalize_and_verify_cartesian_prefix(
                         auto ccd_hit = snap.first_violation_continuous(
                             traj.positions.data(), K, substeps, frames.data(), margins.data(),
                             false, 1e-3, traj.times.data(), traj.velocities.data(),
-                            cfg.strict_ccd, traj.accelerations.data(), traj.spline_order);
+                            cfg.strict_ccd, traj.accelerations.data(), traj.spline_order, eff_wm);
                         if (ccd_hit.has_value()) {
-                            last_error = std::string("Cartesian spline continuous ") + kind +
+                            const char* ckind = (ccd_hit->pair_id < 0) ? "ESDF" : kind;
+                            last_error = std::string("Cartesian spline continuous ") + ckind +
                                          " clearance failed on segment " + std::to_string(ccd_hit->seg) +
                                          ", pair " + snap.pair_display_name(ccd_hit->pair_id);
                             bad_segs.insert(ccd_hit->seg);
@@ -1571,8 +1646,8 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
     }
 
     // Now check start collision (after input validation).
-    if (cfg.avoid_collisions && !snap.pairs.empty() &&
-        !snap.is_config_valid(req.start_q.data(), margins, cfg.verify_original)) {
+    if (cfg.avoid_collisions && snap.has_collision_checks() &&
+        !snap.is_config_valid(req.start_q.data(), margins, cfg.verify_original, cfg.effective_world_margin())) {
         res.reason = "start configuration is in collision";
         res.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
         return res;
@@ -1786,8 +1861,8 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
             mid_err = "Cartesian chord midpoint TCP deviation exceeded";
             return false;
         }
-        if (cfg.avoid_collisions && !snap.pairs.empty() &&
-            !snap.is_config_valid(qm.data(), margins, cfg.verify_original)) {
+        if (cfg.avoid_collisions && snap.has_collision_checks() &&
+            !snap.is_config_valid(qm.data(), margins, cfg.verify_original, cfg.effective_world_margin())) {
             mid_err = "Cartesian chord midpoint collision";
             if (out_is_collision) *out_is_collision = true;
             return false;

@@ -413,3 +413,15 @@ class CartesianPlanResult:
     @property
     def positions(self) -> np.ndarray | None:
         return None if self.trajectory is None else self.trajectory.positions
+
+
+@dataclass(frozen=True)
+class LinkSphere:
+    """Link-local collision sphere used for fast O(1) ESDF obstacle avoidance."""
+
+    link: Link | str
+    shape_name: str
+    center: np.ndarray
+    radius: float
+    collision_layer: int = 1
+    collision_mask: int = 1
