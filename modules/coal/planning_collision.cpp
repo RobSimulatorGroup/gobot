@@ -191,6 +191,112 @@ gp::MotionPlanRequestNative parse_plan_request(const py::dict& d, int J) {
             for (int j = 0; j < J; ++j) req.active_mask[static_cast<size_t>(j)] = m_in.data()[j] ? 1 : 0;
         }
     }
+    if (d.contains("start_velocity") && !d["start_velocity"].is_none()) {
+        req.has_start_velocity = true;
+        req.start_velocity = d["start_velocity"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("start_acceleration") && !d["start_acceleration"].is_none()) {
+        req.has_start_acceleration = true;
+        req.start_acceleration = d["start_acceleration"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("dt_start_smooth") && !d["dt_start_smooth"].is_none()) {
+        req.dt_start_smooth = d["dt_start_smooth"].cast<double>();
+    }
+    return req;
+}
+
+gp::TrajectoryNative trajectory_from_dict(const py::dict& td, int J) {
+    const Input t_in = td["times"].cast<Input>();
+    const Input p_in = td["positions"].cast<Input>();
+    const Input v_in = td["velocities"].cast<Input>();
+    const Input a_in = td["accelerations"].cast<Input>();
+    const int order = td.contains("spline_order") && !td["spline_order"].is_none()
+        ? td["spline_order"].cast<int>() : 3;
+    if (p_in.ndim() != 2 || p_in.shape(0) < 2 || p_in.shape(1) != J)
+        throw std::invalid_argument("prev_traj.positions must have shape [T>=2, J]");
+    const int T = static_cast<int>(p_in.shape(0));
+    if (t_in.ndim() != 1 || t_in.shape(0) != T)
+        throw std::invalid_argument("prev_traj.times must have shape [T]");
+    if (v_in.ndim() != 2 || v_in.shape(0) != T || v_in.shape(1) != J)
+        throw std::invalid_argument("prev_traj.velocities must have shape [T, J]");
+    if (a_in.ndim() != 2 || a_in.shape(0) != T || a_in.shape(1) != J)
+        throw std::invalid_argument("prev_traj.accelerations must have shape [T, J]");
+    gp::TrajectoryNative traj;
+    traj.spline_order = order;
+    if (td.contains("dt") && !td["dt"].is_none()) {
+        traj.has_dt = true;
+        traj.dt = td["dt"].cast<double>();
+    }
+    traj.times.resize(T);
+    std::copy(t_in.data(), t_in.data() + T, traj.times.data());
+    traj.positions.resize(T, J);
+    std::copy(p_in.data(), p_in.data() + T * J, traj.positions.data());
+    traj.velocities.resize(T, J);
+    std::copy(v_in.data(), v_in.data() + T * J, traj.velocities.data());
+    traj.accelerations.resize(T, J);
+    std::copy(a_in.data(), a_in.data() + T * J, traj.accelerations.data());
+    return traj;
+}
+
+gp::ReplanRequestNative parse_replan_request(const py::dict& d, int J) {
+    gp::ReplanRequestNative req;
+    req.config = parse_solver_config(d["config"].cast<py::dict>());
+    req.q_now = d["q_now"].cast<Eigen::VectorXd>();
+    req.dq_now = d["dq_now"].cast<Eigen::VectorXd>();
+    if (d.contains("ddq_now") && !d["ddq_now"].is_none()) {
+        req.has_ddq_now = true;
+        req.ddq_now = d["ddq_now"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("prev_traj") && !d["prev_traj"].is_none()) {
+        req.has_prev_traj = true;
+        req.prev_traj = trajectory_from_dict(d["prev_traj"].cast<py::dict>(), J);
+    }
+    if (d.contains("t_on_prev") && !d["t_on_prev"].is_none()) {
+        req.has_t_on_prev = true;
+        req.t_on_prev = d["t_on_prev"].cast<double>();
+    }
+    if (d.contains("reuse_if_valid") && !d["reuse_if_valid"].is_none()) {
+        req.reuse_if_valid = d["reuse_if_valid"].cast<bool>();
+    }
+    if (d.contains("time_budget_s") && !d["time_budget_s"].is_none()) {
+        req.time_budget_s = d["time_budget_s"].cast<double>();
+    }
+    if (d.contains("has_goal") && d["has_goal"].cast<bool>()) {
+        req.has_goal = true;
+        req.goal_is_pose = d["goal_is_pose"].cast<bool>();
+        if (req.goal_is_pose) {
+            req.goal_pose_sets = d["goal_pose_sets"].cast<std::vector<std::vector<gp::PoseConstraintSpec>>>();
+        } else {
+            req.goal_qs = d["goal_qs"].cast<std::vector<Eigen::VectorXd>>();
+        }
+    }
+    if (d.contains("goal_seed") && !d["goal_seed"].is_none()) {
+        req.has_goal_seed = true;
+        req.goal_seed = d["goal_seed"].cast<Eigen::VectorXd>();
+    }
+    if (d.contains("pose_constraints") && !d["pose_constraints"].is_none()) {
+        const py::dict pc_dict = d["pose_constraints"].cast<py::dict>();
+        for (const auto& kv : pc_dict) {
+            auto vec = kv.second.cast<std::vector<gp::PoseConstraintSpec>>();
+            if (!vec.empty()) req.pose_constraints.emplace_back(kv.first.cast<int>(), std::move(vec));
+        }
+    }
+    if (d.contains("manifold_constraints") && !d["manifold_constraints"].is_none()) {
+        req.manifold_constraints = d["manifold_constraints"].cast<std::vector<gp::PoseConstraintSpec>>();
+    }
+    if (d.contains("joint_targets") && !d["joint_targets"].is_none()) {
+        const py::dict jt_dict = d["joint_targets"].cast<py::dict>();
+        for (const auto& kv : jt_dict) {
+            req.joint_targets.emplace_back(kv.first.cast<int>(), kv.second.cast<Eigen::VectorXd>());
+        }
+    }
+    if (d.contains("active_mask") && !d["active_mask"].is_none()) {
+        const MaskInput m_in = d["active_mask"].cast<MaskInput>();
+        req.active_mask.assign(static_cast<size_t>(J), 1);
+        if (m_in.size() == J) {
+            for (int j = 0; j < J; ++j) req.active_mask[static_cast<size_t>(j)] = m_in.data()[j] ? 1 : 0;
+        }
+    }
     return req;
 }
 
@@ -246,6 +352,7 @@ py::dict plan_result_to_dict(const gp::PlanResultNative& r) {
     diag["retime_ms"] = r.diagnostics.retime_ms;
     diag["qp_calls"] = r.diagnostics.qp_calls;
     diag["sqp_iterations"] = r.diagnostics.sqp_iterations;
+    diag["timed_out"] = r.diagnostics.timed_out;
     diag["seed_strategy"] = r.diagnostics.seed_strategy;
     if (!r.diagnostics.witnesses.empty()) {
         const py::ssize_t K = static_cast<py::ssize_t>(r.diagnostics.witnesses.size() / 6);
@@ -356,6 +463,7 @@ py::dict cartesian_result_to_dict(const gp::CartesianPlanResultNative& r) {
     diag["retime_ms"] = r.retime_ms;
     diag["qp_calls"] = 0;
     diag["sqp_iterations"] = 0;
+    diag["timed_out"] = false;
     diag["seed_strategy"] = "cartesian";
     diag["witnesses"] = py::none();
     d["diagnostics"] = std::move(diag);
@@ -1207,7 +1315,11 @@ PYBIND11_MODULE(_coal_native, module) {
                                        py::object dt_obj,
                                        py::object knot_scales_obj,
                                        py::object jmax_obj,
-                                       int spline_order) {
+                                       int spline_order,
+                                       py::object start_vel_obj,
+                                       py::object start_acc_obj,
+                                       py::object lo_obj,
+                                       py::object hi_obj) {
         if (pos_in.ndim() != 2 || pos_in.shape(0) < 2)
             throw std::invalid_argument("positions must have shape [T>=2, J]");
         const int T = static_cast<int>(pos_in.shape(0));
@@ -1216,29 +1328,49 @@ PYBIND11_MODULE(_coal_native, module) {
         std::copy(pos_in.data(), pos_in.data() + T * J, pos.data());
         const bool has_dt = !dt_obj.is_none();
         const double dt_val = has_dt ? dt_obj.cast<double>() : 0.0;
-        Eigen::VectorXd ks;
+        Eigen::VectorXd ks, jmax, v0, a0, lo, hi;
         const Eigen::VectorXd* ks_ptr = nullptr;
-        if (!knot_scales_obj.is_none()) {
-            ks = knot_scales_obj.cast<Eigen::VectorXd>();
-            ks_ptr = &ks;
-        }
-        Eigen::VectorXd jmax;
         const Eigen::VectorXd* jmax_ptr = nullptr;
-        if (!jmax_obj.is_none()) {
-            jmax = jmax_obj.cast<Eigen::VectorXd>();
-            jmax_ptr = &jmax;
-        }
+        const Eigen::VectorXd* v0_ptr = nullptr;
+        const Eigen::VectorXd* a0_ptr = nullptr;
+        const Eigen::VectorXd* lo_ptr = nullptr;
+        const Eigen::VectorXd* hi_ptr = nullptr;
+        if (!knot_scales_obj.is_none()) { ks = knot_scales_obj.cast<Eigen::VectorXd>(); ks_ptr = &ks; }
+        if (!jmax_obj.is_none()) { jmax = jmax_obj.cast<Eigen::VectorXd>(); jmax_ptr = &jmax; }
+        if (!start_vel_obj.is_none()) { v0 = start_vel_obj.cast<Eigen::VectorXd>(); v0_ptr = &v0; }
+        if (!start_acc_obj.is_none()) { a0 = start_acc_obj.cast<Eigen::VectorXd>(); a0_ptr = &a0; }
+        if (!lo_obj.is_none()) { lo = lo_obj.cast<Eigen::VectorXd>(); lo_ptr = &lo; }
+        if (!hi_obj.is_none()) { hi = hi_obj.cast<Eigen::VectorXd>(); hi_ptr = &hi; }
         gp::TrajectoryNative traj;
         {
             py::gil_scoped_release release;
             traj = gp::retime_trajectory(pos, vmax, amax, stop_at_endpoints, has_dt, dt_val,
-                                         ks_ptr, jmax_ptr, spline_order);
+                                         ks_ptr, jmax_ptr, spline_order, v0_ptr, a0_ptr, lo_ptr, hi_ptr);
         }
         return trajectory_to_dict(traj);
     }, py::arg("positions"), py::arg("velocity_limits"), py::arg("acceleration_limits"),
        py::arg("stop_at_endpoints") = true, py::arg("dt") = py::none(),
        py::arg("knot_velocity_scales") = py::none(), py::arg("jerk_limits") = py::none(),
-       py::arg("spline_order") = 3);
+       py::arg("spline_order") = 3,
+       py::arg("start_velocity") = py::none(), py::arg("start_acceleration") = py::none(),
+       py::arg("lower_limits") = py::none(), py::arg("upper_limits") = py::none());
+
+    module.def("slice_trajectory_suffix", [](const Input& times_in, const Input& pos_in,
+                                             const Input& vel_in, const Input& acc_in,
+                                             double t_anchor, int spline_order, py::object dt_obj) {
+        auto traj = trajectory_from_arrays(times_in, pos_in, vel_in, acc_in, spline_order);
+        if (!dt_obj.is_none()) {
+            traj.has_dt = true;
+            traj.dt = dt_obj.cast<double>();
+        }
+        gp::TrajectoryNative suffix;
+        {
+            py::gil_scoped_release release;
+            suffix = gp::slice_trajectory_suffix(traj, t_anchor);
+        }
+        return trajectory_to_dict(suffix);
+    }, py::arg("times"), py::arg("positions"), py::arg("velocities"), py::arg("accelerations"),
+       py::arg("t_anchor"), py::arg("spline_order") = 3, py::arg("dt") = py::none());
 
     module.def("check_trajectory_bounds", [](const Input& times_in, const Input& pos_in,
                                              const Input& vel_in, const Input& acc_in,
@@ -1876,11 +2008,27 @@ PYBIND11_MODULE(_coal_native, module) {
                 sp.initial.resize(T, J);
                 std::copy(init_arr.data(), init_arr.data() + T * J, sp.initial.data());
                 sp.fixed = d["fixed"].cast<int>();
+                if (d.contains("fixed_start") && !d["fixed_start"].is_none()) {
+                    sp.fixed_start = d["fixed_start"].cast<int>();
+                }
+                if (d.contains("fixed_end") && !d["fixed_end"].is_none()) {
+                    sp.fixed_end = d["fixed_end"].cast<int>();
+                }
                 if (d.contains("dt_vel") && !d["dt_vel"].is_none()) {
                     sp.has_dt_vel = true;
                     sp.dt_vel = d["dt_vel"].cast<double>();
                 }
                 sp.dt_smooth = d["dt_smooth"].cast<double>();
+                if (d.contains("dt_start_smooth") && !d["dt_start_smooth"].is_none()) {
+                    sp.dt_start_smooth = d["dt_start_smooth"].cast<double>();
+                }
+                if (d.contains("start_velocity") && !d["start_velocity"].is_none()) {
+                    sp.has_start_velocity = true;
+                    sp.start_velocity = d["start_velocity"].cast<Eigen::VectorXd>();
+                }
+                if (d.contains("acceleration_scale") && !d["acceleration_scale"].is_none()) {
+                    sp.acceleration_scale = d["acceleration_scale"].cast<double>();
+                }
                 const MaskInput mask_in = d["active_mask"].cast<MaskInput>();
                 sp.active_mask.assign(static_cast<size_t>(J), 1);
                 if (mask_in.size() == J) {
@@ -1970,6 +2118,26 @@ PYBIND11_MODULE(_coal_native, module) {
             {
                 py::gil_scoped_release release;
                 res = planner.plan_with_snapshot(*snap.ptr, req);
+            }
+            return plan_result_to_dict(res);
+        })
+        .def("replan", [](const gp::MotionPlannerNative& planner, const py::dict& req_dict) {
+            const int J = planner.world()->num_joints();
+            const auto req = parse_replan_request(req_dict, J);
+            gp::PlanResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = planner.replan(req);
+            }
+            return plan_result_to_dict(res);
+        })
+        .def("replan_with_snapshot", [](const gp::MotionPlannerNative& planner, const PyWorldSnapshot& snap, const py::dict& req_dict) {
+            const int J = snap.ptr->kin.num_joints();
+            const auto req = parse_replan_request(req_dict, J);
+            gp::PlanResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = planner.replan_with_snapshot(*snap.ptr, req);
             }
             return plan_result_to_dict(res);
         })

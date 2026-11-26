@@ -143,10 +143,14 @@ class MotionPlanRequest:
     group: str | PlanningGroup | Sequence[JointName] | None = None
     config: SolverConfig = field(default_factory=SolverConfig)
     manifold_constraints: Sequence[PoseConstraint] = ()
+    start_velocity: JointConfig | None = None
+    start_acceleration: JointConfig | None = None
 
     def __post_init__(self) -> None:
         if self.manifold_constraints:
             _validate_manifold_constraints(self.manifold_constraints)
+        if self.start_acceleration is not None and self.config.spline_order != 5:
+            raise ValueError("start_acceleration is only supported when config.spline_order == 5")
 
 
 @dataclass(frozen=True)
@@ -213,6 +217,7 @@ class PlanDiagnostics:
     sqp_iterations: int = 0
     seed_strategy: str = "straight"
     witnesses: np.ndarray | None = None
+    timed_out: bool = False
 
 
 @dataclass(frozen=True)

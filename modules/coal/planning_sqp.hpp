@@ -15,10 +15,15 @@ namespace gobot::planning {
 
 struct SQPJobSpecNative {
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> initial;  // (T, J)
-    int fixed = 1;                  // 1 or 2
+    int fixed = 1;                  // legacy symmetric endpoint count (1 or 2)
+    int fixed_start = -1;           // if >= 0, overrides fixed at start
+    int fixed_end = -1;             // if >= 0, overrides fixed at end
     bool has_dt_vel = false;
     double dt_vel = 0.0;
     double dt_smooth = 0.25;
+    double dt_start_smooth = 0.0;   // if > 0, overrides virtual-predecessor dt in smoothness cost
+    bool has_start_velocity = false;
+    Eigen::VectorXd start_velocity; // (J,)
     std::vector<uint8_t> active_mask;  // (J,)
     std::vector<std::pair<int, std::vector<PoseConstraintSpec>>> pose_constraints;
     std::vector<std::pair<int, Eigen::VectorXd>> joint_targets;
@@ -30,12 +35,16 @@ struct SQPJobSpecNative {
     bool first_feasible = true;
     bool strict_ccd = false;
     double velocity_scale = 1.0;
+    double acceleration_scale = 1.0;
+    bool has_deadline = false;
+    std::chrono::steady_clock::time_point deadline;
     std::string seed_strategy = "straight";
     int goal_index = 0;
 };
 
 struct SQPJobResultNative {
     bool success = false;
+    bool timed_out = false;
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> positions;
     std::string reason;
     int qp_calls = 0;
@@ -90,6 +99,90 @@ inline void build_segment_samples(
     }
 }
 
+inline double estimate_seg0_hermite_dt(
+    const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& q,
+    const Eigen::VectorXd& v0,
+    const Eigen::VectorXd& vmax,
+    const Eigen::VectorXd& amax,
+    bool has_dt_vel,
+    double dt_vel) {
+    if (has_dt_vel) return dt_vel;
+    const int J = static_cast<int>(q.cols());
+    auto seg0_ok = [&](double h) -> bool {
+        if (h <= 1e-9) return false;
+        for (int j = 0; j < J; ++j) {
+            const double dqj = q(1, j) - q(0, j);
+            const double v0j = v0(j);
+            const double a0 = (6.0 * dqj / h - 4.0 * v0j) / h;
+            const double a1 = (-6.0 * dqj / h + 2.0 * v0j) / h;
+            if (std::isfinite(amax(j)) && std::max(std::abs(a0), std::abs(a1)) > amax(j) * (1.0 + 1e-5)) {
+                return false;
+            }
+            if (std::isfinite(vmax(j))) {
+                double mv = std::abs(v0j);
+                const double denom = a1 - a0;
+                if (std::abs(denom) > 1e-12) {
+                    const double u_star = -a0 / denom;
+                    if (u_star > 0.0 && u_star < 1.0) {
+                        const double u2 = u_star * u_star;
+                        const double vs = (6.0 * u_star - 6.0 * u2) * (dqj / h) + (3.0 * u2 - 4.0 * u_star + 1.0) * v0j;
+                        mv = std::max(mv, std::abs(vs));
+                    }
+                }
+                if (mv > vmax(j) * (1.0 + 1e-5)) return false;
+            }
+        }
+        return true;
+    };
+    double h_min = 1e-4;
+    for (int j = 0; j < J; ++j) {
+        const double dqj = std::abs(q(1, j) - q(0, j));
+        const double v0j = std::abs(v0(j));
+        if (std::isfinite(vmax(j)) && vmax(j) > 1e-9) h_min = std::max(h_min, dqj / vmax(j));
+        if (std::isfinite(amax(j)) && amax(j) > 1e-9) h_min = std::max(h_min, v0j / amax(j));
+    }
+    if (seg0_ok(h_min)) return h_min;
+    // Scan log-spaced factors to find the smallest feasible braking/transition duration.
+    double prev = h_min;
+    for (int k = 1; k <= 36; ++k) {
+        const double h = h_min * std::pow(1.22, static_cast<double>(k));
+        if (seg0_ok(h)) {
+            double lo = prev, hi = h;
+            for (int it = 0; it < 12; ++it) {
+                const double mid = 0.5 * (lo + hi);
+                if (seg0_ok(mid)) hi = mid;
+                else lo = mid;
+            }
+            return hi;
+        }
+        prev = h;
+    }
+    return prev;
+}
+
+inline void build_seg0_hermite_samples(
+    const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& q,
+    const Eigen::VectorXd& v0,
+    double h0,
+    std::vector<double>& out_q,
+    double out_h01[3]) {
+    constexpr double kUs[3] = {0.25, 0.50, 0.75};
+    const int J = static_cast<int>(q.cols());
+    out_q.resize(static_cast<size_t>(3 * J));
+    for (int k = 0; k < 3; ++k) {
+        const double u = kUs[k];
+        const double u2 = u * u;
+        const double u3 = u2 * u;
+        const double h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+        const double h10 = u3 - 2.0 * u2 + u;
+        const double h01 = -2.0 * u3 + 3.0 * u2;
+        out_h01[k] = h01;
+        for (int j = 0; j < J; ++j) {
+            out_q[static_cast<size_t>(k * J + j)] = h00 * q(0, j) + h01 * q(1, j) + h10 * h0 * v0(j);
+        }
+    }
+}
+
 }  // namespace detail
 
 inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
@@ -105,9 +198,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     const auto& q_init = spec.initial;
     const int T = static_cast<int>(q_init.rows());
     const int J = static_cast<int>(q_init.cols());
-    const int fixed = spec.fixed;
-    const int n_free_wp = T - 2 * fixed;
+    const int fixed_start = (spec.fixed_start >= 0) ? spec.fixed_start : spec.fixed;
+    const int fixed_end = (spec.fixed_end >= 0) ? spec.fixed_end : spec.fixed;
+    const int n_free_wp = T - fixed_start - fixed_end;
     const int n_vars = std::max(0, n_free_wp * J);
+    const bool has_v0 = spec.has_start_velocity && (static_cast<int>(spec.start_velocity.size()) == J) && (T >= 2);
     const int N_shapes = static_cast<int>(snap.shapes.size());
     const int B_links = snap.kin.num_bodies();
     const int P = static_cast<int>(snap.pairs.size());
@@ -118,6 +213,10 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     const Eigen::VectorXd& lower = snap.kin.lower();
     const Eigen::VectorXd& upper = snap.kin.upper();
     const Eigen::VectorXd vmax = snap.kin.velocity_limit() * spec.velocity_scale;
+    const Eigen::VectorXd amax = snap.kin.acceleration_limit() * spec.acceleration_scale;
+    const auto deadline_exceeded = [&]() -> bool {
+        return spec.has_deadline && Clock::now() >= spec.deadline;
+    };
     const Eigen::VectorXd margins = snap.pair_margins(spec.margin, spec.world_margin);
     const double cushion = spec.strict_ccd ? 1.0e-3 : 5e-4;
     const double extra_cushion = spec.strict_ccd ? 1.5e-3 : 8e-4;
@@ -235,6 +334,24 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                     failure = "trajectory violates joint velocity limits";
                     break;
                 }
+                if (has_v0) {
+                    // From |q''(t)| <= a_max integrated twice over [0, h]: |q1 - q0 - h*v0| <= 0.5 * a_max * h^2.
+                    const double h = spec.dt_vel;
+                    bool acc_ok = true;
+                    for (int j = 0; j < J; ++j) {
+                        if (std::isfinite(amax(j))) {
+                            const double diff = std::abs(pos(1, j) - pos(0, j) - h * spec.start_velocity(j));
+                            if (diff > 0.5 * amax(j) * h * h * (1.0 + 1e-6)) {
+                                acc_ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!acc_ok) {
+                        failure = "trajectory violates first-segment start acceleration limit";
+                        break;
+                    }
+                }
             }
             if (!check_targets(pos)) break;
             if (!has_col) {
@@ -304,6 +421,37 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                     break;
                 }
             }
+            // When start_velocity is non-zero, also check the segment-0 cubic Hermite braking arc so SQP
+            // never terminates early on a linear chord whose Hermite tangent bows into an obstacle.
+            if (has_v0 && spec.start_velocity.squaredNorm() > 1e-12) {
+                const double h0_est = detail::estimate_seg0_hermite_dt(
+                    pos, spec.start_velocity, vmax, amax, spec.has_dt_vel, spec.dt_vel);
+                std::vector<double> h_q;
+                double h01_unused[3];
+                detail::build_seg0_hermite_samples(pos, spec.start_velocity, h0_est, h_q, h01_unused);
+                std::vector<double> h_frames(static_cast<size_t>(3 * N_shapes * 12));
+                snap.compute_frames(h_q.data(), 3, h_frames.data());
+                if (P > 0) {
+                    std::vector<int64_t> hr, hp;
+                    snap.screen_aabbs(h_frames.data(), 3, margins.data(), false, 1, hr, hp);
+                    if (!hr.empty()) {
+                        auto hhit = snap.first_violation_indexed(
+                            h_frames.data(), 3, hr.data(), hp.data(),
+                            static_cast<int64_t>(hr.size()), margins.data(), false);
+                        if (hhit.has_value()) {
+                            failure = "segment-0 Hermite tangent clearance, pair " + pair_name(hhit->second);
+                            break;
+                        }
+                    }
+                }
+                if (use_esdf) {
+                    auto ehit = snap.first_esdf_violation_samples(h_q.data(), h_frames.data(), 3, spec.world_margin);
+                    if (ehit.has_value()) {
+                        failure = "segment-0 Hermite tangent ESDF clearance, pair " + pair_name(ehit->second);
+                        break;
+                    }
+                }
+            }
             failure.clear();
             ok = true;
         } while (false);
@@ -327,11 +475,14 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         return out;
     }
 
-    // Build smoothness matrix M_s (n_smooth_rows x T) for first and second waypoint differences.
+    // Build smoothness matrix M_s (n_smooth_rows x T) and offset b_s (n_smooth_rows x J)
+    // for first and second waypoint differences plus optional start-velocity virtual predecessor.
     const int n_d1 = T - 1;
     const int n_d2 = std::max(0, T - 2);
-    const int n_srows = n_d1 + n_d2;
+    const int n_v0_row = has_v0 ? 1 : 0;
+    const int n_srows = n_d1 + n_d2 + n_v0_row;
     Eigen::MatrixXd M_s = Eigen::MatrixXd::Zero(n_srows, T);
+    Eigen::MatrixXd b_s = Eigen::MatrixXd::Zero(n_srows, J);
     for (int i = 0; i < n_d1; ++i) {
         M_s(i, i) = -1.0;
         M_s(i, i + 1) = 1.0;
@@ -342,8 +493,18 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         M_s(n_d1 + i, i + 1) = -2.0 * d2_scale;
         M_s(n_d1 + i, i + 2) = d2_scale;
     }
+    if (has_v0) {
+        const double dt_start = (spec.dt_start_smooth > 0.0)
+            ? spec.dt_start_smooth
+            : (spec.has_dt_vel ? spec.dt_vel : spec.dt_smooth);
+        const double d2_start_scale = 0.1 / (dt_start * dt_start);
+        const int r0 = n_d1 + n_d2;
+        M_s(r0, 0) = -d2_start_scale;
+        M_s(r0, 1) = d2_start_scale;
+        b_s.row(r0) = (d2_start_scale * dt_start) * spec.start_velocity.transpose();
+    }
     // M_free^T * M_free is (n_free_wp x n_free_wp); H = kron(M_free^T * M_free, I_J).
-    const Eigen::MatrixXd M_free = M_s.middleCols(fixed, n_free_wp);
+    const Eigen::MatrixXd M_free = M_s.middleCols(fixed_start, n_free_wp);
     const Eigen::MatrixXd H_wp = M_free.transpose() * M_free;
     Eigen::MatrixXd H = Eigen::MatrixXd::Zero(n_vars, n_vars);
     for (int r = 0; r < n_free_wp; ++r) {
@@ -360,7 +521,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     auto compute_smooth_cost_and_grad = [&](
         const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& q,
         Eigen::VectorXd* grad_out) -> double {
-        const Eigen::MatrixXd res = M_s * q;  // (n_srows, J)
+        const Eigen::MatrixXd res = M_s * q - b_s;  // (n_srows, J)
         if (grad_out != nullptr) {
             const Eigen::MatrixXd g_mat = M_free.transpose() * res;  // (n_free_wp, J)
             grad_out->resize(n_vars);
@@ -384,9 +545,10 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     }
     std::vector<std::pair<int, Eigen::VectorXd>> unpinned_joint_targets;
     for (const auto& [idx, tgt] : spec.joint_targets) {
-        if (idx >= fixed && idx < T - fixed && (q_init.row(idx).transpose() - tgt).lpNorm<Eigen::Infinity>() == 0.0) {
+        if (idx >= fixed_start && idx < T - fixed_end &&
+            (q_init.row(idx).transpose() - tgt).lpNorm<Eigen::Infinity>() == 0.0) {
             any_pinned = true;
-            for (int j = 0; j < J; ++j) pinned[static_cast<size_t>((idx - fixed) * J + j)] = 1;
+            for (int j = 0; j < J; ++j) pinned[static_cast<size_t>((idx - fixed_start) * J + j)] = 1;
         } else {
             unpinned_joint_targets.emplace_back(idx, tgt);
         }
@@ -417,10 +579,14 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         bool all_seg_ok = true;
         for (uint8_t b : ep.col.seg_ok) if (!b) { all_seg_ok = false; break; }
 
-        // Count velocity constraint rows when hard dt_vel is set.
+        // Count velocity & start-acceleration constraint rows when hard dt_vel is set.
         int n_vel_rows = 0;
+        int n_acc0_rows = 0;
         if (spec.has_dt_vel) {
             for (int j = 0; j < J; ++j) if (std::isfinite(vmax(j))) n_vel_rows += 2 * (T - 1);
+            if (has_v0) {
+                for (int j = 0; j < J; ++j) if (std::isfinite(amax(j))) n_acc0_rows += 2;
+            }
         }
         const int n_col_rows = static_cast<int>(ep.col.rows.size());
         // Evaluate any adaptive CCD extra sample points injected for tunneling segments.
@@ -442,6 +608,32 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                                                  extra_esdf_opt, spec.world_margin);
             for (uint8_t b : extra_col.seg_ok) if (!b) { all_seg_ok = false; break; }
             n_extra_rows = static_cast<int>(extra_col.rows.size());
+        }
+
+        // Evaluate segment-0 Hermite bow-out samples when start_velocity is non-zero so SQP steers q[1]
+        // to keep the actual curved tangent arc clear of obstacles. Use a q-independent reference duration
+        // h0_ref so q_H(u) is strictly affine in q[1] with exact Jacobian d q_H(u) / d q[1] = h01(u) * I.
+        CollisionEvalResult hermite0_col;
+        double hermite0_h01[3] = {0.0, 0.0, 0.0};
+        int n_hermite0_rows = 0;
+        if (has_v0 && has_col && spec.start_velocity.squaredNorm() > 1e-12) {
+            double t_brake_ref = 0.0;
+            for (int j = 0; j < J; ++j) {
+                if (std::isfinite(amax(j)) && amax(j) > 1e-9) {
+                    t_brake_ref = std::max(t_brake_ref, std::abs(spec.start_velocity(j)) / amax(j));
+                }
+            }
+            const double dt_nom = (spec.dt_start_smooth > 0.0) ? spec.dt_start_smooth : spec.dt_smooth;
+            const double h0_ref = spec.has_dt_vel ? spec.dt_vel : std::clamp(std::max(t_brake_ref, dt_nom), 0.02, 0.35);
+            std::vector<double> h_q;
+            detail::build_seg0_hermite_samples(q, spec.start_velocity, h0_ref, h_q, hermite0_h01);
+            const Eigen::VectorXd& h_opt = use_cushion ? opt_margins_cushion : margins;
+            const double h_esdf_opt = use_cushion ? esdf_margin_cushion : spec.world_margin;
+            hermite0_col = snap.eval_collision_rows(h_q.data(), 3, h_opt.data(), margins.data(),
+                                                    buffer, linearize, 1, false,
+                                                    h_esdf_opt, spec.world_margin);
+            for (uint8_t b : hermite0_col.seg_ok) if (!b) { all_seg_ok = false; break; }
+            n_hermite0_rows = static_cast<int>(hermite0_col.rows.size());
         }
 
         // Evaluate target constraints (joint + pose).
@@ -474,7 +666,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             }
         }
 
-        const int total_rows = n_vel_rows + n_col_rows + n_extra_rows + 2 * n_cart_dim;
+        const int total_rows = n_vel_rows + n_acc0_rows + n_col_rows + n_extra_rows + n_hermite0_rows + 2 * n_cart_dim;
         ep.v.resize(total_rows);
         if (linearize) ep.A.setZero(total_rows, n_vars);
         else ep.A.resize(0, 0);
@@ -486,8 +678,8 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         if (spec.has_dt_vel) {
             const double inv_dt = 1.0 / spec.dt_vel;
             for (int seg = 0; seg < T - 1; ++seg) {
-                const int w0 = seg - fixed;
-                const int w1 = seg + 1 - fixed;
+                const int w0 = seg - fixed_start;
+                const int w1 = seg + 1 - fixed_start;
                 for (int j = 0; j < J; ++j) {
                     if (!std::isfinite(vmax(j))) continue;
                     const double spd = (q(seg + 1, j) - q(seg, j)) * inv_dt;
@@ -510,6 +702,28 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                     ++row;
                 }
             }
+            // 1b. First-segment start-velocity acceleration bound: |q1 - q0 - h*v0| <= 0.5 * a_max * h^2
+            // Written in rad/s units as |(q1 - q0)/h - v0| <= 0.5 * a_max * h.
+            if (has_v0) {
+                const double h = spec.dt_vel;
+                const int w1 = 1 - fixed_start;
+                for (int j = 0; j < J; ++j) {
+                    if (!std::isfinite(amax(j))) continue;
+                    const double dv = (q(1, j) - q(0, j)) * inv_dt - spec.start_velocity(j);
+                    const double lim_v = 0.5 * amax(j) * h;
+                    if (std::abs(dv) > lim_v * (1.0 + 1e-6)) all_seg_ok = false;
+                    const double r_pos = dv - lim_v;
+                    const double r_neg = -dv - lim_v;
+                    ep.v(row) = r_pos;
+                    if (r_pos > 0.0) viol += r_pos;
+                    if (linearize && w1 >= 0 && w1 < n_free_wp) ep.A(row, w1 * J + j) = inv_dt;
+                    ++row;
+                    ep.v(row) = r_neg;
+                    if (r_neg > 0.0) viol += r_neg;
+                    if (linearize && w1 >= 0 && w1 < n_free_wp) ep.A(row, w1 * J + j) = -inv_dt;
+                    ++row;
+                }
+            }
         }
 
         // 2. Collision rows.
@@ -524,8 +738,8 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 const double t_frac = static_cast<double>(sample_idx % substeps) * inv_sub;
                 const double w0_coef = 1.0 - t_frac;
                 const double w1_coef = t_frac;
-                const int w0 = seg - fixed;
-                const int w1 = seg + 1 - fixed;
+                const int w0 = seg - fixed_start;
+                const int w1 = seg + 1 - fixed_start;
                 const double* gptr = ep.col.gradients.data() + k * J;
                 if (w0 >= 0 && w0 < n_free_wp) {
                     for (int j = 0; j < J; ++j) ep.A(row, w0 * J + j) = w0_coef * gptr[j];
@@ -548,8 +762,8 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 const double t_frac = extra_samples[static_cast<size_t>(e_idx)].second;
                 const double w0_coef = 1.0 - t_frac;
                 const double w1_coef = t_frac;
-                const int w0 = seg - fixed;
-                const int w1 = seg + 1 - fixed;
+                const int w0 = seg - fixed_start;
+                const int w1 = seg + 1 - fixed_start;
                 const double* gptr = extra_col.gradients.data() + k * J;
                 if (w0 >= 0 && w0 < n_free_wp) {
                     for (int j = 0; j < J; ++j) ep.A(row, w0 * J + j) = w0_coef * gptr[j];
@@ -561,9 +775,26 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             ++row;
         }
 
+        // 2c. Segment-0 Hermite tangent-arc collision rows (d q_H(u) / d q[1] = h01(u) * I).
+        for (int k = 0; k < n_hermite0_rows; ++k) {
+            const double rv = hermite0_col.residuals[static_cast<size_t>(k)];
+            ep.v(row) = rv;
+            if (rv > 0.0) viol += rv;
+            if (linearize) {
+                const int64_t h_idx = hermite0_col.rows[static_cast<size_t>(k)];
+                const double w1_coef = hermite0_h01[static_cast<size_t>(h_idx)];
+                const int w1 = 1 - fixed_start;
+                const double* gptr = hermite0_col.gradients.data() + k * J;
+                if (w1 >= 0 && w1 < n_free_wp) {
+                    for (int j = 0; j < J; ++j) ep.A(row, w1 * J + j) = w1_coef * gptr[j];
+                }
+            }
+            ++row;
+        }
+
         // 3. Equality targets (r <= 0 and -r <= 0 via L1 hinge).
         for (const auto& [idx, r, jc] : cart_items) {
-            const int w = idx - fixed;
+            const int w = idx - fixed_start;
             const int dim = static_cast<int>(r.size());
             for (int d = 0; d < dim; ++d) {
                 viol += std::abs(r(d));
@@ -608,7 +839,8 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             ar.cost = compute_smooth_cost_and_grad(q, nullptr);
             return ar;
         }
-        if (initial_feasible && fixed == 1 && spec.pose_constraints.empty() && spec.joint_targets.empty()) {
+        if (initial_feasible && fixed_start == 1 && fixed_end == 1 && !has_v0 &&
+            spec.pose_constraints.empty() && spec.joint_targets.empty()) {
             bool is_straight = true;
             for (int t = 1; t < T - 1 && is_straight; ++t) {
                 const double frac = static_cast<double>(t) / static_cast<double>(T - 1);
@@ -640,6 +872,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
 
         for (int it = 0; it < spec.iterations; ++it) {
             if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return ar;
+            if (deadline_exceeded()) {
+                out.timed_out = true;
+                failure = "replan time budget exceeded";
+                return ar;
+            }
             ++out.sqp_iterations;
 
             const int substeps = detail::grid_substeps(q, base_substeps, spec.max_segment_length);
@@ -664,8 +901,13 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             bool tr_exhausted = true;
             while (radius >= 1e-4) {
                 if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return ar;
+                if (deadline_exceeded()) {
+                    out.timed_out = true;
+                    failure = "replan time budget exceeded";
+                    return ar;
+                }
                 for (int w = 0; w < n_free_wp; ++w) {
-                    const int t = w + fixed;
+                    const int t = w + fixed_start;
                     for (int j = 0; j < J; ++j) {
                         const int idx = w * J + j;
                         if (any_pinned && pinned[static_cast<size_t>(idx)]) {
@@ -696,7 +938,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                 }
                 auto trial = q;
                 for (int w = 0; w < n_free_wp; ++w) {
-                    const int t = w + fixed;
+                    const int t = w + fixed_start;
                     for (int j = 0; j < J; ++j) {
                         trial(t, j) = std::clamp(q(t, j) + step(w * J + j), lower(j), upper(j));
                     }
@@ -766,15 +1008,22 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     auto seed_cur = q_init;
     for (size_t ai = 0; ai < attempts.size(); ++ai) {
         if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) break;
+        if (deadline_exceeded()) {
+            out.timed_out = true;
+            failure = "replan time budget exceeded";
+            break;
+        }
         const auto& ac = attempts[ai];
         extra_samples.clear();
         auto ar = run_attempt(seed_cur, ac.substeps, ac.seg_min, ac.cushion);
         if (ar.has_sol) {
             out.success = true;
+            out.timed_out = false;
             out.positions = std::move(ar.sol);
             out.cost = ar.cost;
             break;
         }
+        if (out.timed_out) break;
         if (!has_col) break;
         // Avoid propagating a trapped seg_min local minimum into full-sample attempts.
         if (ac.seg_min) {

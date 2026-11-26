@@ -175,31 +175,29 @@ struct QuinticPoly {
         };
     }
 
-    // Exact degree-4 Bernstein control points w[0..4] for velocity v(u) = dp/dt on u in [0, 1].
+    // Derivative controls from relative displacement and endpoint derivatives. With
+    // normalized endpoint derivatives these give dp/du, with physical ones dp/dt.
+    static std::array<double, 5> derivative_controls(double mean, double v0, double v1,
+                                                      double scaled_a0, double scaled_a1) {
+        return {v0, v0 + 0.25 * scaled_a0,
+                mean + 2.0 * ((mean - v0) + (mean - v1)) + 0.25 * (scaled_a1 - scaled_a0),
+                v1 - 0.25 * scaled_a1, v1};
+    }
+
+    // Work in derivatives directly: distinct position controls can round to the same
+    // absolute joint position when h is tiny, erasing real velocity/acceleration peaks.
     std::array<double, 5> vel_bernstein(double p0, double v0, double a0,
                                         double p1, double v1, double a1) const {
-        const auto b = pos_bernstein(p0, v0, a0, p1, v1, a1);
-        const double scale = 5.0 / h;
-        return {
-            scale * (b[1] - b[0]),
-            scale * (b[2] - b[1]),
-            scale * (b[3] - b[2]),
-            scale * (b[4] - b[3]),
-            scale * (b[5] - b[4]),
-        };
+        return derivative_controls((p1 - p0) / h, v0, v1, h * a0, h * a1);
     }
 
     // Exact degree-3 Bernstein control points for acceleration a(u) = d^2p/dt^2 on u in [0, 1].
     std::array<double, 4> acc_bernstein(double p0, double v0, double a0,
                                         double p1, double v1, double a1) const {
-        const auto w = vel_bernstein(p0, v0, a0, p1, v1, a1);
-        const double scale = 4.0 / h;
-        return {
-            scale * (w[1] - w[0]),
-            scale * (w[2] - w[1]),
-            scale * (w[3] - w[2]),
-            scale * (w[4] - w[3]),
-        };
+        const double mean = (p1 - p0) / h;
+        const double dv0 = mean - v0, dv1 = mean - v1;
+        return {a0, 4.0 * (3.0 * dv0 + 2.0 * dv1) / h + a1 - 2.0 * a0,
+                -4.0 * (2.0 * dv0 + 3.0 * dv1) / h + a0 - 2.0 * a1, a1};
     }
 
     // Exact degree-2 Bernstein control points for jerk j(u) = d^3p/dt^3 on u in [0, 1].
@@ -412,21 +410,15 @@ inline double quintic_hermite_scalar_total_variation_bound(
     double h_in, double u0, double u1) {
     if (u1 <= u0) return 0.0;
     if (h_in <= 0.0) return std::abs(p1 - p0);
-    const QuinticPoly qp = QuinticPoly::from_endpoints(p0, v0, a0, p1, v1, a1, h_in);
-    // Degree-4 Bernstein control points for dp/du directly from pos_bernstein, avoiding
-    // 1/h followed by *h so the bound is strictly time-scale invariant for any positive h.
-    const auto b = qp.pos_bernstein(p0, v0, a0, p1, v1, a1);
-    const std::array<double, 5> dp_du_full = {
-        5.0 * (b[1] - b[0]),
-        5.0 * (b[2] - b[1]),
-        5.0 * (b[3] - b[2]),
-        5.0 * (b[4] - b[3]),
-        5.0 * (b[5] - b[4]),
-    };
+    const auto dp_du_full = QuinticPoly::derivative_controls(
+        p1 - p0, h_in * v0, h_in * v1, h_in * (h_in * a0), h_in * (h_in * a1));
     const auto dp_du_sub = bernstein_detail::restrict_subinterval(dp_du_full, u0, u1);
     const auto [d_lo, d_hi] = bernstein_detail::control_minmax(dp_du_sub);
     if (d_lo >= 0.0 || d_hi <= 0.0) {
-        return std::abs(qp.eval_pos(u1) - qp.eval_pos(u0));
+        // Each degree-4 Bernstein basis function integrates to 1/5 on [0, 1].
+        double mean = 0.0;
+        for (double derivative : dp_du_sub) mean += derivative / dp_du_sub.size();
+        return (u1 - u0) * std::abs(mean);
     }
     const double dmax_sub = std::max(std::abs(d_lo), std::abs(d_hi));
     return (u1 - u0) * dmax_sub;
