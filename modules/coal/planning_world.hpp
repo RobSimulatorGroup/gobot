@@ -41,6 +41,7 @@ struct IKResultNative {
 struct RRTResultNative {
     bool success = false;
     std::vector<Eigen::VectorXd> waypoints;
+    std::vector<Eigen::VectorXd> dense_waypoints;  // un-downsampled verified chain (for constrained BiRRT)
     int iterations = 0;
     double elapsed_ms = 0.0;
 };

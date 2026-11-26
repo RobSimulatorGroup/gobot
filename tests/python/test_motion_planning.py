@@ -12,6 +12,8 @@ from scipy.spatial.transform import Rotation
 
 import gobot
 from gobot.planning import (
+    CartesianPlanConfig,
+    CartesianWaypoint,
     MotionPlanner,
     MotionPlanRequest,
     PathConstraint,
@@ -1451,3 +1453,854 @@ def test_tiny_positive_duration_ccd_matches_playback_for_cubic_and_quintic(simpl
             )
             assert not ok, f"CCD missed mid-segment penetration for order={order}, h={h_scale}"
             assert reason is not None and "clearance" in reason
+
+
+def test_cartesian_linear_arc_and_tcp_offset_panda(panda_snapshot):
+    """6D Cartesian MoveL + directed MoveC with TCP offset and orientation tracking on 7-DOF Panda (cubic & quintic)."""
+    snap, (start_xyz, _, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    world = PlanningWorld.from_snapshot(
+        snap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    planner = MotionPlanner(world, backend="coal")
+
+    ee = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    seed = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+    ik0 = planner.solve_ik(
+        [PoseConstraint(ee, start_xyz + np.array([0.0, 0.0, 0.18]), down)],
+        seed=seed, margin=0.002, world_margin=0.02,
+    )
+    assert ik0.success, ik0.reason
+    q_start = ik0.positions
+
+    tcp_pos_local = np.array([0.0, 0.0, 0.08], dtype=np.float64)
+    tcp_rot_local = Rotation.from_euler("z", 0.3).as_matrix()
+
+    def eval_tcp(q_arr):
+        lp, lr = world.link_pose(q_arr, ee)
+        if lp.ndim == 1:
+            return lp + lr @ tcp_pos_local, lr @ tcp_rot_local
+        return lp + np.einsum("nij,j->ni", lr, tcp_pos_local), lr @ tcp_rot_local
+
+    p0, r0 = eval_tcp(q_start)
+    p1 = p0 + np.array([-0.08, -0.06, 0.04], dtype=np.float64)
+    r1 = r0 @ Rotation.from_euler("x", 0.12).as_matrix()
+
+    # Directed circular arc from p1 through p_via to p2 in XZ plane (radius 0.045 m), staying clear on -Y side.
+    arc_c = p1 + np.array([0.0, 0.0, 0.045], dtype=np.float64)
+    p_via = arc_c + np.array([-0.045, 0.0, 0.0], dtype=np.float64)
+    p2 = arc_c + np.array([0.0, 0.0, 0.045], dtype=np.float64)
+    r2 = r1 @ Rotation.from_euler("y", -0.10).as_matrix()
+
+    waypoints = [
+        CartesianWaypoint(position=p1, rotation=r1, motion_type="linear", blend_radius=0.0),
+        CartesianWaypoint(position=p2, rotation=r2, motion_type="circular", via_position=p_via, blend_radius=0.0),
+    ]
+
+    for order in (3, 5):
+        cfg = CartesianPlanConfig(
+            max_step=0.015,
+            max_rot_step=0.05,
+            max_pos_error=1e-3,
+            max_rot_error=1e-2,
+            spline_order=order,
+            strict_ccd=True,
+            margin=0.002,
+            world_margin=0.002,
+        )
+        res = planner.plan_cartesian_path(
+            q_start,
+            waypoints,
+            link=ee,
+            tcp_offset_position=tcp_pos_local,
+            tcp_offset_rotation=tcp_rot_local,
+            config=cfg,
+        )
+        assert res.success, f"order={order}: {res.reason}"
+        assert res.trajectory is not None
+        assert res.fraction == pytest.approx(1.0)
+        assert res.completed_waypoints == 2
+        assert res.world_version == world.version
+        assert res.diagnostics.total_ms > 0.0
+        assert res.diagnostics.seed_strategy == "cartesian"
+        assert res.max_pos_error <= cfg.max_pos_error + 1e-6
+        assert res.max_rot_error <= cfg.max_rot_error + 1e-5
+
+        # Independent dense verification of continuous spline curve + strict CCD validation.
+        ts = np.linspace(res.trajectory.times[0], res.trajectory.times[-1], 160)
+        q_dense, _, _ = res.trajectory.sample(ts)
+        pts, _ = eval_tcp(q_dense)
+        assert np.linalg.norm(pts[0] - p0) < 1e-6
+        assert np.linalg.norm(pts[-1] - p2) < cfg.max_pos_error
+        passed_via = False
+        for pt in pts:
+            d_lin = p1 - p0
+            u_lin = float(np.clip(np.dot(pt - p0, d_lin) / np.dot(d_lin, d_lin), 0.0, 1.0))
+            err_lin = float(np.linalg.norm(pt - (p0 + u_lin * d_lin)))
+            rel = pt - arc_c
+            err_arc = abs(math.hypot(float(rel[0]), float(rel[2])) - 0.045) + abs(float(rel[1]))
+            if rel[0] > 2e-3:
+                err_arc += 1.0  # Must follow directed arc through -X via point
+            if float(np.linalg.norm(pt - p_via)) < 0.015:
+                passed_via = True
+            assert min(err_lin, err_arc) <= cfg.max_pos_error + 2e-4
+        assert passed_via
+
+        ok_val, err_val = world.validate_trajectory(
+            res.trajectory,
+            margin=cfg.margin,
+            world_margin=cfg.effective_world_margin,
+            strict_ccd=True,
+        )
+        assert ok_val, err_val
+
+
+def test_cartesian_sharp_corner_vs_blend_and_coarse_spline_refinement(simple_snapshot, panda_snapshot):
+    """Verify sharp-corner stop vs bounded corner blend, and continuous spline refinement when coarse knots bow off line."""
+    # 1. Sharp vs blended 90-degree corner on simple_snapshot prismatic XY tip.
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    tip = ("planning", "left_tip")
+    q_start = np.array([-0.55, 0.30, 0.0], dtype=np.float64)
+    p0, _ = world.link_pose(q_start, tip)
+    p_corner = p0 + np.array([0.25, 0.0, 0.0])
+    p_end = p_corner + np.array([0.0, 0.25, 0.0])
+
+    res_sharp = planner.plan_cartesian_path(
+        q_start,
+        [CartesianWaypoint(p_corner, blend_radius=0.0), CartesianWaypoint(p_end, blend_radius=0.0)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.05, max_pos_error=1e-3, spline_order=5),
+    )
+    assert res_sharp.success, res_sharp.reason
+    assert res_sharp.trajectory is not None
+    knot_pts, _ = world.link_pose(res_sharp.trajectory.positions, tip)
+    corner_idx = int(np.argmin(np.linalg.norm(knot_pts - p_corner[None, :], axis=-1)))
+    assert 0 < corner_idx < res_sharp.trajectory.num_waypoints - 1
+    assert np.linalg.norm(res_sharp.trajectory.velocities[corner_idx]) < 1e-12
+    assert np.linalg.norm(res_sharp.trajectory.accelerations[corner_idx]) < 1e-12
+
+    res_blend = planner.plan_cartesian_path(
+        q_start,
+        [CartesianWaypoint(p_corner, blend_radius=0.06), CartesianWaypoint(p_end, blend_radius=0.0)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.03, max_pos_error=1e-3, spline_order=5),
+    )
+    assert res_blend.success, res_blend.reason
+    assert res_blend.trajectory is not None
+    ts = np.linspace(res_blend.trajectory.times[0], res_blend.trajectory.times[-1], 120)
+    qs, vs, _ = res_blend.trajectory.sample(ts)
+    pts, _ = world.link_pose(qs, tip)
+    dists_to_corner = np.linalg.norm(pts - p_corner[None, :], axis=-1)
+    min_i = int(np.argmin(dists_to_corner))
+    assert 0.005 < float(dists_to_corner[min_i]) <= 0.06
+    assert float(np.linalg.norm(vs[min_i])) > 1e-3
+
+    # 2. Coarse max_step on 7-DOF Panda: raw 2-knot joint chord bows off straight line,
+    # planner must catch and subdivide so actual spline stays within max_pos_error=1e-3 everywhere.
+    psnap, (pstart_xyz, _, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    pworld = PlanningWorld.from_snapshot(
+        psnap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    pplanner = MotionPlanner(pworld, backend="coal")
+    ee = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    pseed = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+    pik = pplanner.solve_ik(
+        [PoseConstraint(ee, pstart_xyz + np.array([0.0, 0.0, 0.18]), down)],
+        seed=pseed, margin=0.002, world_margin=0.02,
+    )
+    assert pik.success, pik.reason
+    pq0 = pik.positions
+    pp0, pr0 = pworld.link_pose(pq0, ee)
+    pp1 = pp0 + np.array([-0.14, -0.06, 0.08], dtype=np.float64)
+    pres = pplanner.plan_cartesian_path(
+        pq0,
+        [CartesianWaypoint(pp1, rotation=pr0)],
+        link=ee,
+        config=CartesianPlanConfig(max_step=0.5, max_pos_error=1e-3, max_rot_error=1e-2, max_subdivision_depth=6),
+    )
+    assert pres.success, pres.reason
+    assert pres.trajectory is not None
+    assert pres.trajectory.num_waypoints > 2
+    assert pres.max_pos_error <= 1e-3 + 1e-6
+
+    # 3. hold_orientation=True locks start TCP orientation across position-only waypoints on Panda.
+    pres_hold = pplanner.plan_cartesian_path(
+        pq0,
+        [CartesianWaypoint(pp1)],
+        link=ee,
+        config=CartesianPlanConfig(max_step=0.03, max_pos_error=1e-3, max_rot_error=5e-3, hold_orientation=True),
+    )
+    assert pres_hold.success, pres_hold.reason
+    assert pres_hold.trajectory is not None
+    ts_h = np.linspace(pres_hold.trajectory.times[0], pres_hold.trajectory.times[-1], 60)
+    qh, _, _ = pres_hold.trajectory.sample(ts_h)
+    _, rots_h = pworld.link_pose(qh, ee)
+    for r_i in rots_h:
+        ang = float(np.linalg.norm(Rotation.from_matrix(pr0.T @ r_i).as_rotvec()))
+        assert ang <= 5e-3 + 1e-5
+
+
+def test_cartesian_obstacle_partial_fraction_jump_and_invalid_arcs(simple_snapshot):
+    """Obstacle blocking mid-path yields monotone verified partial prefix; strict jump & degenerate arcs enforced."""
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    tip = ("planning", "left_tip")
+
+    # Path straight into the static obstacle at (0, -0.06, 0.5) with half-extents (0.16, 0.15, 0.15).
+    q_start = np.array([0.0, 0.45, 0.0], dtype=np.float64)
+    p0, _ = world.link_pose(q_start, tip)
+    p_blocked = p0 + np.array([0.0, -0.55, 0.0])
+
+    cfg = CartesianPlanConfig(
+        max_step=0.02,
+        max_pos_error=1e-3,
+        avoid_collisions=True,
+        margin=0.002,
+        world_margin=0.005,
+        strict_ccd=True,
+    )
+    res = planner.plan_cartesian_path(q_start, [CartesianWaypoint(p_blocked)], link=tip, config=cfg)
+    assert not res.success
+    assert res.trajectory is not None
+    assert 0.1 < res.fraction < 0.85
+    assert res.completed_waypoints == 0
+    assert res.reason is not None and ("collision" in res.reason.lower() or "clearance" in res.reason.lower())
+
+    # Partial prefix must itself be 100% executable under strict_ccd!
+    ok_val, err_val = world.validate_trajectory(
+        res.trajectory,
+        margin=cfg.margin,
+        world_margin=cfg.effective_world_margin,
+        strict_ccd=True,
+    )
+    assert ok_val, err_val
+
+    # Prismatic jump threshold rejected when subdivision disabled, succeeds when subdivision enabled.
+    p_clear = p0 + np.array([0.40, 0.0, 0.0])
+    j_fail = planner.plan_cartesian_path(
+        q_start,
+        [CartesianWaypoint(p_clear)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.40, jump_threshold_prismatic=0.10, max_subdivision_depth=0),
+    )
+    assert not j_fail.success
+    assert j_fail.fraction == pytest.approx(0.0)
+    assert j_fail.reason is not None and "jump" in j_fail.reason.lower()
+
+    j_ok = planner.plan_cartesian_path(
+        q_start,
+        [CartesianWaypoint(p_clear)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.40, jump_threshold_prismatic=0.10, max_subdivision_depth=4),
+    )
+    assert j_ok.success, j_ok.reason
+    assert j_ok.fraction == pytest.approx(1.0)
+
+    # Degenerate collinear and duplicate circular arcs raise ValueError.
+    with pytest.raises(ValueError, match="collinear"):
+        planner.plan_cartesian_path(
+            q_start,
+            [CartesianWaypoint(p0 + np.array([0.2, 0.0, 0.0]), motion_type="circular",
+                               via_position=p0 + np.array([0.1, 0.0, 0.0]))],
+            link=tip,
+        )
+    with pytest.raises(ValueError, match="distinct"):
+        planner.plan_cartesian_path(
+            q_start,
+            [CartesianWaypoint(p0 + np.array([0.2, 0.1, 0.0]), motion_type="circular", via_position=p0)],
+            link=tip,
+        )
+
+
+def test_cartesian_review_regressions_movec_via_blend_rot_pure_rot_and_first_seg_prefix(simple_snapshot, tmp_path):
+    """Regression tests for 4 Cartesian review counterexamples:
+    1. Small near-full YZ circular arc on XY-only tip cannot skip via and report success.
+    2. Blended corner transitioning from constrained to free orientation still achieves specified rotation.
+    3. Failed trailing pure-rotation waypoint after a free-orientation segment cannot report fraction=1 / completed=2.
+    4. Collision inside the first coarse IK segment bisects along path parameter to return verified partial prefix.
+    """
+    # 1. Near-full 1.5 mm YZ circle on XY-only left_tip must fail (cannot reach +3 mm Z via_position).
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    tip = ("planning", "left_tip")
+    q0 = np.array([-0.55, 0.45, 0.0], dtype=np.float64)
+    p0, _ = world.link_pose(q0, tip)
+    R = 0.0015
+    center = p0 + np.array([0.0, 0.0, R])
+    p_via = center + np.array([0.0, 0.0, R])
+    ang_end = -0.5 * math.pi + 2.0 * math.pi - 0.15
+    p_end = center + np.array([0.0, R * math.cos(ang_end), R * math.sin(ang_end)])
+    res_arc = planner.plan_cartesian_path(
+        q0,
+        [CartesianWaypoint(p_end, motion_type="circular", via_position=p_via)],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.01, max_pos_error=1e-3, avoid_collisions=False),
+    )
+    assert not res_arc.success
+    assert res_arc.fraction < 1.0
+    assert res_arc.completed_waypoints == 0
+
+    # 2. X-Y-Yaw robot: blended corner from constrained yaw=1.0 rad to free orientation must reach yaw=1.0 rad.
+    xyyaw_xml = tmp_path / "xyyaw.xml"
+    xyyaw_xml.write_text("""
+    <mujoco model="xyyaw">
+      <compiler angle="radian"/>
+      <worldbody>
+        <body name="base" pos="0 0 0.5">
+          <body name="bx">
+            <inertial pos="0 0 0" mass="0.1" diaginertia="0.01 0.01 0.01"/>
+            <joint name="jx" type="slide" axis="1 0 0" range="-2 2"/>
+            <body name="by">
+              <inertial pos="0 0 0" mass="0.1" diaginertia="0.01 0.01 0.01"/>
+              <joint name="jy" type="slide" axis="0 1 0" range="-2 2"/>
+              <body name="tip">
+                <joint name="jyaw" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
+                <geom type="sphere" size="0.03"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+    """)
+    gobot.set_project_path(str(tmp_path))
+    gobot.import_mjcf_scene(str(xyyaw_xml), "res://xyyaw.jscn", name="xyyaw")
+    ctx = gobot.app.context()
+    ctx.set_project_path(str(tmp_path))
+    ctx.load_scene("res://xyyaw.jscn")
+    try:
+        xyyaw_snap = ctx.compile_physics_scene_snapshot()
+    finally:
+        ctx.clear_scene()
+    w_rot = PlanningWorld.from_snapshot(xyyaw_snap, {"xyyaw": "base"})
+    p_rot = MotionPlanner(w_rot, backend="coal")
+    rot_tip = ("xyyaw", "tip")
+    q_rot0 = np.zeros(3, dtype=np.float64)
+    rp0, _ = w_rot.link_pose(q_rot0, rot_tip)
+    r_target = Rotation.from_euler("z", 1.0).as_matrix()
+    res_blend_rot = p_rot.plan_cartesian_path(
+        q_rot0,
+        [
+            CartesianWaypoint(rp0 + np.array([0.4, 0.0, 0.0]), rotation=r_target, blend_radius=0.15),
+            CartesianWaypoint(rp0 + np.array([0.4, 0.4, 0.0]), rotation=None, blend_radius=0.0),
+        ],
+        link=rot_tip,
+        config=CartesianPlanConfig(max_step=0.02, max_pos_error=1e-3, max_rot_error=1e-2, avoid_collisions=False),
+    )
+    assert res_blend_rot.success, res_blend_rot.reason
+    assert res_blend_rot.trajectory is not None
+    ts = np.linspace(res_blend_rot.trajectory.times[0], res_blend_rot.trajectory.times[-1], 200)
+    qs, _, _ = res_blend_rot.trajectory.sample(ts)
+    assert float(np.min(np.abs(qs[:, 2] - 1.0))) <= 1e-2
+
+    # 3. Trailing pure-rotation waypoint failing IK after a free-orientation arc must report fraction < 1 and completed=1.
+    # On simple_snapshot left_tip (XY slide only, no rotation DOF), start rot is I; request free arc then target rot=Rz(0.5).
+    p_arc_c = p0 + np.array([0.10, 0.0, 0.0])
+    p_arc_via = p_arc_c + np.array([0.0, 0.10, 0.0])
+    p_arc_end = p_arc_c + np.array([0.10, 0.0, 0.0])
+    res_pure_rot = planner.plan_cartesian_path(
+        q0,
+        [
+            CartesianWaypoint(p_arc_end, motion_type="circular", via_position=p_arc_via, rotation=None),
+            CartesianWaypoint(p_arc_end, motion_type="linear", rotation=Rotation.from_euler("z", 0.5).as_matrix()),
+        ],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.02, max_pos_error=1e-3, max_rot_error=1e-2, avoid_collisions=False),
+    )
+    assert not res_pure_rot.success
+    assert res_pure_rot.trajectory is not None
+    assert res_pure_rot.completed_waypoints == 1
+    assert 0.2 < res_pure_rot.fraction < 1.0
+
+    # 4. Single coarse 1.4 m linear segment hitting obstacle inside seg 0 (start, mid, end all collision-free)
+    # must bisect inside seg 0 and return the verified partial prefix under strict_ccd=True.
+    world_seg0 = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner_seg0 = MotionPlanner(world_seg0, backend="coal")
+    q_s0 = np.array([-0.70, 0.45, 0.0], dtype=np.float64)
+    sp0, _ = world_seg0.link_pose(q_s0, tip)
+    # Thin wall at x = -0.34 (width 0.04 -> face at -0.36, sphere r=0.045 -> collides around x=-0.405, ~0.295 m from start).
+    # Start x=-0.70, midpoint x=0.0, end x=+0.70 are all completely clear of the wall!
+    world_seg0.add_box("thin_wall", (0.04, 0.20, 0.20), np.array([-0.34, 0.45, 0.50]))
+    cfg_seg0 = CartesianPlanConfig(
+        max_step=2.0,
+        jump_threshold_prismatic=5.0,
+        max_subdivision_depth=0,
+        avoid_collisions=True,
+        margin=0.002,
+        world_margin=0.005,
+        strict_ccd=True,
+    )
+    res_seg0 = planner_seg0.plan_cartesian_path(
+        q_s0,
+        [CartesianWaypoint(sp0 + np.array([1.40, 0.0, 0.0]))],
+        link=tip,
+        config=cfg_seg0,
+    )
+    assert not res_seg0.success
+    assert res_seg0.trajectory is not None, res_seg0.reason
+    assert 0.15 < res_seg0.fraction < 0.25
+    assert res_seg0.completed_waypoints == 0
+    ok_s0, err_s0 = world_seg0.validate_trajectory(
+        res_seg0.trajectory,
+        margin=cfg_seg0.margin,
+        world_margin=cfg_seg0.effective_world_margin,
+        strict_ccd=True,
+    )
+    assert ok_s0, err_s0
+
+    # 5. P1: 180-deg hairpin reversal blend (forward 30 mm, back 30 mm, blend=6 mm) must reach ~27 mm apex for order 3 & 5.
+    for order in (3, 5):
+        res_hairpin = planner.plan_cartesian_path(
+            q0,
+            [
+                CartesianWaypoint(p0 + np.array([0.030, 0.0, 0.0]), blend_radius=0.006),
+                CartesianWaypoint(p0, blend_radius=0.0),
+            ],
+            link=tip,
+            config=CartesianPlanConfig(max_step=0.01, max_pos_error=1e-3, spline_order=order, avoid_collisions=False),
+        )
+        assert res_hairpin.success, f"order={order}: {res_hairpin.reason}"
+        assert res_hairpin.trajectory is not None
+        ts_h = np.linspace(res_hairpin.trajectory.times[0], res_hairpin.trajectory.times[-1], 200)
+        qh, _, _ = res_hairpin.trajectory.sample(ts_h)
+        pts_h, _ = world.link_pose(qh, tip)
+        max_dx = float(np.max(pts_h[:, 0] - p0[0]))
+        assert abs(max_dx - 0.027) <= 1e-3, f"order={order}: hairpin apex reached {max_dx:.6f} m, expected ~0.027 m"
+
+    # 5b. P2: 200 mm hairpin reversal with 38 mm blend and max_step=10 mm: adjacent IK knots must satisfy <= max_step.
+    res_big_blend = planner.plan_cartesian_path(
+        q0,
+        [
+            CartesianWaypoint(p0 + np.array([0.200, 0.0, 0.0]), blend_radius=0.038),
+            CartesianWaypoint(p0, blend_radius=0.0),
+        ],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.01, max_pos_error=1e-3, avoid_collisions=False),
+    )
+    assert res_big_blend.success, res_big_blend.reason
+    assert res_big_blend.trajectory is not None
+    knot_pts_bb, _ = world.link_pose(res_big_blend.trajectory.positions, tip)
+    adj_dists = np.linalg.norm(np.diff(knot_pts_bb, axis=0), axis=-1)
+    assert float(np.max(adj_dists)) <= 0.01 + 1e-6, f"max adjacent knot TCP spacing {float(np.max(adj_dists)):.6f} m > 0.01 m"
+
+    # 5c. P2: Same 200 mm hairpin with tiny max_step=0.20 mm (< default 0.25 mm IK tol): actual adjacent IK TCP
+    #     spacing MUST still stay <= 0.20 mm (cannot skip steps via IK fast-return and jump 0.40 mm!).
+    res_fine_blend = planner.plan_cartesian_path(
+        q0,
+        [
+            CartesianWaypoint(p0 + np.array([0.200, 0.0, 0.0]), blend_radius=0.038),
+            CartesianWaypoint(p0, blend_radius=0.0),
+        ],
+        link=tip,
+        config=CartesianPlanConfig(max_step=0.0002, max_pos_error=1e-3, avoid_collisions=False),
+    )
+    assert res_fine_blend.success, res_fine_blend.reason
+    assert res_fine_blend.trajectory is not None
+    knot_pts_fb, _ = world.link_pose(res_fine_blend.trajectory.positions, tip)
+    adj_dists_fb = np.linalg.norm(np.diff(knot_pts_fb, axis=0), axis=-1)
+    assert float(np.max(adj_dists_fb)) <= 0.0002 + 1e-6, (
+        f"max adjacent knot TCP spacing {float(np.max(adj_dists_fb)):.6f} m > 0.0002 m"
+    )
+
+    # 6. P2: IK-stage collision exhausting max_subdivision_depth on first interval still recovers verified prefix.
+    world_ikcol = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner_ikcol = MotionPlanner(world_ikcol, backend="coal")
+    # Start x=-0.70, depth-4 node at x=-0.6125; box at x=-0.59, width=0.08 (face at -0.63) + sphere r=0.045 + margin 0.005
+    # leaves first ~20 mm clear while covering x=-0.6125!
+    world_ikcol.add_box("near_wall", (0.08, 0.20, 0.20), np.array([-0.59, 0.45, 0.50]))
+    cfg_ikcol = CartesianPlanConfig(
+        max_step=2.0,
+        jump_threshold_prismatic=5.0,
+        max_subdivision_depth=4,
+        avoid_collisions=True,
+        margin=0.002,
+        world_margin=0.005,
+        strict_ccd=True,
+    )
+    res_ikcol = planner_ikcol.plan_cartesian_path(
+        q_s0,
+        [CartesianWaypoint(sp0 + np.array([1.40, 0.0, 0.0]))],
+        link=tip,
+        config=cfg_ikcol,
+    )
+    assert not res_ikcol.success
+    assert res_ikcol.trajectory is not None, res_ikcol.reason
+    assert 0.005 < res_ikcol.fraction < 0.04
+    ok_ikc, err_ikc = world_ikcol.validate_trajectory(
+        res_ikcol.trajectory,
+        margin=cfg_ikcol.margin,
+        world_margin=cfg_ikcol.effective_world_margin,
+        strict_ccd=True,
+    )
+    assert ok_ikc, err_ikc
+
+    # 7. P2: Later unreachable waypoint IK error must NOT overwrite earlier segment-0 collision truncation reason.
+    res_reason = planner_seg0.plan_cartesian_path(
+        q_s0,
+        [
+            CartesianWaypoint(sp0 + np.array([1.40, 0.0, 0.0])),
+            CartesianWaypoint(sp0 + np.array([1.40, 0.0, 0.20])),  # unreachable Z
+        ],
+        link=tip,
+        config=cfg_seg0,
+    )
+    assert not res_reason.success
+    assert res_reason.trajectory is not None
+    assert res_reason.reason is not None and "clearance" in res_reason.reason and "thin_wall" in res_reason.reason
+
+    # 8. P3: First waypoint equal to start pose preserves completed_waypoints=1 when second waypoint fails.
+    res_wp0 = planner.plan_cartesian_path(
+        q0,
+        [
+            CartesianWaypoint(p0),
+            CartesianWaypoint(p0 + np.array([0.0, 0.0, 0.20])),  # unreachable Z
+        ],
+        link=tip,
+        config=CartesianPlanConfig(avoid_collisions=False),
+    )
+    assert not res_wp0.success
+    assert res_wp0.trajectory is None
+    assert res_wp0.fraction == pytest.approx(0.0)
+    assert res_wp0.completed_waypoints == 1
+
+
+def test_constrained_global_planning_upright_cup_around_pillar_panda(panda_snapshot):
+    """2.4 Acceptance test: carry an upright cup (local Z aligned with world -Z within 0.05 rad, free yaw)
+    around the central pillar on 7-DOF Panda with continuous manifold + strict_ccd verification."""
+    snap, (start_xyz, goal_xyz, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    world = PlanningWorld.from_snapshot(
+        snap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    planner = MotionPlanner(world, backend="coal")
+    hand = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    seed = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+
+    # Global upright-cup manifold constraint: free yaw around Z, tilt <= 0.05 rad everywhere!
+    upright_cup = PoseConstraint(
+        hand,
+        rotation=down,
+        rotation_tolerance=(0.05, 0.05, math.inf),
+    )
+
+    ik_start = planner.solve_ik(
+        [PoseConstraint(hand, start_xyz, down, position_tolerance=1e-4, rotation_tolerance=(0.01, 0.01, math.inf))],
+        seed=seed, margin=0.002, world_margin=0.02,
+    )
+    ik_goal = planner.solve_ik(
+        [PoseConstraint(hand, goal_xyz, down, position_tolerance=1e-4, rotation_tolerance=(0.01, 0.01, math.inf))],
+        seed=seed, margin=0.002, world_margin=0.02,
+    )
+    assert ik_start.success and ik_goal.success
+
+    # 1. Verify existing interior-only PathConstraint semantics are untouched (does NOT reject out-of-manifold endpoints
+    # when not passed in manifold_constraints), while manifold_constraints rejects an out-of-manifold start!
+    q_tilted = ik_start.positions.copy()
+    q_tilted[5] = float(np.clip(q_tilted[5] + 0.5, world.lower_limits[5], world.upper_limits[5]))
+    bad_m = planner.plan(MotionPlanRequest(
+        start=q_tilted,
+        goal=ik_goal.positions,
+        manifold_constraints=[upright_cup],
+        config=SolverConfig(waypoints=12, margin=0.002, world_margin=0.015),
+    ))
+    assert not bad_m.success
+    assert bad_m.reason is not None and "manifold" in bad_m.reason.lower()
+
+    # 2. Plan globally around the central pillar keeping the cup continuously upright (quintic C^2 + strict_ccd)!
+    res = planner.plan(MotionPlanRequest(
+        start=ik_start.positions,
+        goal=ik_goal.positions,
+        manifold_constraints=[upright_cup],
+        config=SolverConfig(
+            waypoints=16,
+            margin=0.002,
+            world_margin=0.015,
+            spline_order=5,
+            strict_ccd=True,
+            stop_at_endpoints=True,
+            rrt_timeout_s=2.5,
+        ),
+    ))
+    assert res.success, res.reason
+    assert res.trajectory is not None
+    assert res.world_version == world.version
+
+    # Dense independent check: cup orientation tilt stays <= 0.05 rad at every instant along the retimed spline!
+    ts = np.linspace(res.trajectory.times[0], res.trajectory.times[-1], 200)
+    q_dense, _, _ = res.trajectory.sample(ts)
+    _, rots = world.link_pose(q_dense, hand)
+    cos_vals = np.clip(np.einsum("ni,i->n", rots[:, :, 2], down[:, 2]), -1.0, 1.0)
+    tilts = np.arccos(cos_vals)
+    assert float(np.max(tilts)) <= 0.05 + 1e-4, f"max cup tilt {float(np.max(tilts)):.5f} rad > 0.05 rad"
+
+    # Independent atomic validate_trajectory (bounds + strict_ccd + continuous manifold)!
+    ok_val, err_val = world.validate_trajectory(
+        res.trajectory,
+        margin=0.002,
+        world_margin=0.015,
+        strict_ccd=True,
+        manifold_constraints=[upright_cup],
+    )
+    assert ok_val, err_val
+
+    # 3. Counterexample: spline whose endpoints are upright (tilt == 0) but mid-segment tilts > 0.05 rad MUST be rejected!
+    v_bad = np.zeros((2, world.num_joints), dtype=np.float64)
+    v_bad[0, 5] = 1.6
+    v_bad[1, 5] = -1.6
+    bad_spline = Trajectory(
+        times=np.array([0.0, 1.0], dtype=np.float64),
+        positions=np.vstack([ik_start.positions, ik_start.positions]),
+        velocities=v_bad,
+        accelerations=np.zeros((2, world.num_joints), dtype=np.float64),
+        spline_order=5,
+    )
+    ok_bad, err_bad = world.validate_trajectory(
+        bad_spline,
+        margin=0.0,
+        world_margin=0.0,
+        velocity_scale=1e3,
+        acceleration_scale=1e3,
+        jerk_scale=1e4,
+        manifold_constraints=[upright_cup],
+    )
+    assert not ok_bad
+    assert err_bad is not None and "manifold" in err_bad.lower()
+
+
+def test_manifold_review_regressions_positional_args_batch_warp_snapshot_free_pi_and_tiny_tol(simple_snapshot, panda_snapshot):
+    """Regression tests for all 9 review findings on 2.4 constrained global planning."""
+    # 1. P2 #8: MotionPlanRequest positional arguments keep exact pre-2.4 meaning (seed is 5th arg!).
+    seed_arr = np.zeros((8, 3), dtype=np.float64)
+    req_pos = MotionPlanRequest(np.zeros(3), np.zeros(3), None, (), seed_arr)
+    assert req_pos.seed is seed_arr
+    assert req_pos.manifold_constraints == ()
+
+    # 2. P1 #1 & #3 & P2 #9: Unreachable interior waypoint_target cannot be bypassed by raw CBiRRT;
+    #    identical start==goal succeeds; tiny tolerance 1e-10 is never silently relaxed to 1e-9.
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world, backend="coal")
+    tip = ("planning", "left_tip")
+    q_clear = np.array([-0.55, 0.45, 0.0], dtype=np.float64)
+    p_clear, _ = world.link_pose(q_clear, tip)
+    plane_z = PoseConstraint(tip, position=p_clear, position_tolerance=(math.inf, math.inf, 1e-3))
+
+    res_same = planner.plan(MotionPlanRequest(
+        start=q_clear,
+        goal=q_clear,
+        manifold_constraints=[plane_z],
+        config=SolverConfig(waypoints=8, margin=0.002, world_margin=0.005),
+    ))
+    assert res_same.success, res_same.reason
+    assert res_same.trajectory is not None and res_same.trajectory.num_waypoints >= 2
+
+    # Tiny tolerance 1e-10 violated by 5e-10 must be rejected by validate_trajectory!
+    tiny_c = PoseConstraint(tip, position=p_clear + np.array([5e-10, 0.0, 0.0]), position_tolerance=1e-10)
+    ok_tiny, _ = world.validate_trajectory(
+        np.vstack([q_clear, q_clear]),
+        margin=0.0,
+        world_margin=0.0,
+        manifold_constraints=[tiny_c],
+    )
+    assert not ok_tiny
+
+    # 3. P2 #7: Rotating right_tip freely across pi around Z with free_count==2 (X constrained, Y/Z free) passes!
+    rtip = ("planning", "right_tip")
+    free_yz = PoseConstraint(rtip, rotation=np.eye(3), rotation_tolerance=(0.05, math.inf, math.inf))
+    q_a = np.array([-0.55, 0.45, 2.9], dtype=np.float64)
+    q_b = np.array([-0.55, 0.45, 3.3], dtype=np.float64)
+    t_pi = Trajectory(
+        times=np.array([0.0, 1.0]),
+        positions=np.vstack([q_a, q_b]),
+        velocities=np.zeros((2, 3)),
+        accelerations=np.zeros((2, 3)),
+        spline_order=3,
+    )
+    ok_pi, err_pi = world.validate_trajectory(
+        t_pi, margin=0.0, world_margin=0.0, manifold_constraints=[free_yz],
+    )
+    assert ok_pi, err_pi
+
+    # 4. P2 #4 & #6: Batch plan on Panda with upright manifold_constraints produces finite positions rows
+    #    even if mid-segment refinement increases knot count, and plan_with_snapshot pins world_version!
+    psnap, (start_xyz, goal_xyz, _) = panda_snapshot
+    mounts = (("panda_link0", "panda_link2"), ("panda_link4", "panda_link6"), ("panda_link7", "panda_hand"))
+    pworld = PlanningWorld.from_snapshot(
+        psnap, {"panda": "panda_link0"},
+        ignored_link_pairs=[(("panda", a), ("panda", b)) for a, b in mounts],
+    )
+    pplanner = MotionPlanner(pworld, backend="coal")
+    hand = ("panda", "panda_hand")
+    down = np.diag([-1.0, 1.0, -1.0])
+    seed = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.5, -2.3], dtype=np.float64)
+    upright = PoseConstraint(hand, rotation=down, rotation_tolerance=(0.05, 0.05, math.inf))
+    ik_s = pplanner.solve_ik(
+        [PoseConstraint(hand, start_xyz, down, position_tolerance=1e-4, rotation_tolerance=(0.01, 0.01, math.inf))],
+        seed=seed, margin=0.002, world_margin=0.02,
+    )
+    ik_g = pplanner.solve_ik(
+        [PoseConstraint(hand, goal_xyz, down, position_tolerance=1e-4, rotation_tolerance=(0.01, 0.01, math.inf))],
+        seed=seed, margin=0.002, world_margin=0.02,
+    )
+    assert ik_s.success and ik_g.success
+
+    req_b = MotionPlanRequest(
+        start=ik_s.positions,
+        goal=ik_g.positions,
+        manifold_constraints=[upright],
+        config=SolverConfig(waypoints=12, margin=0.002, world_margin=0.015, rrt_timeout_s=2.0),
+    )
+    batch = pplanner.plan_batch([req_b])
+    assert batch.success[0], batch.reasons[0]
+    assert batch.results[0].positions is not None
+    assert batch.positions.shape == (1, batch.results[0].positions.shape[0], pworld.num_joints)
+    assert np.isfinite(batch.positions[0]).all()
+    assert batch.results[0].waypoint_indices is not None
+
+    # 5. Review Round 2 P1: plan_batch with waypoints=2 around a blocking box MUST preserve ALL verified
+    #    obstacle-avoidance knots in batch.positions[0] so validating batch.positions[0] as a polyline passes!
+    w_box = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    w_box.add_box("mid_blocker", (0.20, 0.20, 0.40), np.array([0.0, 0.45, 0.50]))
+    pl_box = MotionPlanner(w_box, backend="coal")
+    q_left = np.array([-0.55, 0.45, 0.0], dtype=np.float64)
+    q_right = np.array([0.55, 0.45, 0.0], dtype=np.float64)
+    p_left, _ = w_box.link_pose(q_left, tip)
+    box_plane_z = PoseConstraint(tip, position=p_left, position_tolerance=(math.inf, math.inf, 1e-3))
+
+    req_coarse = MotionPlanRequest(
+        start=q_left,
+        goal=q_right,
+        manifold_constraints=[box_plane_z],
+        config=SolverConfig(
+            waypoints=2, margin=0.002, world_margin=0.005,
+            rrt_step_size=0.15, rrt_timeout_s=2.0, strict_ccd=True,
+        ),
+    )
+    req_same_b = MotionPlanRequest(
+        start=q_left,
+        goal=q_left,
+        manifold_constraints=[box_plane_z],
+        config=SolverConfig(waypoints=2, margin=0.002, world_margin=0.005),
+    )
+    batch_detour = pl_box.plan_batch([req_coarse, req_same_b])
+    assert batch_detour.success[0] and batch_detour.success[1], batch_detour.reasons
+    assert batch_detour.results[0].trajectory is not None
+    n_detour = batch_detour.results[0].trajectory.num_waypoints
+    assert n_detour > 2
+    assert batch_detour.positions.shape == (2, n_detour, w_box.num_joints)
+    assert np.allclose(batch_detour.positions[0], batch_detour.results[0].positions)
+    ok_bp, err_bp = w_box.validate_trajectory(
+        batch_detour.positions[0],
+        margin=0.002,
+        world_margin=0.005,
+        manifold_constraints=[box_plane_z],
+    )
+    assert ok_bp, err_bp
+    ok_bp1, err_bp1 = w_box.validate_trajectory(
+        batch_detour.positions[1],
+        margin=0.002,
+        world_margin=0.005,
+        manifold_constraints=[box_plane_z],
+    )
+    assert ok_bp1, err_bp1
+
+    # Also verify multi-seed (num_seeds=4) with waypoints=2 retains dense CBiRRT fallback and succeeds!
+    res_ms = pl_box.plan(MotionPlanRequest(
+        start=q_left,
+        goal=q_right,
+        manifold_constraints=[box_plane_z],
+        config=SolverConfig(
+            waypoints=2, num_seeds=4, margin=0.002, world_margin=0.005,
+            rrt_step_size=0.15, rrt_timeout_s=2.0, strict_ccd=True,
+        ),
+    ))
+    assert res_ms.success, res_ms.reason
+    assert res_ms.trajectory is not None and res_ms.trajectory.num_waypoints > 2
+    np.testing.assert_array_equal(res_ms.waypoint_indices, [0, res_ms.trajectory.num_waypoints - 1])
+    np.testing.assert_allclose(res_ms.positions[res_ms.waypoint_indices], [q_left, q_right])
+
+    # 6. Review Round 2 P2: Continuous manifold check MUST reject a spline slightly over tolerance (1.0003 * tol)!
+    peak_over = 1e-3 * 1.0003
+    v_over = np.zeros((2, 3), dtype=np.float64)
+    v_over[0, 0] = 4.0 * peak_over
+    v_over[1, 0] = -4.0 * peak_over
+    t_over = Trajectory(
+        times=np.array([0.0, 1.0]),
+        positions=np.vstack([q_clear, q_clear]),
+        velocities=v_over,
+        accelerations=np.zeros((2, 3)),
+        spline_order=3,
+    )
+    plane_x = PoseConstraint(tip, position=p_clear, position_tolerance=(1e-3, math.inf, math.inf))
+    ok_over, _ = world.validate_trajectory(
+        t_over, margin=0.0, world_margin=0.0, manifold_constraints=[plane_x],
+    )
+    assert not ok_over
+
+    # 7. Review Round 2 P3: Zero tolerance in manifold_constraints is explicitly rejected at Python entry points!
+    zero_pos_c = PoseConstraint(tip, position=p_clear, position_tolerance=0.0)
+    zero_rot_c = PoseConstraint(rtip, rotation=np.eye(3), rotation_tolerance=(0.05, 0.0, math.inf))
+    with pytest.raises(ValueError, match="zero tolerance"):
+        MotionPlanRequest(start=q_clear, goal=q_clear, manifold_constraints=[zero_pos_c])
+    with pytest.raises(ValueError, match="zero tolerance"):
+        MotionPlanRequest(start=q_clear, goal=q_clear, manifold_constraints=[zero_rot_c])
+    with pytest.raises(ValueError, match="zero tolerance"):
+        world.validate_trajectory(np.vstack([q_clear, q_clear]), manifold_constraints=[zero_pos_c])
+
+    # Verify pinned snapshot isolation via _plan_warp_single(req, snap=pinned) after world mutates!
+    pinned = pworld._native.snapshot()
+    pinned_ver = int(pinned.version)
+    pworld.add_box("later_blocker", (0.1, 0.1, 0.1), np.array([0.0, 0.0, 5.0]))
+    assert pworld.version > pinned_ver
+    res_pinned = pplanner._plan_warp_single(req_b, snap=pinned)
+    assert res_pinned.success, res_pinned.reason
+    assert res_pinned.world_version == pinned_ver
+
+
+def test_mixed_batch_keeps_spline_knot_indices(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world)
+    start = np.array([-.7, .4, 0.])
+    goal = np.array([.7, .4, 0.])
+    via = np.array([0., .55, 0.])
+    batch = planner.plan_batch([
+        MotionPlanRequest(start, goal, waypoint_targets={1: via}, config=SolverConfig(waypoints=3)),
+        MotionPlanRequest(start, start, config=SolverConfig(waypoints=7)),
+    ])
+    assert batch.success.all(), batch.reasons
+    row = batch.results[0]
+    np.testing.assert_array_equal(batch.positions[0, :3], row.trajectory.positions)
+    np.testing.assert_array_equal(batch.positions[0, 3:], np.tile(goal, (4, 1)))
+    np.testing.assert_allclose(batch.positions[0, row.waypoint_indices[1]], via)
+    assert world.validate_trajectory(row.trajectory, strict_ccd=True)[0]
+
+
+def test_manifold_free_slide_and_allowed_near_antipodal_pose(simple_snapshot):
+    world = PlanningWorld.from_snapshot(simple_snapshot, {"planning": "base"})
+    planner = MotionPlanner(world)
+    start = np.array([-.7, .4, 0.])
+    goal = np.array([.7, .4, 0.])
+    tip = ("planning", "left_tip")
+    p, _ = world.link_pose(start, tip)
+    plane = PoseConstraint(tip, position=p, position_tolerance=(math.inf, math.inf, .0001))
+    for count in (2, 32):
+        valid, reason = world.validate_trajectory(np.linspace(start, goal, count), manifold_constraints=[plane])
+        assert valid, reason
+
+    arm = ("planning", "right_arm")
+    tol = math.radians(179.5)
+    rotation = PoseConstraint(arm, rotation=np.eye(3), rotation_tolerance=(math.inf, tol, tol))
+    for angle, expected in [(178., True), (179., True), (179.9, False), (180., False)]:
+        q = start.copy()
+        q[2] = math.radians(angle)
+        valid, reason = world.validate_trajectory(np.stack([q, q]), manifold_constraints=[rotation])
+        assert valid == expected, reason
+        result = planner.plan(MotionPlanRequest(q, q, manifold_constraints=[rotation], config=SolverConfig(waypoints=2)))
+        assert result.success == expected, result.reason

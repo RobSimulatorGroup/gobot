@@ -15,7 +15,16 @@ import numpy as np
 from scipy.spatial import ConvexHull
 
 from .retime import check_trajectory_bounds
-from .types import JointName, Link, PlanningGroup, PoseConstraint, SyncResult, Trajectory, _normalize_tol
+from .types import (
+    JointName,
+    Link,
+    PlanningGroup,
+    PoseConstraint,
+    SyncResult,
+    Trajectory,
+    _normalize_tol,
+    _validate_manifold_constraints,
+)
 
 try:
     from gobot import _coal_native as _native
@@ -1226,11 +1235,14 @@ class PlanningWorld:
         check_jerk: bool = True,
         disp_tol: float = 5e-4,
         strict_ccd: bool = False,
+        manifold_constraints: Sequence[PoseConstraint] = (),
     ) -> tuple[bool, str | None]:
         """Validate either a waypoint polyline ``[T, J]`` or a continuous ``Trajectory`` curve.
 
         All collision checks (FK, AABB screening, discrete distance, and continuous CCD for convex
         and original triangle meshes) execute atomically against a single immutable C++ WorldSnapshot.
+        Any ``manifold_constraints`` must specify strictly positive tolerances (``> 0`` or ``inf``);
+        zero tolerances are rejected with ``ValueError``.
         """
         if dt is not None and (not math.isfinite(dt) or dt <= 0.0):
             raise ValueError("dt must be finite and positive")
@@ -1240,6 +1252,8 @@ class PlanningWorld:
             raise ValueError("acceleration_scale must be finite and positive")
         if not math.isfinite(jerk_scale) or jerk_scale <= 0.0:
             raise ValueError("jerk_scale must be finite and positive")
+        if manifold_constraints:
+            _validate_manifold_constraints(manifold_constraints)
 
         # Pin ONE immutable C++ WorldSnapshot so joint/velocity/acc/jerk bounds and all collision checks
         # evaluate atomically against the exact same world version.
@@ -1323,4 +1337,18 @@ class PlanningWorld:
             a_arg,
             order_arg,
         )
-        return bool(ok), err
+        if not ok:
+            return False, err
+        if manifold_constraints:
+            compiled_mc = [self.compile_pose_constraint(c) for c in manifold_constraints]
+            ok_m, err_m = snap.validate_trajectory_manifold(
+                np.ascontiguousarray(q, dtype=np.float64),
+                compiled_mc,
+                t_arg,
+                v_arg,
+                a_arg,
+                order_arg,
+            )
+            if not ok_m:
+                return False, err_m
+        return True, None

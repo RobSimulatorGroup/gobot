@@ -14,7 +14,11 @@ from .sqp import SQPJobSpec, run_sqp_batch
 from .types import (
     BatchIKResult,
     BatchPlanResult,
+    CartesianPlanConfig,
+    CartesianPlanResult,
+    CartesianWaypoint,
     IKResult,
+    JointConfig,
     Link,
     MotionPlanRequest,
     PathConstraint,
@@ -134,6 +138,7 @@ def _plan_result_from_native(d: dict) -> PlanResult:
         reason=d["reason"],
         diagnostics=diag,
         world_version=int(d.get("world_version", 0)),
+        waypoint_indices=d.get("waypoint_indices"),
     )
 
 
@@ -147,9 +152,11 @@ def _request_to_native_dict(world: PlanningWorld, req: MotionPlanRequest) -> dic
         world, cfg.waypoints, fixed, req.waypoint_targets, req.path_constraints,
     )
 
+    compiled_manifold = [world.compile_pose_constraint(c) for c in req.manifold_constraints]
     out: dict = {
         "config": _config_to_native_dict(cfg),
         "pose_constraints": pose_map,
+        "manifold_constraints": compiled_manifold,
         "joint_targets": {k: np.ascontiguousarray(v, dtype=np.float64) for k, v in joint_map.items()},
         "active_mask": np.ascontiguousarray(mask, dtype=np.bool_),
     }
@@ -266,11 +273,22 @@ class MotionPlanner:
         )
         return BatchIKResult(q_out, ok_out, tuple(reasons))
 
-    def _finalize_trajectory(self, positions: np.ndarray, cfg: SolverConfig, *, snap=None) -> tuple[Trajectory | None, float, str | None]:
-        """Single unified C++ Hermite retiming & continuous CCD verification path."""
+    def _finalize_trajectory(
+        self,
+        positions: np.ndarray,
+        cfg: SolverConfig,
+        *,
+        snap=None,
+        manifold_constraints=None,
+        active_mask=None,
+    ) -> tuple[Trajectory | None, float, str | None]:
+        """Single unified C++ Hermite retiming, continuous CCD & continuous manifold verification path."""
         target = self.world._native if snap is None else snap
         traj_dict, retime_ms, err = target.finalize_trajectory(
-            np.ascontiguousarray(positions, dtype=np.float64), _config_to_native_dict(cfg),
+            np.ascontiguousarray(positions, dtype=np.float64),
+            _config_to_native_dict(cfg),
+            manifold_constraints,
+            active_mask,
         )
         return _trajectory_from_native(traj_dict), float(retime_ms), err
 
@@ -282,7 +300,7 @@ class MotionPlanner:
         return self._plan_warp_single(request)
 
     def plan_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int = 64) -> BatchPlanResult:
-        """Plan B independent MotionPlanRequests in parallel."""
+        """Plan independent requests. Use each successful result's trajectory for playback."""
         if not requests:
             raise ValueError("provide at least one MotionPlanRequest")
         if chunk_size < 1:
@@ -297,14 +315,120 @@ class MotionPlanner:
             final_results = self._plan_warp_batch(requests, chunk_size=chunk_size)
 
         J = self.world.num_joints
-        empty = np.full((waypoints, J), np.nan, dtype=np.float64)
-        positions = np.stack([r.positions if r.success and r.positions.shape[0] == waypoints else empty for r in final_results])
-        init_pos = np.stack([r.initial_positions if r.initial_positions is not None and r.initial_positions.shape[0] == waypoints else empty
-                             for r in final_results])
+        def stack_knots(rows: Sequence[np.ndarray | None]) -> np.ndarray:
+            width = max([waypoints] + [len(row) for row in rows if row is not None])
+            packed = np.full((len(rows), width, J), np.nan, dtype=np.float64)
+            for i, row in enumerate(rows):
+                if row is not None and len(row):
+                    packed[i, :len(row)] = row
+                    packed[i, len(row):] = row[-1]
+            return packed
+
+        positions = stack_knots([r.positions for r in final_results])
+        init_pos = stack_knots([r.initial_positions for r in final_results])
         success = np.asarray([r.success for r in final_results], dtype=np.bool_)
         reasons = tuple(r.reason for r in final_results)
         world_ver = final_results[0].world_version if final_results else self.world.version
         return BatchPlanResult(final_results, positions, success, reasons, init_pos, world_version=world_ver)
+
+    def plan_cartesian_path(
+        self,
+        start: JointConfig,
+        waypoints: Sequence[CartesianWaypoint],
+        *,
+        link: Link,
+        tcp_offset_position: Sequence[float] | np.ndarray | None = None,
+        tcp_offset_rotation: Sequence[Sequence[float]] | np.ndarray | None = None,
+        group: str | PlanningGroup | Sequence[tuple[str, str]] | None = None,
+        config: CartesianPlanConfig | None = None,
+    ) -> CartesianPlanResult:
+        """Plan a verified linear/circular-arc Cartesian TCP path in C++ against an immutable WorldSnapshot."""
+        if not waypoints:
+            raise ValueError("provide at least one CartesianWaypoint")
+        if link not in self.world.links:
+            raise KeyError(f"unknown link {link!r}")
+        cfg = CartesianPlanConfig() if config is None else config
+        start_q = self.world.configuration(start)
+        mask = self.world.group_mask(group)
+
+        tcp_pos = None
+        if tcp_offset_position is not None:
+            tcp_pos = np.asarray(tcp_offset_position, dtype=np.float64)
+            if tcp_pos.shape != (3,) or not np.isfinite(tcp_pos).all():
+                raise ValueError("tcp_offset_position must be a finite 3-vector")
+        tcp_rot = None
+        if tcp_offset_rotation is not None:
+            tcp_rot = np.asarray(tcp_offset_rotation, dtype=np.float64)
+            if tcp_rot.shape != (3, 3) or not np.isfinite(tcp_rot).all():
+                raise ValueError("tcp_offset_rotation must be a finite 3x3 matrix")
+
+        native_wps = []
+        for wp in waypoints:
+            if not isinstance(wp, CartesianWaypoint):
+                raise TypeError(f"expected CartesianWaypoint, got {type(wp).__name__}")
+            native_wps.append({
+                "motion_type": str(wp.motion_type),
+                "position": np.asarray(wp.position, dtype=np.float64),
+                "rotation": None if wp.rotation is None else np.asarray(wp.rotation, dtype=np.float64),
+                "via_position": None if wp.via_position is None else np.asarray(wp.via_position, dtype=np.float64),
+                "blend_radius": float(wp.blend_radius),
+            })
+
+        req_dict = {
+            "start_q": np.ascontiguousarray(start_q, dtype=np.float64),
+            "link_id": int(self.world.links[link]),
+            "tcp_offset_position": tcp_pos,
+            "tcp_offset_rotation": tcp_rot,
+            "active_mask": np.ascontiguousarray(mask, dtype=np.bool_),
+            "waypoints": native_wps,
+            "config": {
+                "max_step": float(cfg.max_step),
+                "max_rot_step": float(cfg.max_rot_step),
+                "max_pos_error": float(cfg.max_pos_error),
+                "max_rot_error": float(cfg.max_rot_error),
+                "jump_threshold_revolute": float(cfg.jump_threshold_revolute),
+                "jump_threshold_prismatic": float(cfg.jump_threshold_prismatic),
+                "max_subdivision_depth": int(cfg.max_subdivision_depth),
+                "ik_iterations": int(cfg.ik_iterations),
+                "ik_damping": float(cfg.ik_damping),
+                "avoid_collisions": bool(cfg.avoid_collisions),
+                "margin": float(cfg.margin),
+                "world_margin": None if cfg.world_margin is None else float(cfg.world_margin),
+                "strict_ccd": bool(cfg.strict_ccd),
+                "collision_substeps": int(cfg.collision_substeps),
+                "spline_order": int(cfg.spline_order),
+                "velocity_scale": float(cfg.velocity_scale),
+                "acceleration_scale": float(cfg.acceleration_scale),
+                "jerk_scale": float(cfg.jerk_scale),
+                "stop_at_endpoints": bool(cfg.stop_at_endpoints),
+                "hold_orientation": bool(cfg.hold_orientation),
+                "verify_original": bool(cfg.verify_original),
+            },
+        }
+        raw = self._native_planner.plan_cartesian_path(req_dict)
+        diag_d = raw["diagnostics"]
+        diag = PlanDiagnostics(
+            total_ms=float(diag_d["total_ms"]),
+            ik_ms=float(diag_d["ik_ms"]),
+            seed_ms=float(diag_d["seed_ms"]),
+            sqp_ms=float(diag_d["sqp_ms"]),
+            validate_ms=float(diag_d["validate_ms"]),
+            retime_ms=float(diag_d["retime_ms"]),
+            qp_calls=int(diag_d["qp_calls"]),
+            sqp_iterations=int(diag_d["sqp_iterations"]),
+            seed_strategy=str(diag_d["seed_strategy"]),
+            witnesses=diag_d["witnesses"],
+        )
+        return CartesianPlanResult(
+            trajectory=_trajectory_from_native(raw["trajectory"]),
+            fraction=float(raw["fraction"]),
+            completed_waypoints=int(raw["completed_waypoints"]),
+            max_pos_error=float(raw["max_pos_error"]),
+            max_rot_error=float(raw["max_rot_error"]),
+            reason=raw["reason"],
+            diagnostics=diag,
+            world_version=int(raw["world_version"]),
+        )
 
     # --- Experimental MuJoCo Warp path (shares C++ IK, BiRRT, QP, and unified C++ finalize_trajectory) ---
 
@@ -467,6 +591,13 @@ class MotionPlanner:
         return specs, (perf_counter() - t_seed) * 1000.0
 
     def _plan_warp_single(self, request: MotionPlanRequest, *, snap=None) -> PlanResult:
+        if request.manifold_constraints:
+            # Constrained global manifold planning uses the standalone C++ CBiRRT + continuous manifold verifier
+            # executed against the exact pinned snapshot when provided.
+            req_dict = _request_to_native_dict(self.world, request)
+            raw = (self._native_planner.plan(req_dict) if snap is None
+                   else self._native_planner.plan_with_snapshot(snap, req_dict))
+            return _plan_result_from_native(raw)
         t_start = perf_counter()
         pinned = self.world._native.snapshot() if snap is None else snap
         cfg = request.config
@@ -530,8 +661,11 @@ class MotionPlanner:
             qp_calls=winner.qp_calls, sqp_iterations=winner.sqp_iterations,
             seed_strategy=winner.seed_strategy, witnesses=winner.witnesses,
         )
-        return PlanResult(traj, winner.initial_positions, winner.goal_index, retime_err, diag,
-                          world_version=pinned_ver)
+        return PlanResult(
+            traj, winner.initial_positions, winner.goal_index, retime_err, diag,
+            world_version=pinned_ver,
+            waypoint_indices=None if traj is None else np.arange(traj.positions.shape[0], dtype=np.int64),
+        )
 
     def _plan_warp_batch(self, requests: Sequence[MotionPlanRequest], *, chunk_size: int) -> tuple[PlanResult, ...]:
         B = len(requests)
@@ -548,6 +682,9 @@ class MotionPlanner:
 
             for local_i, req in enumerate(chunk):
                 row_i = offset + local_i
+                if req.manifold_constraints:
+                    all_results[row_i] = self._plan_warp_single(req, snap=pinned)
+                    continue
                 cfg = req.config
                 fixed = 2 if cfg.stop_at_endpoints else 1
                 mask = self.world.group_mask(req.group)
@@ -605,6 +742,7 @@ class MotionPlanner:
                                 seed_strategy=sqp_res.seed_strategy, witnesses=sqp_res.witnesses,
                             ),
                             world_version=pinned_ver,
+                            waypoint_indices=None if traj is None else np.arange(traj.positions.shape[0], dtype=np.int64),
                         )
         return tuple(r for r in all_results if r is not None)
 
