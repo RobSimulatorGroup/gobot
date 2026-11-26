@@ -490,6 +490,34 @@ inline void eval_tcp_pose_and_jacobian(const KinematicsModel& kin,
     }
 }
 
+inline bool tcp_step_within_limits(const KinematicsModel& kin, int link_id,
+                                   const Vec3& tcp_pos_local, const Mat3& tcp_rot_local,
+                                   const Eigen::VectorXd& qa, const Eigen::VectorXd& qb,
+                                   bool track_rotation, const CartesianPlanConfigNative& cfg,
+                                   std::vector<Vec3>& bpos, std::vector<Mat3>& brot,
+                                   std::string* reason = nullptr) {
+    auto tcp_pose = [&](const Eigen::VectorXd& q, Vec3& p, Mat3& r) {
+        kin.fk_single(q.data(), bpos.data(), brot.data());
+        eval_tcp_pose_and_jacobian(kin, link_id, tcp_pos_local, tcp_rot_local,
+                                   bpos.data(), brot.data(), nullptr, nullptr, p, r);
+    };
+    Vec3 pa, pb;
+    Mat3 ra, rb;
+    tcp_pose(qa, pa, ra);
+    tcp_pose(qb, pb, rb);
+    const double dp = (pb - pa).norm();
+    const double dr = track_rotation ? rot_geodesic_angle(ra, rb) : 0.0;
+    if (dp <= cfg.max_step + 1e-9 && dr <= cfg.max_rot_step + 1e-9) return true;
+    if (reason) {
+        char buf[180];
+        std::snprintf(buf, sizeof(buf),
+                      "Cartesian adjacent IK TCP step exceeded limit (pos=%.6f/%.6f m, rot=%.6f/%.6f rad)",
+                      dp, cfg.max_step, dr, cfg.max_rot_step);
+        *reason = buf;
+    }
+    return false;
+}
+
 // Unwrap revolute joint angles by +/- 2*pi multiples toward q_prev while staying inside [lo, hi].
 inline void unwrap_revolute_near(Eigen::VectorXd& q,
                                  const Eigen::VectorXd& q_prev,
@@ -572,9 +600,9 @@ inline StepIKResult solve_cartesian_step_ik(
     const Eigen::VectorXd& q_prev,
     const std::vector<uint8_t>& active_mask,
     const CartesianPlanConfigNative& cfg,
-    const Eigen::VectorXd& margins,
-    double pos_tol,
-    double rot_tol) {
+    const Eigen::VectorXd& margins) {
+    const double pos_tol = 0.25 * std::min(cfg.max_pos_error, cfg.max_step);
+    const double rot_tol = 0.25 * std::min(cfg.max_rot_error, cfg.max_rot_step);
     StepIKResult out;
     const int J = snap.kin.num_joints();
     const int B = snap.kin.num_bodies();
@@ -1197,8 +1225,8 @@ inline PrefixVerifyResult finalize_and_verify_cartesian_prefix(
         return out;
     }
 
-    const double ik_pos_tol = 0.25 * cfg.max_pos_error;
-    const double ik_rot_tol = 0.25 * cfg.max_rot_error;
+    std::vector<Vec3> step_bpos(snap.kin.num_bodies());
+    std::vector<Mat3> step_brot(snap.kin.num_bodies());
 
     std::vector<double> samples, frames;
     std::vector<int64_t> screen_rows, screen_pairs, viol_rows, viol_pairs;
@@ -1352,14 +1380,18 @@ inline PrefixVerifyResult finalize_and_verify_cartesian_prefix(
                         const auto ik_m = solve_cartesian_step_ik(
                             snap, link_id, tcp_pos_local, tcp_rot_local,
                             prim.eval_pos(tm), prim.eval_rot(tm), prim.has_rot,
-                            q_seed, active_mask, cfg, margins, ik_pos_tol, ik_rot_tol);
+                            q_seed, active_mask, cfg, margins);
                         if (ik_m.status == StepIKStatus::Ok) {
                             const auto& is_pris = snap.kin.joint_prismatic();
                             const auto j1 = check_joint_jump(knots[static_cast<size_t>(k)].q, ik_m.q, is_pris,
                                                              cfg.jump_threshold_revolute, cfg.jump_threshold_prismatic);
                             const auto j2 = check_joint_jump(ik_m.q, knots[static_cast<size_t>(k + 1)].q, is_pris,
                                                              cfg.jump_threshold_revolute, cfg.jump_threshold_prismatic);
-                            if (j1.ok && j2.ok) {
+                            auto valid_step_to_mid = [&](const Eigen::VectorXd& neighbor) {
+                                return tcp_step_within_limits(snap.kin, link_id, tcp_pos_local, tcp_rot_local,
+                                                              neighbor, ik_m.q, prim.has_rot, cfg, step_bpos, step_brot);
+                            };
+                            if (j1.ok && j2.ok && valid_step_to_mid(knots[k].q) && valid_step_to_mid(knots[k + 1].q)) {
                                 CartesianKnot mid;
                                 mid.q = ik_m.q;
                                 mid.prim_idx = pid;
@@ -1704,9 +1736,6 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
 
     // 4. Sequential continuity-preserving damped IK with adaptive subdivision.
     const auto t_ik0 = Clock::now();
-    const double ik_pos_tol = 0.25 * cfg.max_pos_error;
-    const double ik_rot_tol = 0.25 * cfg.max_rot_error;
-
     std::vector<cartesian_detail::CartesianKnot> knots;
     knots.reserve(128);
     {
@@ -1890,17 +1919,25 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
             const auto ik = cartesian_detail::solve_cartesian_step_ik(
                 snap, req.link_id, req.tcp_offset_position, tcp_rot_local,
                 prim.eval_pos(cur.tb), prim.eval_rot(cur.tb), prim.has_rot,
-                q_prev, mask, cfg, margins, ik_pos_tol, ik_rot_tol);
+                q_prev, mask, cfg, margins);
 
             std::string mid_err;
             bool mid_is_col = false;
             bool mid_ok = true;
+            bool tcp_step_exceeded = false;
+            std::string step_err;
             if (ik.status == cartesian_detail::StepIKStatus::Ok) {
-                mid_ok = check_chord_mid(prim, cur.ta, cur.tb, q_prev, ik.q, mid_err, &mid_is_col);
+                tcp_step_exceeded = !cartesian_detail::tcp_step_within_limits(
+                    snap.kin, req.link_id, req.tcp_offset_position, tcp_rot_local, q_prev, ik.q,
+                    prim.has_rot, cfg, mid_bpos, mid_brot, &step_err);
+                if (!tcp_step_exceeded) {
+                    mid_ok = check_chord_mid(prim, cur.ta, cur.tb, q_prev, ik.q, mid_err, &mid_is_col);
+                }
             }
 
             const bool approaching_jump = (ik.status == cartesian_detail::StepIKStatus::Ok) && (ik.jump_ratio > 0.75);
-            const bool needs_subdiv = (ik.status != cartesian_detail::StepIKStatus::Ok) || !mid_ok || approaching_jump;
+            const bool needs_subdiv = (ik.status != cartesian_detail::StepIKStatus::Ok) ||
+                                      tcp_step_exceeded || !mid_ok || approaching_jump;
 
             if (needs_subdiv && cur.depth < cfg.max_subdivision_depth) {
                 const double tm = 0.5 * (cur.ta + cur.tb);
@@ -1910,12 +1947,18 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
                 continue;
             }
 
-            if (ik.status != cartesian_detail::StepIKStatus::Ok || !mid_ok) {
+            if (ik.status != cartesian_detail::StepIKStatus::Ok || tcp_step_exceeded || !mid_ok) {
                 ik_stopped = true;
-                ik_stop_reason = (ik.status != cartesian_detail::StepIKStatus::Ok) ? ik.reason : mid_err;
+                if (ik.status != cartesian_detail::StepIKStatus::Ok) {
+                    ik_stop_reason = ik.reason;
+                } else if (tcp_step_exceeded) {
+                    ik_stop_reason = step_err;
+                } else {
+                    ik_stop_reason = mid_err;
+                }
                 has_ik_fail_interval = true;
                 ik_fail_is_collision = (ik.status == cartesian_detail::StepIKStatus::Collision) ||
-                                       (ik.status == cartesian_detail::StepIKStatus::Ok && mid_is_col);
+                                       (ik.status == cartesian_detail::StepIKStatus::Ok && !tcp_step_exceeded && mid_is_col);
                 ik_fail_prim = p_idx;
                 ik_fail_ta = cur.ta;
                 ik_fail_tb = cur.tb;
@@ -1989,10 +2032,12 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
             const auto ik_m = cartesian_detail::solve_cartesian_step_ik(
                 snap, req.link_id, req.tcp_offset_position, tcp_rot_local,
                 prim.eval_pos(tm), prim.eval_rot(tm), prim.has_rot,
-                q_prev, mask, cfg, margins, ik_pos_tol, ik_rot_tol);
+                q_prev, mask, cfg, margins);
             std::string mid_err;
-            const bool ok_step = (ik_m.status == cartesian_detail::StepIKStatus::Ok) &&
-                                 check_chord_mid(prim, lo_t, tm, q_prev, ik_m.q, mid_err);
+            const bool ok_step = ik_m.status == cartesian_detail::StepIKStatus::Ok &&
+                cartesian_detail::tcp_step_within_limits(snap.kin, req.link_id, req.tcp_offset_position,
+                    tcp_rot_local, q_prev, ik_m.q, prim.has_rot, cfg, mid_bpos, mid_brot) &&
+                check_chord_mid(prim, lo_t, tm, q_prev, ik_m.q, mid_err);
             if (!ok_step) {
                 hi_t = tm;
                 continue;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "planning_cartesian.hpp"
+#include "planning_manifold.hpp"
 #include "planning_retime.hpp"
 #include "planning_sqp.hpp"
 #include "planning_world.hpp"
@@ -63,8 +64,9 @@ struct MotionPlanRequestNative {
     bool has_goal_seed = false;
     Eigen::VectorXd goal_seed;
 
-    // Optional waypoint constraints, initial trajectory seed, and active joint mask.
+    // Optional waypoint constraints, global manifold constraints, initial trajectory seed, and active joint mask.
     std::vector<std::pair<int, std::vector<PoseConstraintSpec>>> pose_constraints;
+    std::vector<PoseConstraintSpec> manifold_constraints;
     std::vector<std::pair<int, Eigen::VectorXd>> joint_targets;
     bool has_seed = false;
     RowMatrixXd seed;
@@ -91,6 +93,7 @@ struct PlanResultNative {
     TrajectoryNative trajectory;
     bool has_initial_positions = false;
     RowMatrixXd initial_positions;
+    std::vector<int> waypoint_indices;  // maps original waypoint index k -> row index in trajectory.positions
     int goal_index = 0;
     uint64_t world_version = 0;
     std::string reason;
@@ -100,11 +103,32 @@ struct PlanResultNative {
 struct FinalizeResultNative {
     bool success = false;
     TrajectoryNative trajectory;
+    std::vector<int> waypoint_indices;  // maps original positions_in row k -> row index in trajectory.positions
     double retime_ms = 0.0;
     std::string reason;
 };
 
 namespace planner_detail {
+
+// A raw BiRRT detour has no interior request targets. Associate the free request
+// slots with the nearest dense knots at uniform joint-space arc length.
+inline std::vector<int> dense_waypoint_indices(const RowMatrixXd& path, int count, int fixed,
+                                               const std::vector<int>& retimed_indices) {
+    const int last = static_cast<int>(path.rows()) - 1;
+    std::vector<double> length(last + 1, 0.0);
+    for (int i = 1; i <= last; ++i) {
+        length[i] = length[i - 1] + (path.row(i) - path.row(i - 1)).norm();
+    }
+    std::vector<int> result(count, retimed_indices.front());
+    std::fill(result.end() - fixed, result.end(), retimed_indices.back());
+    for (int k = fixed; k < count - fixed; ++k) {
+        const double target = length.back() * (k - fixed + 1) / (count - 2 * fixed + 1);
+        int i = static_cast<int>(std::lower_bound(length.begin(), length.end(), target) - length.begin());
+        if (i > 0 && target - length[i - 1] < length[i] - target) --i;
+        result[k] = retimed_indices[i];
+    }
+    return result;
+}
 
 inline RowMatrixXd linear_seed(const Eigen::VectorXd& start, const Eigen::VectorXd& goal,
                                int waypoints, int fixed,
@@ -139,17 +163,19 @@ inline RowMatrixXd linear_seed(const Eigen::VectorXd& start, const Eigen::Vector
 
 }  // namespace planner_detail
 
-// Unified Hermite retiming + continuous collision & bounds verification on an immutable WorldSnapshot.
+// Unified Hermite retiming + continuous collision, bounds & manifold verification on an immutable WorldSnapshot.
 // Used identically by single plan(), batch plan_batch(), and Python's MuJoCo Warp path.
-inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
-                                                const RowMatrixXd& positions,
-                                                const SolverConfigNative& cfg) {
+inline FinalizeResultNative finalize_trajectory(
+    const WorldSnapshot& snap,
+    const RowMatrixXd& positions_in,
+    const SolverConfigNative& cfg,
+    const std::vector<PoseConstraintSpec>* manifold_constraints = nullptr,
+    const std::vector<uint8_t>* active_mask = nullptr) {
     using Clock = std::chrono::steady_clock;
     const auto t0 = Clock::now();
     FinalizeResultNative out;
 
-    const int T = static_cast<int>(positions.rows());
-    const int J = static_cast<int>(positions.cols());
+    const int J = static_cast<int>(positions_in.cols());
     if (!std::isfinite(cfg.velocity_scale) || cfg.velocity_scale <= 0.0) {
         throw std::invalid_argument("velocity_scale must be finite and positive");
     }
@@ -158,6 +184,10 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
     }
     if (!std::isfinite(cfg.jerk_scale) || cfg.jerk_scale <= 0.0) {
         throw std::invalid_argument("jerk_scale must be finite and positive");
+    }
+    const bool has_manifold = (manifold_constraints != nullptr && !manifold_constraints->empty());
+    if (has_manifold) {
+        manifold_detail::validate_manifold_specs(snap, *manifold_constraints);
     }
     const Eigen::VectorXd vmax = snap.kin.velocity_limit() * cfg.velocity_scale;
     const Eigen::VectorXd amax = snap.kin.acceleration_limit() * cfg.acceleration_scale;
@@ -170,135 +200,200 @@ inline FinalizeResultNative finalize_trajectory(const WorldSnapshot& snap,
         throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
     }
     const int spline_order = cfg.spline_order;
-
-    int substeps = std::max(2 * cfg.collision_substeps, 4);
-    if (cfg.max_segment_length > 0.0 && T >= 2) {
-        double longest = 0.0;
-        for (int i = 0; i + 1 < T; ++i) longest = std::max(longest, (positions.row(i + 1) - positions.row(i)).norm());
-        substeps = std::max(substeps, static_cast<int>(std::ceil(longest / cfg.max_segment_length)));
+    std::vector<uint8_t> mask(static_cast<size_t>(J), 1);
+    if (active_mask != nullptr && static_cast<int>(active_mask->size()) == J) {
+        mask = *active_mask;
     }
+
     const int P = static_cast<int>(snap.pairs.size());
     const int N_shapes = static_cast<int>(snap.shapes.size());
     const Eigen::VectorXd margins = (P > 0) ? snap.pair_margins(cfg.margin, cfg.effective_world_margin()) : Eigen::VectorXd();
 
-    Eigen::VectorXd knot_scales = Eigen::VectorXd::Ones(T);
+    RowMatrixXd positions = positions_in;
+    std::vector<int> wp_indices(static_cast<size_t>(positions_in.rows()));
+    for (int k = 0; k < static_cast<int>(positions_in.rows()); ++k) {
+        wp_indices[static_cast<size_t>(k)] = k;
+    }
     std::string last_error;
     std::vector<double> samples, frames;
     std::vector<int64_t> screen_rows, screen_pairs, viol_rows, viol_pairs;
 
-    for (int attempt = 0; attempt < 8; ++attempt) {
-        TrajectoryNative traj = retime_trajectory(
-            positions, vmax, amax, cfg.stop_at_endpoints, has_dt, dt_val, &knot_scales, &jmax, spline_order);
-
-        // 1. Exact/certified continuous position, velocity, acceleration & jerk verification.
-        auto bchk = check_trajectory_bounds(
-            traj, vmax, amax, true, true, 1e-5, &lo, &hi, &jmax, spline_order == 5);
-        if (!bchk.ok) {
-            last_error = bchk.reason;
-            if (has_dt) {
-                out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-                out.reason = last_error;
-                return out;
-            }
+    const int max_refine_rounds = (has_manifold && !has_dt) ? 4 : 0;
+    for (int refine = 0; refine <= max_refine_rounds; ++refine) {
+        const int T = static_cast<int>(positions.rows());
+        int substeps = std::max(2 * cfg.collision_substeps, 4);
+        if (cfg.max_segment_length > 0.0 && T >= 2) {
+            double longest = 0.0;
+            for (int i = 0; i + 1 < T; ++i) longest = std::max(longest, (positions.row(i + 1) - positions.row(i)).norm());
+            substeps = std::max(substeps, static_cast<int>(std::ceil(longest / cfg.max_segment_length)));
         }
 
-        // 2. Sample actual spline curve and check discrete & continuous CCD.
-        traj.sample_segments(substeps, samples);
-        const int64_t S = static_cast<int64_t>((T - 1) * substeps + 1);
-        std::set<int> bad_segs(bchk.bad_segments.begin(), bchk.bad_segments.end());
-        for (int64_t s = 0; s < S; ++s) {
-            const double* qs = samples.data() + s * J;
-            for (int j = 0; j < J; ++j) {
-                if (!std::isfinite(qs[j]) || qs[j] < lo(j) - 1e-6 || qs[j] > hi(j) + 1e-6) {
-                    bad_segs.insert(std::min(static_cast<int>(s / substeps), T - 2));
-                    if (last_error.empty()) last_error = "retimed spline curve violates joint limits";
+        Eigen::VectorXd knot_scales = Eigen::VectorXd::Ones(T);
+        std::set<int> manifold_bad_segs;
+
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            TrajectoryNative traj = retime_trajectory(
+                positions, vmax, amax, cfg.stop_at_endpoints, has_dt, dt_val, &knot_scales, &jmax, spline_order);
+
+            // 1. Exact/certified continuous position, velocity, acceleration & jerk verification.
+            auto bchk = check_trajectory_bounds(
+                traj, vmax, amax, true, true, 1e-5, &lo, &hi, &jmax, spline_order == 5);
+            if (!bchk.ok) {
+                last_error = bchk.reason;
+                if (has_dt) {
+                    out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+                    out.reason = last_error;
+                    return out;
+                }
+            }
+
+            // 2. Sample actual spline curve and check discrete & continuous CCD.
+            traj.sample_segments(substeps, samples);
+            const int64_t S = static_cast<int64_t>((T - 1) * substeps + 1);
+            std::set<int> bad_segs(bchk.bad_segments.begin(), bchk.bad_segments.end());
+            manifold_bad_segs.clear();
+            for (int64_t s = 0; s < S; ++s) {
+                const double* qs = samples.data() + s * J;
+                for (int j = 0; j < J; ++j) {
+                    if (!std::isfinite(qs[j]) || qs[j] < lo(j) - 1e-6 || qs[j] > hi(j) + 1e-6) {
+                        bad_segs.insert(std::min(static_cast<int>(s / substeps), T - 2));
+                        if (last_error.empty()) last_error = "retimed spline curve violates joint limits";
+                        break;
+                    }
+                }
+            }
+
+            if (bad_segs.empty() && P > 0) {
+                frames.resize(static_cast<size_t>(S * N_shapes * 12));
+                snap.compute_frames(samples.data(), S, frames.data());
+
+                const int n_passes = snap.has_mesh ? 2 : 1;
+                for (int pass = 0; pass < n_passes; ++pass) {
+                    const bool verify_orig = (pass == 1);
+                    const char* kind = verify_orig ? "mesh" : "convex";
+                    snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
+                    if (!screen_rows.empty()) {
+                        snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
+                                                     static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig,
+                                                     viol_rows, viol_pairs);
+                        if (!viol_rows.empty()) {
+                            const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), T - 2);
+                            last_error = std::string("retimed Hermite ") + kind + " clearance failed on segment " +
+                                         std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
+                            for (const int64_t r : viol_rows) {
+                                bad_segs.insert(std::min(static_cast<int>(r / substeps), T - 2));
+                            }
+                            break;
+                        }
+                    }
+                    if (!verify_orig) {
+                        auto ccd_hit = snap.first_violation_continuous(
+                            traj.positions.data(), T, substeps, frames.data(), margins.data(),
+                            false, 1e-3, traj.times.data(), traj.velocities.data(),
+                            cfg.strict_ccd, traj.accelerations.data(), traj.spline_order);
+                        if (ccd_hit.has_value()) {
+                            last_error = std::string("retimed Hermite continuous ") + kind + " clearance failed on segment " +
+                                         std::to_string(ccd_hit->seg) + ", pair " + snap.pair_display_name(ccd_hit->pair_id);
+                            bad_segs.insert(ccd_hit->seg);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. Certified continuous manifold verification along the actual played cubic/quintic spline.
+            if (bad_segs.empty() && has_manifold) {
+                const auto mchk = verify_spline_manifold_constraints(snap, traj, *manifold_constraints, false);
+                if (!mchk.ok) {
+                    last_error = mchk.reason;
+                    for (const int s : mchk.bad_segments) {
+                        bad_segs.insert(s);
+                        manifold_bad_segs.insert(s);
+                    }
+                }
+            }
+
+            if (bad_segs.empty()) {
+                out.success = true;
+                out.trajectory = std::move(traj);
+                out.waypoint_indices = std::move(wp_indices);
+                out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+                return out;
+            }
+
+            // Damp knot velocities around offending segments (at 0 velocity Hermite collapses onto the verified chord).
+            bool changed = false;
+            for (const int seg : bad_segs) {
+                int knots_pair[2] = {seg, seg + 1};
+                int count = 2;
+                if (has_dt && !cfg.stop_at_endpoints) {
+                    int filtered[2];
+                    int fc = 0;
+                    for (int k = 0; k < 2; ++k) {
+                        if (knots_pair[k] > 0 && knots_pair[k] < T - 1) filtered[fc++] = knots_pair[k];
+                    }
+                    if (fc > 0) {
+                        count = fc;
+                        for (int k = 0; k < fc; ++k) knots_pair[k] = filtered[k];
+                    }
+                }
+                for (int k = 0; k < count; ++k) {
+                    const int knot = knots_pair[k];
+                    const double old = knot_scales(knot);
+                    if (old > 0.0) {
+                        knot_scales(knot) = (attempt >= 2 || old <= 0.25) ? 0.0 : (old * 0.5);
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) {
+                if (!has_dt && (knot_scales.array() > 0.0).any()) {
+                    knot_scales.setZero();
+                } else {
                     break;
                 }
             }
         }
 
-        if (bad_segs.empty() && P > 0) {
-            frames.resize(static_cast<size_t>(S * N_shapes * 12));
-            snap.compute_frames(samples.data(), S, frames.data());
-
-            const int n_passes = snap.has_mesh ? 2 : 1;
-            for (int pass = 0; pass < n_passes; ++pass) {
-                const bool verify_orig = (pass == 1);
-                const char* kind = verify_orig ? "mesh" : "convex";
-                // Discrete check across all samples (collects all violating segments in one pass).
-                snap.screen_aabbs(frames.data(), S, margins.data(), verify_orig, substeps, screen_rows, screen_pairs);
-                if (!screen_rows.empty()) {
-                    snap.violating_pairs_indexed(frames.data(), S, screen_rows.data(), screen_pairs.data(),
-                                                 static_cast<int64_t>(screen_rows.size()), margins.data(), verify_orig,
-                                                 viol_rows, viol_pairs);
-                    if (!viol_rows.empty()) {
-                        const int seg0 = std::min(static_cast<int>(viol_rows[0] / substeps), T - 2);
-                        last_error = std::string("retimed Hermite ") + kind + " clearance failed on segment " +
-                                     std::to_string(seg0) + ", pair " + snap.pair_display_name(viol_pairs[0]);
-                        for (const int64_t r : viol_rows) {
-                            bad_segs.insert(std::min(static_cast<int>(r / substeps), T - 2));
-                        }
-                        break;
-                    }
-                }
-                // Sound kinematic-chain Conservative Advancement CCD on the actual played spline curve.
-                // (For triangle meshes, d_orig >= d_convex everywhere, so convex CCD proves mesh clearance too.)
-                if (!verify_orig) {
-                    auto ccd_hit = snap.first_violation_continuous(
-                        traj.positions.data(), T, substeps, frames.data(), margins.data(),
-                        false, 1e-3, traj.times.data(), traj.velocities.data(),
-                        cfg.strict_ccd, traj.accelerations.data(), traj.spline_order);
-                    if (ccd_hit.has_value()) {
-                        last_error = std::string("retimed Hermite continuous ") + kind + " clearance failed on segment " +
-                                     std::to_string(ccd_hit->seg) + ", pair " + snap.pair_display_name(ccd_hit->pair_id);
-                        bad_segs.insert(ccd_hit->seg);
-                        break;
+        // If continuous manifold verification still failed at zero knot velocity (nonlinear FK chord bow-out),
+        // insert projected midpoint knots on offending segments in free-timing mode and re-retime!
+        if (!manifold_bad_segs.empty() && !has_dt && refine < max_refine_rounds && T < 512) {
+            std::vector<Eigen::VectorXd> next_rows;
+            next_rows.reserve(static_cast<size_t>(T) + manifold_bad_segs.size());
+            std::vector<int> old_to_new(static_cast<size_t>(T), 0);
+            bool inserted = false;
+            for (int k = 0; k < T - 1; ++k) {
+                old_to_new[static_cast<size_t>(k)] = static_cast<int>(next_rows.size());
+                next_rows.push_back(positions.row(k).transpose());
+                if (manifold_bad_segs.count(k) > 0) {
+                    const Eigen::VectorXd qa = positions.row(k).transpose();
+                    const Eigen::VectorXd qb = positions.row(k + 1).transpose();
+                    const Eigen::VectorXd q_seed = 0.5 * (qa + qb);
+                    Eigen::VectorXd q_mid;
+                    const double max_d = std::max(0.25, (qb - qa).norm());
+                    if (manifold_detail::project_onto_manifold(
+                            snap, *manifold_constraints, mask, q_seed, q_mid, max_d, 0.25, 25) &&
+                        (P == 0 || snap.is_config_valid(q_mid.data(), margins, true))) {
+                        next_rows.push_back(std::move(q_mid));
+                        inserted = true;
                     }
                 }
             }
-        }
-
-        if (bad_segs.empty()) {
-            out.success = true;
-            out.trajectory = std::move(traj);
-            out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-            return out;
-        }
-
-        // Damp knot velocities around offending segments (at 0 velocity Hermite collapses onto the verified chord).
-        bool changed = false;
-        for (const int seg : bad_segs) {
-            int knots[2] = {seg, seg + 1};
-            int count = 2;
-            if (has_dt && !cfg.stop_at_endpoints) {
-                int filtered[2];
-                int fc = 0;
-                for (int k = 0; k < 2; ++k) {
-                    if (knots[k] > 0 && knots[k] < T - 1) filtered[fc++] = knots[k];
+            old_to_new[static_cast<size_t>(T - 1)] = static_cast<int>(next_rows.size());
+            next_rows.push_back(positions.row(T - 1).transpose());
+            if (inserted) {
+                RowMatrixXd next_pos(static_cast<Eigen::Index>(next_rows.size()), J);
+                for (size_t i = 0; i < next_rows.size(); ++i) {
+                    next_pos.row(static_cast<Eigen::Index>(i)) = next_rows[i].transpose();
                 }
-                if (fc > 0) {
-                    count = fc;
-                    for (int k = 0; k < fc; ++k) knots[k] = filtered[k];
+                for (int& idx : wp_indices) {
+                    idx = old_to_new[static_cast<size_t>(idx)];
                 }
-            }
-            for (int k = 0; k < count; ++k) {
-                const int knot = knots[k];
-                const double old = knot_scales(knot);
-                if (old > 0.0) {
-                    knot_scales(knot) = (attempt >= 2 || old <= 0.25) ? 0.0 : (old * 0.5);
-                    changed = true;
-                }
+                positions = std::move(next_pos);
+                continue;
             }
         }
-        if (!changed) {
-            if (!has_dt && (knot_scales.array() > 0.0).any()) {
-                knot_scales.setZero();
-            } else {
-                out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-                out.reason = last_error;
-                return out;
-            }
-        }
+        break;
     }
 
     out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
@@ -333,6 +428,10 @@ public:
     PlanResultNative plan(const MotionPlanRequestNative& req) const {
         auto snap = world_->snapshot();
         return plan_on_snapshot(*snap, req);
+    }
+
+    PlanResultNative plan_with_snapshot(const WorldSnapshot& snap, const MotionPlanRequestNative& req) const {
+        return plan_on_snapshot(snap, req);
     }
 
     CartesianPlanResultNative plan_cartesian_path(const CartesianPlanRequestNative& req) const {
@@ -417,7 +516,8 @@ private:
     static std::string validate_endpoints(const WorldSnapshot& snap,
                                           const Eigen::VectorXd& start_q,
                                           const Eigen::VectorXd& goal_q,
-                                          const SolverConfigNative& cfg, int fixed) {
+                                          const SolverConfigNative& cfg, int fixed,
+                                          const std::vector<PoseConstraintSpec>& manifold_constraints) {
         const int J = snap.kin.num_joints();
         const auto& lo = snap.kin.lower();
         const auto& hi = snap.kin.upper();
@@ -425,6 +525,14 @@ private:
             if (!std::isfinite(start_q(j)) || start_q(j) < lo(j) || start_q(j) > hi(j) ||
                 !std::isfinite(goal_q(j)) || goal_q(j) < lo(j) || goal_q(j) > hi(j)) {
                 return "start or goal violates joint limits";
+            }
+        }
+        if (!manifold_constraints.empty()) {
+            if (!manifold_detail::is_on_manifold(snap, start_q.data(), manifold_constraints, 1.0)) {
+                return "start configuration violates manifold constraint";
+            }
+            if (!manifold_detail::is_on_manifold(snap, goal_q.data(), manifold_constraints, 1.0)) {
+                return "goal configuration violates manifold constraint";
             }
         }
         if (cfg.has_dt) {
@@ -469,7 +577,8 @@ private:
         const MotionPlanRequestNative& req,
         const std::vector<uint8_t>& mask,
         bool force_rrt,
-        double& out_seed_ms) {
+        double& out_seed_ms,
+        std::vector<std::pair<int, RowMatrixXd>>* out_dense_rrt = nullptr) {
         using Clock = std::chrono::steady_clock;
         const auto t0 = Clock::now();
         const auto& cfg = req.config;
@@ -490,6 +599,21 @@ private:
             sp.dt_smooth = dt_smooth;
             sp.active_mask = mask;
             sp.pose_constraints = req.pose_constraints;
+            if (!req.manifold_constraints.empty()) {
+                for (int t = fixed; t < cfg.waypoints - fixed; ++t) {
+                    bool found = false;
+                    for (auto& [wt, vec] : sp.pose_constraints) {
+                        if (wt == t) {
+                            vec.insert(vec.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        sp.pose_constraints.emplace_back(t, req.manifold_constraints);
+                    }
+                }
+            }
             sp.joint_targets = req.joint_targets;
             sp.margin = cfg.margin;
             sp.world_margin = cfg.effective_world_margin();
@@ -535,19 +659,36 @@ private:
             const int n_rrt = force_rrt ? std::max(1, cfg.num_seeds) : std::max(1, cfg.num_seeds - static_cast<int>(specs.size()));
             const int inner_wp = cfg.waypoints - 2 * (fixed - 1);
             std::vector<RRTResultNative> rrt_out(static_cast<size_t>(n_rrt));
+            const bool has_manifold = !req.manifold_constraints.empty();
             ThreadPool::instance().parallel_for(n_rrt, 1, [&](int64_t b, int64_t e) {
                 for (int64_t i = b; i < e; ++i) {
                     const auto& [gid, gq] = goal_candidates[static_cast<size_t>(i) % goal_candidates.size()];
                     const uint64_t sd = 1001ULL + static_cast<uint64_t>(i) * 7919ULL;
-                    rrt_out[static_cast<size_t>(i)] = snap.plan_birrt(
-                        start_q, gq, mask, cfg.margin, cfg.effective_world_margin(),
-                        cfg.rrt_step_size, cfg.rrt_max_iterations, cfg.rrt_timeout_s,
-                        sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp);
+                    rrt_out[static_cast<size_t>(i)] = has_manifold
+                        ? plan_constrained_birrt(
+                              snap, start_q, gq, req.manifold_constraints, mask,
+                              cfg.margin, cfg.effective_world_margin(),
+                              cfg.rrt_step_size, cfg.rrt_max_iterations, cfg.rrt_timeout_s,
+                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp)
+                        : snap.plan_birrt(
+                              start_q, gq, mask, cfg.margin, cfg.effective_world_margin(),
+                              cfg.rrt_step_size, cfg.rrt_max_iterations, cfg.rrt_timeout_s,
+                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp);
                 }
             });
             for (int i = 0; i < n_rrt; ++i) {
-                if (!rrt_out[static_cast<size_t>(i)].success) continue;
+                const bool have_dense = !rrt_out[static_cast<size_t>(i)].dense_waypoints.empty();
+                if (!rrt_out[static_cast<size_t>(i)].success && !have_dense) continue;
                 const auto& [gid, gq] = goal_candidates[static_cast<size_t>(i) % goal_candidates.size()];
+                if (out_dense_rrt != nullptr && rrt_out[static_cast<size_t>(i)].dense_waypoints.size() >= 2) {
+                    const auto& dw = rrt_out[static_cast<size_t>(i)].dense_waypoints;
+                    RowMatrixXd dense_mat(static_cast<Eigen::Index>(dw.size()), J);
+                    for (size_t k = 0; k < dw.size(); ++k) {
+                        dense_mat.row(static_cast<Eigen::Index>(k)) = dw[k].transpose();
+                    }
+                    out_dense_rrt->emplace_back(gid, std::move(dense_mat));
+                }
+                if (static_cast<int>(rrt_out[static_cast<size_t>(i)].waypoints.size()) != inner_wp) continue;
                 RowMatrixXd path(cfg.waypoints, J);
                 if (fixed == 2) {
                     path.row(0) = start_q.transpose();
@@ -556,7 +697,7 @@ private:
                 } else {
                     for (int t = 0; t < cfg.waypoints; ++t) path.row(t) = rrt_out[static_cast<size_t>(i)].waypoints[static_cast<size_t>(t)].transpose();
                 }
-                specs.push_back(make_spec(std::move(path), "birrt", gid));
+                specs.push_back(make_spec(std::move(path), has_manifold ? "constrained_birrt" : "birrt", gid));
             }
         }
 
@@ -610,11 +751,17 @@ private:
         const auto mask = resolve_mask(snap, req.active_mask.empty() ? nullptr : &req.active_mask);
         const double wm = cfg.effective_world_margin();
 
-        // 1. Resolve start & goal endpoints (with C++ IK / parallel GoalSet IK).
+        if (!req.manifold_constraints.empty()) {
+            manifold_detail::validate_manifold_specs(snap, req.manifold_constraints);
+        }
+
+        // 1. Resolve start & goal endpoints (with C++ IK / parallel GoalSet IK, including manifold constraints).
         const auto t_ik0 = Clock::now();
         Eigen::VectorXd start_q;
         if (req.start_is_pose) {
-            auto s_ik = solve_ik_on_snapshot(snap, req.start_poses, req.has_start_seed ? &req.start_seed : nullptr,
+            auto start_targets = req.start_poses;
+            start_targets.insert(start_targets.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
+            auto s_ik = solve_ik_on_snapshot(snap, start_targets, req.has_start_seed ? &req.start_seed : nullptr,
                                              &mask, cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0);
             if (!s_ik.success) {
                 res.reason = "start IK failed: " + s_ik.reason;
@@ -631,7 +778,9 @@ private:
         if (req.goal_is_pose) {
             const Eigen::VectorXd& g_seed = req.has_goal_seed ? req.goal_seed : start_q;
             if (req.goal_pose_sets.size() == 1) {
-                auto g_ik = solve_ik_on_snapshot(snap, req.goal_pose_sets[0], &g_seed, &mask,
+                auto goal_targets = req.goal_pose_sets[0];
+                goal_targets.insert(goal_targets.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
+                auto g_ik = solve_ik_on_snapshot(snap, goal_targets, &g_seed, &mask,
                                                  cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0);
                 if (!g_ik.success) {
                     res.reason = "goal IK failed: " + g_ik.reason;
@@ -643,7 +792,11 @@ private:
             } else {
                 std::vector<IKProblem> probs;
                 probs.reserve(req.goal_pose_sets.size());
-                for (const auto& ts : req.goal_pose_sets) probs.push_back({ts, g_seed});
+                for (const auto& ts : req.goal_pose_sets) {
+                    auto merged = ts;
+                    merged.insert(merged.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
+                    probs.push_back({std::move(merged), g_seed});
+                }
                 auto ik_batch = snap.solve_ik_batch(probs, mask, cfg.margin, wm, 40, true);
                 for (int i = 0; i < static_cast<int>(ik_batch.size()); ++i) {
                     if (ik_batch[static_cast<size_t>(i)].success) {
@@ -679,7 +832,7 @@ private:
         std::vector<std::pair<int, Eigen::VectorXd>> valid_goals;
         std::string last_ep_err;
         for (const auto& [gid, gq] : goal_candidates) {
-            std::string err = validate_endpoints(snap, start_q, gq, cfg, fixed);
+            std::string err = validate_endpoints(snap, start_q, gq, cfg, fixed, req.manifold_constraints);
             if (err.empty()) valid_goals.emplace_back(gid, gq);
             else last_ep_err = std::move(err);
         }
@@ -691,8 +844,11 @@ private:
         }
 
         // 3. Build seed jobs and run SQP (with optional multi-seed racing).
+        // Always capture dense CBiRRT paths when build_seed_jobs runs RRT (including num_seeds > 1)
+        // so multi-seed constrained planning never discards valid dense fallback paths.
         double seed_ms = 0.0;
-        auto specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, false, seed_ms);
+        std::vector<std::pair<int, RowMatrixXd>> initial_dense_rrt;
+        auto specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, false, seed_ms, &initial_dense_rrt);
         auto sqp_results = solve_sqp_batch(snap, specs, specs.size() > 1 && cfg.first_feasible);
 
         int winner_idx = -1;
@@ -704,23 +860,81 @@ private:
             }
         }
 
-        // 4. Global BiRRT fallback when local single-seed SQP gets stuck.
-        if (winner_idx < 0 && cfg.use_global_seeding && cfg.num_seeds == 1 && !req.has_seed) {
-            double rrt_ms = 0.0;
-            auto rrt_specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, true, rrt_ms);
-            seed_ms += rrt_ms;
-            if (!rrt_specs.empty()) {
-                auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible);
-                for (int i = 0; i < static_cast<int>(rrt_res.size()); ++i) {
-                    if (rrt_res[static_cast<size_t>(i)].success && rrt_res[static_cast<size_t>(i)].cost < winner_cost) {
-                        winner_cost = rrt_res[static_cast<size_t>(i)].cost;
-                        winner_idx = i;
+        const bool can_raw_rrt_fallback =
+            !req.manifold_constraints.empty() && req.pose_constraints.empty() && req.joint_targets.empty();
+        const bool fixed_timing = cfg.has_dt || !cfg.retime;
+
+        auto try_raw_rrt_fallback = [&](const std::vector<std::pair<int, RowMatrixXd>>& dense_list,
+                                        const std::vector<SQPJobSpecNative>& spec_list) -> bool {
+            if (!can_raw_rrt_fallback) return false;
+            // In fixed-timing mode, never change waypoint count/duration via variable-length dense_rrt.
+            if (!fixed_timing) {
+                for (const auto& [dgid, dmat] : dense_list) {
+                    auto fin_rrt = finalize_trajectory(snap, dmat, cfg, &req.manifold_constraints, &mask);
+                    if (fin_rrt.success) {
+                        res.has_initial_positions = true;
+                        res.initial_positions = dmat;
+                        res.waypoint_indices = planner_detail::dense_waypoint_indices(
+                            dmat, cfg.waypoints, fixed, fin_rrt.waypoint_indices);
+                        res.goal_index = dgid;
+                        res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+                        res.diagnostics.ik_ms = ik_ms;
+                        res.diagnostics.seed_ms = seed_ms;
+                        res.diagnostics.retime_ms = fin_rrt.retime_ms;
+                        res.diagnostics.seed_strategy = "constrained_birrt";
+                        res.success = true;
+                        res.trajectory = std::move(fin_rrt.trajectory);
+                        return true;
                     }
                 }
-                if (winner_idx >= 0) {
-                    specs = std::move(rrt_specs);
-                    sqp_results = std::move(rrt_res);
+            }
+            for (const auto& sp : spec_list) {
+                if (sp.seed_strategy != "constrained_birrt") continue;
+                auto fin_rrt = finalize_trajectory(snap, sp.initial, cfg, &req.manifold_constraints, &mask);
+                if (fin_rrt.success) {
+                    res.has_initial_positions = true;
+                    res.initial_positions = sp.initial;
+                    res.waypoint_indices = std::move(fin_rrt.waypoint_indices);
+                    res.goal_index = sp.goal_index;
+                    res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+                    res.diagnostics.ik_ms = ik_ms;
+                    res.diagnostics.seed_ms = seed_ms;
+                    res.diagnostics.retime_ms = fin_rrt.retime_ms;
+                    res.diagnostics.seed_strategy = "constrained_birrt";
+                    res.success = true;
+                    res.trajectory = std::move(fin_rrt.trajectory);
+                    return true;
                 }
+            }
+            return false;
+        };
+
+        // 4. Global BiRRT (or Manifold-Projected CBiRRT) fallback when local SQP gets stuck.
+        if (winner_idx < 0 && cfg.use_global_seeding && !req.has_seed) {
+            if (cfg.num_seeds == 1) {
+                double rrt_ms = 0.0;
+                std::vector<std::pair<int, RowMatrixXd>> dense_rrt;
+                auto rrt_specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, true, rrt_ms, &dense_rrt);
+                seed_ms += rrt_ms;
+                if (!rrt_specs.empty()) {
+                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible);
+                    for (int i = 0; i < static_cast<int>(rrt_res.size()); ++i) {
+                        if (rrt_res[static_cast<size_t>(i)].success && rrt_res[static_cast<size_t>(i)].cost < winner_cost) {
+                            winner_cost = rrt_res[static_cast<size_t>(i)].cost;
+                            winner_idx = i;
+                        }
+                    }
+                    if (winner_idx >= 0) {
+                        specs = std::move(rrt_specs);
+                        sqp_results = std::move(rrt_res);
+                        initial_dense_rrt = std::move(dense_rrt);
+                    }
+                }
+                if (winner_idx < 0 && try_raw_rrt_fallback(dense_rrt, rrt_specs)) {
+                    return res;
+                }
+            } else if (try_raw_rrt_fallback(initial_dense_rrt, specs)) {
+                return res;
             }
         }
 
@@ -746,9 +960,54 @@ private:
             return res;
         }
 
-        // 5. Unified Hermite retiming & continuous CCD verification.
+        // 5. Unified Hermite retiming, continuous CCD & continuous manifold verification.
         const auto& win = sqp_results[static_cast<size_t>(winner_idx)];
-        auto fin = finalize_trajectory(snap, win.positions, cfg);
+        const auto* mc_ptr = req.manifold_constraints.empty() ? nullptr : &req.manifold_constraints;
+        auto fin = finalize_trajectory(snap, win.positions, cfg, mc_ptr, &mask);
+
+        // If SQP winner failed continuous manifold verification on a constrained global plan,
+        // try existing multi-seed dense CBiRRT fallback first, then global CBiRRT + finalize before giving up.
+        if (!fin.success && !req.manifold_constraints.empty() && cfg.use_global_seeding && !req.has_seed) {
+            if (!initial_dense_rrt.empty() && try_raw_rrt_fallback(initial_dense_rrt, specs)) {
+                return res;
+            }
+            if (win.seed_strategy != "constrained_birrt") {
+                double rrt_ms = 0.0;
+                std::vector<std::pair<int, RowMatrixXd>> dense_rrt;
+                auto rrt_specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, true, rrt_ms, &dense_rrt);
+                seed_ms += rrt_ms;
+                if (!rrt_specs.empty()) {
+                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible);
+                    for (size_t i = 0; i < rrt_res.size(); ++i) {
+                        if (rrt_res[i].success) {
+                            auto fin2 = finalize_trajectory(snap, rrt_res[i].positions, cfg, mc_ptr, &mask);
+                            if (fin2.success) {
+                                res.has_initial_positions = true;
+                                res.initial_positions = rrt_specs[i].initial;
+                                res.waypoint_indices = std::move(fin2.waypoint_indices);
+                                res.goal_index = rrt_res[i].goal_index;
+                                res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+                                res.diagnostics.ik_ms = ik_ms;
+                                res.diagnostics.seed_ms = seed_ms;
+                                res.diagnostics.sqp_ms = rrt_res[i].sqp_ms;
+                                res.diagnostics.validate_ms = rrt_res[i].validate_ms;
+                                res.diagnostics.retime_ms = fin2.retime_ms;
+                                res.diagnostics.qp_calls = rrt_res[i].qp_calls;
+                                res.diagnostics.sqp_iterations = rrt_res[i].sqp_iterations;
+                                res.diagnostics.seed_strategy = rrt_res[i].seed_strategy;
+                                res.diagnostics.witnesses = rrt_res[i].witnesses;
+                                res.success = true;
+                                res.trajectory = std::move(fin2.trajectory);
+                                return res;
+                            }
+                        }
+                    }
+                }
+                if (try_raw_rrt_fallback(dense_rrt, rrt_specs)) {
+                    return res;
+                }
+            }
+        }
 
         res.has_initial_positions = true;
         res.initial_positions = specs[static_cast<size_t>(winner_idx)].initial;
@@ -768,6 +1027,7 @@ private:
             return res;
         }
         res.success = true;
+        res.waypoint_indices = std::move(fin.waypoint_indices);
         res.trajectory = std::move(fin.trajectory);
         return res;
     }

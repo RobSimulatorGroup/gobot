@@ -105,8 +105,11 @@ Goal: cover the core workflows expected in industrial manipulation and assembly 
    - Explicit corner handling: sharp-corner stop (`blend_radius == 0`, locking corner knot velocity and quintic acceleration to zero so splines never cut corners) vs $G^1$ cubic Bézier Cartesian corner blend (`blend_radius > 0`, strictly bounded within `blend_radius`).
    - Continuity-preserving projected LM damped IK seeded sequentially from the previous knot with continuous revolute unwrapping across $\pm\pi$, separate revolute (rad) and prismatic (m) jump thresholds, and adaptive subdivision before declaring jump/collision failures.
    - Certified continuous TCP position & orientation deviation verification along the actual played cubic (`spline_order=3`) or quintic (`spline_order=5`) Hermite spline using kinematic-chain Lipschitz bounds + Hermite total variation + adaptive bisection, recovering via knot velocity damping and mid-segment IK refinement, and returning monotone progress `fraction` / `completed_waypoints` strictly over the retimed and fully re-verified executable prefix (including `strict_ccd` pass-through).
-4. **Constrained Global Planning (Manifold-Projected BiRRT)**
-   - Explicit global manifold constraints (without altering interior-only `PathConstraint` semantics), projection operator checking true orientation angles (handling anti-parallel $\pi$ degeneracy), storing intermediate projected states on tree edges, unified constrained connect/shortcut/resampling, and post-SQP/retiming continuous manifold verification.
+4. **Constrained Global Planning (Manifold-Projected BiRRT) (Completed)**
+   - Explicit global `manifold_constraints` on `MotionPlanRequest` / `MotionPlanRequestNative` and `PlanningWorld.validate_trajectory(..., manifold_constraints=...)` without altering existing interior-only `PathConstraint` semantics.
+   - Standalone C++ manifold kernel ([`planning_manifold.hpp`](../modules/coal/planning_manifold.hpp)) with tangent-projected Levenberg-Marquardt manifold projection checking true geodesic constraint satisfaction (`ok`) and explicitly rejecting anti-parallel $\pi$ degeneracy where axis-alignment residuals vanish.
+   - Bidirectional `plan_constrained_birrt` storing every intermediate projected state on tree edges and sharing a unified constrained trace across extend, connect, shortcutting, and manifold-projected resampling.
+   - Post-SQP / post-retiming certified continuous manifold verification (`verify_spline_manifold_constraints`) along the actual played cubic (`order=3`) or quintic (`order=5`) Hermite spline using kinematic-chain Lipschitz bounds + Hermite total variation + adaptive bisection, recovering via knot velocity damping and projected mid-segment knot insertion in free-timing mode.
 
 ---
 

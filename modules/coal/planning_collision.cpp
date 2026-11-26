@@ -166,6 +166,9 @@ gp::MotionPlanRequestNative parse_plan_request(const py::dict& d, int J) {
             if (!vec.empty()) req.pose_constraints.emplace_back(kv.first.cast<int>(), std::move(vec));
         }
     }
+    if (d.contains("manifold_constraints") && !d["manifold_constraints"].is_none()) {
+        req.manifold_constraints = d["manifold_constraints"].cast<std::vector<gp::PoseConstraintSpec>>();
+    }
     if (d.contains("joint_targets") && !d["joint_targets"].is_none()) {
         const py::dict jt_dict = d["joint_targets"].cast<py::dict>();
         for (const auto& kv : jt_dict) {
@@ -220,6 +223,15 @@ py::dict plan_result_to_dict(const gp::PlanResultNative& r) {
         d["initial_positions"] = std::move(init_arr);
     } else {
         d["initial_positions"] = py::none();
+    }
+    if (r.success && !r.waypoint_indices.empty()) {
+        const py::ssize_t W = static_cast<py::ssize_t>(r.waypoint_indices.size());
+        py::array_t<int64_t> wi_arr(W);
+        int64_t* wi_ptr = wi_arr.mutable_data();
+        for (py::ssize_t i = 0; i < W; ++i) wi_ptr[i] = static_cast<int64_t>(r.waypoint_indices[static_cast<size_t>(i)]);
+        d["waypoint_indices"] = std::move(wi_arr);
+    } else {
+        d["waypoint_indices"] = py::none();
     }
     d["goal_index"] = r.goal_index;
     d["world_version"] = r.world_version;
@@ -799,12 +811,17 @@ py::tuple snap_plan_birrt_batch(const gp::WorldSnapshot& snap,
                                 double margin, double world_margin,
                                 double step_size, int max_iterations, double timeout_s,
                                 const std::vector<uint64_t>& seeds, bool verify_original,
-                                int shortcut_iters, int output_waypoints) {
+                                int shortcut_iters, int output_waypoints,
+                                py::object manifold_obj = py::none()) {
     const int64_t B = starts.shape(0);
     const int J = snap.kin.num_joints();
     std::vector<uint8_t> mask(static_cast<size_t>(J), 1);
     if (active_mask_in.size() == J) {
         for (int j = 0; j < J; ++j) mask[static_cast<size_t>(j)] = active_mask_in.data()[j] ? 1 : 0;
+    }
+    std::vector<gp::PoseConstraintSpec> manifold_specs;
+    if (!manifold_obj.is_none()) {
+        manifold_specs = manifold_obj.cast<std::vector<gp::PoseConstraintSpec>>();
     }
     std::vector<gp::RRTResultNative> res(static_cast<size_t>(B));
     {
@@ -814,9 +831,13 @@ py::tuple snap_plan_birrt_batch(const gp::WorldSnapshot& snap,
                 Eigen::Map<const Eigen::VectorXd> s(starts.data() + i * J, J);
                 Eigen::Map<const Eigen::VectorXd> g(goals.data() + i * J, J);
                 const uint64_t sd = (i < static_cast<int64_t>(seeds.size())) ? seeds[static_cast<size_t>(i)] : static_cast<uint64_t>(i + 1);
-                res[static_cast<size_t>(i)] = snap.plan_birrt(s, g, mask, margin, world_margin, step_size,
-                                                              max_iterations, timeout_s, sd, verify_original,
-                                                              shortcut_iters, output_waypoints);
+                res[static_cast<size_t>(i)] = manifold_specs.empty()
+                    ? snap.plan_birrt(s, g, mask, margin, world_margin, step_size,
+                                      max_iterations, timeout_s, sd, verify_original,
+                                      shortcut_iters, output_waypoints)
+                    : gp::plan_constrained_birrt(snap, s, g, manifold_specs, mask, margin, world_margin, step_size,
+                                                 max_iterations, timeout_s, sd, verify_original,
+                                                 shortcut_iters, output_waypoints);
             }
         });
     }
@@ -839,22 +860,112 @@ py::tuple snap_plan_birrt_batch(const gp::WorldSnapshot& snap,
     return py::make_tuple(paths, ok);
 }
 
-py::tuple snap_finalize_trajectory(const gp::WorldSnapshot& snap, const Input& pos_arr, const py::dict& cfg_dict) {
+py::tuple snap_finalize_trajectory(const gp::WorldSnapshot& snap, const Input& pos_arr, const py::dict& cfg_dict,
+                                   py::object manifold_obj = py::none(), py::object active_mask_obj = py::none()) {
     const int J = snap.kin.num_joints();
     if (pos_arr.ndim() != 2 || pos_arr.shape(1) != J)
         throw std::invalid_argument("positions must have shape [T, J]");
     gp::RowMatrixXd pos(pos_arr.shape(0), J);
     std::copy(pos_arr.data(), pos_arr.data() + pos_arr.shape(0) * J, pos.data());
     const auto cfg = parse_solver_config(cfg_dict);
+    std::vector<gp::PoseConstraintSpec> manifold_specs;
+    const std::vector<gp::PoseConstraintSpec>* mc_ptr = nullptr;
+    if (!manifold_obj.is_none()) {
+        manifold_specs = manifold_obj.cast<std::vector<gp::PoseConstraintSpec>>();
+        if (!manifold_specs.empty()) mc_ptr = &manifold_specs;
+    }
+    std::vector<uint8_t> mask;
+    const std::vector<uint8_t>* mask_ptr = nullptr;
+    if (!active_mask_obj.is_none()) {
+        const MaskInput m_in = active_mask_obj.cast<MaskInput>();
+        if (m_in.size() != J) throw std::invalid_argument("active_mask length must match num_joints");
+        mask.assign(static_cast<size_t>(J), 1);
+        for (int j = 0; j < J; ++j) mask[static_cast<size_t>(j)] = m_in.data()[j] ? 1 : 0;
+        mask_ptr = &mask;
+    }
     gp::FinalizeResultNative fin;
     {
         py::gil_scoped_release release;
-        fin = gp::finalize_trajectory(snap, pos, cfg);
+        fin = gp::finalize_trajectory(snap, pos, cfg, mc_ptr, mask_ptr);
     }
     if (!fin.success) {
         return py::make_tuple(py::none(), fin.retime_ms, py::str(fin.reason));
     }
     return py::make_tuple(trajectory_to_dict(fin.trajectory), fin.retime_ms, py::none());
+}
+
+py::tuple snap_validate_trajectory_manifold(
+    const gp::WorldSnapshot& snap,
+    const Input& q_waypoints,
+    const std::vector<gp::PoseConstraintSpec>& manifold_specs,
+    py::object times_obj = py::none(),
+    py::object vel_obj = py::none(),
+    py::object acc_obj = py::none(),
+    int spline_order = 3) {
+    if (spline_order != 3 && spline_order != 5)
+        throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
+    const int J = snap.kin.num_joints();
+    if (q_waypoints.ndim() != 2 || q_waypoints.shape(0) < 2 || q_waypoints.shape(1) != J)
+        throw std::invalid_argument("q_waypoints must have shape [T>=2, J]");
+    const int T = static_cast<int>(q_waypoints.shape(0));
+    const bool has_t = !times_obj.is_none();
+    const bool has_v = !vel_obj.is_none();
+    const bool has_a = !acc_obj.is_none();
+    if (has_t != has_v)
+        throw std::invalid_argument("times and velocities must both be provided or both omitted");
+    if (spline_order == 5 && (!has_t || !has_v || !has_a))
+        throw std::invalid_argument("quintic manifold check requires times, velocities, and accelerations");
+
+    gp::TrajectoryNative traj;
+    traj.spline_order = spline_order;
+    traj.positions.resize(T, J);
+    std::copy(q_waypoints.data(), q_waypoints.data() + T * J, traj.positions.data());
+    const bool is_polyline = !has_t;
+    if (!is_polyline) {
+        const Input t_arr = times_obj.cast<Input>();
+        const Input v_arr = vel_obj.cast<Input>();
+        if (t_arr.ndim() != 1 || t_arr.shape(0) != T)
+            throw std::invalid_argument("times must have shape [T]");
+        if (v_arr.ndim() != 2 || v_arr.shape(0) != T || v_arr.shape(1) != J)
+            throw std::invalid_argument("velocities must have shape [T, J]");
+        traj.times.resize(T);
+        std::copy(t_arr.data(), t_arr.data() + T, traj.times.data());
+        for (int i = 0; i < T; ++i) {
+            if (!std::isfinite(traj.times(i)))
+                throw std::invalid_argument("times must be finite");
+        }
+        for (int i = 0; i + 1 < T; ++i) {
+            if (traj.times(i + 1) < traj.times(i))
+                throw std::invalid_argument("times must be non-decreasing");
+        }
+        traj.velocities.resize(T, J);
+        std::copy(v_arr.data(), v_arr.data() + T * J, traj.velocities.data());
+        if (!traj.positions.allFinite() || !traj.velocities.allFinite())
+            throw std::invalid_argument("positions and velocities must be finite");
+        traj.accelerations = gp::RowMatrixXd::Zero(T, J);
+        if (has_a) {
+            const Input a_arr = acc_obj.cast<Input>();
+            if (a_arr.ndim() != 2 || a_arr.shape(0) != T || a_arr.shape(1) != J)
+                throw std::invalid_argument("accelerations must have shape [T, J]");
+            std::copy(a_arr.data(), a_arr.data() + T * J, traj.accelerations.data());
+            if (!traj.accelerations.allFinite())
+                throw std::invalid_argument("accelerations must be finite");
+        }
+    } else {
+        if (!traj.positions.allFinite())
+            throw std::invalid_argument("positions must be finite");
+        traj.times = Eigen::VectorXd::Zero(T);
+        traj.velocities = gp::RowMatrixXd::Zero(T, J);
+        traj.accelerations = gp::RowMatrixXd::Zero(T, J);
+    }
+
+    gp::ManifoldSplineCheckResult res;
+    {
+        py::gil_scoped_release release;
+        res = gp::verify_spline_manifold_constraints(snap, traj, manifold_specs, is_polyline);
+    }
+    if (res.ok) return py::make_tuple(true, py::none());
+    return py::make_tuple(false, py::str(res.reason));
 }
 
 py::tuple snap_validate_trajectory_collision(
@@ -1198,14 +1309,30 @@ PYBIND11_MODULE(_coal_native, module) {
                                     double margin, double world_margin,
                                     double step_size, int max_iterations, double timeout_s,
                                     const std::vector<uint64_t>& seeds, bool verify_original,
-                                    int shortcut_iters, int output_waypoints) {
+                                    int shortcut_iters, int output_waypoints, py::object manifold_obj) {
             return snap_plan_birrt_batch(*s.ptr, starts, goals, active_mask_in,
                                          margin, world_margin, step_size, max_iterations, timeout_s,
-                                         seeds, verify_original, shortcut_iters, output_waypoints);
-        })
-        .def("finalize_trajectory", [](const PyWorldSnapshot& s, const Input& pos_arr, const py::dict& cfg_dict) {
-            return snap_finalize_trajectory(*s.ptr, pos_arr, cfg_dict);
-        })
+                                         seeds, verify_original, shortcut_iters, output_waypoints, manifold_obj);
+        }, py::arg("starts"), py::arg("goals"), py::arg("active_mask"),
+           py::arg("margin"), py::arg("world_margin"),
+           py::arg("step_size"), py::arg("max_iterations"), py::arg("timeout_s"),
+           py::arg("seeds"), py::arg("verify_original"),
+           py::arg("shortcut_iters"), py::arg("output_waypoints"),
+           py::arg("manifold_constraints") = py::none())
+        .def("finalize_trajectory", [](const PyWorldSnapshot& s, const Input& pos_arr, const py::dict& cfg_dict,
+                                       py::object manifold_obj, py::object active_mask_obj) {
+            return snap_finalize_trajectory(*s.ptr, pos_arr, cfg_dict, manifold_obj, active_mask_obj);
+        }, py::arg("positions"), py::arg("config"),
+           py::arg("manifold_constraints") = py::none(), py::arg("active_mask") = py::none())
+        .def("validate_trajectory_manifold", [](const PyWorldSnapshot& s, const Input& q_waypoints,
+                                                const std::vector<gp::PoseConstraintSpec>& manifold_specs,
+                                                py::object times_obj, py::object vel_obj,
+                                                py::object acc_obj, int spline_order) {
+            return snap_validate_trajectory_manifold(
+                *s.ptr, q_waypoints, manifold_specs, times_obj, vel_obj, acc_obj, spline_order);
+        }, py::arg("q_waypoints"), py::arg("manifold_constraints"),
+           py::arg("times") = py::none(), py::arg("velocities") = py::none(),
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
         .def("validate_trajectory_collision", [](const PyWorldSnapshot& s, const Input& q_waypoints,
                                                  const Input& samples, int substeps,
                                                  double margin, double world_margin, bool verify_original,
@@ -1489,14 +1616,30 @@ PYBIND11_MODULE(_coal_native, module) {
                                     double margin, double world_margin,
                                     double step_size, int max_iterations, double timeout_s,
                                     const std::vector<uint64_t>& seeds, bool verify_original,
-                                    int shortcut_iters, int output_waypoints) {
+                                    int shortcut_iters, int output_waypoints, py::object manifold_obj) {
             return snap_plan_birrt_batch(*w.snapshot(), starts, goals, active_mask_in,
                                          margin, world_margin, step_size, max_iterations, timeout_s,
-                                         seeds, verify_original, shortcut_iters, output_waypoints);
-        })
-        .def("finalize_trajectory", [](const gp::PlanningWorld& w, const Input& pos_arr, const py::dict& cfg_dict) {
-            return snap_finalize_trajectory(*w.snapshot(), pos_arr, cfg_dict);
-        })
+                                         seeds, verify_original, shortcut_iters, output_waypoints, manifold_obj);
+        }, py::arg("starts"), py::arg("goals"), py::arg("active_mask"),
+           py::arg("margin"), py::arg("world_margin"),
+           py::arg("step_size"), py::arg("max_iterations"), py::arg("timeout_s"),
+           py::arg("seeds"), py::arg("verify_original"),
+           py::arg("shortcut_iters"), py::arg("output_waypoints"),
+           py::arg("manifold_constraints") = py::none())
+        .def("finalize_trajectory", [](const gp::PlanningWorld& w, const Input& pos_arr, const py::dict& cfg_dict,
+                                       py::object manifold_obj, py::object active_mask_obj) {
+            return snap_finalize_trajectory(*w.snapshot(), pos_arr, cfg_dict, manifold_obj, active_mask_obj);
+        }, py::arg("positions"), py::arg("config"),
+           py::arg("manifold_constraints") = py::none(), py::arg("active_mask") = py::none())
+        .def("validate_trajectory_manifold", [](const gp::PlanningWorld& w, const Input& q_waypoints,
+                                                const std::vector<gp::PoseConstraintSpec>& manifold_specs,
+                                                py::object times_obj, py::object vel_obj,
+                                                py::object acc_obj, int spline_order) {
+            return snap_validate_trajectory_manifold(
+                *w.snapshot(), q_waypoints, manifold_specs, times_obj, vel_obj, acc_obj, spline_order);
+        }, py::arg("q_waypoints"), py::arg("manifold_constraints"),
+           py::arg("times") = py::none(), py::arg("velocities") = py::none(),
+           py::arg("accelerations") = py::none(), py::arg("spline_order") = 3)
         .def("validate_trajectory_collision", [](const gp::PlanningWorld& w, const Input& q_waypoints,
                                                  const Input& samples, int substeps,
                                                  double margin, double world_margin, bool verify_original,
@@ -1608,6 +1751,16 @@ PYBIND11_MODULE(_coal_native, module) {
             {
                 py::gil_scoped_release release;
                 res = planner.plan(req);
+            }
+            return plan_result_to_dict(res);
+        })
+        .def("plan_with_snapshot", [](const gp::MotionPlannerNative& planner, const PyWorldSnapshot& snap, const py::dict& req_dict) {
+            const int J = snap.ptr->kin.num_joints();
+            const auto req = parse_plan_request(req_dict, J);
+            gp::PlanResultNative res;
+            {
+                py::gil_scoped_release release;
+                res = planner.plan_with_snapshot(*snap.ptr, req);
             }
             return plan_result_to_dict(res);
         })

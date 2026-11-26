@@ -1033,6 +1033,24 @@ TEST(MotionPlanningCpp, CartesianCornerHandlingAndSplineDeviationGuard) {
         ASSERT_TRUE(res_ref.success) << res_ref.reason;
         EXPECT_GT(res_ref.trajectory.num_waypoints(), 2);
         EXPECT_LE(res_ref.max_pos_error, 1e-3 + 1e-6);
+
+        // Drive post-retiming midpoint insertion directly, bypassing initial path subdivision.
+        std::vector<gp::cartesian_detail::CartesianKnot> knots(2);
+        knots[0].q = q_a;
+        knots[1].q = ik_b.q;
+        knots[1].tau = 1.0;
+        auto finalize = [&](double max_step) {
+            auto cfg = req_coarse.config;
+            cfg.max_step = max_step;
+            cfg.jump_threshold_revolute = 3.0;
+            return gp::cartesian_detail::finalize_and_verify_cartesian_prefix(
+                *snap, 3, gp::Vec3::Zero(), gp::Mat3::Identity(), {1, 1}, cfg,
+                snap->pair_margins(0.0, 0.0), {lin_prim}, knots);
+        };
+        const auto refined = finalize(1.0);
+        ASSERT_TRUE(refined.ok) << refined.reason;
+        EXPECT_GT(refined.trajectory.num_waypoints(), 2);
+        EXPECT_FALSE(finalize(0.01).ok);
     }
 }
 
@@ -1484,5 +1502,441 @@ TEST(MotionPlanningCpp, CartesianReviewCounterexamplesMoveCViaBlendRotPureRotAnd
         EXPECT_FALSE(res_zero0.has_trajectory);
         EXPECT_DOUBLE_EQ(res_zero0.fraction, 0.0);
         EXPECT_EQ(res_zero0.completed_waypoints, 1);
+    }
+}
+
+namespace {
+
+// Build a 4-DOF spatial arm (base yaw Z, shoulder pitch Y, elbow pitch Y, wrist pitch Y)
+// carrying a cup sphere at its end-effector, for constrained global manifold planning tests.
+std::shared_ptr<gp::PlanningWorld> make_upright_cup_arm_world() {
+    auto world = std::make_shared<gp::PlanningWorld>();
+    // Bodies:
+    // 0: base (root at origin)
+    // 1: turret (revolute Z at (0, 0, 0.2))
+    // 2: upper_arm (revolute Y at (0, 0, 0.1))
+    // 3: forearm (revolute Y at (0.45, 0, 0))
+    // 4: cup (revolute Y at (0.40, 0, 0))
+    std::vector<int> parent = {-1, 0, 1, 2, 3};
+    std::vector<int> kinds = {4, 1, 1, 1, 1};
+    std::vector<int> joint_idx = {-1, 0, 1, 2, 3};
+    const gp::Mat3 I3 = gp::Mat3::Identity();
+    std::vector<gp::Mat3> a_rot(5, I3), b_rot(5, I3);
+    std::vector<gp::Vec3> a_pos = {
+        gp::Vec3::Zero(),
+        gp::Vec3(0.0, 0.0, 0.20),
+        gp::Vec3(0.0, 0.0, 0.10),
+        gp::Vec3(0.45, 0.0, 0.0),
+        gp::Vec3(0.40, 0.0, 0.0),
+    };
+    std::vector<gp::Vec3> b_pos(5, gp::Vec3::Zero());
+    std::vector<gp::Vec3> axes = {
+        gp::Vec3::UnitX(),
+        gp::Vec3::UnitZ(),
+        gp::Vec3::UnitY(),
+        gp::Vec3::UnitY(),
+        gp::Vec3::UnitY(),
+    };
+    std::vector<gp::KinematicsModel::Branch> branches = {{"cup_arm", 0, gp::Vec3::Zero(), I3}};
+    std::vector<std::string> bnames = {
+        "cup_arm::base", "cup_arm::turret", "cup_arm::upper_arm", "cup_arm::forearm", "cup_arm::cup",
+    };
+    std::vector<std::string> jnames = {
+        "cup_arm::yaw", "cup_arm::shoulder", "cup_arm::elbow", "cup_arm::wrist",
+    };
+    Eigen::VectorXd lo(4), hi(4), vel(4), acc(4), qinit(4);
+    lo << -3.0, -1.6, -2.4, -2.5;
+    hi <<  3.0,  1.6,  2.4,  2.5;
+    vel << 2.0, 2.0, 2.5, 3.0;
+    acc << 6.0, 6.0, 8.0, 10.0;
+    qinit << 0.0, -0.4, 0.8, -0.4;  // shoulder + elbow + wrist == 0 => cup Z is strictly upright (+Z)!
+    std::unordered_map<std::string, int> lidx = {
+        {"cup_arm::base", 0}, {"cup_arm::turret", 1}, {"cup_arm::upper_arm", 2},
+        {"cup_arm::forearm", 3}, {"cup_arm::cup", 4},
+    };
+    world->init_kinematics(parent, kinds, joint_idx, a_rot, a_pos, b_rot, b_pos, axes,
+                           branches, bnames, jnames, lo, hi, vel, acc, qinit, lidx);
+
+    // Add cup sphere collision shape on body 4 and forearm capsule on body 3.
+    auto cup_sh = std::make_shared<gp::CollisionShape>();
+    cup_sh->label = "cup_sphere";
+    cup_sh->kind = 2;
+    cup_sh->radius = 0.045;
+    cup_sh->convex = std::make_shared<coal::Sphere>(0.045);
+    cup_sh->finalize_bounds();
+    gp::WorldShape cup_ws;
+    cup_ws.name = "cup_arm/cup/sphere";
+    cup_ws.link_key = "cup_arm::cup";
+    cup_ws.body_id = 4;
+    cup_ws.local_frame.setZero();
+    cup_ws.local_frame.leftCols<3>() = I3;
+    cup_ws.shape = cup_sh;
+    world->add_shape(cup_ws);
+
+    return world;
+}
+
+}  // namespace
+
+TEST(MotionPlanningCpp, ManifoldAntiParallelPiDegeneracyAndContinuousSplineVerification) {
+    auto world = make_upright_cup_arm_world();
+    auto snap = world->snapshot();
+
+    gp::PoseConstraintSpec upright;
+    upright.link_id = 4;
+    upright.has_rotation = true;
+    upright.rotation = gp::Mat3::Identity();
+    upright.rot_tol = gp::Vec3(0.05, 0.05, std::numeric_limits<double>::infinity());
+
+    // 1. Exact anti-parallel pi configuration (shoulder + elbow + wrist == pi => cup upside down!).
+    // eval_pose_constraint residual vanishes to (0, 0), yet true angle is pi -> MUST be rejected!
+    Eigen::VectorXd q_upside_down(4);
+    q_upside_down << 0.0, 1.0, 1.141592653589793, 1.0;  // sum == pi
+    std::vector<gp::Vec3> bp(5);
+    std::vector<gp::Mat3> br(5);
+    snap->kin.fk_single(q_upside_down.data(), bp.data(), br.data());
+    const auto ev = gp::manifold_detail::eval_constraint_norm(upright, bp.data(), br.data(), 1.0);
+    EXPECT_FALSE(ev.ok);
+    EXPECT_TRUE(ev.antipodal);
+    EXPECT_NEAR(ev.rot_err, M_PI, 1e-4);
+
+    // Projection operator must reject the anti-parallel pi singularity instead of returning residual=0!
+    Eigen::VectorXd q_proj;
+    std::vector<uint8_t> mask(4, 1);
+    EXPECT_FALSE(gp::manifold_detail::project_onto_manifold(*snap, {upright}, mask, q_upside_down, q_proj));
+
+    // 2. Mid-segment continuous spline manifold violation (both endpoints strictly upright, midpoint tilts 0.3 rad!):
+    Eigen::VectorXd q_up(4);
+    q_up << 0.0, -0.4, 0.8, -0.4;
+    for (int order : {3, 5}) {
+        gp::TrajectoryNative bad_traj;
+        bad_traj.spline_order = order;
+        bad_traj.times = (Eigen::VectorXd(2) << 0.0, 1.0).finished();
+        bad_traj.positions.resize(2, 4);
+        bad_traj.positions.row(0) = q_up.transpose();
+        bad_traj.positions.row(1) = q_up.transpose();
+        bad_traj.velocities = gp::RowMatrixXd::Zero(2, 4);
+        // Opposing wrist velocities push midpoint wrist pitch by ~0.35 rad while endpoints stay at 0 tilt!
+        bad_traj.velocities(0, 3) =  1.4;
+        bad_traj.velocities(1, 3) = -1.4;
+        bad_traj.accelerations = gp::RowMatrixXd::Zero(2, 4);
+        const auto mchk = gp::verify_spline_manifold_constraints(*snap, bad_traj, {upright}, false);
+        EXPECT_FALSE(mchk.ok) << "order=" << order;
+        EXPECT_GT(mchk.max_rot_err, 0.2) << "order=" << order;
+    }
+}
+
+TEST(MotionPlanningCpp, ConstrainedBiRRTUprightCupAroundPillar) {
+    auto world = make_upright_cup_arm_world();
+    // Place a tall blocking pillar directly on the straight yaw sweep (x ~ 0.72, y = 0.0) so
+    // the arm must fold inward or lift over/around while keeping the cup strictly upright!
+    add_box_obstacle(*world, "pillar", gp::Vec3(0.22, 0.16, 0.60), gp::Vec3(0.72, 0.0, 0.35));
+
+    gp::PoseConstraintSpec upright;
+    upright.link_id = 4;
+    upright.has_rotation = true;
+    upright.rotation = gp::Mat3::Identity();
+    upright.rot_tol = gp::Vec3(0.05, 0.05, std::numeric_limits<double>::infinity());
+
+    // Start on -Y side (yaw=-0.8), Goal on +Y side (yaw=+0.8), both strictly upright (sum of pitch == 0).
+    Eigen::VectorXd q_start(4), q_goal(4);
+    q_start << -0.8, -0.4, 0.8, -0.4;
+    q_goal  <<  0.8, -0.4, 0.8, -0.4;
+
+    gp::MotionPlannerNative planner(world);
+
+    // 1. Out-of-manifold start must be cleanly rejected.
+    {
+        gp::MotionPlanRequestNative bad_req;
+        bad_req.start_q = (Eigen::VectorXd(4) << -0.8, -0.4, 0.8, 0.2).finished();  // tilted 0.6 rad
+        bad_req.goal_qs = {q_goal};
+        bad_req.manifold_constraints = {upright};
+        const auto bad_res = planner.plan(bad_req);
+        EXPECT_FALSE(bad_res.success);
+        EXPECT_NE(bad_res.reason.find("manifold"), std::string::npos);
+    }
+
+    // 2. Plan upright cup around pillar for BOTH cubic (order=3) and quintic (order=5) splines!
+    for (int order : {3, 5}) {
+        gp::MotionPlanRequestNative req;
+        req.start_q = q_start;
+        req.goal_qs = {q_goal};
+        req.manifold_constraints = {upright};
+        req.config.waypoints = 16;
+        req.config.margin = 0.002;
+        req.config.has_world_margin = true;
+        req.config.world_margin = 0.01;
+        req.config.spline_order = order;
+        req.config.strict_ccd = true;
+        req.config.stop_at_endpoints = true;
+        req.config.rrt_timeout_s = 2.0;
+
+        const auto res = planner.plan(req);
+        ASSERT_TRUE(res.success) << "order=" << order << " reason=" << res.reason;
+        EXPECT_GT(res.trajectory.duration(), 0.0);
+
+        auto snap = world->snapshot();
+        // Dense independent check: cup Z axis stays within 0.05 rad of world +Z everywhere along the played spline!
+        std::vector<gp::Vec3> bp(5);
+        std::vector<gp::Mat3> br(5);
+        double worst_tilt = 0.0;
+        for (int i = 0; i <= 200; ++i) {
+            const double t = res.trajectory.duration() * static_cast<double>(i) / 200.0;
+            Eigen::VectorXd qs;
+            res.trajectory.sample_single(t, qs);
+            snap->kin.fk_single(qs.data(), bp.data(), br.data());
+            const double cos_ang = std::clamp(br[4].col(2).z(), -1.0, 1.0);
+            const double tilt = std::acos(cos_ang);
+            worst_tilt = std::max(worst_tilt, tilt);
+        }
+        EXPECT_LE(worst_tilt, 0.05 + 1e-5) << "order=" << order;
+
+        // Independent certified manifold + strict CCD + bounds verification.
+        const auto mchk = gp::verify_spline_manifold_constraints(*snap, res.trajectory, {upright}, false);
+        EXPECT_TRUE(mchk.ok) << mchk.reason;
+        std::vector<double> samples;
+        res.trajectory.sample_segments(8, samples);
+        const auto cchk = snap->validate_trajectory_collision(
+            res.trajectory.positions.data(), res.trajectory.num_waypoints(),
+            samples.data(), static_cast<int64_t>(samples.size() / 4), 8,
+            req.config.margin, req.config.effective_world_margin(), true, 5e-4,
+            res.trajectory.times.data(), res.trajectory.velocities.data(), true,
+            res.trajectory.accelerations.data(), res.trajectory.spline_order);
+        EXPECT_TRUE(cchk.valid) << cchk.reason;
+    }
+}
+
+TEST(MotionPlanningCpp, ManifoldReviewRegressionsFallbackDurationSameEndpointsResampleFreeAxisPiAndTinyTol) {
+    auto world = make_upright_cup_arm_world();
+    add_box_obstacle(*world, "pillar", gp::Vec3(0.22, 0.16, 0.60), gp::Vec3(0.72, 0.0, 0.35));
+    auto snap = world->snapshot();
+    gp::MotionPlannerNative planner(world);
+
+    gp::PoseConstraintSpec upright;
+    upright.link_id = 4;
+    upright.has_rotation = true;
+    upright.rotation = gp::Mat3::Identity();
+    upright.rot_tol = gp::Vec3(0.05, 0.05, std::numeric_limits<double>::infinity());
+
+    Eigen::VectorXd q_start(4), q_goal(4);
+    q_start << -0.8, -0.4, 0.8, -0.4;
+    q_goal  <<  0.8, -0.4, 0.8, -0.4;
+    std::vector<uint8_t> mask(4, 1);
+
+    // 1. P1 #3: Identical start == goal in plan_constrained_birrt MUST emit >= 2 waypoints (never size 1 / OOB)!
+    {
+        const auto rrt_same = gp::plan_constrained_birrt(
+            *snap, q_start, q_start, {upright}, mask, 0.002, 0.01, 0.25, 1000, 1.0, 42, false, 16, 10);
+        EXPECT_TRUE(rrt_same.success);
+        EXPECT_EQ(rrt_same.waypoints.size(), 10u);
+        EXPECT_GE(rrt_same.dense_waypoints.size(), 2u);
+    }
+
+    // 2. P2 #5: Coarse output_waypoints=2 around blocking pillar MUST NOT mark a pillar-cutting chord as success=True!
+    {
+        const auto rrt_coarse = gp::plan_constrained_birrt(
+            *snap, q_start, q_goal, {upright}, mask, 0.002, 0.01, 0.25, 2000, 1.5, 42, false, 32, 2);
+        EXPECT_FALSE(rrt_coarse.success);
+    }
+
+    // 3. P1 #1: Raw CBiRRT fallback MUST NOT bypass user-specified waypoint pose_constraints when SQP fails!
+    {
+        gp::MotionPlanRequestNative req_wp;
+        req_wp.start_q = q_start;
+        req_wp.goal_qs = {q_goal};
+        req_wp.manifold_constraints = {upright};
+        gp::PoseConstraintSpec unreachable_via;
+        unreachable_via.link_id = 4;
+        unreachable_via.has_position = true;
+        unreachable_via.position = gp::Vec3(5.0, 5.0, 5.0);  // unreachable!
+        unreachable_via.pos_tol = gp::Vec3::Constant(1e-3);
+        req_wp.pose_constraints.emplace_back(8, std::vector<gp::PoseConstraintSpec>{unreachable_via});
+        req_wp.config.waypoints = 16;
+        req_wp.config.margin = 0.002;
+        req_wp.config.has_world_margin = true;
+        req_wp.config.world_margin = 0.01;
+        req_wp.config.rrt_timeout_s = 1.0;
+        const auto res_wp = planner.plan(req_wp);
+        EXPECT_FALSE(res_wp.success);
+    }
+
+    // 4. P1 #2: Fixed-dt request must preserve exact waypoint count & duration (never replaced by variable dense_rrt!).
+    {
+        gp::MotionPlanRequestNative req_dt;
+        req_dt.start_q = q_start;
+        req_dt.goal_qs = {q_goal};
+        req_dt.manifold_constraints = {upright};
+        req_dt.config.waypoints = 12;
+        req_dt.config.has_dt = true;
+        req_dt.config.dt = 0.25;
+        req_dt.config.margin = 0.002;
+        req_dt.config.has_world_margin = true;
+        req_dt.config.world_margin = 0.01;
+        req_dt.config.rrt_timeout_s = 1.5;
+        const auto res_dt = planner.plan(req_dt);
+        if (res_dt.success) {
+            EXPECT_EQ(res_dt.trajectory.num_waypoints(), 12);
+            EXPECT_NEAR(res_dt.trajectory.duration(), 11.0 * 0.25, 1e-9);
+        }
+    }
+
+    // 5. P2 #7: Rotating through pi around a free axis (free_count == 2: constrain X only, Y & Z free)
+    // MUST PASS continuous manifold verification instead of being falsely rejected near pi!
+    {
+        auto clear_world = make_upright_cup_arm_world();
+        auto csnap = clear_world->snapshot();
+        gp::PoseConstraintSpec free_yz;
+        free_yz.link_id = 4;
+        free_yz.has_rotation = true;
+        free_yz.rotation = gp::Mat3::Identity();
+        free_yz.rot_tol = gp::Vec3(0.05,
+                                   std::numeric_limits<double>::infinity(),
+                                   std::numeric_limits<double>::infinity());
+        // Pure yaw sweep from 2.9 rad across pi (3.14159) to 3.3 rad (with pitch sum == 0 -> exact phi_x == 0!).
+        gp::TrajectoryNative yaw_pi_traj;
+        yaw_pi_traj.spline_order = 3;
+        yaw_pi_traj.times = (Eigen::VectorXd(2) << 0.0, 1.0).finished();
+        yaw_pi_traj.positions.resize(2, 4);
+        yaw_pi_traj.positions << 2.9, -0.4, 0.8, -0.4,
+                                 3.3, -0.4, 0.8, -0.4;
+        yaw_pi_traj.velocities = gp::RowMatrixXd::Zero(2, 4);
+        yaw_pi_traj.accelerations = gp::RowMatrixXd::Zero(2, 4);
+        const auto mchk = gp::verify_spline_manifold_constraints(*csnap, yaw_pi_traj, {free_yz}, false);
+        EXPECT_TRUE(mchk.ok) << mchk.reason;
+    }
+
+    // 6. P2 #9: Tiny user tolerance (1e-10) must NOT be silently relaxed to 1e-9!
+    {
+        auto clear_world = make_upright_cup_arm_world();
+        auto csnap = clear_world->snapshot();
+        Eigen::VectorXd q0(4);
+        q0 << 0.0, -0.4, 0.8, -0.4;
+        std::vector<gp::Vec3> bp(5);
+        std::vector<gp::Mat3> br(5);
+        csnap->kin.fk_single(q0.data(), bp.data(), br.data());
+
+        gp::PoseConstraintSpec tiny_tol;
+        tiny_tol.link_id = 4;
+        tiny_tol.has_position = true;
+        tiny_tol.position = bp[4] + gp::Vec3(5e-10, 0.0, 0.0);  // violates 1e-10 tol by 5x!
+        tiny_tol.pos_tol = gp::Vec3::Constant(1e-10);
+
+        gp::TrajectoryNative stat_traj;
+        stat_traj.spline_order = 3;
+        stat_traj.times = (Eigen::VectorXd(2) << 0.0, 1.0).finished();
+        stat_traj.positions.resize(2, 4);
+        stat_traj.positions.row(0) = q0.transpose();
+        stat_traj.positions.row(1) = q0.transpose();
+        stat_traj.velocities = gp::RowMatrixXd::Zero(2, 4);
+        stat_traj.accelerations = gp::RowMatrixXd::Zero(2, 4);
+        const auto mchk = gp::verify_spline_manifold_constraints(*csnap, stat_traj, {tiny_tol}, false);
+        EXPECT_FALSE(mchk.ok);
+    }
+
+    // 7. Review Round 2 P2: Continuous manifold check MUST reject a spline that peaks slightly above
+    //    tolerance (e.g. 1.0003 * tol, previously leaked by 5e-4 slack!).
+    {
+        auto clear_world = make_upright_cup_arm_world();
+        auto csnap = clear_world->snapshot();
+        // Keep base yaw=0, elbow=0, wrist=0, shoulder q1(u) = 0 at endpoints and peaks at 1.0003 * 0.05 rad
+        // at midpoint via cubic Hermite velocities v0 = +4 * peak, v1 = -4 * peak!
+        const double tol = 0.05;
+        const double peak = tol * 1.0003;  // exceeds tol by only 0.03% (3e-4)!
+        gp::TrajectoryNative slight_over;
+        slight_over.spline_order = 3;
+        slight_over.times = (Eigen::VectorXd(2) << 0.0, 1.0).finished();
+        slight_over.positions = gp::RowMatrixXd::Zero(2, 4);
+        slight_over.velocities = gp::RowMatrixXd::Zero(2, 4);
+        slight_over.accelerations = gp::RowMatrixXd::Zero(2, 4);
+        // For cubic Hermite with q0=q1=0, v0=v, v1=-v on h=1: q(0.5) = v * 0.25 -> v = 4 * peak.
+        slight_over.velocities(0, 1) = 4.0 * peak;
+        slight_over.velocities(1, 1) = -4.0 * peak;
+        const auto mchk = gp::verify_spline_manifold_constraints(*csnap, slight_over, {upright}, false);
+        EXPECT_FALSE(mchk.ok) << "spline peaking at 1.0003 * tol must be rejected";
+    }
+
+    // 8. Review Round 2 P2: Midpoint refinement in finalize_trajectory returns exact original waypoint_indices mapping!
+    {
+        auto clear_world = make_upright_cup_arm_world();
+        auto csnap = clear_world->snapshot();
+        // Straight joint chord between two upright poses with large shoulder/elbow sweep causes midpoint tilt
+        // exceeding 0.01 rad, forcing finalize_trajectory to insert projected midpoints!
+        Eigen::VectorXd qa(4), qb_seed(4), qb(4), qc(4);
+        qa << -0.5, -0.8,  1.6, -0.8;
+        qb_seed << 0.0, 0.8, -1.6, 0.8;
+        qc <<  0.5, -0.8,  1.6, -0.8;
+        std::vector<gp::Vec3> bp_a(5);
+        std::vector<gp::Mat3> br_a(5);
+        csnap->kin.fk_single(qa.data(), bp_a.data(), br_a.data());
+
+        gp::PoseConstraintSpec z_plane;
+        z_plane.link_id = 4;
+        z_plane.has_position = true;
+        z_plane.position = bp_a[4];
+        z_plane.pos_tol = gp::Vec3(std::numeric_limits<double>::infinity(),
+                                   std::numeric_limits<double>::infinity(),
+                                   0.01);
+        const std::vector<gp::PoseConstraintSpec> z_specs{z_plane};
+        ASSERT_TRUE(gp::manifold_detail::project_onto_manifold(*csnap, z_specs, mask, qb_seed, qb, 2.0, 0.1, 30));
+
+        gp::RowMatrixXd coarse(3, 4);
+        coarse.row(0) = qa.transpose();
+        coarse.row(1) = qb.transpose();
+        coarse.row(2) = qc.transpose();
+
+        gp::SolverConfigNative fcfg;
+        fcfg.margin = 0.0;
+        fcfg.has_world_margin = true;
+        fcfg.world_margin = 0.0;
+        const auto fin = gp::finalize_trajectory(*csnap, coarse, fcfg, &z_specs, &mask);
+        ASSERT_TRUE(fin.success) << fin.reason;
+        EXPECT_GT(fin.trajectory.num_waypoints(), 3);
+        ASSERT_EQ(fin.waypoint_indices.size(), 3u);
+        EXPECT_EQ(fin.waypoint_indices[0], 0);
+        EXPECT_GT(fin.waypoint_indices[1], 0);
+        EXPECT_LT(fin.waypoint_indices[1], fin.trajectory.num_waypoints() - 1);
+        EXPECT_EQ(fin.waypoint_indices[2], fin.trajectory.num_waypoints() - 1);
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_TRUE(fin.trajectory.positions.row(fin.waypoint_indices[static_cast<size_t>(k)]).isApprox(
+                coarse.row(k), 1e-12));
+        }
+    }
+
+    // 9. Review Round 2 P2: Multi-seed (num_seeds > 1) constrained global planning retains & uses dense CBiRRT fallback!
+    {
+        gp::MotionPlanRequestNative req_ms;
+        req_ms.start_q = q_start;
+        req_ms.goal_qs = {q_goal};
+        req_ms.manifold_constraints = {upright};
+        req_ms.config.waypoints = 2;  // too coarse for SQP alone; requires dense CBiRRT fallback!
+        req_ms.config.num_seeds = 4;
+        req_ms.config.use_global_seeding = true;
+        req_ms.config.margin = 0.002;
+        req_ms.config.has_world_margin = true;
+        req_ms.config.world_margin = 0.01;
+        req_ms.config.rrt_timeout_s = 2.0;
+        req_ms.config.strict_ccd = true;
+        const auto res_ms = planner.plan(req_ms);
+        ASSERT_TRUE(res_ms.success) << res_ms.reason;
+        EXPECT_EQ(res_ms.diagnostics.seed_strategy, "constrained_birrt");
+        EXPECT_GT(res_ms.trajectory.num_waypoints(), 2);
+        ASSERT_EQ(res_ms.waypoint_indices.size(), 2u);
+        EXPECT_EQ(res_ms.waypoint_indices.front(), 0);
+        EXPECT_EQ(res_ms.waypoint_indices.back(), res_ms.trajectory.num_waypoints() - 1);
+    }
+
+    // 10. Review Round 2 P3: Zero tolerance in manifold_constraints is explicitly rejected at entry.
+    {
+        gp::PoseConstraintSpec zero_pos;
+        zero_pos.link_id = 4;
+        zero_pos.has_position = true;
+        zero_pos.position = gp::Vec3::Zero();
+        zero_pos.pos_tol = gp::Vec3(0.0, 0.01, 0.01);
+
+        gp::MotionPlanRequestNative req_z;
+        req_z.start_q = q_start;
+        req_z.goal_qs = {q_start};
+        req_z.manifold_constraints = {zero_pos};
+        EXPECT_THROW(planner.plan(req_z), std::invalid_argument);
     }
 }

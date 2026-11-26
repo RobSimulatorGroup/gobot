@@ -104,9 +104,34 @@ JointConfig = Sequence[float] | np.ndarray
 GoalSpec = JointConfig | Sequence[PoseConstraint] | Sequence[Sequence[PoseConstraint]]
 
 
+def _validate_manifold_constraints(constraints: Sequence[PoseConstraint]) -> None:
+    """Validate that manifold constraints use strictly positive tolerances (> 0 or +inf)."""
+    for c in constraints:
+        if not isinstance(c, PoseConstraint):
+            raise TypeError("manifold_constraints entries must be PoseConstraint instances")
+        if c.position is not None:
+            pt = _normalize_tol(c.position_tolerance)
+            if (pt <= 0.0).any():
+                raise ValueError(
+                    "manifold_constraints require strictly positive position_tolerance (> 0 or inf); "
+                    "zero tolerance is not supported"
+                )
+        if c.rotation is not None:
+            rt = _normalize_tol(c.rotation_tolerance)
+            if (rt <= 0.0).any():
+                raise ValueError(
+                    "manifold_constraints require strictly positive rotation_tolerance (> 0 or inf); "
+                    "zero tolerance is not supported"
+                )
+
+
 @dataclass(frozen=True)
 class MotionPlanRequest:
-    """Declarative request for single- or multi-goal motion planning."""
+    """Declarative request for single- or multi-goal motion planning.
+
+    Note: ``manifold_constraints`` must use strictly positive tolerances (``> 0`` or ``inf``);
+    zero tolerances are rejected at request construction.
+    """
 
     start: JointConfig | Sequence[PoseConstraint]
     goal: GoalSpec
@@ -117,6 +142,11 @@ class MotionPlanRequest:
     goal_seed: JointConfig | None = None
     group: str | PlanningGroup | Sequence[JointName] | None = None
     config: SolverConfig = field(default_factory=SolverConfig)
+    manifold_constraints: Sequence[PoseConstraint] = ()
+
+    def __post_init__(self) -> None:
+        if self.manifold_constraints:
+            _validate_manifold_constraints(self.manifold_constraints)
 
 
 @dataclass(frozen=True)
@@ -221,12 +251,19 @@ class SyncResult:
 
 @dataclass(frozen=True)
 class PlanResult:
+    """A successful trajectory maps request slots to knot rows via `waypoint_indices`.
+
+    On a dense BiRRT fallback, free interior slots refer to the nearest knots
+    at uniform joint-space arc-length intervals between the endpoints.
+    """
+
     trajectory: Trajectory | None
     initial_positions: np.ndarray | None = None
     goal_index: int = 0
     reason: str | None = None
     diagnostics: PlanDiagnostics = field(default_factory=PlanDiagnostics)
     world_version: int = 0
+    waypoint_indices: np.ndarray | None = None
 
     @property
     def success(self) -> bool:
@@ -243,6 +280,14 @@ class PlanResult:
 
 @dataclass(frozen=True)
 class BatchPlanResult:
+    """Batch of individually verified spline trajectories.
+
+    For playback, use `results[i].trajectory.sample(t)`. The `positions` array
+    holds the spline knots for inspection, padded by repeating each last knot.
+    Use `results[i].trajectory.num_waypoints` for the original row length.
+    Linear interpolation of these arrays requires separate polyline validation.
+    """
+
     results: tuple[PlanResult, ...]
     positions: np.ndarray
     success: np.ndarray
