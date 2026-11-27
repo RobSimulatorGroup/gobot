@@ -99,6 +99,24 @@ protected:
     std::filesystem::path project_path;
 };
 
+TEST_F(TestScenePlaySession, node_script_can_load_a_sibling_file) {
+    auto script = MakeScript("scripts/play.py", R"PY(
+from pathlib import Path
+import runpy
+import gobot
+
+name = runpy.run_path(str(Path(__file__).with_name("plan.py")))["name"]
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.node.name = name
+)PY");
+    std::ofstream(project_path / "scripts/plan.py") << "name = 'SiblingLoaded'\n";
+    root->SetScript(script);
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    EXPECT_EQ(session.GetRuntimeRoot()->GetName(), "SiblingLoaded");
+}
+
 TEST_F(TestScenePlaySession, node_scripts_run_only_inside_play_session) {
     auto script = MakeScript("scripts/session_counter.py", R"PY(
 import gobot

@@ -26,10 +26,6 @@ from gobot.planning import (
     retime_trajectory,
 )
 
-pytest.importorskip("gobot._coal_native", exc_type=ModuleNotFoundError)
-pytest.importorskip("osqp")
-
-
 @pytest.fixture
 def simple_snapshot(tmp_path):
     source = tmp_path / "planning.xml"

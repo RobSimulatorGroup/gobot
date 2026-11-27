@@ -9,12 +9,14 @@ Python embedding environment.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from importlib import metadata
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -566,13 +568,42 @@ def _find_editor_executable() -> Path:
     )
 
 
-def _register_packaged_examples() -> None:
+def _writable_download_projects(examples: Path) -> dict[Path, Path]:
+    """Give project hooks a writable asset directory for system-wide wheels."""
+    projects = {}
+    for name in ("g1_track", "gaussian_splatting"):
+        source = examples / name
+        if not source.is_dir() or os.access(source, os.W_OK):
+            continue
+        parent = _project_history_path().parent / "wheel-examples" / metadata.version(DIST_NAME)
+        target = parent / name
+        if not target.is_dir():
+            parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=parent) as tmp:
+                stage = Path(tmp) / name
+                shutil.copytree(source, stage, ignore=shutil.ignore_patterns("__pycache__"))
+                stage.chmod(stage.stat().st_mode | 0o700)
+                if (stage / "assets").is_dir():
+                    (stage / "assets").chmod((stage / "assets").stat().st_mode | 0o700)
+                try:
+                    stage.rename(target)
+                except OSError as error:
+                    if error.errno not in (errno.EEXIST, errno.ENOTEMPTY) or not target.is_dir():
+                        raise
+        projects[source.resolve()] = target
+    return projects
+
+
+def _register_packaged_examples() -> dict[Path, Path]:
+    packaged = _packaged_examples()
+    writable = _writable_download_projects(packaged) if packaged else {}
     candidate_examples = [
-        path for path in (_editable_source_examples(), _packaged_examples()) if path is not None
+        path for path in (_editable_source_examples(), *{p.parent for p in writable.values()}, packaged)
+        if path is not None
     ]
     existing_examples = [path for path in candidate_examples if path.is_dir()]
     if not existing_examples:
-        return
+        return writable
 
     history_path = _project_history_path()
     data: dict[str, object] = {}
@@ -606,7 +637,8 @@ def _register_packaged_examples() -> None:
         history_path.parent.mkdir(parents=True, exist_ok=True)
         history_path.write_text(json.dumps(data, indent=4), encoding="utf-8")
     except OSError:
-        return
+        pass
+    return writable
 
 
 def editor() -> int:
@@ -620,7 +652,13 @@ def editor() -> int:
             print(f"[gobot] {error}", file=sys.stderr)
             return 1
 
-    _register_packaged_examples()
+    writable_projects = _register_packaged_examples()
+    if "--path" in editor_args:
+        index = editor_args.index("--path") + 1
+        if index < len(editor_args):
+            requested = Path(editor_args[index]).expanduser().resolve()
+            if requested in writable_projects:
+                editor_args[index] = str(writable_projects[requested])
 
     python_library = _find_current_python_library()
     print(f"[gobot] Python library: {python_library}", file=sys.stderr, flush=True)

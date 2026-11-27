@@ -89,12 +89,10 @@ inspection error and `40.1 mm` minimum sampled world clearance.
 
 ## Build
 
-Initialize Coal, enable `GOB_BUILD_COAL`, and build the Python package and
-editor with the project's usual CMake options:
+The default Python build includes Coal and initializes its pinned sources:
 
 ```sh
-git submodule update --init --recursive 3rdparty/coal
-CMAKE_ARGS="-DGOB_BUILD_COAL=ON" uv sync --extra planning-sqp --reinstall-package gobot
+uv sync --reinstall-package gobot
 ```
 
 Coal uses CMake 3.22+, Eigen, Boost serialization/filesystem, and Assimp

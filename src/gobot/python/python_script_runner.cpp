@@ -398,7 +398,8 @@ py::object CreateNodeScriptInstance(Node* node, const Ref<PythonScript>& script)
     modules.attr("pop")(module_name.c_str(), py::none());
 
     py::module_ module = py::module_::import("types").attr("ModuleType")(module_name);
-    module.attr("__file__") = filename;
+    const auto* settings = ProjectSettings::GetInstance();
+    module.attr("__file__") = settings ? settings->GlobalizePath(filename) : filename;
     modules[module_name.c_str()] = module;
 
     py::module_ builtins = py::module_::import("builtins");

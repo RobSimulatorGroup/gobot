@@ -6,6 +6,7 @@ import importlib.util
 from importlib.metadata import PackageNotFoundError, version
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,7 @@ def verify_payload(package_root: Path) -> None:
 
 def main() -> int:
     import gobot
+    from gobot import _coal_native
     from gobot_cli import editor as editor_launcher
 
     package_root = Path(gobot.__file__).resolve().parent
@@ -135,6 +137,7 @@ def main() -> int:
         raise RuntimeError("installed wheel does not expose gobot.rl")
 
     if os.environ.get("GOBOT_SMOKE_REQUIRE_DEFAULT_DEPENDENCIES") == "1":
+        runpy.run_path(str(package_root / "examples/panda_trajopt/scripts/play.py"))
         missing_distributions = []
         for distribution in DEFAULT_DISTRIBUTIONS:
             try:

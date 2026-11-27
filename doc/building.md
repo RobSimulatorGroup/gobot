@@ -8,6 +8,9 @@ complete Git checkout. Dependency versions live in `pyproject.toml`,
 
 Requirements: Linux, Python 3.10+, uv, Git, CMake 3.27+, Ninja, `patch`, a C++20
 compiler, and system development libraries for Eigen, OpenGL/EGL, and X11.
+The default Coal planner also requires Assimp and Boost filesystem and serialization
+development packages (`libassimp-dev`, `libboost-filesystem-dev` and
+`libboost-serialization-dev` on Ubuntu).
 The default SuperDex build needs GCC 12+ or a supported Clang. Default Python
 builds also need a CUDA Toolkit with `nvcc`; libuipc needs TBB and urdfdom
 development packages. See the [CI workflow](../.github/workflows/ci.yml) for
@@ -68,6 +71,7 @@ git submodule update --init --depth=1 \
   3rdparty/assimp 3rdparty/gli 3rdparty/googletest 3rdparty/imgui \
   3rdparty/meshoptimizer 3rdparty/project_superdex \
   3rdparty/pybind11 3rdparty/rttr 3rdparty/stb
+git submodule update --init --recursive --depth=1 3rdparty/coal
 
 python3 -m venv build/cpu-venv
 source build/cpu-venv/bin/activate
@@ -96,6 +100,7 @@ Run `deactivate` when finished with the CPU test environment.
 | CMake option | Standalone default | Python build default | Details |
 | --- | --- | --- | --- |
 | `GOB_BUILD_MUJOCO` | ON | ON | [MuJoCo SDK and native batch](physics_mujoco_setup.md) |
+| `GOB_BUILD_COAL` | ON | ON | CPU collision detection and motion planning |
 | `GOB_BUILD_SUPERDEX` | ON | ON | Experimental CPU backend; CUDA is separately disabled |
 | `GOB_BUILD_LIBUIPC` | ON | ON | [CUDA IPC solver](libuipc_ipc.md) |
 | `GOB_BUILD_LUISA_RENDERER` | OFF | ON | [CUDA renderer](luisa_rendering_plan.md) |

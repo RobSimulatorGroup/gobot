@@ -84,6 +84,7 @@ components = ["python"]
 [tool.scikit-build.cmake.define]
 GOB_BUILD_TESTS = "OFF"
 GOB_BUILD_ASSIMP = "ON"
+GOB_BUILD_COAL = "ON"
 GOB_BUILD_MUJOCO = "ON"
 GOB_BUILD_SUPERDEX = "ON"
 GOB_BUILD_EGL = "ON"

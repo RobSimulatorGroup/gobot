@@ -1,5 +1,8 @@
 """Validate release payloads against the current authored CartPole example."""
 from pathlib import Path
+import hashlib
+import json
+import runpy
 import shutil
 import stat
 import subprocess
@@ -19,7 +22,7 @@ class ReleaseWheelTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def make_wheel(self, omit=()):
+    def make_wheel(self, omit=(), *, dependencies=None):
         wheel_path = self.root / "gobot-0.1.18-cp310-cp310-manylinux_2_35_x86_64.whl"
         payload = {
             name: b"fixture"
@@ -32,9 +35,12 @@ class ReleaseWheelTests(unittest.TestCase):
                          "cartpole_swingup.py", "scripts/cartpole.py", "README.md"):
             payload["gobot/examples/cartpole/" + relative] = (CARTPOLE / relative).read_bytes()
         payload["gobot/_core.cpython-310-x86_64-linux-gnu.so"] = b"fixture"
+        payload["gobot/_coal_native.cpython-310-x86_64-linux-gnu.so"] = b"fixture"
         metadata = "Metadata-Version: 2.1\nName: gobot\nVersion: 0.1.18\n"
-        metadata += "".join("Requires-Dist: " + name + "\n" for name in
-                            sorted(verify_release_wheel.REQUIRED_DEPENDENCIES))
+        metadata += 'Provides-Extra: planning-sqp\nRequires-Dist: osqp>=1,<2; extra == "planning-sqp"\n'
+        if dependencies is None:
+            dependencies = verify_release_wheel.REQUIRED_DEPENDENCIES
+        metadata += "".join("Requires-Dist: " + name + "\n" for name in sorted(dependencies))
         payload["gobot-0.1.18.dist-info/METADATA"] = metadata.encode()
         with ZipFile(wheel_path, "w") as wheel:
             for name, content in payload.items():
@@ -64,12 +70,44 @@ class ReleaseWheelTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "cartpole_swingup.py"):
             smoke_installed_wheel.verify_payload(self.installed_payload(wheel))
 
+    def test_optional_requirement_does_not_satisfy_default_runtime(self):
+        dependencies = verify_release_wheel.REQUIRED_DEPENDENCIES - {"torch"}
+        wheel = self.make_wheel(dependencies=dependencies | {'torch; extra == "planning-sqp"'})
+        self.assertIn("missing default dependencies: torch", verify_release_wheel.verify_wheel(wheel))
+
     def test_go1_release_policy_remains_required(self):
         missing = "gobot/examples/go1/policies/go1_velocity.onnx"
         wheel = self.make_wheel(omit=(missing,))
         self.assertIn("missing payload: " + missing, verify_release_wheel.verify_wheel(wheel))
         with self.assertRaisesRegex(RuntimeError, "go1_velocity.onnx"):
             smoke_installed_wheel.verify_payload(self.installed_payload(wheel))
+
+    def test_g1_tracking_download_and_offline_reopen(self):
+        ensure_assets = runpy.run_path(str(ROOT / "examples/g1_track/prepare.py"))["ensure_assets"]
+        project = self.root / "project"
+        project.mkdir()
+        mesh = "assets/project/assets/link.STL"
+        (project / "world.jscn").write_text(json.dumps({
+            "__EXT_RESOURCES__": [{"__PATH__": "res://" + mesh}]
+        }))
+        archive = self.root / "deployment.zip"
+        with ZipFile(archive, "w") as bundle:
+            bundle.writestr("assets/policy/config.json",
+                            '{"scene_path": "res://world.jscn", "motion_file": "motion.npz"}')
+            for name in ("assets/policy/policy.pt", "assets/project/motion.npz",
+                         "assets/project/world.jscn", "assets/project/project.gobot"):
+                bundle.writestr(name, b"fixture")
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            ensure_assets(project, archive.as_uri(), "0" * 64)
+        with self.assertRaises(KeyError):
+            ensure_assets(project, archive.as_uri())
+        self.assertFalse((project / "assets").exists())
+        with ZipFile(archive, "a") as bundle:
+            bundle.writestr(mesh, b"mesh")
+        ensure_assets(project, archive.as_uri(), hashlib.sha256(archive.read_bytes()).hexdigest())
+        archive.unlink()
+        ensure_assets(project, archive.as_uri())
+        self.assertEqual((project / mesh).read_bytes(), b"mesh")
 
     def test_g1_velocity_release_policy_is_required(self):
         missing = "gobot/examples/g1_velocity/policies/g1_velocity.onnx"

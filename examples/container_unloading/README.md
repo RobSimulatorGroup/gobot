@@ -125,8 +125,8 @@ acceleration limits):
 
 ## Requirements and assets
 
-Use a Coal-enabled Gobot build (`-DGOB_BUILD_COAL=ON`) and the `planning-sqp`
-Python extra for OSQP. See the [Panda build instructions](../panda_trajopt/README.md#build).
+The default Gobot build includes the native Coal planner used by this example.
+See the [Panda build instructions](../panda_trajopt/README.md#build).
 
 The workcell dimensions and tooling are authored for this example. The FANUC
 M-10iA represents the six-axis industrial arm in the unloading footage. The

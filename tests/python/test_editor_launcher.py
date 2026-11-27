@@ -25,6 +25,28 @@ def test_wheel_install_does_not_rebuild() -> None:
     run.assert_not_called()
 
 
+def test_read_only_wheel_examples_get_writable_projects() -> None:
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        examples = root / "site-packages/gobot/examples"
+        for name in ("g1_track", "gaussian_splatting"):
+            (examples / name).mkdir(parents=True)
+            (examples / name / "project.gobot").write_text("{}")
+        with (
+            patch.object(launcher.os, "access", return_value=False),
+            patch.object(launcher.metadata, "version", return_value="1.0"),
+            patch.object(launcher, "_project_history_path", return_value=root / "user/projects.json"),
+        ):
+            copies = launcher._writable_download_projects(examples)
+            for source, target in copies.items():
+                assert target.parent == root / "user/wheel-examples/1.0"
+                assert target.name == source.name
+                (target / "assets").mkdir()
+            assert len(copies) == 2
+            assert launcher._writable_download_projects(examples) == copies
+            assert all((target / "assets").is_dir() for target in copies.values())
+
+
 def test_editable_install_rebuilds_with_environment_tools() -> None:
     invocations = []
 
@@ -293,6 +315,7 @@ def test_editor_cuda_runtime_is_optional() -> None:
 
 def main() -> None:
     test_wheel_install_does_not_rebuild()
+    test_read_only_wheel_examples_get_writable_projects()
     test_editable_install_rebuilds_with_environment_tools()
     test_editable_install_rebuilds_stale_bundled_gsplat()
     test_editable_install_repairs_isolated_cmake_cache()

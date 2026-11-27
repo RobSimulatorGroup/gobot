@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
+import runpy
 import threading
 
 import numpy as np
@@ -12,11 +12,8 @@ from scipy.spatial.transform import Rotation
 import gobot
 from gobot import render
 
-_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
-if _SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPTS_DIR)
-
-from plan import HAND, solve  # noqa: E402
+_plan = runpy.run_path(str(Path(__file__).with_name("plan.py")))
+HAND, solve = _plan["HAND"], _plan["solve"]
 
 
 def create_seed_visuals(parent, links):

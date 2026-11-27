@@ -512,6 +512,7 @@ jobs:
             -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-11 \
             -DCUDAToolkit_ROOT="$GOBOT_CUDA_BUILD_SDK_ROOT" \
             -DGOB_BUILD_ASSIMP=OFF \
+            -DGOB_BUILD_COAL=OFF \
             -DGOB_BUILD_MUJOCO=OFF \
             -DGOB_BUILD_SUPERDEX=OFF \
             -DGOB_BUILD_EGL=OFF \
@@ -613,6 +614,9 @@ jobs:
             g++-12 \
             git \
             gzip \
+            libassimp-dev \
+            libboost-filesystem-dev \
+            libboost-serialization-dev \
             libegl-dev \
             libeigen3-dev \
             libgl-dev \
@@ -659,6 +663,7 @@ jobs:
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb
+          git -c protocol.version=2 submodule update --init --recursive --depth=1 3rdparty/coal
 
       - name: Resolve compilation cache key
         id: wheel-ccache-key

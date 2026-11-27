@@ -17,6 +17,9 @@ REQUIRED_PAYLOAD = {
     "gobot/gobot_editor",
     "gobot/libgobot.so",
     "gobot/libgobot_editor_runtime.so",
+    "gobot/libgobot_planning.so",
+    "gobot/libcoal.so",
+    "gobot/licenses/coal/LICENSE",
     "gobot/libgobot_libuipc_solver.so",
     "gobot/libgobot_luisa_renderer.so",
     "gobot/libuipc/Release/bin/libuipc_backend_cuda.so",
@@ -76,6 +79,13 @@ REQUIRED_PAYLOAD = {
     "gobot/examples/gaussian_splatting/project.gobot",
     "gobot/examples/gaussian_splatting/deep_blending_playroom.gsplat",
     "gobot/examples/go1/policies/go1_velocity.onnx",
+    "gobot/examples/panda_trajopt/scripts/play.py",
+    "gobot/examples/panda_trajopt/scripts/plan.py",
+    "gobot/examples/g1_track/prepare.py",
+    "gobot/examples/g1_track/project.gobot",
+    "gobot/examples/g1_track/world.jscn",
+    "gobot/examples/g1_track/play.json",
+    "gobot/examples/g1_track/play.py",
     "gobot/examples/g1_velocity/policies/g1_velocity.onnx",
     "gobot/examples/g1_velocity/policies/g1_velocity.onnx.manifest.json",
     "gobot/examples/g1_velocity/policies/g1_velocity.verification.json",
@@ -140,11 +150,9 @@ def verify_wheel(path: Path) -> list[str]:
             errors.append(
                 "contains non-release Go1 policies: " + ", ".join(unexpected_go1_policies)
             )
-        if not any(
-            name.startswith("gobot/_core.") and name.endswith(".so")
-            for name in names
-        ):
-            errors.append("missing payload: gobot/_core.<python-abi>.so")
+        for module in ("_core", "_coal_native"):
+            if not any(name.startswith(f"gobot/{module}.") and name.endswith(".so") for name in names):
+                errors.append(f"missing payload: gobot/{module}.<python-abi>.so")
         nvrtc_path = "gobot/luisa/luisa_nvrtc"
         if nvrtc_path in names:
             nvrtc_mode = wheel.getinfo(nvrtc_path).external_attr >> 16
@@ -181,18 +189,18 @@ def verify_wheel(path: Path) -> list[str]:
             errors.append(f"expected one METADATA file, found {len(metadata_names)}")
         else:
             metadata = BytesParser().parsebytes(wheel.read(metadata_names[0]))
-            dependencies = {
-                normalized(Requirement(value).name)
-                for value in metadata.get_all("Requires-Dist", [])
-            }
+            requirements = map(Requirement, metadata.get_all("Requires-Dist", []))
+            target = {"sys_platform": "linux", "platform_machine": "x86_64", "extra": ""}
+            dependencies = {normalized(req.name) for req in requirements
+                            if req.marker is None or req.marker.evaluate(target)}
             missing_dependencies = sorted(REQUIRED_DEPENDENCIES - dependencies)
             if missing_dependencies:
                 errors.append(
                     "missing default dependencies: " + ", ".join(missing_dependencies)
                 )
-            extras = metadata.get_all("Provides-Extra", [])
-            if extras:
-                errors.append("release wheel still declares extras: " + ", ".join(extras))
+            extras = set(metadata.get_all("Provides-Extra", []))
+            if extras != {"planning-sqp"}:
+                errors.append(f"expected the planning-sqp extra, found {sorted(extras)}")
     return errors
 
 

@@ -17,6 +17,8 @@ FILE_PATH = "FO_dataset/playroom/point_cloud/iteration_7000/point_cloud.ply"
 EXPECTED_SIZE = 370_875_860
 EXPECTED_SHA256 = "201bc92b65594727a3ecfbe7e658c09ac3f8be753e2e2024047cd3ea1fe31d8c"
 DEFAULT_URLS = (
+    "https://github.com/RobSimulatorGroup/gobot-example-assets/releases/download/"
+    "gaussian-playroom-v1/playroom-7000.ply",
     f"https://huggingface.co/datasets/Voxel51/gaussian_splatting/resolve/{REVISION}/{FILE_PATH}",
     f"https://hf-mirror.com/datasets/Voxel51/gaussian_splatting/resolve/{REVISION}/{FILE_PATH}",
 )

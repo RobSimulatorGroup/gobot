@@ -37,6 +37,7 @@ jobs:
           3rdparty/pybind11 \
           3rdparty/rttr \
           3rdparty/stb
+        git -c protocol.version=2 submodule update --init --recursive --depth=1 3rdparty/coal
 
     - name: Get Ninja
       uses: seanmiddleditch/gha-setup-ninja@v3
@@ -44,7 +45,11 @@ jobs:
     - name: Install dependencies
       if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |  
-        sudo apt install -y \
+        sudo apt-get update
+        sudo apt-get install -y \
+          libassimp-dev \
+          libboost-filesystem-dev \
+          libboost-serialization-dev \
           libeigen3-dev \
           libx11-xcb-dev \
           pkg-config \
@@ -89,6 +94,8 @@ jobs:
       run: cmake -B ${{ github.workspace }}/build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DGOB_BUILD_TESTS=ON -DGOB_BUILD_LIBUIPC=OFF -DPython3_EXECUTABLE="$(command -v python)"
 
     - name: Build
+      env:
+        CMAKE_BUILD_PARALLEL_LEVEL: "2"
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
 
     - name: Test
@@ -146,6 +153,7 @@ jobs:
           -DGOB_BUILD_OPENUSD=ON \
           -DGOB_OPENUSD_ROOT="$PWD/build/openusd/install" \
           -DGOB_BUILD_ASSIMP=OFF \
+          -DGOB_BUILD_COAL=OFF \
           -DGOB_BUILD_MUJOCO=OFF \
           -DGOB_BUILD_SUPERDEX=OFF \
           -DGOB_BUILD_EGL=OFF \

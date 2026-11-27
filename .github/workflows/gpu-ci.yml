@@ -60,9 +60,9 @@ jobs:
       - name: Build LuisaCompute CUDA runtime
         run: cmake --workflow --preset dependencies-render
 
-      - name: Install complete Gobot environment
+      - name: Install Gobot for renderer and RL tests
         env:
-          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF -DGOB_BUILD_SUPERDEX=OFF"
+          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF -DGOB_BUILD_SUPERDEX=OFF -DGOB_BUILD_COAL=OFF"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: uv sync
 
@@ -73,6 +73,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DGOB_BUILD_TESTS=ON \
             -DGOB_BUILD_ASSIMP=OFF \
+            -DGOB_BUILD_COAL=OFF \
             -DGOB_BUILD_MUJOCO=OFF \
             -DGOB_BUILD_SUPERDEX=OFF \
             -DGOB_BUILD_LUISA_RENDERER=ON \

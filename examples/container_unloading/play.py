@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
+import runpy
 import threading
 
 import numpy as np
@@ -12,11 +12,8 @@ from scipy.spatial.transform import Rotation
 import gobot
 from gobot import render
 
-_PROJECT_DIR = str(Path(__file__).resolve().parent)
-if _PROJECT_DIR not in sys.path:
-    sys.path.insert(0, _PROJECT_DIR)
-
-from plan import PAYLOAD, ROBOT, solve  # noqa: E402
+_plan = runpy.run_path(str(Path(__file__).with_name("plan.py")))
+PAYLOAD, ROBOT, solve = _plan["PAYLOAD"], _plan["ROBOT"], _plan["solve"]
 
 
 def seed_visuals(root, links):
