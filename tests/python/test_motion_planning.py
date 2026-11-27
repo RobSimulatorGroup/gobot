@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 import runpy
 from time import perf_counter
@@ -419,11 +420,22 @@ def test_batch_planning_and_backend_parity_with_dynamic_mutation(simple_snapshot
     p4, _ = world.link_pose(res.positions[1, 4], tip)
     np.testing.assert_allclose(p4, [0.1, 0.4, 0.5], atol=1e-4)
 
-    # Mutate world topology and verify backend stays synchronized.
-    world.add_sphere("extra_ball", 0.06, (0.0, 0.42, 0.5))
-    res2 = planner.plan(MotionPlanRequest(np.array([-0.7, 0.42, 0.0]), np.array([0.7, 0.42, 0.0]), config=cfg))
-    assert res2.success, res2.reason
-    ok, reason = world.validate_trajectory(res2.positions, dt=0.45, margin=0.01, world_margin=0.015)
+    # A line through the sphere center has no lateral distance gradient. Allow a global detour.
+    lane_y = 0.5
+    crossing = MotionPlanRequest(np.array([-0.7, lane_y, 0.0]), np.array([0.7, lane_y, 0.0]),
+                                 config=replace(cfg, use_global_seeding=True))
+    before = planner.plan(crossing)
+    assert before.success, before.reason
+
+    world.add_sphere("extra_ball", 0.06, (0.0, lane_y, 0.5))
+    clearance = dict(margin=cfg.margin, world_margin=cfg.world_margin, strict_ccd=True)
+    ok, reason = world.validate_trajectory(before.trajectory, **clearance)
+    assert not ok and "extra_ball" in (reason or ""), reason
+
+    after = planner.plan(crossing)
+    assert after.success, after.reason
+    assert before.world_version < after.world_version == world.version
+    ok, reason = world.validate_trajectory(after.trajectory, **clearance)
     assert ok, reason
 
 
