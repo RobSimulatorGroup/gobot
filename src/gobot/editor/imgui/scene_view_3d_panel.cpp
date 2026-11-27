@@ -10,6 +10,7 @@
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
+#include "gobot/editor/ik_ghost_session.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -38,6 +39,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gobot {
@@ -71,6 +73,12 @@ Robot3D* FindFirstRobot(Node* node) {
     }
 
     return nullptr;
+}
+
+Node* ResolveHoveredNode(Node* root, ObjectID id) {
+    if (!root || id.IsNull()) return nullptr;
+    auto* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(id));
+    return node && (node == root || root->IsAncestorOf(node)) ? node : nullptr;
 }
 
 Robot3D* FindActiveRobot(Node* scene_root, Node* hovered_node) {
@@ -359,6 +367,61 @@ void ClearRuntimeExternalForce() {
     }
 }
 
+std::string FormatShortCollisionShapeName(std::string_view raw) {
+    // Strip surrounding quotes if present.
+    while (!raw.empty() && (raw.front() == '\'' || raw.front() == '"' || raw.front() == ' ')) {
+        raw.remove_prefix(1);
+    }
+    while (!raw.empty() && (raw.back() == '\'' || raw.back() == '"' || raw.back() == ' ')) {
+        raw.remove_suffix(1);
+    }
+    if (raw.empty()) {
+        return {};
+    }
+    // Robot shape format: "robot/link//root/.../shape" -> return "link".
+    if (const std::size_t dbl = raw.find("//"); dbl != std::string_view::npos && dbl > 0) {
+        const std::string_view prefix = raw.substr(0, dbl);
+        if (const std::size_t slash = prefix.rfind('/'); slash != std::string_view::npos) {
+            return std::string(prefix.substr(slash + 1));
+        }
+        return std::string(prefix);
+    }
+    // Obstacle scene path format: "/root/.../Node/Collision" -> return last 1-2 path segments.
+    const std::size_t last_slash = raw.rfind('/');
+    if (last_slash == std::string_view::npos) {
+        return std::string(raw);
+    }
+    const std::string_view leaf = raw.substr(last_slash + 1);
+    if (leaf == "Collision" || leaf == "CollisionShape" || leaf == "CollisionShape3D") {
+        const std::string_view parent_part = raw.substr(0, last_slash);
+        if (const std::size_t prev_slash = parent_part.rfind('/'); prev_slash != std::string_view::npos) {
+            return std::string(parent_part.substr(prev_slash + 1));
+        }
+    }
+    return std::string(leaf);
+}
+
+std::string FormatCollisionPairForHud(const std::string& pair_str) {
+    if (pair_str.empty()) {
+        return "margin";
+    }
+    std::string_view sv = pair_str;
+    if (sv.size() >= 2 && sv.front() == '(' && sv.back() == ')') {
+        sv.remove_prefix(1);
+        sv.remove_suffix(1);
+    }
+    const std::size_t comma = sv.find(',');
+    if (comma == std::string_view::npos) {
+        return FormatShortCollisionShapeName(sv);
+    }
+    const std::string a = FormatShortCollisionShapeName(sv.substr(0, comma));
+    const std::string b = FormatShortCollisionShapeName(sv.substr(comma + 1));
+    if (a.empty() || b.empty()) {
+        return pair_str;
+    }
+    return a + " <-> " + b;
+}
+
 }
 
 void DrawJointMotionHint(Joint3D* joint,
@@ -440,10 +503,25 @@ void SceneView3DPanel::OnImGuiContent()
         }
     }
     static const std::vector<DebugArrow> empty_debug_arrows;
-    const EngineContext* engine_context = Editor::GetInstance()->GetEngineContext();
+    static const std::vector<VisualMeshRenderItem> empty_overlay_meshes;
+    auto* editor = Editor::GetInstance();
+    const EngineContext* engine_context = editor->GetEngineContext();
+    auto* ik_session = editor->GetIKGhostSession();
+    if (ik_session != nullptr && engine_context != nullptr) {
+        auto* active_robot = FindActiveRobot(scene_root, ResolveHoveredNode(scene_root, hovered_node_id_));
+        ik_session->Update(scene_root,
+                           active_robot,
+                           engine_context->GetSceneEpoch(),
+                           editor->GetSceneChangeVersion(),
+                           editor->IsScenePlaySessionRunning());
+    }
     const std::vector<DebugArrow>& debug_arrows = engine_context != nullptr
                                                           ? engine_context->GetDebugArrows()
                                                           : empty_debug_arrows;
+    const std::vector<VisualMeshRenderItem>& overlay_meshes =
+            (ik_session != nullptr && ik_session->IsEnabled())
+                    ? ik_session->GetOverlayMeshes()
+                    : empty_overlay_meshes;
     const bool show_collision_debug = true;
     viewport_renderer_->Render(view_port_,
                                scene_root,
@@ -451,7 +529,8 @@ void SceneView3DPanel::OnImGuiContent()
                                physics_frame ? &physics_frame->state : nullptr,
                                physics_settings,
                                debug_arrows,
-                               show_collision_debug);
+                               show_collision_debug,
+                               overlay_meshes);
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
@@ -511,7 +590,7 @@ void SceneView3DPanel::OnImGuiContent()
             : (dragged_joint_ ? dragged_joint_
                               : (motion_target_joint_ ? motion_target_joint_ : selected_motion_joint));
     viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size,
-                                      ImGui::GetWindowDrawList(), hovered_node_, active_motion_joint,
+                                      ImGui::GetWindowDrawList(), ResolveHoveredNode(scene_root, hovered_node_id_), active_motion_joint,
                                       !IsSceneRuntimePlaying());
     DrawJointMotionHint(active_motion_joint,
                         camera_3d,
@@ -519,6 +598,78 @@ void SceneView3DPanel::OnImGuiContent()
                         scene_view_size,
                         ImGui::GetWindowDrawList(),
                         dragged_joint_ != nullptr);
+    if (ik_session != nullptr && ik_session->IsEnabled()) {
+        const IKGhostDiagnostics diag = ik_session->GetDiagnostics();
+        auto* draw_list = ImGui::GetWindowDrawList();
+        if (diag.status == IKGhostStatus::PoseNotSolved && diag.displayed_seq == diag.target_seq &&
+            ik_session->HasActiveTarget()) {
+            ImVec2 target_screen;
+            if (ProjectWorldPoint(camera_3d, scene_view_position, scene_view_size,
+                                  ik_session->GetTargetPose().translation(), target_screen)) {
+                const ImU32 red = IM_COL32(245, 72, 72, 240);
+                draw_list->AddCircle(target_screen, 11.0f, red, 20, 2.0f);
+                draw_list->AddLine({target_screen.x - 14.0f, target_screen.y},
+                                   {target_screen.x + 14.0f, target_screen.y}, red, 2.0f);
+                draw_list->AddLine({target_screen.x, target_screen.y - 14.0f},
+                                   {target_screen.x, target_screen.y + 14.0f}, red, 2.0f);
+            }
+        }
+        ImU32 badge_col = IM_COL32(140, 180, 235, 255);
+        std::string badge_text;
+        const std::string ee_label = diag.end_effector_link.empty() ? "TCP" : diag.end_effector_link;
+        switch (diag.status) {
+            case IKGhostStatus::Ok:
+                badge_col = IM_COL32(52, 224, 112, 255);
+                badge_text = fmt::format("IK Ghost [{}]  OK", ee_label);
+                if (std::isfinite(diag.min_distance)) {
+                    badge_text += fmt::format("  clear {:.1f} mm", diag.min_distance * 1000.0);
+                }
+                badge_text += fmt::format("  ({:.1f} ms / p95 {:.1f} ms)",
+                                          diag.last_solve_ms, diag.p95_input_to_display_ms);
+                break;
+            case IKGhostStatus::Collision:
+                badge_col = IM_COL32(250, 148, 32, 255);
+                badge_text = fmt::format("IK Ghost [{}]  COLLISION ({})",
+                                         ee_label, FormatCollisionPairForHud(diag.collision_pair));
+                if (diag.min_distance == -std::numeric_limits<double>::infinity()) {
+                    badge_text += "  mesh intersection (depth unknown)";
+                } else if (std::isfinite(diag.min_distance)) {
+                    badge_text += fmt::format("  dist {:.1f} mm", diag.min_distance * 1000.0);
+                }
+                break;
+            case IKGhostStatus::PoseNotSolved:
+                badge_col = IM_COL32(242, 68, 68, 255);
+                badge_text = fmt::format("IK Ghost [{}]  NOT SOLVED  pos {:.1f} mm / rot {:.1f} deg",
+                                         ee_label,
+                                         diag.pos_err * 1000.0,
+                                         diag.rot_err * 180.0 / M_PI);
+                break;
+            case IKGhostStatus::Solving:
+                badge_text = fmt::format("IK Goal [{}]  Solving...", ee_label);
+                break;
+            default:
+                badge_text = fmt::format("IK Goal [{}]  {}",
+                                         ee_label,
+                                         diag.status_message.empty() ? "Inactive" : diag.status_message);
+                break;
+        }
+        const ImVec2 text_size = ImGui::CalcTextSize(badge_text.c_str());
+        const ImVec2 pad{10.0f, 6.0f};
+        const float dot_radius = 4.5f;
+        const float dot_space = dot_radius * 2.0f + 8.0f;
+        const ImVec2 box_min{scene_view_position.x + 10.0f,
+                             scene_view_position.y + scene_view_size.y - text_size.y - pad.y * 2.0f - 10.0f};
+        const ImVec2 box_max{box_min.x + pad.x * 2.0f + dot_space + text_size.x,
+                             box_min.y + text_size.y + pad.y * 2.0f};
+        draw_list->AddRectFilled(box_min, box_max, IM_COL32(22, 24, 28, 215), 5.0f);
+        draw_list->AddRect(box_min, box_max, badge_col, 5.0f, 0, 1.5f);
+        draw_list->AddCircleFilled({box_min.x + pad.x + dot_radius,
+                                    (box_min.y + box_max.y) * 0.5f},
+                                   dot_radius, badge_col, 16);
+        draw_list->AddText({box_min.x + pad.x + dot_space, box_min.y + pad.y},
+                           IM_COL32(242, 245, 248, 255),
+                           badge_text.c_str());
+    }
     if (drag_force_active_) {
         ImVec2 start;
         ImVec2 end;
@@ -575,24 +726,27 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             (!runtime_playing ||
              runtime_zooming ||
              (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !camera_modifier_down && !viewport_input_blocked));
+    Node* hovered = nullptr;
     if (!scene_root || !mouse_inside_rect || gizmo_captures_mouse) {
-        hovered_node_ = nullptr;
+        hovered_node_id_ = ObjectID{};
         motion_target_joint_ = nullptr;
         node3d_editor->SetViewportZoomPivot(Vector3::Zero(), false);
     } else if (should_pick) {
         Vector3 hit_point = Vector3::Zero();
-        hovered_node_ = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
+        hovered = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
                                                      viewport_position, viewport_size, ImGui::GetMousePos(),
                                                      &hit_point, runtime_playing, runtime_playing);
-        node3d_editor->SetViewportZoomPivot(hit_point, hovered_node_ != nullptr);
-        if (hovered_node_ != nullptr && !drag_force_point_locked_) {
+        hovered_node_id_ = hovered ? hovered->GetInstanceId() : ObjectID{};
+        node3d_editor->SetViewportZoomPivot(hit_point, hovered != nullptr);
+        if (hovered != nullptr && !drag_force_point_locked_) {
             drag_force_point_ = hit_point;
         }
     } else if (runtime_playing) {
+        hovered = ResolveHoveredNode(scene_root, hovered_node_id_);
         motion_target_joint_ = nullptr;
     }
 
-    auto* motion_joint = runtime_playing ? nullptr : FindMotionJointForViewportTarget(hovered_node_);
+    auto* motion_joint = runtime_playing ? nullptr : FindMotionJointForViewportTarget(hovered);
     motion_target_joint_ = motion_joint;
 
     if (!left_down || viewport_input_blocked) {
@@ -622,8 +776,8 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
 
     if (mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
         !camera_modifier_down && !gizmo_captures_mouse) {
-        if (hovered_node_) {
-            Editor::GetInstance()->SetSelected(hovered_node_);
+        if (hovered) {
+            Editor::GetInstance()->SetSelected(hovered);
         } else {
             Editor::GetInstance()->SetSelected(nullptr);
         }
@@ -646,7 +800,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                 drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
             }
         } else if (runtime_playing) {
-            if (auto* link = FindNearestAncestorLink(hovered_node_);
+            if (auto* link = FindNearestAncestorLink(hovered);
                 link && !Editor::GetInstance()->GetEngineContext()->HasRuntimePoseTarget(link->GetInstanceId())) {
                 dragged_force_link_ = link;
                 drag_force_joint_ = FindNearestAncestorJoint(link);
@@ -899,7 +1053,7 @@ ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
     const float separator_width = 9.0f;
     const float right_limit = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 8.0f;
 
-    constexpr int button_count = 10;
+    constexpr int button_count = 11;
     constexpr int separator_count = 6;
     const float toolbar_width = button_count * button_extent +
                                 separator_count * separator_width +
@@ -939,6 +1093,7 @@ ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
     add_item(separator_width);
     add_item(button_extent);
     add_item(button_extent);
+    add_item(button_extent);
     add_item(separator_width);
     add_item(button_extent);
     max_row_width = std::max(max_row_width, row_width);
@@ -949,7 +1104,8 @@ ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
 void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
 {
     auto node3d_editor = Node3DEditor::GetInstance();
-    auto* active_robot = FindActiveRobot(Editor::GetInstance()->GetActiveSceneRoot(), hovered_node_);
+    auto* root = Editor::GetInstance()->GetActiveSceneRoot();
+    auto* active_robot = FindActiveRobot(root, ResolveHoveredNode(root, hovered_node_id_));
     const float base_font_size = ImGui::GetFontSize();
     const float button_extent = std::max(30.0f, base_font_size * 1.32f);
     const ImVec2 button_size{button_extent, button_extent};
@@ -1079,6 +1235,16 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         });
         draw_toolbar_button("motion_mode", ICON_MDI_AXIS_ARROW, "Robot motion mode: edit joint positions", motion_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Motion);
+        });
+        auto* ik_session = Editor::GetInstance()->GetIKGhostSession();
+        const bool ik_available = ik_session != nullptr && InteractiveIKGhostSession::IsAvailable() &&
+                                  robot_available && !Editor::GetInstance()->IsScenePlaySessionRunning();
+        const bool ik_selected = ik_session != nullptr && ik_session->IsEnabled();
+        const char* ik_tooltip = InteractiveIKGhostSession::IsAvailable()
+                                         ? "Interactive IK Goal mode: drag TCP ghost with live collision preview"
+                                         : "Interactive IK Goal mode unavailable (requires GOB_BUILD_COAL=ON)";
+        draw_toolbar_button("ik_goal_mode", ICON_MDI_TARGET, ik_tooltip, ik_selected, ik_available, [&]() {
+            ik_session->SetEnabled(!ik_selected);
         });
     }
 

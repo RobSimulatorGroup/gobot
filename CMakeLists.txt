@@ -1208,6 +1208,8 @@ add_library(gobot_editor_runtime SHARED
 add_dependencies(gobot_editor_runtime gobot_editor_resources gobot_python_package)
 if(GOB_BUILD_COAL)
     add_dependencies(gobot_editor_runtime _coal_native)
+    target_link_libraries(gobot_editor_runtime PUBLIC gobot_planning)
+    target_compile_definitions(gobot_editor_runtime PUBLIC GOBOT_HAS_PLANNING=1)
 endif()
 target_include_directories(gobot_editor_runtime PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)

@@ -3,6 +3,7 @@
 // link against a single compiled library target.
 
 #include "planning_planner.hpp"
+#include "planning_shapes.hpp"
 
 namespace gobot::planning {
 

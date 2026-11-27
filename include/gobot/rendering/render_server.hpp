@@ -153,6 +153,11 @@ public:
                                    const RenderSceneSnapshot& scene,
                                    const RenderViewSnapshot& view);
 
+    void RenderOverlayMeshesToViewport(const RID& viewport,
+                                       const Camera3D* camera,
+                                       const std::vector<VisualMeshRenderItem>& items,
+                                       const OverlayMeshPassOptions& options = {});
+
     void SetSceneRendererSettings(const SceneRendererSettings& settings);
 
     [[nodiscard]] SceneRendererSettings GetSceneRendererSettings() const;

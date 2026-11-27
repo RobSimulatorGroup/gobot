@@ -1,4 +1,5 @@
 #include "planning_planner.hpp"
+#include "planning_shapes.hpp"
 
 #include <gtest/gtest.h>
 
@@ -2694,4 +2695,150 @@ TEST(MotionPlanningCpp, BatchCandidateVerificationEnforcesFullRequest) {
         const int wp2 = res[0].plan.waypoint_indices[2];
         EXPECT_NEAR(res[0].plan.trajectory.positions(wp2, 0), -0.45, 1e-4);
     }
+}
+
+TEST(MotionPlanningCpp, MeshShapeConvexHullAndDegeneracy) {
+    // 1. Collinear vertices must throw explicitly (matching Python world.py).
+    {
+        std::vector<gp::Vec3> verts = {{0, 0, 0}, {1, 0, 0}, {2, 0, 0}};
+        std::vector<uint32_t> idxs = {0, 1, 2};
+        EXPECT_THROW(gp::make_mesh_shape("collinear", verts, idxs), std::invalid_argument);
+    }
+
+    // 2. Coplanar polygon produces exact 2D convex hull without throwing or falling back to bloated OBB.
+    {
+        std::vector<gp::Vec3> verts = {
+            {0.0, 0.0, 0.5}, {1.0, 0.0, 0.5}, {1.0, 1.0, 0.5},
+            {0.0, 1.0, 0.5}, {0.5, 0.5, 0.5}  // interior point must be dropped from hull
+        };
+        std::vector<uint32_t> idxs = {0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4};
+        auto sh = gp::make_mesh_shape("coplanar_quad", verts, idxs);
+        ASSERT_NE(sh, nullptr);
+        EXPECT_EQ(sh->kind, 5);
+        EXPECT_EQ(sh->hull_points.size(), 4u);
+        EXPECT_NE(sh->convex, nullptr);
+        EXPECT_NE(sh->original, nullptr);
+    }
+
+    // 3. 3D non-convex L-shaped mesh: exact 3D convex hull + exact BVH original preserves concave notch.
+    {
+        // Build an L-shape extruded along Z: two boxes [0..1, 0..0.2] and [0..0.2, 0.2..1.0], Z in [0..0.4].
+        // Point (0.7, 0.7, 0.2) is outside the L-shape and outside the convex hull of the L-shape?
+        // Actually (0.7, 0.7) is OUTSIDE the diagonal (1,0.2)-(0.2,1) (x+y=1.4 > 1.2)!
+        // An AABB/OBB [0..1, 0..1] would falsely cover (0.7, 0.7, 0.2), whereas the exact 3D convex hull does not!
+        std::vector<gp::Vec3> verts;
+        std::vector<uint32_t> idxs;
+        auto add_box = [&](double x0, double x1, double y0, double y1, double z0, double z1) {
+            const uint32_t base = static_cast<uint32_t>(verts.size());
+            verts.push_back({x0, y0, z0}); verts.push_back({x1, y0, z0});
+            verts.push_back({x1, y1, z0}); verts.push_back({x0, y1, z0});
+            verts.push_back({x0, y0, z1}); verts.push_back({x1, y0, z1});
+            verts.push_back({x1, y1, z1}); verts.push_back({x0, y1, z1});
+            const uint32_t tris[36] = {
+                0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
+                0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6,
+                0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5
+            };
+            for (uint32_t t : tris) idxs.push_back(base + t);
+        };
+        add_box(0.0, 1.0, 0.0, 0.2, 0.0, 0.4);
+        add_box(0.0, 0.2, 0.2, 1.0, 0.0, 0.4);
+
+        auto l_shape = gp::make_mesh_shape("l_bracket", verts, idxs);
+        auto probe = gp::make_sphere_shape("probe", 0.05);
+        gp::Frame f_id = gp::Frame::Zero();
+        f_id.leftCols<3>() = gp::Mat3::Identity();
+        gp::Frame f_probe = f_id;
+        f_probe.col(3) = gp::Vec3(0.75, 0.75, 0.2);  // inside AABB [0..1]^2, outside true convex hull (x+y <= 1.2)
+        double dist_cvx[10] = {};
+        gp::eval_coal_distance(*l_shape, *probe, f_id.data(), f_probe.data(), false, 10.0, dist_cvx);
+        EXPECT_GT(dist_cvx[0], 0.10) << "True 3D convex hull must leave outside corner open (unlike AABB/OBB)";
+    }
+}
+
+TEST(MotionPlanningCpp, PreviewIKPreservesCollidingCandidateAndESDF) {
+    // 2-DOF planar XY slider arm with box obstacle at (0.5, 0.0, 0.0) of size 0.2^3.
+    gp::PlanningWorld world;
+    std::vector<int> parent = {-1, 0, 1};
+    std::vector<int> kinds = {4, 3, 3};
+    std::vector<int> jidx = {-1, 0, 1};
+    std::vector<gp::Mat3> a_rot(3, gp::Mat3::Identity());
+    std::vector<gp::Vec3> a_pos(3, gp::Vec3::Zero());
+    std::vector<gp::Mat3> b_rot(3, gp::Mat3::Identity());
+    std::vector<gp::Vec3> b_pos(3, gp::Vec3::Zero());
+    std::vector<gp::Vec3> axes = {gp::Vec3::UnitX(), gp::Vec3::UnitX(), gp::Vec3::UnitY()};
+    std::vector<gp::KinematicsModel::Branch> branches = {{"arm", 0, gp::Vec3::Zero(), gp::Mat3::Identity()}};
+    std::vector<std::string> bnames = {"arm::base", "arm::x", "arm::ee"};
+    std::vector<std::string> jnames = {"arm::jx", "arm::jy"};
+    Eigen::VectorXd lo(2), hi(2), vel(2), acc(2), init_q(2);
+    lo << -1.0, -1.0;
+    hi << 1.0, 1.0;
+    vel << 2.0, 2.0;
+    acc << 5.0, 5.0;
+    init_q << 0.0, 0.0;
+    std::unordered_map<std::string, int> lmap = {{"arm::base", 0}, {"arm::x", 1}, {"arm::ee", 2}};
+    world.init_kinematics(parent, kinds, jidx, a_rot, a_pos, b_rot, b_pos, axes,
+                          branches, bnames, jnames, lo, hi, vel, acc, init_q, lmap);
+    {
+        gp::WorldShape ee_ws;
+        ee_ws.name = "arm/ee";
+        ee_ws.link_key = "arm::ee";
+        ee_ws.body_id = 2;
+        ee_ws.local_frame = gp::Frame::Zero();
+        ee_ws.local_frame.leftCols<3>() = gp::Mat3::Identity();
+        ee_ws.layer = 1;
+        ee_ws.mask = 1;
+        ee_ws.shape = gp::make_sphere_shape("ee_sphere", 0.05);
+        world.add_shape(std::move(ee_ws));
+    }
+    {
+        gp::WorldShape box_ws;
+        box_ws.name = "wall_box";
+        box_ws.link_key = "::wall";
+        box_ws.body_id = -1;
+        box_ws.local_frame = gp::Frame::Zero();
+        box_ws.local_frame.leftCols<3>() = gp::Mat3::Identity();
+        box_ws.local_frame.col(3) = gp::Vec3(0.5, 0.0, 0.0);
+        box_ws.layer = 1;
+        box_ws.mask = 1;
+        box_ws.shape = gp::make_box_shape("wall_box", gp::Vec3(0.2, 0.2, 0.2));
+        world.add_shape(std::move(box_ws));
+    }
+
+    auto snap = world.snapshot();
+    std::vector<uint8_t> mask = {1, 1};
+    gp::PreviewIKConfigNative cfg;
+    cfg.check_rotation = false;
+    cfg.margin = 0.0;
+    cfg.world_margin = 0.01;
+
+    // 1. Free space -> Ok (green)
+    auto ok_res = gp::solve_ik_preview_on_snapshot(
+        *snap, 2, gp::Vec3::Zero(), gp::Mat3::Identity(),
+        gp::Vec3(0.1, 0.4, 0.0), gp::Mat3::Identity(), init_q, mask, cfg);
+    EXPECT_EQ(ok_res.status, gp::PreviewIKStatus::Ok);
+    EXPECT_LT(ok_res.pos_err, 1e-3);
+    EXPECT_GT(ok_res.min_distance, 0.01);
+
+    // 2. Inside box -> Collision (orange), MUST preserve colliding q reaching target + witness!
+    auto col_res = gp::solve_ik_preview_on_snapshot(
+        *snap, 2, gp::Vec3::Zero(), gp::Mat3::Identity(),
+        gp::Vec3(0.5, 0.0, 0.0), gp::Mat3::Identity(), ok_res.q, mask, cfg);
+    EXPECT_EQ(col_res.status, gp::PreviewIKStatus::Collision);
+    ASSERT_EQ(col_res.q.size(), 2);
+    EXPECT_NEAR(col_res.q(0), 0.5, 2e-3);
+    EXPECT_NEAR(col_res.q(1), 0.0, 2e-3);
+    EXPECT_LT(col_res.min_distance, 0.0);
+    EXPECT_FALSE(col_res.collision_pair.empty());
+    EXPECT_TRUE(col_res.has_witness);
+
+    EXPECT_NEAR((col_res.witness_a - gp::Vec3(col_res.q(0), col_res.q(1), 0.0)).norm(), 0.05, 1e-5);
+    EXPECT_NEAR((col_res.witness_b - gp::Vec3(0.5, 0.0, 0.0)).cwiseAbs().maxCoeff(), 0.10, 1e-5);
+
+    // 3. Outside joint limits -> PoseNotSolved (red)
+    auto far_res = gp::solve_ik_preview_on_snapshot(
+        *snap, 2, gp::Vec3::Zero(), gp::Mat3::Identity(),
+        gp::Vec3(2.5, 0.0, 0.0), gp::Mat3::Identity(), ok_res.q, mask, cfg);
+    EXPECT_EQ(far_res.status, gp::PreviewIKStatus::PoseNotSolved);
+    EXPECT_GT(far_res.pos_err, 1.0);
 }

@@ -706,11 +706,16 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                     const PhysicsSceneState* physics_state,
                                     const PhysicsWorldSettings* physics_settings,
                                     const std::vector<DebugArrow>& debug_arrows,
-                                    bool show_collision_debug) {
+                                    bool show_collision_debug,
+                                    const std::vector<VisualMeshRenderItem>& overlay_meshes) {
     GOBOT_PROFILE_ZONE("EditorViewportRenderer::Render");
     if (scene_root) {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderScene");
         RS::GetInstance()->RenderSceneToViewport(viewport, scene_root, camera);
+    }
+    if (!overlay_meshes.empty()) {
+        GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderOverlayMeshes");
+        RS::GetInstance()->RenderOverlayMeshesToViewport(viewport, camera, overlay_meshes);
     }
     {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderEditorDebug");

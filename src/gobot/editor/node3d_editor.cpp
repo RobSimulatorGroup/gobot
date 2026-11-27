@@ -8,6 +8,7 @@
 
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/editor/ik_ghost_session.hpp"
 #include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/main/engine_context.hpp"
@@ -395,6 +396,40 @@ void Node3DEditor::OnImGuizmo() {
             }
             editing_=ImGuizmo::IsUsing();
         }
+        DrawViewManipulator(view_manipulate_position, view_manipulate_size);
+        return;
+    }
+
+    if (auto* ik_session = Editor::GetInstance()->GetIKGhostSession();
+        ik_session != nullptr && ik_session->HasActiveTarget()) {
+        ImGuizmo::OPERATION ik_op = ImGuizmo::TRANSLATE;
+        if (imguizmo_operation_ == ImGuizmo::ROTATE || imguizmo_operation_ == ImGuizmo::UNIVERSAL) {
+            ik_op = static_cast<ImGuizmo::OPERATION>(imguizmo_operation_);
+        }
+        Matrix4 model_matrix = ik_session->GetTargetPose().matrix();
+        float object_matrix[16];
+        for (int i = 0; i < 16; ++i) {
+            object_matrix[i] = static_cast<float>(model_matrix.data()[i]);
+        }
+        Matrix4 view = camera3d_->GetViewMatrix();
+        Matrix4 projection = camera3d_->GetProjectionMatrix();
+        float snap[3] = {0.01f, 0.01f, 0.01f};
+        if (ik_op == ImGuizmo::ROTATE) {
+            snap[0] = 5.0f;
+            snap[1] = 5.0f;
+            snap[2] = 5.0f;
+        }
+        const bool changed = ImGuizmo::Manipulate(view.data(), projection.data(),
+                                                  ik_op, ImGuizmo::LOCAL, object_matrix, nullptr,
+                                                  snap_guizmo_ ? snap : nullptr);
+        if (changed) {
+            for (int i = 0; i < 16; ++i) {
+                model_matrix.data()[i] = static_cast<RealType>(object_matrix[i]);
+            }
+            // Only updates interactive preview goal; never mutates SceneTree or SceneCommandStack.
+            ik_session->SetTargetPose(Affine3(model_matrix));
+        }
+        editing_ = ImGuizmo::IsUsing();
         DrawViewManipulator(view_manipulate_position, view_manipulate_size);
         return;
     }

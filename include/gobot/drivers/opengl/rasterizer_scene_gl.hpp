@@ -33,6 +33,11 @@ public:
                      const RenderSceneSnapshot& scene,
                      const RenderViewSnapshot& view) override;
 
+    void RenderOverlayMeshes(const RID& render_target,
+                             const RenderViewSnapshot& view,
+                             const std::vector<VisualMeshRenderItem>& items,
+                             const OverlayMeshPassOptions& options = {}) override;
+
     [[nodiscard]] SceneRendererCapabilities GetCapabilities() const override;
 
     [[nodiscard]] SceneRendererStats GetStats() const override;
@@ -188,6 +193,8 @@ private:
     bool luisa_load_attempted_ = false;
     bool luisa_create_attempted_ = false;
     std::string luisa_status_;
+    RenderEnvironmentSnapshot last_scene_environment_;
+    std::vector<RenderLightSnapshot> last_scene_lights_;
 
     void EnsureDefaultProgram();
 
