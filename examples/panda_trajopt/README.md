@@ -95,8 +95,8 @@ The default Python build includes Coal and initializes its pinned sources:
 uv sync --reinstall-package gobot
 ```
 
-Coal uses CMake 3.22+, Eigen, Boost serialization/filesystem, and Assimp
-development packages. Select `"coal"` (CPU) or `"mujoco_warp"` (GPU) via
+Gobot builds the pinned Coal fork with Eigen for in-memory collision queries.
+Select `"coal"` (CPU) or `"mujoco_warp"` (GPU) via
 `MotionPlanner(world, backend=...)`.
 
 The Panda joint frames and limits are adapted from the Apache-2.0 Genesis

@@ -8,9 +8,8 @@ complete Git checkout. Dependency versions live in `pyproject.toml`,
 
 Requirements: Linux, Python 3.10+, uv, Git, CMake 3.27+, Ninja, `patch`, a C++20
 compiler, and system development libraries for Eigen, OpenGL/EGL, and X11.
-The default Coal planner also requires Assimp and Boost filesystem and serialization
-development packages (`libassimp-dev`, `libboost-filesystem-dev` and
-`libboost-serialization-dev` on Ubuntu).
+Gobot enables the Coal planner by default and supplies its collision meshes in
+memory. This build of Coal requires Eigen and builds without Assimp or Boost.
 The default SuperDex build needs GCC 12+ or a supported Clang. Default Python
 builds also need a CUDA Toolkit with `nvcc`; libuipc needs TBB and urdfdom
 development packages. See the [CI workflow](../.github/workflows/ci.yml) for
