@@ -400,8 +400,12 @@ void Node3DEditor::OnImGuizmo() {
         return;
     }
 
-    if (auto* ik_session = Editor::GetInstance()->GetIKGhostSession();
+    auto* editor_inst = Editor::GetInstance();
+    if (auto* ik_session = editor_inst->GetIKGhostSession();
         ik_session != nullptr && ik_session->HasActiveTarget()) {
+        if (gizmo_drag_tx_.IsTransactionActive() || gizmo_drag_tx_.IsGestureCancelled()) {
+            gizmo_drag_tx_.CommitAndReset(editor_inst->GetEngineContext());
+        }
         ImGuizmo::OPERATION ik_op = ImGuizmo::TRANSLATE;
         if (imguizmo_operation_ == ImGuizmo::ROTATE || imguizmo_operation_ == ImGuizmo::UNIVERSAL) {
             ik_op = static_cast<ImGuizmo::OPERATION>(imguizmo_operation_);
@@ -434,17 +438,23 @@ void Node3DEditor::OnImGuizmo() {
         return;
     }
 
+    auto* context = editor_inst ? editor_inst->GetEngineContext() : nullptr;
+
     if (imguizmo_operation_ != InvalidGuizmoOperation()) {
-        auto* selected = Editor::GetInstance()->GetSelected();
+        auto* selected = editor_inst->GetSelected();
         auto* selected_node_3d = Object::PointerCastTo<Node3D>(selected);
-        if (!selected_node_3d || !selected_node_3d->IsInsideTree()) {
-            DrawViewManipulator(view_manipulate_position, view_manipulate_size);
-            return;
-        }
-        if (IsLockedByRobotMotionMode(selected_node_3d)) {
+        if (!selected_node_3d || !selected_node_3d->IsInsideTree() || IsLockedByRobotMotionMode(selected_node_3d)) {
+            if (gizmo_drag_tx_.IsTransactionActive() || gizmo_drag_tx_.IsGestureCancelled()) {
+                gizmo_drag_tx_.CommitAndReset(context);
+            }
             editing_ = false;
             DrawViewManipulator(view_manipulate_position, view_manipulate_size);
             return;
+        }
+
+        const bool escape_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (escape_pressed && gizmo_drag_tx_.IsTransactionActive()) {
+            gizmo_drag_tx_.CancelOnEscape(context);
         }
 
         Matrix4 model_matrix = selected_node_3d->GetGlobalTransform().matrix();
@@ -471,20 +481,29 @@ void Node3DEditor::OnImGuizmo() {
                                             ImGuizmo::LOCAL, object_matrix, nullptr,
                                             snap_guizmo_ ? snap : nullptr);
 
-        if (changed) {
+        if (changed && !gizmo_drag_tx_.IsGestureCancelled()) {
             for (int i = 0; i < 16; ++i) {
                 model_matrix.data()[i] = static_cast<RealType>(object_matrix[i]);
             }
-            auto* editor = Editor::GetInstance();
-            if (auto* context = editor->GetEngineContext()) {
-                context->ExecuteSceneCommand(std::make_unique<SetNode3DTransformCommand>(
-                        selected_node_3d->GetInstanceId(),
-                        Affine3(model_matrix),
-                        true));
-            }
+            gizmo_drag_tx_.ExecuteMutation(
+                    context,
+                    "Transform Node",
+                    std::make_unique<SetNode3DTransformCommand>(
+                            selected_node_3d->GetInstanceId(),
+                            Affine3(model_matrix),
+                            true));
         }
 
-        editing_ = ImGuizmo::IsUsing();
+        const bool using_gizmo = ImGuizmo::IsUsing();
+        const bool mouse_left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        if (!using_gizmo && !mouse_left_down) {
+            gizmo_drag_tx_.CommitAndReset(context);
+        }
+
+        editing_ = using_gizmo && !gizmo_drag_tx_.IsGestureCancelled();
+    } else if (gizmo_drag_tx_.IsTransactionActive() || gizmo_drag_tx_.IsGestureCancelled()) {
+        gizmo_drag_tx_.CommitAndReset(context);
+        editing_ = false;
     }
 
     DrawViewManipulator(view_manipulate_position, view_manipulate_size);

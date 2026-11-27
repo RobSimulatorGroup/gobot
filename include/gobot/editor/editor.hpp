@@ -29,7 +29,10 @@ class ResourcePanel;
 class PythonPanel;
 class ProjectHookRunner;
 class ScenePlaySession;
+class PlanningSceneBridge;
 class InteractiveIKGhostSession;
+class MotionPlanningSession;
+class Robot3D;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
     GOBCLASS(Editor, Node)
@@ -74,7 +77,15 @@ public:
 
     EngineContext* GetEngineContext() const { return engine_context_; }
 
+    PlanningSceneBridge* GetPlanningSceneBridge() const { return planning_scene_bridge_.get(); }
+
     InteractiveIKGhostSession* GetIKGhostSession() const { return ik_ghost_session_.get(); }
+
+    MotionPlanningSession* GetMotionPlanningSession() const { return motion_planning_session_.get(); }
+
+    Robot3D* ResolvePlanningRobot(Node* scene_root) const;
+
+    void UpdatePlanningSessions(double dt_seconds);
 
     bool SaveEditedScene(const std::string& path) const;
 
@@ -226,7 +237,9 @@ private:
     ResourcePanel* resource_panel_{nullptr};
     PythonPanel* python_panel_{nullptr};
     std::unique_ptr<ScenePlaySession> scene_play_session_;
+    std::unique_ptr<PlanningSceneBridge> planning_scene_bridge_;
     std::unique_ptr<InteractiveIKGhostSession> ik_ghost_session_;
+    std::unique_ptr<MotionPlanningSession> motion_planning_session_;
     std::unique_ptr<ProjectHookRunner> project_hook_runner_;
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};

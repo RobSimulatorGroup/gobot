@@ -32,12 +32,16 @@
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/physics_panel.hpp"
 #include "gobot/editor/imgui/tactile_panel.hpp"
+#include "gobot/editor/imgui/motion_planning_panel.hpp"
 #include "imgui_extension/gizmos/ImGuizmo.h"
 #include "gobot/editor/imgui/python_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/ik_ghost_session.hpp"
+#include "gobot/editor/motion_planning_session.hpp"
+#include "gobot/editor/planning_scene_bridge.hpp"
 #include "gobot/editor/scene_play_session.hpp"
+#include "gobot/scene/robot_3d.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/physics/physics_server.hpp"
@@ -133,7 +137,9 @@ Editor::Editor() {
         return OpenSceneFromPath(path);
     });
     scene_play_session_ = std::make_unique<ScenePlaySession>();
-    ik_ghost_session_ = std::make_unique<InteractiveIKGhostSession>();
+    planning_scene_bridge_ = std::make_unique<PlanningSceneBridge>();
+    ik_ghost_session_ = std::make_unique<InteractiveIKGhostSession>(planning_scene_bridge_.get());
+    motion_planning_session_ = std::make_unique<MotionPlanningSession>(planning_scene_bridge_.get());
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
@@ -155,6 +161,7 @@ Editor::Editor() {
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<PhysicsPanel>());
     AddChild(Object::New<TactilePanel>());
+    AddChild(Object::New<MotionPlanningPanel>());
     resource_panel_ = Object::New<ResourcePanel>();
     AddChild(resource_panel_);
 
@@ -168,7 +175,9 @@ Editor::Editor() {
 
 Editor::~Editor() {
     project_hook_runner_.reset();
+    motion_planning_session_.reset();
     ik_ghost_session_.reset();
+    planning_scene_bridge_.reset();
     SaveCurrentSceneViewState();
     if (scene_play_session_ != nullptr) {
         scene_play_session_->Stop();
@@ -1021,9 +1030,59 @@ void Editor::End() {
     imgui_manager_->EndFrame();
 }
 
+Robot3D* Editor::ResolvePlanningRobot(Node* scene_root) const {
+    if (scene_root == nullptr) {
+        return nullptr;
+    }
+    if (motion_planning_session_ != nullptr) {
+        const ObjectID pinned = motion_planning_session_->GetPinnedRobotId();
+        if (pinned.IsValid()) {
+            auto* pinned_robot = Object::PointerCastTo<Robot3D>(ObjectDB::GetInstance(pinned));
+            if (pinned_robot != nullptr && (pinned_robot == scene_root || scene_root->IsAncestorOf(pinned_robot))) {
+                return pinned_robot;
+            }
+        }
+    }
+    for (Node* cur = selected_; cur != nullptr; cur = cur->GetParent()) {
+        if (auto* robot = Object::PointerCastTo<Robot3D>(cur)) {
+            if (robot == scene_root || scene_root->IsAncestorOf(robot)) {
+                return robot;
+            }
+        }
+    }
+    std::function<Robot3D*(Node*)> find_first = [&](Node* node) -> Robot3D* {
+        if (node == nullptr) return nullptr;
+        if (auto* robot = Object::PointerCastTo<Robot3D>(node)) return robot;
+        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+            if (auto* r = find_first(node->GetChild(static_cast<int>(i)))) return r;
+        }
+        return nullptr;
+    };
+    return find_first(scene_root);
+}
+
+void Editor::UpdatePlanningSessions(double dt_seconds) {
+    if (engine_context_ == nullptr || planning_scene_bridge_ == nullptr) {
+        return;
+    }
+    Node* scene_root = GetActiveSceneRoot();
+    const bool is_play_mode = IsScenePlaySessionRunning();
+    Robot3D* active_robot = is_play_mode ? nullptr : ResolvePlanningRobot(scene_root);
+    const std::uint64_t scene_epoch = engine_context_->GetSceneEpoch();
+    const std::uint64_t change_ver = GetSceneChangeVersion();
+
+    if (motion_planning_session_ != nullptr) {
+        motion_planning_session_->Update(scene_root, active_robot, scene_epoch, change_ver, is_play_mode, dt_seconds);
+    }
+    if (ik_ghost_session_ != nullptr) {
+        ik_ghost_session_->Update(scene_root, active_robot, scene_epoch, change_ver, is_play_mode);
+    }
+}
+
 void Editor::OnImGuiContent() {
     HandleQuitRequest();
     UpdateProjectLoadHook();
+    UpdatePlanningSessions(static_cast<double>(ImGui::GetIO().DeltaTime));
     file_browser_->Display();
     HandleSceneFileDialogSelection();
     DrawUnsavedSceneDialog();

@@ -26,12 +26,14 @@ TEST_F(EditorDockLayoutTest, PhysicsAndTactileShareTheBottomRightDock) {
     gobot::BuildDefaultEditorDockLayout(dockspace_, ImVec2(1600, 900));
     auto* physics = Dock("###physics");
     auto* tactile = Dock("###tactile");
+    auto* motion_planning = Dock("###motion_planning");
     auto* inspector = Dock("###inspector");
     auto* viewport = Dock("###scene_view3d");
     ASSERT_NE(physics, nullptr);
     ASSERT_NE(inspector, nullptr);
     ASSERT_NE(viewport, nullptr);
     EXPECT_EQ(physics, tactile);
+    EXPECT_EQ(physics, motion_planning);
     EXPECT_FLOAT_EQ(physics->Pos.x, inspector->Pos.x);
     EXPECT_GT(physics->Pos.y, inspector->Pos.y);
     EXPECT_GT(physics->Pos.x, viewport->Pos.x);
@@ -39,6 +41,7 @@ TEST_F(EditorDockLayoutTest, PhysicsAndTactileShareTheBottomRightDock) {
     EXPECT_EQ(physics->SelectedTabId, ImHashStr("###physics"));
     EXPECT_EQ(ImGui::FindWindowSettingsByID(ImHashStr("###physics"))->DockOrder, 0);
     EXPECT_EQ(ImGui::FindWindowSettingsByID(ImHashStr("###tactile"))->DockOrder, 1);
+    EXPECT_EQ(ImGui::FindWindowSettingsByID(ImHashStr("###motion_planning"))->DockOrder, 2);
 }
 
 TEST_F(EditorDockLayoutTest, ResetRestoresTheDefaultSimulationDock) {

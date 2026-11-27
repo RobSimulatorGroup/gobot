@@ -45,6 +45,7 @@ struct SQPJobSpecNative {
 struct SQPJobResultNative {
     bool success = false;
     bool timed_out = false;
+    bool cancelled = false;
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> positions;
     std::string reason;
     int qp_calls = 0;
@@ -187,13 +188,32 @@ inline void build_seg0_hermite_samples(
 
 inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
                                         const SQPJobSpecNative& spec,
-                                        const std::atomic<bool>* cancel_flag = nullptr) {
+                                        const std::atomic<bool>* cancel_flag = nullptr,
+                                        const std::atomic<bool>* race_flag = nullptr) {
     using Clock = std::chrono::steady_clock;
     const auto t_job_start = Clock::now();
 
     SQPJobResultNative out;
     out.seed_strategy = spec.seed_strategy;
     out.goal_index = spec.goal_index;
+
+    const auto is_cancelled = [&]() -> bool {
+        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+            out.cancelled = true;
+            return true;
+        }
+        return false;
+    };
+    const auto is_raced = [&]() -> bool {
+        return race_flag != nullptr && race_flag->load(std::memory_order_relaxed);
+    };
+    if (is_cancelled()) {
+        out.reason = "planning cancelled";
+        return out;
+    }
+    if (is_raced()) {
+        return out;
+    }
 
     const auto& q_init = spec.initial;
     const int T = static_cast<int>(q_init.rows());
@@ -397,9 +417,16 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             }
             // Sound kinematic-chain Conservative Advancement check (convex hull + ESDF sphere-cover).
             {
+                bool ccd_cancelled = false;
                 auto ccd_hit = snap.first_violation_continuous(
                     pos.data(), T, substeps, val_frames.data(), margins.data(), false, 1e-3,
-                    nullptr, nullptr, spec.strict_ccd, nullptr, 3, spec.world_margin);
+                    nullptr, nullptr, spec.strict_ccd, nullptr, 3, spec.world_margin,
+                    cancel_flag, &ccd_cancelled);
+                if (ccd_cancelled || is_cancelled()) {
+                    out.cancelled = true;
+                    failure = "planning cancelled";
+                    break;
+                }
                 if (ccd_hit.has_value()) {
                     failure = "continuous collision clearance on segment " + std::to_string(ccd_hit->seg) +
                               ", pair " + pair_name(ccd_hit->pair_id);
@@ -871,7 +898,12 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         double penalty = 10.0;
 
         for (int it = 0; it < spec.iterations; ++it) {
-            if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return ar;
+            if (is_cancelled()) {
+                ar.has_sol = false;
+                failure = "planning cancelled";
+                return ar;
+            }
+            if (is_raced()) return ar;
             if (deadline_exceeded()) {
                 out.timed_out = true;
                 failure = "replan time budget exceeded";
@@ -900,7 +932,12 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             double predicted = 0.0;
             bool tr_exhausted = true;
             while (radius >= 1e-4) {
-                if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return ar;
+                if (is_cancelled()) {
+                    ar.has_sol = false;
+                    failure = "planning cancelled";
+                    return ar;
+                }
+                if (is_raced()) return ar;
                 if (deadline_exceeded()) {
                     out.timed_out = true;
                     failure = "replan time budget exceeded";
@@ -1007,7 +1044,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
 
     auto seed_cur = q_init;
     for (size_t ai = 0; ai < attempts.size(); ++ai) {
-        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) break;
+        if (is_cancelled()) {
+            failure = "planning cancelled";
+            break;
+        }
+        if (is_raced()) break;
         if (deadline_exceeded()) {
             out.timed_out = true;
             failure = "replan time budget exceeded";
@@ -1016,6 +1057,11 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
         const auto& ac = attempts[ai];
         extra_samples.clear();
         auto ar = run_attempt(seed_cur, ac.substeps, ac.seg_min, ac.cushion);
+        if (out.cancelled || is_cancelled()) {
+            out.cancelled = true;
+            failure = "planning cancelled";
+            break;
+        }
         if (ar.has_sol) {
             out.success = true;
             out.timed_out = false;
@@ -1023,7 +1069,7 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
             out.cost = ar.cost;
             break;
         }
-        if (out.timed_out) break;
+        if (out.timed_out || is_raced()) break;
         if (!has_col) break;
         // Avoid propagating a trapped seg_min local minimum into full-sample attempts.
         if (ac.seg_min) {
@@ -1037,31 +1083,35 @@ inline SQPJobResultNative solve_sqp_job(const WorldSnapshot& snap,
     out.sqp_ms = std::max(0.0, total_ms - validate_ms);
     out.validate_ms = validate_ms;
     if (!out.success) {
-        out.reason = failure.empty() ? "trajectory optimization found no feasible path" : failure;
+        out.reason = out.cancelled
+            ? "planning cancelled"
+            : (failure.empty() ? "trajectory optimization found no feasible path" : failure);
     }
     return out;
 }
 
 inline std::vector<SQPJobResultNative> solve_sqp_batch(const WorldSnapshot& snap,
                                                        const std::vector<SQPJobSpecNative>& specs,
-                                                       bool race = false) {
+                                                       bool race = false,
+                                                       const std::atomic<bool>* cancel_flag = nullptr) {
     const int64_t B = static_cast<int64_t>(specs.size());
     std::vector<SQPJobResultNative> results(static_cast<size_t>(B));
     if (B == 0) return results;
     if (B == 1) {
-        results[0] = solve_sqp_job(snap, specs[0], nullptr);
+        results[0] = solve_sqp_job(snap, specs[0], cancel_flag, nullptr);
         return results;
     }
     std::atomic<bool> race_won{false};
     std::atomic<int64_t> next_idx{0};
-    const std::atomic<bool>* flag_ptr = race ? &race_won : nullptr;
+    const std::atomic<bool>* race_ptr = race ? &race_won : nullptr;
     const int64_t workers = std::min<int64_t>(B, static_cast<int64_t>(ThreadPool::instance().max_threads()));
     ThreadPool::instance().parallel_for(workers, 1, [&](int64_t, int64_t) {
         while (true) {
+            if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) break;
             if (race && race_won.load(std::memory_order_relaxed)) break;
             const int64_t i = next_idx.fetch_add(1, std::memory_order_relaxed);
             if (i >= B) break;
-            results[static_cast<size_t>(i)] = solve_sqp_job(snap, specs[static_cast<size_t>(i)], flag_ptr);
+            results[static_cast<size_t>(i)] = solve_sqp_job(snap, specs[static_cast<size_t>(i)], cancel_flag, race_ptr);
             if (race && results[static_cast<size_t>(i)].success) {
                 race_won.store(true, std::memory_order_relaxed);
             }
@@ -1072,9 +1122,10 @@ inline std::vector<SQPJobResultNative> solve_sqp_batch(const WorldSnapshot& snap
 
 inline std::vector<SQPJobResultNative> solve_sqp_batch(const PlanningWorld& world,
                                                        const std::vector<SQPJobSpecNative>& specs,
-                                                       bool race = false) {
+                                                       bool race = false,
+                                                       const std::atomic<bool>* cancel_flag = nullptr) {
     auto snap = world.snapshot();
-    return solve_sqp_batch(*snap, specs, race);
+    return solve_sqp_batch(*snap, specs, race, cancel_flag);
 }
 
 }  // namespace gobot::planning

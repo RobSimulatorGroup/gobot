@@ -9,6 +9,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/editor/drag_transaction_controller.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/imgui_node.hpp"
 
@@ -95,6 +96,7 @@ private:
     uint32_t imguizmo_operation_ = UINT32_MAX;
 
     bool snap_guizmo_{false};
+    EditorDragTransactionController gizmo_drag_tx_;
 
     SceneView3DPanel* scene_view3d_panel_;
 

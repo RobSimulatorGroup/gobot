@@ -186,6 +186,10 @@ public:
                                      const Camera3D* camera,
                                      const std::vector<DebugArrow>& arrows);
 
+    void RenderDebugPrimitivesToViewport(const RID& viewport,
+                                         const Camera3D* camera,
+                                         const DebugPrimitivesData& primitives);
+
     void Free(const RID& rid);
 
     void Draw();

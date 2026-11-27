@@ -11,6 +11,7 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
 #include "gobot/editor/ik_ghost_session.hpp"
+#include "gobot/editor/motion_planning_session.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -507,21 +508,63 @@ void SceneView3DPanel::OnImGuiContent()
     auto* editor = Editor::GetInstance();
     const EngineContext* engine_context = editor->GetEngineContext();
     auto* ik_session = editor->GetIKGhostSession();
-    if (ik_session != nullptr && engine_context != nullptr) {
-        auto* active_robot = FindActiveRobot(scene_root, ResolveHoveredNode(scene_root, hovered_node_id_));
-        ik_session->Update(scene_root,
-                           active_robot,
-                           engine_context->GetSceneEpoch(),
-                           editor->GetSceneChangeVersion(),
-                           editor->IsScenePlaySessionRunning());
-    }
+    auto* planning_session = editor->GetMotionPlanningSession();
     const std::vector<DebugArrow>& debug_arrows = engine_context != nullptr
                                                           ? engine_context->GetDebugArrows()
                                                           : empty_debug_arrows;
+    const bool show_plan_preview = (planning_session != nullptr && planning_session->IsPreviewActive());
     const std::vector<VisualMeshRenderItem>& overlay_meshes =
-            (ik_session != nullptr && ik_session->IsEnabled())
-                    ? ik_session->GetOverlayMeshes()
-                    : empty_overlay_meshes;
+            show_plan_preview
+                    ? planning_session->GetPreviewOverlayMeshes()
+                    : ((ik_session != nullptr && ik_session->IsEnabled())
+                               ? ik_session->GetOverlayMeshes()
+                               : empty_overlay_meshes);
+
+    DebugPrimitivesData debug_primitives;
+    if (planning_session != nullptr && !editor->IsScenePlaySessionRunning()) {
+        const MotionPlanningConfig& pcfg = planning_session->GetConfig();
+        const TrajectoryDebugOverlayData& dbg = planning_session->GetDebugOverlayData();
+        if (pcfg.show_ee_path && dbg.valid && dbg.ee_path_points.size() >= 2) {
+            const Color path_color = dbg.is_stale
+                    ? Color(0.98f, 0.56f, 0.10f, 0.92f)
+                    : Color(0.16f, 0.88f, 0.96f, 0.95f);
+            for (std::size_t i = 0; i + 1 < dbg.ee_path_points.size(); ++i) {
+                debug_primitives.lines.push_back(DebugLineSegment{
+                        dbg.ee_path_points[i], dbg.ee_path_points[i + 1], path_color, 3.0f});
+            }
+        }
+        auto append_witness_marker = [&](const Vector3& wa, const Vector3& wb, const Color& col) {
+            debug_primitives.lines.push_back(DebugLineSegment{wa, wb, col, 3.0f});
+            const RealType r = 0.015;
+            for (const Vector3& pt : {wa, wb}) {
+                debug_primitives.lines.push_back(DebugLineSegment{pt - Vector3::UnitX() * r, pt + Vector3::UnitX() * r, col, 2.0f});
+                debug_primitives.lines.push_back(DebugLineSegment{pt - Vector3::UnitY() * r, pt + Vector3::UnitY() * r, col, 2.0f});
+                debug_primitives.lines.push_back(DebugLineSegment{pt - Vector3::UnitZ() * r, pt + Vector3::UnitZ() * r, col, 2.0f});
+            }
+        };
+        if (pcfg.show_collision_witnesses) {
+            if (dbg.valid && dbg.has_witness_points) {
+                const Color wcol = (dbg.sampled_min_distance < pcfg.margin)
+                        ? Color(0.98f, 0.24f, 0.20f, 0.98f)
+                        : Color(1.0f, 0.84f, 0.16f, 0.95f);
+                append_witness_marker(dbg.witness_a, dbg.witness_b, wcol);
+            }
+            if (ik_session != nullptr && ik_session->IsEnabled()) {
+                const IKGhostDiagnostics ik_diag = ik_session->GetDiagnostics();
+                if (ik_diag.has_witness) {
+                    append_witness_marker(ik_diag.witness_a, ik_diag.witness_b, Color(1.0f, 0.32f, 0.14f, 0.98f));
+                }
+            }
+        }
+        if (pcfg.show_link_spheres) {
+            const Color scol(0.32f, 0.78f, 1.0f, 0.50f);
+            for (const LinkSphereOverlay& sp : planning_session->CollectCurrentLinkSpheres()) {
+                debug_primitives.spheres.push_back(DebugSphereWireframe{
+                        sp.center, static_cast<RealType>(sp.radius), scol, 1.25f});
+            }
+        }
+    }
+
     const bool show_collision_debug = true;
     viewport_renderer_->Render(view_port_,
                                scene_root,
@@ -530,7 +573,8 @@ void SceneView3DPanel::OnImGuiContent()
                                physics_settings,
                                debug_arrows,
                                show_collision_debug,
-                               overlay_meshes);
+                               overlay_meshes,
+                               debug_primitives.Empty() ? nullptr : &debug_primitives);
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
@@ -670,6 +714,43 @@ void SceneView3DPanel::OnImGuiContent()
                            IM_COL32(242, 245, 248, 255),
                            badge_text.c_str());
     }
+    if (planning_session != nullptr && !editor->IsScenePlaySessionRunning()) {
+        const MotionPlanningDiagnostics pdiag = planning_session->GetDiagnostics();
+        const bool show_plan_hud = (pdiag.status == MotionPlanningStatus::Planning ||
+                                    pdiag.status == MotionPlanningStatus::Stale ||
+                                    planning_session->IsPreviewActive());
+        if (show_plan_hud) {
+            auto* draw_list = ImGui::GetWindowDrawList();
+            ImU32 pcol = IM_COL32(60, 195, 245, 255);
+            std::string ptext;
+            if (pdiag.status == MotionPlanningStatus::Planning) {
+                pcol = IM_COL32(82, 184, 250, 255);
+                ptext = "Motion Planning: Solving...";
+            } else if (planning_session->GetDebugOverlayData().is_stale) {
+                pcol = IM_COL32(250, 148, 32, 255);
+                ptext = planning_session->IsPreviewActive()
+                        ? fmt::format("Plan Preview (STALE - Re-Plan needed)  t={:.2f}/{:.2f}s",
+                                      planning_session->GetPreviewTime(),
+                                      planning_session->GetTrajectoryDuration())
+                        : "Motion Plan: STALE (Scene/settings changed - click Re-Plan)";
+            } else {
+                pcol = IM_COL32(48, 220, 238, 255);
+                ptext = fmt::format("Plan Preview (Ready)  t={:.2f}/{:.2f}s",
+                                    planning_session->GetPreviewTime(),
+                                    planning_session->GetTrajectoryDuration());
+            }
+            const ImVec2 tsz = ImGui::CalcTextSize(ptext.c_str());
+            const ImVec2 pad{10.0f, 5.0f};
+            const float y_offset = (ik_session != nullptr && ik_session->IsEnabled()) ? 44.0f : 10.0f;
+            const ImVec2 bmin{scene_view_position.x + 10.0f,
+                              scene_view_position.y + scene_view_size.y - tsz.y - pad.y * 2.0f - y_offset};
+            const ImVec2 bmax{bmin.x + pad.x * 2.0f + tsz.x,
+                              bmin.y + tsz.y + pad.y * 2.0f};
+            draw_list->AddRectFilled(bmin, bmax, IM_COL32(22, 24, 28, 215), 5.0f);
+            draw_list->AddRect(bmin, bmax, pcol, 5.0f, 0, 1.5f);
+            draw_list->AddText({bmin.x + pad.x, bmin.y + pad.y}, IM_COL32(242, 245, 248, 255), ptext.c_str());
+        }
+    }
     if (drag_force_active_) {
         ImVec2 start;
         ImVec2 end;
@@ -750,6 +831,9 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     motion_target_joint_ = motion_joint;
 
     if (!left_down || viewport_input_blocked) {
+        if (joint_drag_tx_.IsTransactionActive() || joint_drag_tx_.IsGestureCancelled()) {
+            joint_drag_tx_.CommitAndReset(Editor::GetInstance()->GetEngineContext());
+        }
         pressed_joint_ = nullptr;
         dragged_joint_ = nullptr;
         if (drag_force_active_) {
@@ -851,6 +935,15 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     }
 
     if (dragged_joint_) {
+        auto* context = Editor::GetInstance()->GetEngineContext();
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && joint_drag_tx_.IsTransactionActive()) {
+            joint_drag_tx_.CancelOnEscape(context);
+        }
+        if (joint_drag_tx_.IsGestureCancelled()) {
+            drag_last_mouse_ = ImGui::GetMousePos();
+            node3d_editor->SetBlockCameraInput(true);
+            return;
+        }
         const ImVec2 mouse_position = ImGui::GetMousePos();
         const ImVec2 mouse_delta{mouse_position.x - drag_last_mouse_.x,
                                  mouse_position.y - drag_last_mouse_.y};
@@ -863,12 +956,13 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             if (std::abs(delta_angle) > CMP_EPSILON) {
                 const RealType new_joint_position = old_joint_position + drag_joint_rotation_sign_ * delta_angle;
                 if (std::abs(new_joint_position - old_joint_position) > CMP_EPSILON) {
-                    if (auto* context = Editor::GetInstance()->GetEngineContext()) {
-                        context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
-                                dragged_joint_->GetInstanceId(),
-                                "joint_position",
-                                Variant(new_joint_position)));
-                    }
+                    joint_drag_tx_.ExecuteMutation(
+                            context,
+                            "Move Joint",
+                            std::make_unique<SetNodePropertyCommand>(
+                                    dragged_joint_->GetInstanceId(),
+                                    "joint_position",
+                                    Variant(new_joint_position)));
                 }
             }
             drag_last_angle_ = current_angle;
@@ -879,12 +973,13 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             if (std::abs(signed_pixels) > CMP_EPSILON) {
                 const RealType new_joint_position = old_joint_position + signed_pixels * 0.005f;
                 if (std::abs(new_joint_position - old_joint_position) > CMP_EPSILON) {
-                    if (auto* context = Editor::GetInstance()->GetEngineContext()) {
-                        context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
-                                dragged_joint_->GetInstanceId(),
-                                "joint_position",
-                                Variant(new_joint_position)));
-                    }
+                    joint_drag_tx_.ExecuteMutation(
+                            context,
+                            "Move Joint",
+                            std::make_unique<SetNodePropertyCommand>(
+                                    dragged_joint_->GetInstanceId(),
+                                    "joint_position",
+                                    Variant(new_joint_position)));
                 }
             }
         }

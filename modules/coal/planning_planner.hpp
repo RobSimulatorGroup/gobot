@@ -112,7 +112,10 @@ struct ReplanRequestNative {
     double time_budget_s = 0.0;  // <= 0 disables total deadline
 };
 
+enum class StrictCCDResult { NotRun, Passed, Failed };
+
 struct PlanDiagnosticsNative {
+    StrictCCDResult strict_ccd = StrictCCDResult::NotRun;
     double total_ms = 0.0;
     double ik_ms = 0.0;
     double seed_ms = 0.0;
@@ -122,6 +125,7 @@ struct PlanDiagnosticsNative {
     int qp_calls = 0;
     int sqp_iterations = 0;
     bool timed_out = false;
+    bool cancelled = false;
     std::string seed_strategy = "straight";
     std::vector<double> witnesses;  // flat [K * 6]
 };
@@ -160,11 +164,26 @@ struct CandidateBatchResultNative {
 };
 
 struct FinalizeResultNative {
+    StrictCCDResult strict_ccd = StrictCCDResult::NotRun;
     bool success = false;
+    bool cancelled = false;
     TrajectoryNative trajectory;
     std::vector<int> waypoint_indices;  // maps original positions_in row k -> row index in trajectory.positions
     double retime_ms = 0.0;
     std::string reason;
+};
+
+struct TrajectorySampledClearanceNative {
+    bool valid = false;
+    bool mesh_intersection = false;
+    double min_distance = std::numeric_limits<double>::infinity();
+    double worst_time = 0.0;
+    std::string shape_pair;
+    // World-space witnesses for the reported sampled minimum clearance, valid only when has_witness is true.
+    bool has_witness = false;
+    Vec3 witness_a = Vec3::Zero();
+    Vec3 witness_b = Vec3::Zero();
+    int samples_checked = 0;
 };
 
 namespace planner_detail {
@@ -222,7 +241,9 @@ inline RowMatrixXd linear_seed(const Eigen::VectorXd& start, const Eigen::Vector
 }
 
 struct TrajectoryValidationResult {
+    StrictCCDResult strict_ccd = StrictCCDResult::NotRun;
     bool ok = false;
+    bool cancelled = false;
     std::string reason;
     std::set<int> bad_segments;
     std::set<int> manifold_bad_segments;
@@ -246,8 +267,17 @@ inline TrajectoryValidationResult validate_trajectory_atomic(
     std::vector<int64_t>& screen_rows,
     std::vector<int64_t>& screen_pairs,
     std::vector<int64_t>& viol_rows,
-    std::vector<int64_t>& viol_pairs) {
+    std::vector<int64_t>& viol_pairs,
+    const std::atomic<bool>* cancel_flag = nullptr) {
     TrajectoryValidationResult res;
+    auto is_cancelled = [&]() -> bool {
+        return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+    };
+    if (is_cancelled()) {
+        res.cancelled = true;
+        res.reason = "planning cancelled";
+        return res;
+    }
     const int T = traj.num_waypoints();
     const int J = traj.num_joints();
     if (T < 2 || J != snap.kin.num_joints()) {
@@ -299,6 +329,11 @@ inline TrajectoryValidationResult validate_trajectory_atomic(
 
         const int n_passes = (P > 0 && snap.has_mesh) ? 2 : 1;
         for (int pass = 0; pass < n_passes; ++pass) {
+            if (is_cancelled()) {
+                res.cancelled = true;
+                res.reason = "planning cancelled";
+                return res;
+            }
             const bool verify_orig = (pass == 1);
             const char* kind = verify_orig ? "mesh" : "convex";
             if (P > 0) {
@@ -331,10 +366,20 @@ inline TrajectoryValidationResult validate_trajectory_atomic(
                 }
             }
             if (!verify_orig) {
+                bool ccd_cancelled = false;
                 auto ccd_hit = snap.first_violation_continuous(
                     traj.positions.data(), T, substeps, frames.data(), margins.data(),
                     false, 1e-3, traj.times.data(), traj.velocities.data(),
-                    cfg.strict_ccd, traj.accelerations.data(), traj.spline_order, eff_wm);
+                    cfg.strict_ccd, traj.accelerations.data(), traj.spline_order, eff_wm,
+                    cancel_flag, &ccd_cancelled);
+                if (ccd_cancelled || is_cancelled()) {
+                    res.cancelled = true;
+                    res.reason = "planning cancelled";
+                    return res;
+                }
+                if (cfg.strict_ccd) {
+                    res.strict_ccd = ccd_hit ? StrictCCDResult::Failed : StrictCCDResult::Passed;
+                }
                 if (ccd_hit.has_value()) {
                     const char* ckind = (ccd_hit->pair_id < 0) ? "ESDF" : kind;
                     res.reason = std::string("retimed Hermite continuous ") + ckind + " clearance failed on segment " +
@@ -375,10 +420,19 @@ inline FinalizeResultNative finalize_trajectory(
     const std::vector<uint8_t>* active_mask = nullptr,
     const Eigen::VectorXd* start_velocity = nullptr,
     const Eigen::VectorXd* start_acceleration = nullptr,
-    const std::chrono::steady_clock::time_point* deadline = nullptr) {
+    const std::chrono::steady_clock::time_point* deadline = nullptr,
+    const std::atomic<bool>* cancel_flag = nullptr) {
     using Clock = std::chrono::steady_clock;
     const auto t0 = Clock::now();
     FinalizeResultNative out;
+    auto is_cancelled = [&]() -> bool {
+        return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+    };
+    if (is_cancelled()) {
+        out.cancelled = true;
+        out.reason = "planning cancelled";
+        return out;
+    }
 
     const int J = static_cast<int>(positions_in.cols());
     if (!std::isfinite(cfg.velocity_scale) || cfg.velocity_scale <= 0.0) {
@@ -438,6 +492,12 @@ inline FinalizeResultNative finalize_trajectory(
         std::set<int> last_bad_segs;
 
         for (int attempt = 0; attempt < 8; ++attempt) {
+            if (is_cancelled()) {
+                out.cancelled = true;
+                out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+                out.reason = "planning cancelled";
+                return out;
+            }
             if (deadline != nullptr && Clock::now() >= *deadline) {
                 out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
                 out.reason = "replan time budget exceeded";
@@ -449,7 +509,14 @@ inline FinalizeResultNative finalize_trajectory(
 
             auto vres = planner_detail::validate_trajectory_atomic(
                 snap, traj, cfg, vmax, amax, jmax, lo, hi, manifold_constraints,
-                samples, frames, screen_rows, screen_pairs, viol_rows, viol_pairs);
+                samples, frames, screen_rows, screen_pairs, viol_rows, viol_pairs, cancel_flag);
+            out.strict_ccd = vres.strict_ccd;
+            if (vres.cancelled || is_cancelled()) {
+                out.cancelled = true;
+                out.retime_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+                out.reason = "planning cancelled";
+                return out;
+            }
 
             // Verify fixed start boundary preservation (never accept a dropped boundary).
             if (vres.ok && start_velocity != nullptr &&
@@ -605,6 +672,120 @@ inline FinalizeResultNative finalize_trajectory(
     return out;
 }
 
+// Evaluate sampled minimum clearance along the final retimed spline on the planned WorldSnapshot.
+// Computes sample time, closest/worst shape pair, distance, and world-space witnesses (valid only when
+// the underlying distance query returned witness points; false on original mesh intersection or ESDF).
+inline TrajectorySampledClearanceNative evaluate_trajectory_sampled_clearance(
+    const WorldSnapshot& snap,
+    const TrajectoryNative& traj,
+    double margin,
+    double world_margin,
+    int substeps_per_segment = 8,
+    bool verify_original = true,
+    const std::atomic<bool>* cancel_flag = nullptr) {
+    TrajectorySampledClearanceNative out;
+    const int T = traj.num_waypoints();
+    const int J = traj.num_joints();
+    if (T < 2 || J != snap.kin.num_joints()) {
+        return out;
+    }
+    const int substeps = std::max(1, substeps_per_segment);
+    std::vector<double> samples;
+    traj.sample_segments(substeps, samples);
+    const int64_t S = static_cast<int64_t>((T - 1) * substeps + 1);
+    out.samples_checked = static_cast<int>(S);
+
+    const int P = static_cast<int>(snap.pairs.size());
+    const bool use_esdf = snap.has_esdf();
+    if (P == 0 && !use_esdf) {
+        return out;
+    }
+    const double eff_wm = (world_margin >= 0.0) ? world_margin : margin;
+    const Eigen::VectorXd margins = (P > 0) ? snap.pair_margins(margin, eff_wm) : Eigen::VectorXd();
+    const int N_shapes = static_cast<int>(snap.shapes.size());
+    std::vector<double> frames(static_cast<size_t>(S * N_shapes * 12));
+    snap.compute_frames(samples.data(), S, frames.data());
+
+    auto sample_time_at = [&](int64_t s) -> double {
+        if (traj.times.size() != T) return 0.0;
+        if (s >= S - 1) return traj.times(T - 1);
+        const int seg = static_cast<int>(s / substeps);
+        const int sub_k = static_cast<int>(s % substeps);
+        const double u = static_cast<double>(sub_k) / static_cast<double>(substeps);
+        return traj.times(seg) + u * (traj.times(seg + 1) - traj.times(seg));
+    };
+
+    // Rank confirmed mesh intersections first, then smallest distance (tie-broken by convex margin violation).
+    std::pair<bool, double> best_rank{true, std::numeric_limits<double>::infinity()};
+    auto consider = [&](int64_t sample_idx, int64_t pair_id, double distance,
+                        bool mesh_intersection, double ranking_distance) -> bool {
+        const std::pair<bool, double> rank{!mesh_intersection, ranking_distance};
+        if (rank >= best_rank) return false;
+        best_rank = rank;
+        out.valid = true;
+        out.mesh_intersection = mesh_intersection;
+        out.min_distance = distance;
+        out.worst_time = sample_time_at(sample_idx);
+        out.shape_pair = snap.pair_display_name(pair_id);
+        out.has_witness = false;
+        out.witness_a.setZero();
+        out.witness_b.setZero();
+        return true;
+    };
+
+    const double unlimited = std::numeric_limits<double>::infinity();
+    if (P > 0) {
+        for (int64_t s = 0; s < S; ++s) {
+            if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+                return TrajectorySampledClearanceNative{};
+            }
+            const double* sf = frames.data() + s * N_shapes * 12;
+            for (int64_t p = 0; p < P; ++p) {
+                if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return {};
+                const auto& pair = snap.pairs[static_cast<size_t>(p)];
+                const auto& a = *snap.shapes[static_cast<size_t>(pair.shape_a)].shape;
+                const auto& b = *snap.shapes[static_cast<size_t>(pair.shape_b)].shape;
+                const double* fa = sf + pair.shape_a * 12;
+                const double* fb = sf + pair.shape_b * 12;
+                double convex[10];
+                eval_coal_distance(a, b, fa, fb, false, unlimited, convex);
+                double original = unlimited;
+                if (verify_original && (a.original != a.convex || b.original != b.convex)) {
+                    eval_coal_distance(a, b, fa, fb, true, unlimited, &original);
+                }
+                const double distance = std::min(original, convex[0]);
+                const bool intersection = (original == -unlimited);
+                const double rank_dist = intersection ? convex[0] : distance;
+                if (consider(s, p, distance, intersection, rank_dist) && !intersection && distance == convex[0]) {
+                    out.witness_a = transform_from(fa).transform(Eigen::Map<const Vec3>(convex + 1));
+                    out.witness_b = transform_from(fb).transform(Eigen::Map<const Vec3>(convex + 4));
+                    out.has_witness = true;
+                }
+            }
+        }
+    }
+    if (use_esdf) {
+        std::vector<Vec3> bpos(static_cast<size_t>(snap.kin.num_bodies()));
+        std::vector<Mat3> brot(static_cast<size_t>(snap.kin.num_bodies()));
+        for (int64_t s = 0; s < S; ++s) {
+            if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+                return TrajectorySampledClearanceNative{};
+            }
+            snap.kin.fk_single(samples.data() + s * J, bpos.data(), brot.data());
+            for (size_t si = 0; si < snap.esdf_spheres.size(); ++si) {
+                const auto& sphere = snap.esdf_spheres[si];
+                const Vec3 center = brot[static_cast<size_t>(sphere.body_id)] * sphere.local_center +
+                                    bpos[static_cast<size_t>(sphere.body_id)];
+                const double distance = snap.esdf->collision_distance(center) - sphere.radius;
+                if (std::isfinite(distance)) {
+                    consider(s, -static_cast<int64_t>(si + 1), distance, false, distance);
+                }
+            }
+        }
+    }
+    return out;
+}
+
 // Standalone C++ MotionPlanner operating on thread-safe immutable PlanningWorld snapshots.
 // Can be called directly from C++ (e.g. gobot_editor, C++ tests) or via Python bindings.
 class MotionPlannerNative {
@@ -629,22 +810,29 @@ public:
                                     world_margin.value_or(margin), iterations, num_seeds, verify_original, rng_seed);
     }
 
-    PlanResultNative plan(const MotionPlanRequestNative& req) const {
+    PlanResultNative plan(const MotionPlanRequestNative& req,
+                          const std::atomic<bool>* cancel_flag = nullptr) const {
         auto snap = world_->snapshot();
-        return plan_on_snapshot(*snap, req);
+        return plan_on_snapshot(*snap, req, nullptr, cancel_flag);
     }
 
-    PlanResultNative plan_with_snapshot(const WorldSnapshot& snap, const MotionPlanRequestNative& req) const {
-        return plan_on_snapshot(snap, req);
+    PlanResultNative plan_with_snapshot(const WorldSnapshot& snap,
+                                        const MotionPlanRequestNative& req,
+                                        const std::chrono::steady_clock::time_point* deadline = nullptr,
+                                        const std::atomic<bool>* cancel_flag = nullptr) const {
+        return plan_on_snapshot(snap, req, deadline, cancel_flag);
     }
 
-    PlanResultNative replan(const ReplanRequestNative& req) const {
+    PlanResultNative replan(const ReplanRequestNative& req,
+                            const std::atomic<bool>* cancel_flag = nullptr) const {
         auto snap = world_->snapshot();
-        return replan_on_snapshot(*snap, req);
+        return replan_on_snapshot(*snap, req, cancel_flag);
     }
 
-    PlanResultNative replan_with_snapshot(const WorldSnapshot& snap, const ReplanRequestNative& req) const {
-        return replan_on_snapshot(snap, req);
+    PlanResultNative replan_with_snapshot(const WorldSnapshot& snap,
+                                          const ReplanRequestNative& req,
+                                          const std::atomic<bool>* cancel_flag = nullptr) const {
+        return replan_on_snapshot(snap, req, cancel_flag);
     }
 
     CartesianPlanResultNative plan_cartesian_path(const CartesianPlanRequestNative& req) const {
@@ -722,7 +910,11 @@ private:
                                                const std::vector<uint8_t>* active_mask,
                                                double margin, double world_margin,
                                                int iterations, int num_seeds,
-                                               bool verify_original, uint64_t rng_seed) {
+                                               bool verify_original, uint64_t rng_seed,
+                                               const std::atomic<bool>* cancel_flag = nullptr) {
+        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+            return IKResultNative{{}, false, "planning cancelled"};
+        }
         if (targets.empty()) return IKResultNative{{}, false, "provide at least one pose constraint"};
         const int J = snap.kin.num_joints();
         const auto mask = resolve_mask(snap, active_mask);
@@ -746,7 +938,10 @@ private:
                 problems.push_back({targets, std::move(s)});
             }
         }
-        auto batch = snap.solve_ik_batch(problems, mask, margin, world_margin, iterations, verify_original);
+        auto batch = snap.solve_ik_batch(problems, mask, margin, world_margin, iterations, verify_original, cancel_flag);
+        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+            return IKResultNative{{}, false, "planning cancelled"};
+        }
         int best = -1;
         double best_d2 = std::numeric_limits<double>::infinity();
         for (int i = 0; i < static_cast<int>(batch.size()); ++i) {
@@ -891,9 +1086,17 @@ private:
         bool force_rrt,
         double& out_seed_ms,
         std::vector<std::pair<int, RowMatrixXd>>* out_dense_rrt = nullptr,
-        const std::chrono::steady_clock::time_point* deadline = nullptr) {
+        const std::chrono::steady_clock::time_point* deadline = nullptr,
+        const std::atomic<bool>* cancel_flag = nullptr) {
         using Clock = std::chrono::steady_clock;
         const auto t0 = Clock::now();
+        auto is_cancelled = [&]() -> bool {
+            return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+        };
+        if (is_cancelled()) {
+            out_seed_ms = 0.0;
+            return {};
+        }
         const auto& cfg = req.config;
         const int J = snap.kin.num_joints();
         const double dt_smooth = cfg.has_dt ? cfg.dt : 0.25;
@@ -979,7 +1182,7 @@ private:
         }
 
         const bool need_rrt = force_rrt || (cfg.use_global_seeding && cfg.num_seeds > 1);
-        if (need_rrt && !has_interior_anchors) {
+        if (need_rrt && !has_interior_anchors && !is_cancelled()) {
             double rrt_budget_s = cfg.rrt_timeout_s;
             if (deadline != nullptr) {
                 const double rem_s = std::chrono::duration<double>(*deadline - Clock::now()).count();
@@ -998,6 +1201,7 @@ private:
             const bool has_manifold = !req.manifold_constraints.empty();
             ThreadPool::instance().parallel_for(n_rrt, 1, [&](int64_t b, int64_t e) {
                 for (int64_t i = b; i < e; ++i) {
+                    if (is_cancelled()) break;
                     const auto& [gid, gq] = goal_candidates[static_cast<size_t>(i) % goal_candidates.size()];
                     const uint64_t sd = 1001ULL + static_cast<uint64_t>(i) * 7919ULL;
                     rrt_out[static_cast<size_t>(i)] = has_manifold
@@ -1005,13 +1209,17 @@ private:
                               snap, start_q, gq, req.manifold_constraints, mask,
                               cfg.margin, cfg.effective_world_margin(),
                               cfg.rrt_step_size, cfg.rrt_max_iterations, rrt_budget_s,
-                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp)
+                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp, cancel_flag)
                         : snap.plan_birrt(
                               start_q, gq, mask, cfg.margin, cfg.effective_world_margin(),
                               cfg.rrt_step_size, cfg.rrt_max_iterations, rrt_budget_s,
-                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp);
+                              sd, snap.has_mesh, cfg.rrt_shortcut_iters, inner_wp, cancel_flag);
                 }
             });
+            if (is_cancelled()) {
+                out_seed_ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+                return {};
+            }
             for (int i = 0; i < n_rrt; ++i) {
                 const bool have_dense = !rrt_out[static_cast<size_t>(i)].dense_waypoints.empty();
                 if (!rrt_out[static_cast<size_t>(i)].success && !have_dense) continue;
@@ -1063,11 +1271,30 @@ private:
     static PlanResultNative plan_on_snapshot(
         const WorldSnapshot& snap,
         const MotionPlanRequestNative& req,
-        const std::chrono::steady_clock::time_point* deadline = nullptr) {
+        const std::chrono::steady_clock::time_point* deadline = nullptr,
+        const std::atomic<bool>* cancel_flag = nullptr) {
         using Clock = std::chrono::steady_clock;
         const auto t_start = Clock::now();
         PlanResultNative res;
         res.world_version = snap.version;
+        auto is_cancelled = [&]() -> bool {
+            return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+        };
+        auto finish_cancelled = [&](double ik_ms_v = 0.0, double seed_ms_v = 0.0) -> PlanResultNative {
+            res.success = false;
+            res.trajectory = {};
+            res.waypoint_indices.clear();
+            res.diagnostics.cancelled = true;
+            res.diagnostics.timed_out = false;
+            res.diagnostics.ik_ms = ik_ms_v;
+            res.diagnostics.seed_ms = seed_ms_v;
+            res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+            res.reason = "planning cancelled";
+            return res;
+        };
+        if (is_cancelled()) {
+            return finish_cancelled();
+        }
         const auto& cfg = req.config;
         if (cfg.spline_order != 3 && cfg.spline_order != 5) {
             throw std::invalid_argument("spline_order must be 3 (cubic) or 5 (quintic)");
@@ -1113,12 +1340,18 @@ private:
 
         // 1. Resolve start & goal endpoints (with C++ IK / parallel GoalSet IK, including manifold constraints).
         const auto t_ik0 = Clock::now();
+        if (is_cancelled()) {
+            return finish_cancelled();
+        }
         Eigen::VectorXd start_q;
         if (req.start_is_pose) {
             auto start_targets = req.start_poses;
             start_targets.insert(start_targets.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
             auto s_ik = solve_ik_on_snapshot(snap, start_targets, req.has_start_seed ? &req.start_seed : nullptr,
-                                             &mask, cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0);
+                                             &mask, cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0, cancel_flag);
+            if (is_cancelled()) {
+                return finish_cancelled(std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count());
+            }
             if (!s_ik.success) {
                 res.reason = "start IK failed: " + s_ik.reason;
                 res.diagnostics.ik_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count();
@@ -1137,7 +1370,10 @@ private:
                 auto goal_targets = req.goal_pose_sets[0];
                 goal_targets.insert(goal_targets.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
                 auto g_ik = solve_ik_on_snapshot(snap, goal_targets, &g_seed, &mask,
-                                                 cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0);
+                                                 cfg.margin, wm, 40, std::max(1, cfg.num_seeds), true, 0, cancel_flag);
+                if (is_cancelled()) {
+                    return finish_cancelled(std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count());
+                }
                 if (!g_ik.success) {
                     res.reason = "goal IK failed: " + g_ik.reason;
                     res.diagnostics.ik_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count();
@@ -1153,7 +1389,10 @@ private:
                     merged.insert(merged.end(), req.manifold_constraints.begin(), req.manifold_constraints.end());
                     probs.push_back({std::move(merged), g_seed});
                 }
-                auto ik_batch = snap.solve_ik_batch(probs, mask, cfg.margin, wm, 40, true);
+                auto ik_batch = snap.solve_ik_batch(probs, mask, cfg.margin, wm, 40, true, cancel_flag);
+                if (is_cancelled()) {
+                    return finish_cancelled(std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count());
+                }
                 for (int i = 0; i < static_cast<int>(ik_batch.size()); ++i) {
                     if (ik_batch[static_cast<size_t>(i)].success) {
                         goal_candidates.emplace_back(i, std::move(ik_batch[static_cast<size_t>(i)].q));
@@ -1183,11 +1422,17 @@ private:
             for (int j = 0; j < J; ++j) if (!mask[static_cast<size_t>(j)]) gq(j) = start_q(j);
         }
         const double ik_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_ik0).count();
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms);
+        }
 
         // 2. Filter valid endpoints.
         std::vector<std::pair<int, Eigen::VectorXd>> valid_goals;
         std::string last_ep_err;
         for (const auto& [gid, gq] : goal_candidates) {
+            if (is_cancelled()) {
+                return finish_cancelled(ik_ms);
+            }
             std::string err = validate_endpoints(snap, start_q, gq, cfg, fixed_start, fixed_end, req.manifold_constraints);
             if (err.empty()) valid_goals.emplace_back(gid, gq);
             else last_ep_err = std::move(err);
@@ -1199,6 +1444,9 @@ private:
             return res;
         }
 
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms);
+        }
         if (deadline_exceeded()) {
             res.diagnostics.timed_out = true;
             res.diagnostics.ik_ms = ik_ms;
@@ -1211,8 +1459,14 @@ private:
         double seed_ms = 0.0;
         std::vector<std::pair<int, RowMatrixXd>> initial_dense_rrt;
         auto specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, fixed_start, fixed_end,
-                                     false, seed_ms, &initial_dense_rrt, deadline);
-        auto sqp_results = solve_sqp_batch(snap, specs, specs.size() > 1 && cfg.first_feasible);
+                                     false, seed_ms, &initial_dense_rrt, deadline, cancel_flag);
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms, seed_ms);
+        }
+        auto sqp_results = solve_sqp_batch(snap, specs, specs.size() > 1 && cfg.first_feasible, cancel_flag);
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms, seed_ms);
+        }
 
         int winner_idx = -1;
         double winner_cost = std::numeric_limits<double>::infinity();
@@ -1233,13 +1487,14 @@ private:
 
         auto try_raw_rrt_fallback = [&](const std::vector<std::pair<int, RowMatrixXd>>& dense_list,
                                         const std::vector<SQPJobSpecNative>& spec_list) -> bool {
-            if (!can_raw_rrt_fallback || deadline_exceeded()) return false;
+            if (!can_raw_rrt_fallback || is_cancelled() || deadline_exceeded()) return false;
             const std::string fb_strat = req.manifold_constraints.empty() ? "birrt" : "constrained_birrt";
             // In fixed-timing mode, never change waypoint count/duration via variable-length dense_rrt.
             if (!fixed_timing) {
                 for (const auto& [dgid, dmat] : dense_list) {
-                    if (deadline_exceeded()) return false;
-                    auto fin_rrt = finalize_trajectory(snap, dmat, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline);
+                    if (is_cancelled() || deadline_exceeded()) return false;
+                    auto fin_rrt = finalize_trajectory(snap, dmat, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline, cancel_flag);
+                    if (fin_rrt.cancelled || is_cancelled()) return false;
                     if (fin_rrt.success) {
                         res.has_initial_positions = true;
                         res.initial_positions = dmat;
@@ -1249,6 +1504,7 @@ private:
                         res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
                         res.diagnostics.ik_ms = ik_ms;
                         res.diagnostics.seed_ms = seed_ms;
+                        res.diagnostics.strict_ccd = fin_rrt.strict_ccd;
                         res.diagnostics.retime_ms = fin_rrt.retime_ms;
                         res.diagnostics.seed_strategy = fb_strat;
                         res.success = true;
@@ -1258,9 +1514,10 @@ private:
                 }
             }
             for (const auto& sp : spec_list) {
-                if (deadline_exceeded()) return false;
+                if (is_cancelled() || deadline_exceeded()) return false;
                 if (sp.seed_strategy != "constrained_birrt" && sp.seed_strategy != "birrt") continue;
-                auto fin_rrt = finalize_trajectory(snap, sp.initial, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline);
+                auto fin_rrt = finalize_trajectory(snap, sp.initial, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline, cancel_flag);
+                if (fin_rrt.cancelled || is_cancelled()) return false;
                 if (fin_rrt.success) {
                     res.has_initial_positions = true;
                     res.initial_positions = sp.initial;
@@ -1269,6 +1526,7 @@ private:
                     res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
                     res.diagnostics.ik_ms = ik_ms;
                     res.diagnostics.seed_ms = seed_ms;
+                    res.diagnostics.strict_ccd = fin_rrt.strict_ccd;
                     res.diagnostics.retime_ms = fin_rrt.retime_ms;
                     res.diagnostics.seed_strategy = sp.seed_strategy;
                     res.success = true;
@@ -1280,15 +1538,21 @@ private:
         };
 
         // 4. Global BiRRT (or Manifold-Projected CBiRRT) fallback when local SQP gets stuck.
-        if (winner_idx < 0 && cfg.use_global_seeding && !req.has_seed && !deadline_exceeded()) {
+        if (winner_idx < 0 && cfg.use_global_seeding && !req.has_seed && !is_cancelled() && !deadline_exceeded()) {
             if (cfg.num_seeds == 1) {
                 double rrt_ms = 0.0;
                 std::vector<std::pair<int, RowMatrixXd>> dense_rrt;
                 auto rrt_specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, fixed_start, fixed_end,
-                                                 true, rrt_ms, &dense_rrt, deadline);
+                                                 true, rrt_ms, &dense_rrt, deadline, cancel_flag);
                 seed_ms += rrt_ms;
+                if (is_cancelled()) {
+                    return finish_cancelled(ik_ms, seed_ms);
+                }
                 if (!rrt_specs.empty() && !deadline_exceeded()) {
-                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible);
+                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible, cancel_flag);
+                    if (is_cancelled()) {
+                        return finish_cancelled(ik_ms, seed_ms);
+                    }
                     for (int i = 0; i < static_cast<int>(rrt_res.size()); ++i) {
                         if (rrt_res[static_cast<size_t>(i)].timed_out) any_timed_out = true;
                         if (rrt_res[static_cast<size_t>(i)].success && rrt_res[static_cast<size_t>(i)].cost < winner_cost) {
@@ -1305,9 +1569,19 @@ private:
                 if (winner_idx < 0 && try_raw_rrt_fallback(dense_rrt, rrt_specs)) {
                     return res;
                 }
+                if (is_cancelled()) {
+                    return finish_cancelled(ik_ms, seed_ms);
+                }
             } else if (try_raw_rrt_fallback(initial_dense_rrt, specs)) {
                 return res;
             }
+            if (is_cancelled()) {
+                return finish_cancelled(ik_ms, seed_ms);
+            }
+        }
+
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms, seed_ms);
         }
 
         if (winner_idx < 0) {
@@ -1337,27 +1611,45 @@ private:
 
         // 5. Unified Hermite retiming, continuous CCD & continuous manifold verification.
         const auto& win = sqp_results[static_cast<size_t>(winner_idx)];
-        auto fin = finalize_trajectory(snap, win.positions, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline);
+        auto fin = finalize_trajectory(snap, win.positions, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline, cancel_flag);
+        if (fin.cancelled || is_cancelled()) {
+            return finish_cancelled(ik_ms, seed_ms);
+        }
 
         // If SQP winner failed finalization (e.g. manifold or start-boundary Hermite overshoot) on a global plan,
         // try existing dense RRT fallback first, then global BiRRT/CBiRRT + finalize before giving up.
         if (!fin.success && (!req.manifold_constraints.empty() || has_start_bc) &&
-            cfg.use_global_seeding && !req.has_seed && !deadline_exceeded()) {
+            cfg.use_global_seeding && !req.has_seed && !is_cancelled() && !deadline_exceeded()) {
             if (!initial_dense_rrt.empty() && try_raw_rrt_fallback(initial_dense_rrt, specs)) {
                 return res;
+            }
+            if (is_cancelled()) {
+                return finish_cancelled(ik_ms, seed_ms);
             }
             if (win.seed_strategy != "constrained_birrt" && win.seed_strategy != "birrt") {
                 double rrt_ms = 0.0;
                 std::vector<std::pair<int, RowMatrixXd>> dense_rrt;
                 auto rrt_specs = build_seed_jobs(snap, start_q, valid_goals, req, mask, fixed_start, fixed_end,
-                                                 true, rrt_ms, &dense_rrt, deadline);
+                                                 true, rrt_ms, &dense_rrt, deadline, cancel_flag);
                 seed_ms += rrt_ms;
+                if (is_cancelled()) {
+                    return finish_cancelled(ik_ms, seed_ms);
+                }
                 if (!rrt_specs.empty() && !deadline_exceeded()) {
-                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible);
+                    auto rrt_res = solve_sqp_batch(snap, rrt_specs, cfg.first_feasible, cancel_flag);
+                    if (is_cancelled()) {
+                        return finish_cancelled(ik_ms, seed_ms);
+                    }
                     for (size_t i = 0; i < rrt_res.size(); ++i) {
+                        if (is_cancelled()) {
+                            return finish_cancelled(ik_ms, seed_ms);
+                        }
                         if (rrt_res[i].success && !deadline_exceeded()) {
                             auto fin2 = finalize_trajectory(
-                                snap, rrt_res[i].positions, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline);
+                                snap, rrt_res[i].positions, cfg, mc_ptr, &mask, v0_ptr, a0_ptr, deadline, cancel_flag);
+                            if (fin2.cancelled || is_cancelled()) {
+                                return finish_cancelled(ik_ms, seed_ms);
+                            }
                             if (fin2.success) {
                                 res.has_initial_positions = true;
                                 res.initial_positions = rrt_specs[i].initial;
@@ -1368,6 +1660,7 @@ private:
                                 res.diagnostics.seed_ms = seed_ms;
                                 res.diagnostics.sqp_ms = rrt_res[i].sqp_ms;
                                 res.diagnostics.validate_ms = rrt_res[i].validate_ms;
+                                res.diagnostics.strict_ccd = fin2.strict_ccd;
                                 res.diagnostics.retime_ms = fin2.retime_ms;
                                 res.diagnostics.qp_calls = rrt_res[i].qp_calls;
                                 res.diagnostics.sqp_iterations = rrt_res[i].sqp_iterations;
@@ -1383,7 +1676,14 @@ private:
                 if (try_raw_rrt_fallback(dense_rrt, rrt_specs)) {
                     return res;
                 }
+                if (is_cancelled()) {
+                    return finish_cancelled(ik_ms, seed_ms);
+                }
             }
+        }
+
+        if (is_cancelled()) {
+            return finish_cancelled(ik_ms, seed_ms);
         }
 
         res.has_initial_positions = true;
@@ -1394,6 +1694,7 @@ private:
         res.diagnostics.seed_ms = seed_ms;
         res.diagnostics.sqp_ms = win.sqp_ms;
         res.diagnostics.validate_ms = win.validate_ms;
+        res.diagnostics.strict_ccd = fin.strict_ccd;
         res.diagnostics.retime_ms = fin.retime_ms;
         res.diagnostics.qp_calls = win.qp_calls;
         res.diagnostics.sqp_iterations = win.sqp_iterations;
@@ -1410,7 +1711,9 @@ private:
         return res;
     }
 
-    static PlanResultNative replan_on_snapshot(const WorldSnapshot& snap, const ReplanRequestNative& req) {
+    static PlanResultNative replan_on_snapshot(const WorldSnapshot& snap,
+                                               const ReplanRequestNative& req,
+                                               const std::atomic<bool>* cancel_flag = nullptr) {
         using Clock = std::chrono::steady_clock;
         const auto t_start = Clock::now();
         if (!std::isfinite(req.time_budget_s) || req.time_budget_s < 0.0)
@@ -1420,10 +1723,17 @@ private:
         const auto deadline = limited
             ? t_start + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(req.time_budget_s))
             : Clock::time_point::max();
-        auto res = replan_impl(snap, req, t_start, limited ? &deadline : nullptr);
+        auto res = replan_impl(snap, req, t_start, limited ? &deadline : nullptr, cancel_flag);
         const auto finished = Clock::now();
         res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(finished - t_start).count();
-        if (limited && finished >= deadline) {
+        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+            res.success = false;
+            res.trajectory = {};
+            res.waypoint_indices.clear();
+            res.reason = "planning cancelled";
+            res.diagnostics.cancelled = true;
+            res.diagnostics.timed_out = false;
+        } else if (limited && finished >= deadline) {
             res.success = false;
             res.trajectory = {};
             res.waypoint_indices.clear();
@@ -1435,7 +1745,8 @@ private:
 
     static PlanResultNative replan_impl(const WorldSnapshot& snap, const ReplanRequestNative& req,
                                         std::chrono::steady_clock::time_point t_start,
-                                        const std::chrono::steady_clock::time_point* deadline_ptr) {
+                                        const std::chrono::steady_clock::time_point* deadline_ptr,
+                                        const std::atomic<bool>* cancel_flag = nullptr) {
         using Clock = std::chrono::steady_clock;
         PlanResultNative res;
         res.world_version = snap.version;
@@ -1678,7 +1989,10 @@ private:
             warm_req.seed = std::move(seed);
             warm_req.seed_strategy_label = "warm_start";
 
-            last_res = plan_on_snapshot(snap, warm_req, deadline_ptr);
+            last_res = plan_on_snapshot(snap, warm_req, deadline_ptr, cancel_flag);
+            if (last_res.diagnostics.cancelled) {
+                return last_res;
+            }
             if (last_res.success) {
                 last_res.diagnostics.total_ms =
                     std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
@@ -1696,6 +2010,14 @@ private:
 
         // Stage 3: Time-budgeted global fallback (straight + BiRRT/CBiRRT) preserving exact start boundary.
         if (!tried_warm || cfg.use_global_seeding) {
+            if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+                res.diagnostics = accum_diag;
+                res.diagnostics.cancelled = true;
+                res.diagnostics.timed_out = false;
+                res.diagnostics.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+                res.reason = "planning cancelled";
+                return res;
+            }
             if (deadline_exceeded()) {
                 res.diagnostics = accum_diag;
                 res.diagnostics.timed_out = true;
@@ -1710,7 +2032,7 @@ private:
                 const double dt_est = (rem_dur > 1e-4) ? (rem_dur / static_cast<double>(n_segs)) : 0.05;
                 base_req.dt_start_smooth = std::clamp(dt_est, 0.02, 0.25);
             }
-            PlanResultNative fb = plan_on_snapshot(snap, base_req, deadline_ptr);
+            PlanResultNative fb = plan_on_snapshot(snap, base_req, deadline_ptr, cancel_flag);
             fb.diagnostics.ik_ms += accum_diag.ik_ms;
             fb.diagnostics.seed_ms += accum_diag.seed_ms;
             fb.diagnostics.sqp_ms += accum_diag.sqp_ms;

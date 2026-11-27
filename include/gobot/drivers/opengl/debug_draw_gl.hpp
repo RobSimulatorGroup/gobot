@@ -34,6 +34,10 @@ public:
                            const RenderViewSnapshot& view,
                            const std::vector<DebugArrow>& arrows) override;
 
+    void RenderDebugPrimitives(const RID& render_target,
+                               const RenderViewSnapshot& view,
+                               const DebugPrimitivesData& primitives) override;
+
 private:
     GLuint program_ = 0;
     LineBuffer editor_grid_;
@@ -52,6 +56,7 @@ private:
     LineBuffer contact_normal_lines_;
     LineBuffer contact_force_lines_;
     LineBuffer debug_arrow_lines_;
+    LineBuffer debug_primitive_lines_;
 
     void EnsureProgram();
 

@@ -41,6 +41,7 @@ struct IKResultNative {
 
 struct RRTResultNative {
     bool success = false;
+    bool cancelled = false;
     std::vector<Eigen::VectorXd> waypoints;
     std::vector<Eigen::VectorXd> dense_waypoints;  // un-downsampled verified chain (for constrained BiRRT)
     int iterations = 0;
@@ -915,7 +916,14 @@ public:
         const double* times = nullptr, const double* velocities = nullptr,
         bool strict = false,
         const double* accelerations = nullptr, int spline_order = 3,
-        double esdf_margin = -1.0) const {
+        double esdf_margin = -1.0,
+        const std::atomic<bool>* cancel_flag = nullptr,
+        bool* was_cancelled = nullptr) const {
+        if (was_cancelled != nullptr) *was_cancelled = false;
+        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+            if (was_cancelled != nullptr) *was_cancelled = true;
+            return std::nullopt;
+        }
         if (T < 2) {
             throw std::invalid_argument("q_waypoints must have at least 2 waypoints");
         }
@@ -1182,8 +1190,17 @@ public:
         }
 
         std::atomic<int64_t> earliest_s(S);
+        std::atomic<bool> cancelled{false};
         std::mutex hit_mutex;
         std::optional<ContinuousViolation> best_hit;
+
+        auto is_cancelled = [&]() -> bool {
+            if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed)) {
+                cancelled.store(true, std::memory_order_relaxed);
+                return true;
+            }
+            return false;
+        };
 
         auto check_range = [&](int64_t s_beg, int64_t s_end) {
             std::vector<Vec3> bpos(static_cast<size_t>(B_links));
@@ -1209,14 +1226,14 @@ public:
             stack.reserve(32);
 
             for (int64_t s = s_beg; s < s_end; ++s) {
-                if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                if (is_cancelled() || s >= earliest_s.load(std::memory_order_relaxed)) break;
                 const int seg = static_cast<int>(s / substeps);
                 const int sub_k = static_cast<int>(s % substeps);
                 const double u_start = static_cast<double>(sub_k) * inv_sub;
                 const double u_end = static_cast<double>(sub_k + 1) * inv_sub;
 
                 for (int64_t p = 0; p < P; ++p) {
-                    if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                    if (is_cancelled() || s >= earliest_s.load(std::memory_order_relaxed)) break;
                     const auto& pr = pairs[static_cast<size_t>(p)];
                     const int sa = shape_move_slot[static_cast<size_t>(pr.shape_a)];
                     const int sb = shape_move_slot[static_cast<size_t>(pr.shape_b)];
@@ -1313,6 +1330,7 @@ public:
                     stack.clear();
                     stack.push_back({u_start, u_end, d0, d1});
                     while (!stack.empty()) {
+                        if (is_cancelled()) break;
                         const Interval cur = stack.back();
                         stack.pop_back();
                         const double um = 0.5 * (cur.u0 + cur.u1);
@@ -1367,9 +1385,9 @@ public:
                 }
 
                 // Sound Conservative Advancement continuous check for ESDF link spheres.
-                if (check_esdf) {
+                if (check_esdf && !is_cancelled()) {
                     for (int64_t si = 0; si < NS; ++si) {
-                        if (s >= earliest_s.load(std::memory_order_relaxed)) break;
+                        if (is_cancelled() || s >= earliest_s.load(std::memory_order_relaxed)) break;
                         const auto& sp = esdf_spheres[static_cast<size_t>(si)];
                         const int64_t pid = -(si + 1);
                         const Vec3& p0 = esdf_centers[static_cast<size_t>(s * NS + si)];
@@ -1409,6 +1427,7 @@ public:
                         stack.clear();
                         stack.push_back({u_start, u_end, d0, d1});
                         while (!stack.empty()) {
+                            if (is_cancelled()) break;
                             const Interval cur = stack.back();
                             stack.pop_back();
                             const double um = 0.5 * (cur.u0 + cur.u1);
@@ -1463,6 +1482,10 @@ public:
         };
 
         ThreadPool::instance().parallel_for(S - 1, 8, check_range);
+        if (cancelled.load(std::memory_order_relaxed)) {
+            if (was_cancelled != nullptr) *was_cancelled = true;
+            return std::nullopt;
+        }
         return best_hit;
     }
 
@@ -1787,7 +1810,8 @@ public:
 
     bool is_segment_valid(const Eigen::VectorXd& qa, const Eigen::VectorXd& qb,
                           const Eigen::VectorXd& margins, double max_step, bool verify_original,
-                          double esdf_margin = -1.0) const {
+                          double esdf_margin = -1.0, const std::atomic<bool>* cancel_flag = nullptr) const {
+        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return false;
         const double dist = (qb - qa).norm();
         const int steps = std::max(1, static_cast<int>(std::ceil(dist / max_step)));
         if (steps == 1) return is_config_valid(qb.data(), margins, verify_original, esdf_margin);
@@ -1797,6 +1821,7 @@ public:
         stack.emplace_back(0, steps);
         Eigen::VectorXd q(qa.size());
         while (!stack.empty()) {
+            if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return false;
             auto [l, r] = stack.back();
             stack.pop_back();
             if (r - l <= 1) continue;
@@ -1814,10 +1839,21 @@ public:
     std::vector<IKResultNative> solve_ik_batch(const std::vector<IKProblem>& problems,
                                                const std::vector<uint8_t>& active_mask,
                                                double margin, double world_margin,
-                                               int iterations, bool verify_original) const {
+                                               int iterations, bool verify_original,
+                                               const std::atomic<bool>* cancel_flag = nullptr) const {
         const int B_prob = static_cast<int>(problems.size());
         std::vector<IKResultNative> results(static_cast<size_t>(B_prob));
         if (B_prob == 0) return results;
+        auto is_cancelled = [&]() -> bool {
+            return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+        };
+        if (is_cancelled()) {
+            for (auto& r : results) {
+                r.success = false;
+                r.reason = "planning cancelled";
+            }
+            return results;
+        }
 
         const int J = kin.num_joints();
         const int B_links = kin.num_bodies();
@@ -1836,6 +1872,11 @@ public:
         auto solve_one = [&](int idx) {
             const auto& prob = problems[static_cast<size_t>(idx)];
             auto& out = results[static_cast<size_t>(idx)];
+            if (is_cancelled()) {
+                out.success = false;
+                out.reason = "planning cancelled";
+                return;
+            }
             if (prob.targets.empty()) {
                 out.reason = "provide at least one pose constraint";
                 return;
@@ -2058,9 +2099,19 @@ public:
             Eigen::MatrixXd H(J, J);
             Eigen::VectorXd g(J), ineq(total_col);
             for (int outer = 0; outer < outer_rounds; ++outer) {
+                if (is_cancelled()) {
+                    out.success = false;
+                    out.reason = "planning cancelled";
+                    return;
+                }
                 double damping = 1e-3;
                 double cost = eval_merit(q, nullptr, nullptr);
                 for (int it = 0; it < iterations; ++it) {
+                    if (is_cancelled()) {
+                        out.success = false;
+                        out.reason = "planning cancelled";
+                        return;
+                    }
                     cost = eval_merit(q, &H, &g);
                     std::vector<uint8_t> free(static_cast<size_t>(J), 0);
                     double max_g = 0.0;
@@ -2083,6 +2134,11 @@ public:
                     }
                     bool accepted = false;
                     for (int damp_it = 0; damp_it < 8; ++damp_it) {
+                        if (is_cancelled()) {
+                            out.success = false;
+                            out.reason = "planning cancelled";
+                            return;
+                        }
                         Eigen::MatrixXd sys = H;
                         for (int j = 0; j < J; ++j) {
                             if (free[static_cast<size_t>(j)]) {
@@ -2150,9 +2206,18 @@ public:
                                double margin, double world_margin,
                                double step_size, int max_iterations, double timeout_s,
                                uint64_t rng_seed, bool verify_original,
-                               int shortcut_iters, int output_waypoints) const {
+                               int shortcut_iters, int output_waypoints,
+                               const std::atomic<bool>* cancel_flag = nullptr) const {
         const auto t0 = std::chrono::steady_clock::now();
         RRTResultNative out;
+        auto is_cancelled = [&]() -> bool {
+            return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+        };
+        if (is_cancelled()) {
+            out.cancelled = true;
+            out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            return out;
+        }
         const int J = kin.num_joints();
         const Eigen::VectorXd margins = pair_margins(margin, world_margin);
         const Eigen::VectorXd& lo = kin.lower();
@@ -2163,9 +2228,11 @@ public:
             !is_config_valid(goal.data(), margins, verify_original, world_margin)) {
             return out;
         }
-        if (is_segment_valid(start, goal, margins, check_res, verify_original, world_margin)) {
-            out.success = true;
-            out.waypoints = resample_path({start, goal}, output_waypoints);
+        if (is_segment_valid(start, goal, margins, check_res, verify_original, world_margin, cancel_flag)) {
+            out.waypoints = resample_path({start, goal}, output_waypoints, cancel_flag);
+            out.cancelled = is_cancelled();
+            out.success = !out.cancelled;
+            if (out.cancelled) out.waypoints.clear();
             out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
             return out;
         }
@@ -2204,6 +2271,7 @@ public:
         };
 
         auto extend = [&](std::vector<Node>& tree, const Eigen::VectorXd& target) -> int {
+            if (is_cancelled()) return 0;
             const int near_id = nearest(tree, target);
             const Eigen::VectorXd& q_near = tree[static_cast<size_t>(near_id)].q;
             Eigen::VectorXd diff = target - q_near;
@@ -2211,20 +2279,24 @@ public:
             if (d < 1e-9) return 2;
             const bool reached = (d <= step_size);
             Eigen::VectorXd q_new = reached ? target : (q_near + (step_size / d) * diff);
-            if (!is_segment_valid(q_near, q_new, margins, check_res, verify_original, world_margin)) return 0;
+            if (!is_segment_valid(q_near, q_new, margins, check_res, verify_original, world_margin, cancel_flag)) return 0;
             tree.push_back({std::move(q_new), near_id});
             return reached ? 2 : 1;
         };
 
         auto connect = [&](std::vector<Node>& tree, const Eigen::VectorXd& target) -> int {
             int status = 1;
-            while (status == 1) status = extend(tree, target);
-            return status;
+            while (status == 1 && !is_cancelled()) status = extend(tree, target);
+            return is_cancelled() ? 0 : status;
         };
 
         bool swapped = false;
         Eigen::VectorXd sample(J);
         for (int it = 0; it < max_iterations; ++it) {
+            if (is_cancelled()) {
+                out.cancelled = true;
+                break;
+            }
             if ((it & 15) == 0 && timeout_s > 0.0) {
                 const double elapsed_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                 if (elapsed_s >= timeout_s) break;
@@ -2251,27 +2323,41 @@ public:
                         pa.insert(pa.end(), pb.begin(), pb.end());
                     }
                     for (int sc = 0; sc < shortcut_iters && pa.size() > 2; ++sc) {
+                        if (is_cancelled()) {
+                            out.cancelled = true;
+                            out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                            return out;
+                        }
                         const int n = static_cast<int>(pa.size());
                         int i = static_cast<int>(rng() % static_cast<uint64_t>(n - 2));
                         int j = i + 2 + static_cast<int>(rng() % static_cast<uint64_t>(n - i - 2));
                         if (is_segment_valid(pa[static_cast<size_t>(i)], pa[static_cast<size_t>(j)],
-                                             margins, check_res, verify_original, world_margin)) {
+                                             margins, check_res, verify_original, world_margin, cancel_flag)) {
                             pa.erase(pa.begin() + i + 1, pa.begin() + j);
                         }
                     }
-                    out.success = true;
-                    out.waypoints = resample_path(pa, output_waypoints);
+                    if (is_cancelled()) {
+                        out.cancelled = true;
+                        out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                        return out;
+                    }
+                    out.waypoints = resample_path(pa, output_waypoints, cancel_flag);
+                    out.cancelled = is_cancelled();
+                    out.success = !out.cancelled;
+                    if (out.cancelled) out.waypoints.clear();
                     out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
                     return out;
                 }
             }
             swapped = !swapped;
         }
+        if (is_cancelled()) out.cancelled = true;
         out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         return out;
     }
 
-    static std::vector<Eigen::VectorXd> resample_path(const std::vector<Eigen::VectorXd>& path, int count) {
+    static std::vector<Eigen::VectorXd> resample_path(const std::vector<Eigen::VectorXd>& path, int count,
+                                                      const std::atomic<bool>* cancel_flag = nullptr) {
         if (count < 2 || path.size() < 2) return path;
         std::vector<double> cum(path.size(), 0.0);
         for (size_t i = 1; i < path.size(); ++i) {
@@ -2282,11 +2368,15 @@ public:
         out.reserve(static_cast<size_t>(count));
         out.push_back(path.front());
         if (total < 1e-12) {
-            for (int i = 1; i < count; ++i) out.push_back(path.back());
+            for (int i = 1; i < count; ++i) {
+                if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return {};
+                out.push_back(path.back());
+            }
             return out;
         }
         size_t seg = 0;
         for (int i = 1; i < count - 1; ++i) {
+            if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return {};
             const double s = total * static_cast<double>(i) / static_cast<double>(count - 1);
             while (seg + 1 < path.size() - 1 && cum[seg + 1] < s) ++seg;
             const double seg_len = cum[seg + 1] - cum[seg];

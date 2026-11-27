@@ -65,11 +65,15 @@ struct IKGhostDiagnostics {
     std::string collision_pair;
     std::string end_effector_link;
     std::string status_message;
+    bool has_witness = false;
+    Vector3 witness_a = Vector3::Zero();
+    Vector3 witness_b = Vector3::Zero();
 };
 
 class GOBOT_EXPORT InteractiveIKGhostSession {
 public:
     InteractiveIKGhostSession();
+    explicit InteractiveIKGhostSession(PlanningSceneBridge* shared_bridge);
     ~InteractiveIKGhostSession();
 
     InteractiveIKGhostSession(const InteractiveIKGhostSession&) = delete;
@@ -101,24 +105,30 @@ public:
     // Reset target pose back to the robot's current end-effector pose.
     void ResetTargetToCurrentPose();
 
-    [[nodiscard]] bool HasActiveTarget() const noexcept { return enabled_ && has_target_pose_ && bridge_.IsReady(); }
+    [[nodiscard]] bool HasActiveTarget() const noexcept { return enabled_ && has_target_pose_ && GetBridge().IsReady(); }
     [[nodiscard]] const Affine3& GetTargetPose() const noexcept { return target_pose_; }
     [[nodiscard]] const std::vector<VisualMeshRenderItem>& GetOverlayMeshes() const noexcept { return overlay_meshes_; }
     [[nodiscard]] const Eigen::VectorXd& GetGhostJointPositions() const noexcept { return ghost_q_; }
     [[nodiscard]] IKGhostDiagnostics GetDiagnostics() const;
-    [[nodiscard]] const PlanningSceneBridge& GetBridge() const noexcept { return bridge_; }
-    [[nodiscard]] PlanningSceneBridge& GetBridge() noexcept { return bridge_; }
+    [[nodiscard]] const PlanningSceneBridge& GetBridge() const noexcept { return shared_bridge_ ? *shared_bridge_ : owned_bridge_; }
+    [[nodiscard]] PlanningSceneBridge& GetBridge() noexcept { return shared_bridge_ ? *shared_bridge_ : owned_bridge_; }
+
+    // Returns true and writes ghost joint positions ONLY if the currently displayed IK solution is Ok,
+    // matches the expected snapshot identity and EE link, and displayed_seq == target_seq (no mid-drag lag).
+    bool TryGetExactSolvedGoal(const PlanningSnapshotIdentity& expected_snapshot,
+                               const std::string& expected_ee_link,
+                               Eigen::VectorXd* out_q,
+                               std::string* out_reason = nullptr) const;
 
     // Wait until the background worker finishes the latest submitted target_seq (for deterministic tests).
     bool WaitForIdle(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
 
 private:
     struct PendingRequest {
-        std::uint64_t scene_epoch = 0;
-        std::uint64_t world_version = 0;
+        PlanningSnapshotIdentity snapshot_id;
         std::uint64_t target_seq = 0;
-        ObjectID robot_id{};
         int link_id = -1;
+        std::string ee_link_name;
         Affine3 target_pose = Affine3::Identity();
         Eigen::VectorXd seed_q;
         std::vector<Eigen::VectorXd> fallback_seeds;
@@ -130,10 +140,9 @@ private:
     };
 
     struct CompletedResult {
-        std::uint64_t scene_epoch = 0;
-        std::uint64_t world_version = 0;
+        PlanningSnapshotIdentity snapshot_id;
         std::uint64_t target_seq = 0;
-        ObjectID robot_id{};
+        std::string ee_link_name;
         IKGhostStatus status = IKGhostStatus::Inactive;
         Eigen::VectorXd q;
         double pos_err = 0.0;
@@ -142,6 +151,9 @@ private:
         double solve_ms = 0.0;
         std::string collision_pair;
         std::string reason;
+        bool has_witness = false;
+        Vector3 witness_a = Vector3::Zero();
+        Vector3 witness_b = Vector3::Zero();
         std::chrono::steady_clock::time_point submitted_at;
 #if defined(GOBOT_HAS_PLANNING)
         std::shared_ptr<const planning::WorldSnapshot> snapshot;
@@ -157,18 +169,17 @@ private:
     void RecordLatencySample(double ms);
     void ClearActiveState();
 
-    PlanningSceneBridge bridge_;
+    PlanningSceneBridge owned_bridge_;
+    PlanningSceneBridge* shared_bridge_ = nullptr;
     IKGhostPreviewConfig config_;
-    std::vector<std::pair<std::string, std::string>> extra_ignored_pairs_;
     std::string preferred_ee_link_;
 
     bool enabled_ = false;
     bool has_target_pose_ = false;
     int ee_link_id_ = -1;
-    ObjectID bound_robot_id_{};
-    std::uint64_t bound_scene_epoch_ = 0;
-    std::uint64_t last_synced_change_version_ = 0;
-    std::uint64_t last_synced_world_version_ = 0;
+    PlanningSnapshotIdentity bound_snapshot_id_;
+    PlanningSnapshotIdentity displayed_snapshot_id_;
+    std::string displayed_ee_link_;
     std::uint64_t next_target_seq_ = 0;
     std::uint64_t first_valid_target_seq_ = 0;
     std::uint64_t displayed_target_seq_ = 0;
@@ -185,6 +196,9 @@ private:
     std::deque<double> latency_samples_ms_;
     std::string last_collision_pair_;
     std::string last_status_message_;
+    bool last_has_witness_ = false;
+    Vector3 last_witness_a_ = Vector3::Zero();
+    Vector3 last_witness_b_ = Vector3::Zero();
 
     std::mutex mutex_;
     std::condition_variable cv_;

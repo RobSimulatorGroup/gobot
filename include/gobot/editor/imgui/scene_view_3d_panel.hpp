@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/object_id.hpp"
+#include "gobot/editor/drag_transaction_controller.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "imgui.h"
@@ -76,6 +77,7 @@ private:
     bool drag_joint_screen_center_valid_{false};
     bool drag_joint_screen_axis_valid_{false};
     bool drag_last_angle_valid_{false};
+    EditorDragTransactionController joint_drag_tx_;
 };
 
 

@@ -317,6 +317,7 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     FreeLineBuffer(contact_normal_lines_);
     FreeLineBuffer(contact_force_lines_);
     FreeLineBuffer(debug_arrow_lines_);
+    FreeLineBuffer(debug_primitive_lines_);
 }
 
 void GLRendererDebugDraw::EnsureProgram() {
@@ -761,6 +762,103 @@ void GLRendererDebugDraw::RenderDebugArrows(const RID& render_target,
                        4.0f);
     }
 
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void GLRendererDebugDraw::RenderDebugPrimitives(const RID& render_target,
+                                                const RenderViewSnapshot& view,
+                                                const DebugPrimitivesData& primitives) {
+    GOBOT_PROFILE_ZONE("OpenGL::RenderDebugPrimitives");
+    if (primitives.Empty()) {
+        debug_primitive_lines_.vertex_count = 0;
+        return;
+    }
+
+    auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
+    ERR_FAIL_COND(rt == nullptr);
+    if (rt->fbo == 0 || rt->size.x() <= 0 || rt->size.y() <= 0) {
+        return;
+    }
+
+    EnsureProgram();
+    if (program_ == 0) {
+        return;
+    }
+
+    struct PrimitiveBatch {
+        Color color;
+        float width;
+        std::vector<float> vertices;
+    };
+    std::vector<PrimitiveBatch> batches;
+    auto find_or_create_batch = [&](const Color& color, float width) -> PrimitiveBatch& {
+        for (PrimitiveBatch& b : batches) {
+            if (SameColor(b.color, color) && std::abs(b.width - width) <= 0.05f) {
+                return b;
+            }
+        }
+        batches.push_back(PrimitiveBatch{color, width, {}});
+        return batches.back();
+    };
+
+    for (const DebugLineSegment& seg : primitives.lines) {
+        PrimitiveBatch& b = find_or_create_batch(seg.color, std::max(1.0f, seg.width));
+        AppendWorldLine(b.vertices, seg.start, seg.end);
+    }
+
+    constexpr int kRingSegments = 20;
+    for (const DebugSphereWireframe& sp : primitives.spheres) {
+        if (sp.radius <= CMP_EPSILON) {
+            continue;
+        }
+        PrimitiveBatch& b = find_or_create_batch(sp.color, std::max(1.0f, sp.width));
+        for (int i = 0; i < kRingSegments; ++i) {
+            const RealType a0 = static_cast<RealType>(2.0 * Math_PI * i / kRingSegments);
+            const RealType a1 = static_cast<RealType>(2.0 * Math_PI * (i + 1) / kRingSegments);
+            const RealType c0 = std::cos(a0) * sp.radius;
+            const RealType s0 = std::sin(a0) * sp.radius;
+            const RealType c1 = std::cos(a1) * sp.radius;
+            const RealType s1 = std::sin(a1) * sp.radius;
+            // XY ring
+            AppendWorldLine(b.vertices, sp.center + Vector3{c0, s0, 0.0}, sp.center + Vector3{c1, s1, 0.0});
+            // XZ ring
+            AppendWorldLine(b.vertices, sp.center + Vector3{c0, 0.0, s0}, sp.center + Vector3{c1, 0.0, s1});
+            // YZ ring
+            AppendWorldLine(b.vertices, sp.center + Vector3{0.0, c0, s0}, sp.center + Vector3{0.0, c1, s1});
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+    glViewport(0, 0, rt->size.x(), rt->size.y());
+    if (primitives.depth_test) {
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glUseProgram(program_);
+    UploadMatrix4(glGetUniformLocation(program_, "u_view"), view.camera.view);
+    UploadMatrix4(glGetUniformLocation(program_, "u_projection"), view.camera.projection);
+
+    for (const PrimitiveBatch& batch : batches) {
+        DrawLineBuffer(debug_primitive_lines_,
+                       batch.vertices,
+                       program_,
+                       batch.color.red(),
+                       batch.color.green(),
+                       batch.color.blue(),
+                       batch.color.alpha(),
+                       batch.width);
+    }
+
+    glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
     glBindVertexArray(0);

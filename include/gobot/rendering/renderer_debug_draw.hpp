@@ -31,6 +31,28 @@ struct DebugArrow {
     bool show_head{true};
 };
 
+struct DebugLineSegment {
+    Vector3 start{Vector3::Zero()};
+    Vector3 end{Vector3::Zero()};
+    Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    float width{2.0f};
+};
+
+struct DebugSphereWireframe {
+    Vector3 center{Vector3::Zero()};
+    RealType radius{0.05};
+    Color color{0.35f, 0.85f, 1.0f, 0.65f};
+    float width{1.5f};
+};
+
+struct DebugPrimitivesData {
+    std::vector<DebugLineSegment> lines;
+    std::vector<DebugSphereWireframe> spheres;
+    bool depth_test{true};
+
+    [[nodiscard]] bool Empty() const noexcept { return lines.empty() && spheres.empty(); }
+};
+
 class RendererDebugDraw {
 public:
     virtual ~RendererDebugDraw() = default;
@@ -42,6 +64,14 @@ public:
     virtual void RenderDebugArrows(const RID& render_target,
                                    const RenderViewSnapshot& view,
                                    const std::vector<DebugArrow>& arrows) = 0;
+
+    virtual void RenderDebugPrimitives(const RID& render_target,
+                                       const RenderViewSnapshot& view,
+                                       const DebugPrimitivesData& primitives) {
+        (void)render_target;
+        (void)view;
+        (void)primitives;
+    }
 };
 
 }

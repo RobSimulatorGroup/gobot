@@ -707,7 +707,8 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                     const PhysicsWorldSettings* physics_settings,
                                     const std::vector<DebugArrow>& debug_arrows,
                                     bool show_collision_debug,
-                                    const std::vector<VisualMeshRenderItem>& overlay_meshes) {
+                                    const std::vector<VisualMeshRenderItem>& overlay_meshes,
+                                    const DebugPrimitivesData* debug_primitives) {
     GOBOT_PROFILE_ZONE("EditorViewportRenderer::Render");
     if (scene_root) {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderScene");
@@ -734,6 +735,10 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                      velocity_debug_arrows.begin(),
                                      velocity_debug_arrows.end());
         RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, combined_debug_arrows);
+    }
+    if (debug_primitives != nullptr && !debug_primitives->Empty()) {
+        GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderDebugPrimitives");
+        RS::GetInstance()->RenderDebugPrimitivesToViewport(viewport, camera, *debug_primitives);
     }
 }
 
