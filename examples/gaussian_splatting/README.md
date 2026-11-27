@@ -51,6 +51,7 @@ grid stays below the room instead of covering the initial camera view.
 
 ## Source
 
+- Gobot release mirror: [Gaussian Playroom v1](https://github.com/RobSimulatorGroup/gobot-example-assets/releases/tag/gaussian-playroom-v1)
 - PLY mirror: [`Voxel51/gaussian_splatting`](https://huggingface.co/datasets/Voxel51/gaussian_splatting)
   on Hugging Face
 - Revision: `ed0588b29edea35e36dad784f73c1f502cc8a0d2`

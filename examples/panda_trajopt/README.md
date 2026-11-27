@@ -89,16 +89,14 @@ inspection error and `40.1 mm` minimum sampled world clearance.
 
 ## Build
 
-Initialize Coal, enable `GOB_BUILD_COAL`, and build the Python package and
-editor with the project's usual CMake options:
+The default Python build includes Coal and initializes its pinned sources:
 
 ```sh
-git submodule update --init --recursive 3rdparty/coal
-CMAKE_ARGS="-DGOB_BUILD_COAL=ON" uv sync --extra planning-sqp --reinstall-package gobot
+uv sync --reinstall-package gobot
 ```
 
-Coal uses CMake 3.22+, Eigen, Boost serialization/filesystem, and Assimp
-development packages. Select `"coal"` (CPU) or `"mujoco_warp"` (GPU) via
+Gobot builds the pinned Coal fork with Eigen for in-memory collision queries.
+Select `"coal"` (CPU) or `"mujoco_warp"` (GPU) via
 `MotionPlanner(world, backend=...)`.
 
 The Panda joint frames and limits are adapted from the Apache-2.0 Genesis

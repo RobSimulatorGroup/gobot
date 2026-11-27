@@ -10,6 +10,11 @@ import tempfile
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 
 def _unexpected_backend_hook(*args: object, **kwargs: object) -> None:
     raise AssertionError("unpatched scikit-build-core hook was called")
@@ -36,11 +41,13 @@ with patch.dict(sys.modules, {"scikit_build_core": _scikit_build_core_stub}):
 
 def test_python_build_defaults_enable_complete_native_runtime() -> None:
     pyproject = (backend.ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    project = tomllib.loads(pyproject)["project"]
 
     assert 'build-backend = "gobot_build_backend"' in pyproject
     assert 'backend-path = ["."]' in pyproject
     for define in (
         "GOB_BUILD_ASSIMP",
+        "GOB_BUILD_COAL",
         "GOB_BUILD_MUJOCO",
         "GOB_BUILD_SUPERDEX",
         "GOB_BUILD_EGL",
@@ -51,20 +58,15 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
         "GOB_BUNDLE_OPENUSD_RUNTIME",
     ):
         assert f'{define} = "ON"' in pyproject
+    default_requirements = {dep.split(";", 1)[0].strip() for dep in project["dependencies"]}
     for requirement in (
-        '"mujoco==3.17.0;',
-        '"mujoco-warp==3.17.0;',
-        '"newton[onnx]==1.7.0;',
-        '"nvidia-cublas-cu12>=12.8,<13;',
-        '"nvidia-cuda-runtime-cu12>=12.8,<13;',
-        '"nvidia-cusolver-cu12>=11.7,<12;',
-        '"nvidia-cusparse-cu12>=12.5,<13;',
-        '"nvidia-nvjitlink-cu12>=12.8,<13;',
-        '"torch>=2.9;',
-        '"warp-lang==1.17.0;',
+        "mujoco==3.17.0", "mujoco-warp==3.17.0", "newton[onnx]==1.7.0",
+        "nvidia-cublas-cu12>=12.8,<13", "nvidia-cuda-runtime-cu12>=12.8,<13",
+        "nvidia-cusolver-cu12>=11.7,<12", "nvidia-cusparse-cu12>=12.5,<13",
+        "nvidia-nvjitlink-cu12>=12.8,<13", "torch>=2.9", "warp-lang==1.17.0",
     ):
-        assert requirement in pyproject
-    assert "[project.optional-dependencies]" not in pyproject
+        assert requirement in default_requirements
+    assert project["optional-dependencies"] == {"planning-sqp": ["osqp>=1,<2"]}
 
 
 def test_superdex_build_defaults_include_cpu_sdk_sources() -> None:
@@ -535,6 +537,9 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         root.joinpath(".git").mkdir()
+        coal_cmake = root / "3rdparty/coal/cmake"
+        coal_cmake.mkdir(parents=True)
+        (coal_cmake / "base.cmake").touch()
         luisa_root = root / "3rdparty/luisa_compute"
         for marker in backend._LUISA_NESTED_MARKERS:
             path = luisa_root / marker
@@ -562,6 +567,8 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
                     (" def scripts/SymEigen",),
                     ("-123 src/ext/reproc",),
                     (" 123 src/ext/reproc",),
+                    ("-456 cmake",),
+                    (" 456 cmake",),
                 ],
             ),
             patch.object(backend.shutil, "which", return_value="/usr/bin/git"),
@@ -569,8 +576,9 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
         ):
             backend._ensure_source_dependencies(root)
 
-    assert run.call_count == 6
+    assert run.call_count == 8
     update = run.call_args_list[1].args[0]
+    assert "3rdparty/coal" in update
     assert "3rdparty/assimp" in update
     assert "3rdparty/luisa_compute" in update
     assert "3rdparty/openusd" in update
@@ -582,12 +590,17 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
     luisa_update = run.call_args_list[5].args[0]
     assert "--recursive" in luisa_update
     assert run.call_args_list[5].kwargs["cwd"] == luisa_root
+    assert "--recursive" in run.call_args_list[7].args[0]
+    assert run.call_args_list[7].kwargs["cwd"] == coal_cmake.parent
 
 
 def test_pinned_checkout_does_not_run_submodule_update() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         root.joinpath(".git").mkdir()
+        coal_cmake = root / "3rdparty/coal/cmake"
+        coal_cmake.mkdir(parents=True)
+        (coal_cmake / "base.cmake").touch()
         luisa_root = root / "3rdparty/luisa_compute"
         for marker in backend._LUISA_NESTED_MARKERS:
             path = luisa_root / marker

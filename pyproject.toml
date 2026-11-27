@@ -9,7 +9,7 @@ build-backend = "gobot_build_backend"
 
 [project]
 name = "gobot"
-version = "0.1.19"
+version = "0.1.20"
 description = "Python bindings for the Gobot robotics scene, simulation, and rendering engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -84,6 +84,7 @@ components = ["python"]
 [tool.scikit-build.cmake.define]
 GOB_BUILD_TESTS = "OFF"
 GOB_BUILD_ASSIMP = "ON"
+GOB_BUILD_COAL = "ON"
 GOB_BUILD_MUJOCO = "ON"
 GOB_BUILD_SUPERDEX = "ON"
 GOB_BUILD_EGL = "ON"

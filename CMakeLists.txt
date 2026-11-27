@@ -34,7 +34,7 @@ if(GOB_BUILD_LIBUIPC)
     endif()
 endif()
 
-project (gobot VERSION 0.1.19)
+project (gobot VERSION 0.1.20)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -48,7 +48,7 @@ set(GOBOT_VERSION "${PROJECT_VERSION}")
 set(GOBOT_VERSION_COMMIT "" CACHE STRING "Git commit or build identifier embedded in Gobot version output")
 
 option(GOB_BUILD_TESTS "build tests" OFF)
-option(GOB_BUILD_COAL "build the Coal CPU collision backend for motion planning" OFF)
+option(GOB_BUILD_COAL "build the Coal CPU collision backend for motion planning" ON)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer support" OFF)
 option(GOB_BUNDLE_OPENUSD_RUNTIME
        "install the OpenUSD runtime libraries and plugin resources with Gobot"

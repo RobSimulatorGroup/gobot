@@ -632,12 +632,20 @@ set_tests_properties(test_python_terrain_generation_scene
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
-if(GOB_BUILD_MUJOCO)
+if(GOB_BUILD_MUJOCO AND GOB_BUILD_COAL)
     add_test(NAME test_python_motion_planning
             COMMAND ${Python3_EXECUTABLE} -S -m pytest -q
-                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_motion_planning.py
-                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_scene_torch_fk.py)
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_motion_planning.py)
     set_tests_properties(test_python_motion_planning PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV};CUDA_VISIBLE_DEVICES=;PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
+
+if(GOB_BUILD_MUJOCO)
+    add_test(NAME test_python_scene_torch_fk
+            COMMAND ${Python3_EXECUTABLE} -S -m pytest -q
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_scene_torch_fk.py)
+    set_tests_properties(test_python_scene_torch_fk PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV};CUDA_VISIBLE_DEVICES=;PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 

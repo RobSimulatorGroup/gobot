@@ -25,6 +25,28 @@ def test_wheel_install_does_not_rebuild() -> None:
     run.assert_not_called()
 
 
+def test_read_only_wheel_examples_get_writable_projects() -> None:
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        examples = root / "site-packages/gobot/examples"
+        for name in ("g1_track", "gaussian_splatting"):
+            (examples / name).mkdir(parents=True)
+            (examples / name / "project.gobot").write_text("{}")
+        with (
+            patch.object(launcher.os, "access", return_value=False),
+            patch.object(launcher.metadata, "version", return_value="1.0"),
+            patch.object(launcher, "_project_history_path", return_value=root / "user/projects.json"),
+        ):
+            copies = launcher._writable_download_projects(examples)
+            for source, target in copies.items():
+                assert target.parent == root / "user/wheel-examples/1.0"
+                assert target.name == source.name
+                (target / "assets").mkdir()
+            assert len(copies) == 2
+            assert launcher._writable_download_projects(examples) == copies
+            assert all((target / "assets").is_dir() for target in copies.values())
+
+
 def test_editable_install_rebuilds_with_environment_tools() -> None:
     invocations = []
 
@@ -243,14 +265,22 @@ def test_editor_preloads_current_environment_cuda_runtime() -> None:
 def test_editor_no_rebuild_preserves_native_arguments_and_environment() -> None:
     executable = Path("/installed/gobot_editor")
     environment = {"GOBOT_PYTHON_LIBRARY": "/environment/libpython.so"}
-    for args, skip_rebuild in (
-        (["--no-rebuild", "--path", "/project"], True),
-        (["--", "--no-rebuild"], False),
+    source = "/wheel examples/g1=track"
+    target = "/user examples/g1=track"
+    for args, expected_args, skip_rebuild in (
+        (["--no-rebuild", "--path", "/project"], ["--path", "/project"], True),
+        (["--path", source], ["--path", target], False),
+        (["--quiet", f"--path={source}"], ["--quiet", f"--path={target}"], False),
+        (["--path=./other"], ["--path=./other"], False),
+        (["--path="], ["--path="], False),
+        (["--path"], ["--path"], False),
+        (["--", "--no-rebuild", "--path", source, f"--path={source}"],
+         ["--", "--no-rebuild", "--path", source, f"--path={source}"], False),
     ):
         with (
             patch.object(launcher.sys, "argv", ["gobot_editor", *args]),
             patch.object(launcher, "_rebuild_editable_native_artifacts") as rebuild,
-            patch.object(launcher, "_register_packaged_examples"),
+            patch.object(launcher, "_register_packaged_examples", return_value={Path(source): Path(target)}),
             patch.object(launcher, "_find_current_python_library", return_value="/environment/libpython.so"),
             patch.object(launcher, "_find_editor_executable", return_value=executable),
             patch.object(launcher, "_distribution_gobot_dir", return_value=None),
@@ -267,10 +297,8 @@ def test_editor_no_rebuild_preserves_native_arguments_and_environment() -> None:
 
         if skip_rebuild:
             rebuild.assert_not_called()
-            expected_args = ["--path", "/project"]
         else:
             rebuild.assert_called_once_with()
-            expected_args = args
         execute.assert_called_once_with(
             os.fspath(executable), [os.fspath(executable), *expected_args], environment
         )
@@ -293,6 +321,7 @@ def test_editor_cuda_runtime_is_optional() -> None:
 
 def main() -> None:
     test_wheel_install_does_not_rebuild()
+    test_read_only_wheel_examples_get_writable_projects()
     test_editable_install_rebuilds_with_environment_tools()
     test_editable_install_rebuilds_stale_bundled_gsplat()
     test_editable_install_repairs_isolated_cmake_cache()

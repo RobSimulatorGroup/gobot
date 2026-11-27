@@ -2,6 +2,7 @@
 # Keep MuJoCo aligned with GOB_MUJOCO_GIT_TAG and pyproject.toml.
 mujoco==3.17.0
 numpy>=2,<3
+osqp>=1,<2
 packaging>=23.2
 pillow>=10.1
 scipy>=1.11
@@ -12,6 +13,7 @@ tensordict==0.13.0
 pytest>=8.2
 rsl-rl-lib==5.5.2
 tensorboard
+tomli; python_version < "3.11"
 
 # The +cpu suffix keeps hosted CI free of the CUDA runtime dependency stack.
 --extra-index-url https://download.pytorch.org/whl/cpu

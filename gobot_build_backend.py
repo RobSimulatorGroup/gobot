@@ -22,6 +22,7 @@ SKIP_BOOTSTRAP_ENV = "GOBOT_SKIP_DEPENDENCY_BOOTSTRAP"
 
 _SUBMODULE_MARKERS = {
     "3rdparty/assimp": "CMakeLists.txt",
+    "3rdparty/coal": "CMakeLists.txt",
     "3rdparty/gli": "CMakeLists.txt",
     "3rdparty/imgui": "imgui.cpp",
     "3rdparty/luisa_compute": "CMakeLists.txt",
@@ -185,109 +186,29 @@ def _ensure_source_dependencies(root: Path) -> None:
             "superproject after git submodule update."
         )
 
-    libuipc_root = root / "3rdparty/libuipc"
-    missing_libuipc_nested = [
-        marker
-        for marker in _LIBUIPC_NESTED_MARKERS
-        if not (libuipc_root / marker).is_file()
-    ]
-    libuipc_nested_status = (
-        _submodule_status(libuipc_root, recursive=True) if git_checkout else ()
-    )
-    if _status_has_mismatch(libuipc_nested_status):
-        raise RuntimeError(
-            "A nested libuipc submodule differs from the commit pinned by libuipc."
-        )
-    if git_checkout and (
-        missing_libuipc_nested
-        or not libuipc_nested_status
-        or any(line.startswith("-") for line in libuipc_nested_status)
+    for name, markers in (
+        ("libuipc", _LIBUIPC_NESTED_MARKERS),
+        ("luisa_compute", _LUISA_NESTED_MARKERS),
+        ("coal", ("cmake/base.cmake",)),
     ):
-        _run(["git", "submodule", "sync", "--recursive"], cwd=libuipc_root)
-        _run(
-            ["git", "submodule", "update", "--init", "--depth=1", "--recursive"],
-            cwd=libuipc_root,
-        )
-    elif missing_libuipc_nested:
-        raise RuntimeError(
-            "Gobot's source archive is missing libuipc nested sources: "
-            + ", ".join(missing_libuipc_nested)
-        )
-    still_missing_libuipc_nested = [
-        marker
-        for marker in _LIBUIPC_NESTED_MARKERS
-        if not (libuipc_root / marker).is_file()
-    ]
-    if still_missing_libuipc_nested:
-        raise RuntimeError(
-            "Git completed without initializing libuipc nested sources: "
-            + ", ".join(still_missing_libuipc_nested)
-        )
-    if git_checkout and not _status_is_pinned(
-        _submodule_status(libuipc_root, recursive=True)
-    ):
-        raise RuntimeError(
-            "libuipc nested submodules do not match their pinned commits."
-        )
+        source = root / "3rdparty" / name
+        if git_checkout:
+            status = _submodule_status(source, recursive=True)
+            if _status_has_mismatch(status):
+                raise RuntimeError(f"A nested {name} submodule differs from its pinned commit.")
+            if not _status_is_pinned(status) or any(not (source / m).is_file() for m in markers):
+                _run(["git", "submodule", "sync", "--recursive"], cwd=source)
+                _run(
+                    ["git", "-c", "protocol.version=2", "submodule", "update",
+                     "--init", "--depth=1", "--recursive"],
+                    cwd=source,
+                )
+                if not _status_is_pinned(_submodule_status(source, recursive=True)):
+                    raise RuntimeError(f"Nested {name} submodules do not match their pinned commits.")
 
-    luisa_root = root / "3rdparty/luisa_compute"
-    missing_luisa_nested = [
-        marker
-        for marker in _LUISA_NESTED_MARKERS
-        if not (luisa_root / marker).is_file()
-    ]
-    luisa_nested_status = (
-        _submodule_status(luisa_root, recursive=True) if git_checkout else ()
-    )
-    if _status_has_mismatch(luisa_nested_status):
-        raise RuntimeError(
-            "A LuisaCompute nested submodule is checked out at a commit "
-            "different from its pinned gitlink. Preserve or commit that work, "
-            "then restore the pinned submodule before building."
-        )
-    update_luisa_nested = git_checkout and (
-        bool(missing_luisa_nested)
-        or not luisa_nested_status
-        or any(line.startswith("-") for line in luisa_nested_status)
-    )
-    if update_luisa_nested:
-        _run(["git", "submodule", "sync", "--recursive"], cwd=luisa_root)
-        _run(
-            [
-                "git",
-                "-c",
-                "protocol.version=2",
-                "submodule",
-                "update",
-                "--init",
-                "--depth=1",
-                "--recursive",
-            ],
-            cwd=luisa_root,
-        )
-    elif missing_luisa_nested:
-        raise RuntimeError(
-            "LuisaCompute's nested sources are missing from a non-Git source tree. "
-            "Install the published Gobot wheel or use a complete Git checkout."
-        )
-
-    still_missing_luisa_nested = [
-        marker
-        for marker in _LUISA_NESTED_MARKERS
-        if not (luisa_root / marker).is_file()
-    ]
-    if still_missing_luisa_nested:
-        raise RuntimeError(
-            "Git completed without initializing LuisaCompute nested sources: "
-            + ", ".join(still_missing_luisa_nested)
-        )
-    if update_luisa_nested and not _status_is_pinned(
-        _submodule_status(luisa_root, recursive=True)
-    ):
-        raise RuntimeError(
-            "LuisaCompute nested submodules do not match their pinned commits "
-            "after git submodule update."
-        )
+        missing = [marker for marker in markers if not (source / marker).is_file()]
+        if missing:
+            raise RuntimeError(f"Missing nested {name} sources: " + ", ".join(missing))
 
 
 def _ensure_native_sdks() -> None:
