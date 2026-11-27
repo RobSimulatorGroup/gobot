@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   go1-mujoco-warp:
-    name: GPU renderer and Go1 MuJoCo Warp
+    name: GPU renderer, batch planner and Go1 MuJoCo Warp
     runs-on: [self-hosted, linux, x64, gpu]
     timeout-minutes: 60
 
@@ -26,7 +26,7 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: Check out renderer and test submodules
+      - name: Check out renderer, planner and test submodules
         run: |
           git submodule sync --recursive
           git -c protocol.version=2 submodule update --init --force --depth=1 \
@@ -38,6 +38,7 @@ jobs:
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb
+          git -c protocol.version=2 submodule update --init --recursive --depth=1 3rdparty/coal
           git -C 3rdparty/luisa_compute submodule sync --recursive
           git -C 3rdparty/luisa_compute -c protocol.version=2 submodule update \
             --init --force --depth=1 --recursive
@@ -60,11 +61,18 @@ jobs:
       - name: Build LuisaCompute CUDA runtime
         run: cmake --workflow --preset dependencies-render
 
-      - name: Install Gobot for renderer and RL tests
+      - name: Install Gobot for rendering, planning and RL tests
         env:
-          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF -DGOB_BUILD_SUPERDEX=OFF -DGOB_BUILD_COAL=OFF"
+          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF -DGOB_BUILD_SUPERDEX=OFF -DGOB_BUILD_COAL=ON"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
-        run: uv sync
+        run: |
+          uv sync
+          uv pip install 'pytest>=8.2'
+
+      - name: Test CUDA batch planning
+        run: |
+          uv run --no-sync python -c 'from gobot import _coal_native; import warp as wp; assert wp.get_cuda_devices(), "Warp requires a CUDA device for GPU planning tests"'
+          uv run --no-sync python -m pytest -q tests/python/test_motion_planning.py -k 'test_gpu_'
 
       - name: Configure Luisa renderer integration test
         run: |

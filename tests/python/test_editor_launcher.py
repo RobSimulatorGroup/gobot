@@ -265,14 +265,22 @@ def test_editor_preloads_current_environment_cuda_runtime() -> None:
 def test_editor_no_rebuild_preserves_native_arguments_and_environment() -> None:
     executable = Path("/installed/gobot_editor")
     environment = {"GOBOT_PYTHON_LIBRARY": "/environment/libpython.so"}
-    for args, skip_rebuild in (
-        (["--no-rebuild", "--path", "/project"], True),
-        (["--", "--no-rebuild"], False),
+    source = "/wheel examples/g1=track"
+    target = "/user examples/g1=track"
+    for args, expected_args, skip_rebuild in (
+        (["--no-rebuild", "--path", "/project"], ["--path", "/project"], True),
+        (["--path", source], ["--path", target], False),
+        (["--quiet", f"--path={source}"], ["--quiet", f"--path={target}"], False),
+        (["--path=./other"], ["--path=./other"], False),
+        (["--path="], ["--path="], False),
+        (["--path"], ["--path"], False),
+        (["--", "--no-rebuild", "--path", source, f"--path={source}"],
+         ["--", "--no-rebuild", "--path", source, f"--path={source}"], False),
     ):
         with (
             patch.object(launcher.sys, "argv", ["gobot_editor", *args]),
             patch.object(launcher, "_rebuild_editable_native_artifacts") as rebuild,
-            patch.object(launcher, "_register_packaged_examples"),
+            patch.object(launcher, "_register_packaged_examples", return_value={Path(source): Path(target)}),
             patch.object(launcher, "_find_current_python_library", return_value="/environment/libpython.so"),
             patch.object(launcher, "_find_editor_executable", return_value=executable),
             patch.object(launcher, "_distribution_gobot_dir", return_value=None),
@@ -289,10 +297,8 @@ def test_editor_no_rebuild_preserves_native_arguments_and_environment() -> None:
 
         if skip_rebuild:
             rebuild.assert_not_called()
-            expected_args = ["--path", "/project"]
         else:
             rebuild.assert_called_once_with()
-            expected_args = args
         execute.assert_called_once_with(
             os.fspath(executable), [os.fspath(executable), *expected_args], environment
         )

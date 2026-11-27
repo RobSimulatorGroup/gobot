@@ -653,12 +653,19 @@ def editor() -> int:
             return 1
 
     writable_projects = _register_packaged_examples()
-    if "--path" in editor_args:
-        index = editor_args.index("--path") + 1
-        if index < len(editor_args):
-            requested = Path(editor_args[index]).expanduser().resolve()
-            if requested in writable_projects:
-                editor_args[index] = str(writable_projects[requested])
+    arguments = iter(enumerate(editor_args))
+    for index, argument in arguments:
+        if argument == "--":
+            break
+        option, equals, value = argument.partition("=")
+        if option != "--path":
+            continue
+        if not equals:
+            index, value = next(arguments, (index, ""))
+        if value and writable_projects:
+            target = writable_projects.get(Path(value).expanduser().resolve())
+            if target is not None:
+                editor_args[index] = f"--path={target}" if equals else str(target)
 
     python_library = _find_current_python_library()
     print(f"[gobot] Python library: {python_library}", file=sys.stderr, flush=True)
