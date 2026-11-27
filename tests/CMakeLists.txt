@@ -164,6 +164,21 @@ gtest_discover_tests(test_ik_ghost_preview
         EXTRA_ARGS --gtest_color=yes
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 set_target_properties(test_ik_ghost_preview PROPERTIES FOLDER tests)
+add_executable(test_motion_planning_session
+        editor/test_motion_planning_session.cpp)
+target_compile_options(test_motion_planning_session PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_compile_definitions(test_motion_planning_session PRIVATE
+        GOBOT_ROOT_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(test_motion_planning_session gtest gmock gobot_editor_runtime)
+if (MSVC)
+    target_link_libraries(test_motion_planning_session -Wl,--whole-archive gobot_test_support)
+else ()
+    target_link_libraries(test_motion_planning_session -Wl,--no-as-needed gobot_test_support)
+endif ()
+gtest_discover_tests(test_motion_planning_session
+        EXTRA_ARGS --gtest_color=yes
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+set_target_properties(test_motion_planning_session PROPERTIES FOLDER tests)
 add_executable(test_project_hook_runner
         editor/test_project_hook_runner.cpp)
 target_compile_options(test_project_hook_runner PUBLIC "${GOBOT_COMPILE_OPTIONS}")

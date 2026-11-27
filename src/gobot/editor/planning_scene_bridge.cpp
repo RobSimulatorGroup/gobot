@@ -361,9 +361,79 @@ void PlanningSceneBridge::Clear() {
     used_shape_names_.clear();
     visual_templates_.clear();
     last_sync_stats_ = {};
+    has_sync_cache_ = false;
+    last_sync_error_.clear();
 #if defined(GOBOT_HAS_PLANNING)
     world_.reset();
 #endif
+}
+
+void PlanningSceneBridge::SetExtraIgnoredPairs(std::vector<std::pair<std::string, std::string>> pairs) {
+    if (pairs == extra_ignored_pairs_) return;
+    extra_ignored_pairs_ = std::move(pairs);
+    has_sync_cache_ = false;
+}
+
+PlanningSnapshotIdentity PlanningSceneBridge::GetCurrentSnapshotIdentity() const noexcept {
+    PlanningSnapshotIdentity id;
+#if defined(GOBOT_HAS_PLANNING)
+    if (world_ != nullptr && robot_id_.IsValid()) {
+        const auto snap = world_->snapshot();
+        if (snap) {
+            id.scene_epoch = synced_scene_epoch_;
+            id.robot_id = robot_id_;
+            id.world_generation = world_generation_;
+            id.world_version = snap->version;
+            id.snapshot_ptr = snap.get();
+        }
+    }
+#endif
+    return id;
+}
+
+bool PlanningSceneBridge::EnsureSynced(
+        const Node* scene_root,
+        const Robot3D* target_robot,
+        std::uint64_t scene_epoch,
+        std::uint64_t scene_change_version) {
+    if (scene_root == nullptr || target_robot == nullptr) {
+        Clear();
+        synced_scene_epoch_ = scene_epoch;
+        synced_robot_id_ = ObjectID{};
+        synced_change_version_ = scene_change_version;
+        return false;
+    }
+
+    const ObjectID robot_id = target_robot->GetInstanceId();
+    if (has_sync_cache_ &&
+        synced_scene_epoch_ == scene_epoch &&
+        synced_robot_id_ == robot_id &&
+        synced_change_version_ == scene_change_version) {
+        return IsReady() && last_sync_error_.empty();
+    }
+
+    if (synced_scene_epoch_ != scene_epoch || synced_robot_id_ != robot_id) {
+        Clear();
+    }
+
+    std::string sync_error;
+    const bool ok = SyncFromScene(scene_root, target_robot, "", extra_ignored_pairs_, &sync_error);
+    if (!ok) {
+        Clear();
+        has_sync_cache_ = true;
+        synced_scene_epoch_ = scene_epoch;
+        synced_robot_id_ = robot_id;
+        synced_change_version_ = scene_change_version;
+        last_sync_error_ = sync_error.empty() ? "Planning scene synchronization failed." : sync_error;
+        return false;
+    }
+
+    has_sync_cache_ = true;
+    synced_scene_epoch_ = scene_epoch;
+    synced_robot_id_ = robot_id;
+    synced_change_version_ = scene_change_version;
+    last_sync_error_.clear();
+    return IsReady();
 }
 
 bool PlanningSceneBridge::IsReady() const noexcept {
@@ -442,6 +512,8 @@ bool PlanningSceneBridge::SyncFromScene(
         }
         return false;
     }
+
+    ++sync_count_;
 
     CompiledPhysicsScene compiled;
     std::string compile_error;
@@ -1028,6 +1100,7 @@ bool PlanningSceneBridge::SyncFromScene(
             }
 
             world_ = std::move(new_world);
+            ++world_generation_;
             tracked_obstacles_ = std::move(new_tracked);
             robot_id_ = target_robot_id;
             robot_name_ = robot_name;
@@ -1043,6 +1116,7 @@ bool PlanningSceneBridge::SyncFromScene(
             last_base_pos_ = root_pos;
             last_base_rot_ = root_rot;
             stats.rebuilt_world = true;
+            stats.world_generation = world_generation_;
             stats.added_obstacles = tracked_obstacles_.size();
             CollectRobotVisualTemplates(target_robot);
         } else {
@@ -1158,6 +1232,7 @@ bool PlanningSceneBridge::SyncFromScene(
     }
 
     current_q_ = Eigen::Map<const Eigen::VectorXd>(cur_list.data(), static_cast<Eigen::Index>(cur_list.size()));
+    stats.world_generation = world_generation_;
     stats.world_version = world_->version();
     last_sync_stats_ = stats;
     return true;
@@ -1246,7 +1321,45 @@ std::vector<VisualMeshRenderItem> PlanningSceneBridge::BuildGhostOverlayMeshes(
     }
     return result;
 }
+
+std::vector<LinkSphereOverlay> PlanningSceneBridge::CollectLinkSpheres(
+        const planning::WorldSnapshot& snapshot,
+        const Eigen::VectorXd& q) const {
+    std::vector<LinkSphereOverlay> spheres;
+    const int B = snapshot.kin.num_bodies();
+    if (B <= 0 || q.size() != snapshot.kin.num_joints()) {
+        return spheres;
+    }
+
+    std::vector<planning::Vec3> bpos(static_cast<std::size_t>(B));
+    std::vector<planning::Mat3> brot(static_cast<std::size_t>(B));
+    snapshot.kin.fk_single(q.data(), bpos.data(), brot.data());
+
+    spheres.reserve(snapshot.link_spheres.size());
+    for (const auto& sp : snapshot.link_spheres) {
+        if (sp.body_id < 0 || sp.body_id >= B) continue;
+        const planning::Vec3 center = brot[sp.body_id] * sp.local_center + bpos[sp.body_id];
+        spheres.push_back(LinkSphereOverlay{center.template cast<RealType>(), static_cast<float>(sp.radius), sp.body_id});
+    }
+    return spheres;
+}
 #endif
+
+std::vector<LinkSphereOverlay> PlanningSceneBridge::CollectLinkSpheres(const Eigen::VectorXd& q) const {
+#if defined(GOBOT_HAS_PLANNING)
+    if (world_ == nullptr) {
+        return {};
+    }
+    const auto snap = world_->snapshot();
+    if (!snap) {
+        return {};
+    }
+    return CollectLinkSpheres(*snap, q);
+#else
+    (void)q;
+    return {};
+#endif
+}
 
 std::vector<VisualMeshRenderItem> PlanningSceneBridge::BuildGhostOverlayMeshes(
         const Eigen::VectorXd& q,

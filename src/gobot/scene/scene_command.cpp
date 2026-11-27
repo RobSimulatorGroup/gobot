@@ -106,6 +106,10 @@ bool SceneCommandStack::Execute(std::unique_ptr<SceneCommand> command) {
     }
 
     if (IsInTransaction()) {
+        if (!transaction_commands_.empty() && transaction_commands_.back()->MergeWith(*command)) {
+            ++version_;
+            return true;
+        }
         transaction_commands_.push_back(std::move(command));
         ++version_;
         return true;

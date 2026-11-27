@@ -260,6 +260,22 @@ void RenderServer::RenderDebugArrowsToViewport(const RID& viewport,
     RSG::debug_draw->RenderDebugArrows(render_target, CaptureRenderViewSnapshot(*camera), arrows);
 }
 
+void RenderServer::RenderDebugPrimitivesToViewport(const RID& viewport,
+                                                   const Camera3D* camera,
+                                                   const DebugPrimitivesData& primitives) {
+    GOBOT_PROFILE_ZONE("RenderServer::RenderDebugPrimitivesToViewport");
+    ERR_FAIL_COND(RSG::debug_draw == nullptr);
+    if (primitives.Empty()) {
+        return;
+    }
+
+    const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
+    ERR_FAIL_COND(render_target.IsNull());
+
+    ERR_FAIL_COND(camera == nullptr);
+    RSG::debug_draw->RenderDebugPrimitives(render_target, CaptureRenderViewSnapshot(*camera), primitives);
+}
+
 
 
 }

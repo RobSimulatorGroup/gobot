@@ -28,7 +28,8 @@ public:
                 const PhysicsWorldSettings* physics_settings = nullptr,
                 const std::vector<DebugArrow>& debug_arrows = {},
                 bool show_collision_debug = true,
-                const std::vector<VisualMeshRenderItem>& overlay_meshes = {});
+                const std::vector<VisualMeshRenderItem>& overlay_meshes = {},
+                const DebugPrimitivesData* debug_primitives = nullptr);
 
     std::vector<DebugArrow> CollectVelocityCommandDebugArrows(const Node* scene_root) const;
 

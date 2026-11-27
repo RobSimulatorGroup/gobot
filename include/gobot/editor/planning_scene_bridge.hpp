@@ -32,12 +32,47 @@ class Robot3D;
 
 struct PlanningSceneSyncStats {
     bool rebuilt_world = false;
+    std::uint64_t world_generation = 0;
     std::uint64_t world_version = 0;
     std::size_t base_updates = 0;
     std::size_t pose_updates = 0;
     std::size_t added_obstacles = 0;
     std::size_t replaced_obstacles = 0;
     std::size_t removed_obstacles = 0;
+};
+
+struct PlanningSnapshotIdentity {
+    std::uint64_t scene_epoch = 0;
+    ObjectID robot_id{};
+    std::uint64_t world_generation = 0;
+    std::uint64_t world_version = 0;
+    const void* snapshot_ptr = nullptr;
+
+    [[nodiscard]] bool IsValid() const noexcept {
+        return robot_id.IsValid() && world_generation != 0 && snapshot_ptr != nullptr;
+    }
+
+    [[nodiscard]] bool MatchesSnapshot(const PlanningSnapshotIdentity& other) const noexcept {
+        return IsValid() && other.IsValid() &&
+               scene_epoch == other.scene_epoch &&
+               robot_id == other.robot_id &&
+               world_generation == other.world_generation &&
+               world_version == other.world_version &&
+               snapshot_ptr == other.snapshot_ptr;
+    }
+
+    [[nodiscard]] bool SameTopology(const PlanningSnapshotIdentity& other) const noexcept {
+        return IsValid() && other.IsValid() &&
+               scene_epoch == other.scene_epoch &&
+               robot_id == other.robot_id &&
+               world_generation == other.world_generation;
+    }
+};
+
+struct LinkSphereOverlay {
+    Vector3 center = Vector3::Zero();
+    float radius = 0.0f;
+    int body_id = -1;
 };
 
 struct LinkVisualTemplate {
@@ -68,7 +103,23 @@ public:
                        const std::vector<std::pair<std::string, std::string>>& extra_ignored_pairs = {},
                        std::string* error = nullptr);
 
+    // Coalesced per-frame synchronization entry point shared by Editor, IK Ghost, and Motion Planning.
+    // Executes SyncFromScene at most once per unique (scene_epoch, robot_id, scene_change_version, collision policy).
+    // On failure, clears the active world so consumers leave Ready and surfaces GetLastSyncError().
+    bool EnsureSynced(const Node* scene_root,
+                      const Robot3D* target_robot,
+                      std::uint64_t scene_epoch,
+                      std::uint64_t scene_change_version);
+
+    void SetExtraIgnoredPairs(std::vector<std::pair<std::string, std::string>> pairs);
+
     [[nodiscard]] bool IsReady() const noexcept;
+    [[nodiscard]] bool HasSyncError() const noexcept { return !last_sync_error_.empty(); }
+    [[nodiscard]] const std::string& GetLastSyncError() const noexcept { return last_sync_error_; }
+    [[nodiscard]] std::uint64_t GetSyncedSceneEpoch() const noexcept { return synced_scene_epoch_; }
+    [[nodiscard]] std::uint64_t GetWorldGeneration() const noexcept { return world_generation_; }
+    [[nodiscard]] std::uint64_t GetSyncCount() const noexcept { return sync_count_; }
+    [[nodiscard]] PlanningSnapshotIdentity GetCurrentSnapshotIdentity() const noexcept;
     [[nodiscard]] ObjectID GetRobotId() const noexcept { return robot_id_; }
     [[nodiscard]] const std::string& GetRobotName() const noexcept { return robot_name_; }
     [[nodiscard]] const std::string& GetBaseLinkName() const noexcept { return base_link_name_; }
@@ -90,6 +141,9 @@ public:
             const Color& tint_color,
             const Color& emissive_color) const;
 
+    // Collect world-space bounding spheres for robot links at configuration q (for optional debug overlay).
+    [[nodiscard]] std::vector<LinkSphereOverlay> CollectLinkSpheres(const Eigen::VectorXd& q) const;
+
     // Evaluate link world transform at configuration q using the active world snapshot.
     bool ComputeLinkWorldTransform(const Eigen::VectorXd& q, int link_id, Affine3* out_transform) const;
 
@@ -104,6 +158,10 @@ public:
             const Eigen::VectorXd& q,
             const Color& tint_color,
             const Color& emissive_color) const;
+
+    [[nodiscard]] std::vector<LinkSphereOverlay> CollectLinkSpheres(
+            const planning::WorldSnapshot& snapshot,
+            const Eigen::VectorXd& q) const;
 #endif
 
 private:
@@ -143,6 +201,14 @@ private:
     std::vector<LinkVisualTemplate> visual_templates_;
     PlanningSceneSyncStats last_sync_stats_;
     double default_acceleration_limit_ = 10.0;
+    std::uint64_t world_generation_ = 0;
+    std::uint64_t sync_count_ = 0;
+    bool has_sync_cache_ = false;
+    std::uint64_t synced_scene_epoch_ = 0;
+    ObjectID synced_robot_id_{};
+    std::uint64_t synced_change_version_ = 0;
+    std::vector<std::pair<std::string, std::string>> extra_ignored_pairs_;
+    std::string last_sync_error_;
 
 #if defined(GOBOT_HAS_PLANNING)
     std::unique_ptr<planning::PlanningWorld> world_;

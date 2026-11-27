@@ -47,7 +47,13 @@ void ColorsForGhostStatus(IKGhostStatus status, Color* albedo, Color* emissive) 
 
 } // namespace
 
-InteractiveIKGhostSession::InteractiveIKGhostSession() {
+InteractiveIKGhostSession::InteractiveIKGhostSession()
+    : shared_bridge_(nullptr) {
+    StartWorker();
+}
+
+InteractiveIKGhostSession::InteractiveIKGhostSession(PlanningSceneBridge* shared_bridge)
+    : shared_bridge_(shared_bridge) {
     StartWorker();
 }
 
@@ -108,19 +114,21 @@ void InteractiveIKGhostSession::SetPreviewConfig(const IKGhostPreviewConfig& con
 }
 
 void InteractiveIKGhostSession::SetExtraIgnoredPairs(std::vector<std::pair<std::string, std::string>> pairs) {
-    extra_ignored_pairs_ = std::move(pairs);
-    last_synced_change_version_ = std::numeric_limits<std::uint64_t>::max();
+    GetBridge().SetExtraIgnoredPairs(std::move(pairs));
 }
 
 bool InteractiveIKGhostSession::SetEndEffectorLink(const std::string& link_name) {
     preferred_ee_link_ = link_name;
-    if (!HasActiveTarget()) {
-        return false;
+    const auto& bridge = GetBridge();
+    if (!enabled_ || !bridge.IsReady()) return false;
+    const int id = bridge.FindLinkId(link_name);
+    if (id < 0) return false;
+    const auto current = bridge.GetCurrentSnapshotIdentity();
+    if (!bound_snapshot_id_.MatchesSnapshot(current)) {
+        ClearActiveState();
+        bound_snapshot_id_ = current;
     }
-    const int id = bridge_.FindLinkId(link_name);
-    if (id < 0) {
-        return false;
-    }
+    if (ee_link_id_ == id && HasActiveTarget()) return true;
     ee_link_id_ = id;
     ResetTargetToCurrentPose();
     return true;
@@ -130,6 +138,8 @@ void InteractiveIKGhostSession::InvalidateDisplayedResult() {
     // A reset or policy change can invalidate an in-flight solve even on the same snapshot.
     first_valid_target_seq_ = next_target_seq_ + 1;
     displayed_target_seq_ = 0;
+    displayed_snapshot_id_ = PlanningSnapshotIdentity{};
+    displayed_ee_link_.clear();
     status_ = IKGhostStatus::Solving;
     overlay_meshes_.clear();
     last_collision_pair_.clear();
@@ -137,6 +147,9 @@ void InteractiveIKGhostSession::InvalidateDisplayedResult() {
     last_pos_err_ = 0.0;
     last_rot_err_ = 0.0;
     last_min_distance_ = std::numeric_limits<double>::infinity();
+    last_has_witness_ = false;
+    last_witness_a_ = Vector3::Zero();
+    last_witness_b_ = Vector3::Zero();
 }
 
 void InteractiveIKGhostSession::ClearActiveState() {
@@ -167,62 +180,66 @@ void InteractiveIKGhostSession::Update(const Node* scene_root,
     return;
 #else
     if (!enabled_) return;
+    PlanningSceneBridge& bridge = GetBridge();
+
     if (is_play_mode || scene_root == nullptr || active_robot == nullptr) {
-        if (bound_robot_id_.IsValid()) {
+        if (bound_snapshot_id_.IsValid()) {
             ClearActiveState();
-            bridge_.Clear();
-            bound_robot_id_ = ObjectID{};
+            if (shared_bridge_ == nullptr) {
+                bridge.Clear();
+            }
+            bound_snapshot_id_ = PlanningSnapshotIdentity{};
             ee_link_id_ = -1;
-            last_synced_world_version_ = 0;
         }
-        bound_scene_epoch_ = scene_epoch;
+        bound_snapshot_id_.scene_epoch = scene_epoch;
         last_status_message_ = is_play_mode ? "Paused during Play Mode." : "No active robot.";
         return;
     }
 
-    const ObjectID robot_id = active_robot->GetInstanceId();
-    const bool context_switched = (bound_scene_epoch_ != scene_epoch) || (bound_robot_id_ != robot_id);
-    const bool needs_sync = context_switched || !bridge_.IsReady() ||
-                            (last_synced_change_version_ != scene_change_version);
+    if (!bridge.EnsureSynced(scene_root,
+                             active_robot,
+                             scene_epoch,
+                             scene_change_version)) {
+        ClearActiveState();
+        bound_snapshot_id_ = PlanningSnapshotIdentity{};
+        ee_link_id_ = -1;
+        status_ = IKGhostStatus::Unavailable;
+        last_status_message_ = bridge.GetLastSyncError().empty()
+                ? "Planning scene synchronization failed."
+                : bridge.GetLastSyncError();
+        return;
+    }
 
-    if (needs_sync) {
-        if (context_switched) {
-            ClearActiveState();
-            bridge_.Clear();
-            bound_scene_epoch_ = scene_epoch;
-            bound_robot_id_ = robot_id;
-            ee_link_id_ = -1;
-            last_synced_world_version_ = 0;
+    const PlanningSnapshotIdentity cur_id = bridge.GetCurrentSnapshotIdentity();
+    if (!cur_id.IsValid()) {
+        ClearActiveState();
+        bound_snapshot_id_ = PlanningSnapshotIdentity{};
+        ee_link_id_ = -1;
+        status_ = IKGhostStatus::Unavailable;
+        last_status_message_ = "Planning snapshot unavailable.";
+        return;
+    }
+
+    int resolved_ee = bridge.GetDefaultEndEffectorLinkId();
+    if (!preferred_ee_link_.empty()) {
+        if (const int idx = bridge.FindLinkId(preferred_ee_link_); idx >= 0) {
+            resolved_ee = idx;
         }
-        std::string sync_error;
-        if (!bridge_.SyncFromScene(scene_root, active_robot, "", extra_ignored_pairs_, &sync_error)) {
-            ClearActiveState();
-            status_ = IKGhostStatus::Unavailable;
-            last_status_message_ = sync_error;
-            return;
-        }
-        last_synced_change_version_ = scene_change_version;
+    }
+    ee_link_id_ = resolved_ee;
 
-        int resolved_ee = bridge_.GetDefaultEndEffectorLinkId();
-        if (!preferred_ee_link_.empty()) {
-            if (const int idx = bridge_.FindLinkId(preferred_ee_link_); idx >= 0) {
-                resolved_ee = idx;
-            }
-        }
-        ee_link_id_ = resolved_ee;
-
-        const std::uint64_t new_world_ver = bridge_.GetWorldVersion();
-        const bool world_changed = (new_world_ver != last_synced_world_version_);
-        last_synced_world_version_ = new_world_ver;
-
-        if (bridge_.GetLastSyncStats().rebuilt_world) {
-            // A replacement world may have the same local version and joint count.
-            ClearActiveState();
-        } else if (world_changed && has_target_pose_) {
+    if (!bound_snapshot_id_.IsValid() || !bound_snapshot_id_.SameTopology(cur_id)) {
+        // Robot changed, scene changed, or topology rebuilt (new world_generation even if numeric version collides).
+        ClearActiveState();
+        bound_snapshot_id_ = cur_id;
+    } else if (!bound_snapshot_id_.MatchesSnapshot(cur_id)) {
+        bound_snapshot_id_ = cur_id;
+        if (has_target_pose_) {
             InvalidateDisplayedResult();
             SubmitCurrentTarget();
         }
     }
+
     if (!has_target_pose_) {
         ResetTargetToCurrentPose();
     }
@@ -239,13 +256,13 @@ void InteractiveIKGhostSession::Update(const Node* scene_root,
     }
 
     if (have_result &&
-        res.scene_epoch == bound_scene_epoch_ &&
-        res.robot_id == bound_robot_id_ &&
+        res.snapshot_id.MatchesSnapshot(cur_id) &&
         res.target_seq >= first_valid_target_seq_ &&
         res.target_seq > displayed_target_seq_ &&
-        res.world_version == last_synced_world_version_ &&
-        res.snapshot == bridge_.CaptureSnapshot()) {
+        res.snapshot == bridge.CaptureSnapshot()) {
         displayed_target_seq_ = res.target_seq;
+        displayed_snapshot_id_ = res.snapshot_id;
+        displayed_ee_link_ = res.ee_link_name;
         status_ = res.status;
         last_pos_err_ = res.pos_err;
         last_rot_err_ = res.rot_err;
@@ -253,8 +270,11 @@ void InteractiveIKGhostSession::Update(const Node* scene_root,
         last_solve_ms_ = res.solve_ms;
         last_collision_pair_ = res.collision_pair;
         last_status_message_ = res.reason;
+        last_has_witness_ = res.has_witness;
+        last_witness_a_ = res.witness_a;
+        last_witness_b_ = res.witness_b;
 
-        if (res.q.size() == bridge_.GetCurrentJointPositions().size()) {
+        if (res.q.size() == bridge.GetCurrentJointPositions().size()) {
             ghost_q_ = res.q;
             RebuildOverlayMeshesFromResult(res);
         }
@@ -266,16 +286,52 @@ void InteractiveIKGhostSession::Update(const Node* scene_root,
 #endif
 }
 
+bool InteractiveIKGhostSession::TryGetExactSolvedGoal(const PlanningSnapshotIdentity& expected_snapshot,
+                                                      const std::string& expected_ee_link,
+                                                      Eigen::VectorXd* out_q,
+                                                      std::string* out_reason) const {
+    if (!enabled_ || !HasActiveTarget()) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost is not active.";
+        return false;
+    }
+    if (status_ != IKGhostStatus::Ok) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost does not have a valid collision-free solution.";
+        return false;
+    }
+    if (displayed_target_seq_ == 0 || displayed_target_seq_ != next_target_seq_) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost is still solving the latest gizmo target.";
+        return false;
+    }
+    if (!displayed_snapshot_id_.MatchesSnapshot(expected_snapshot)) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost solution does not match the current planning snapshot.";
+        return false;
+    }
+    if (!expected_ee_link.empty() && displayed_ee_link_ != expected_ee_link) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost end-effector link does not match the planner EE link.";
+        return false;
+    }
+    const PlanningSceneBridge& bridge = GetBridge();
+    if (ghost_q_.size() != bridge.GetCurrentJointPositions().size() || ghost_q_.size() == 0) {
+        if (out_reason != nullptr) *out_reason = "IK Ghost joint state dimension mismatch.";
+        return false;
+    }
+    if (out_q != nullptr) {
+        *out_q = ghost_q_;
+    }
+    return true;
+}
+
 void InteractiveIKGhostSession::ResetTargetToCurrentPose() {
 #if !defined(GOBOT_HAS_PLANNING)
     return;
 #else
-    if (!enabled_ || !bridge_.IsReady() || ee_link_id_ < 0) {
+    const PlanningSceneBridge& bridge = GetBridge();
+    if (!enabled_ || !bridge.IsReady() || ee_link_id_ < 0) {
         return;
     }
-    ghost_q_ = bridge_.GetCurrentJointPositions();
+    ghost_q_ = bridge.GetCurrentJointPositions();
     Affine3 ee_tf = Affine3::Identity();
-    if (!bridge_.ComputeLinkWorldTransform(ghost_q_, ee_link_id_, &ee_tf)) {
+    if (!bridge.ComputeLinkWorldTransform(ghost_q_, ee_link_id_, &ee_tf)) {
         return;
     }
     InvalidateDisplayedResult();
@@ -298,19 +354,21 @@ void InteractiveIKGhostSession::SubmitCurrentTarget() {
 #if !defined(GOBOT_HAS_PLANNING)
     return;
 #else
-    const auto snap = bridge_.CaptureSnapshot();
-    if (!snap || ee_link_id_ < 0 || ee_link_id_ >= snap->kin.num_bodies()) {
+    const PlanningSceneBridge& bridge = GetBridge();
+    const auto snap = bridge.CaptureSnapshot();
+    const PlanningSnapshotIdentity snap_id = bridge.GetCurrentSnapshotIdentity();
+    if (!snap || !snap_id.IsValid() || ee_link_id_ < 0 || ee_link_id_ >= snap->kin.num_bodies()) {
         return;
     }
 
     const int J = snap->kin.num_joints();
-    Eigen::VectorXd seed = (ghost_q_.size() == J) ? ghost_q_ : bridge_.GetCurrentJointPositions();
+    Eigen::VectorXd seed = (ghost_q_.size() == J) ? ghost_q_ : bridge.GetCurrentJointPositions();
     if (seed.size() != J) {
         seed = Eigen::VectorXd::Zero(J);
     }
 
     std::vector<Eigen::VectorXd> fallbacks;
-    const Eigen::VectorXd& cur_q = bridge_.GetCurrentJointPositions();
+    const Eigen::VectorXd& cur_q = bridge.GetCurrentJointPositions();
     if (cur_q.size() == J && (cur_q - seed).cwiseAbs().maxCoeff() > 1e-3) {
         fallbacks.push_back(cur_q);
     }
@@ -329,11 +387,12 @@ void InteractiveIKGhostSession::SubmitCurrentTarget() {
     }
 
     PendingRequest req;
-    req.scene_epoch = bound_scene_epoch_;
-    req.world_version = snap->version;
+    req.snapshot_id = snap_id;
     req.target_seq = ++next_target_seq_;
-    req.robot_id = bound_robot_id_;
     req.link_id = ee_link_id_;
+    if (ee_link_id_ >= 0 && static_cast<std::size_t>(ee_link_id_) < bridge.GetLinkNames().size()) {
+        req.ee_link_name = bridge.GetLinkNames()[static_cast<std::size_t>(ee_link_id_)];
+    }
     req.target_pose = target_pose_;
     req.seed_q = std::move(seed);
     req.fallback_seeds = std::move(fallbacks);
@@ -367,10 +426,9 @@ void InteractiveIKGhostSession::WorkerLoop() {
 
         const auto t0 = std::chrono::steady_clock::now();
         CompletedResult out;
-        out.scene_epoch = req.scene_epoch;
-        out.world_version = req.world_version;
+        out.snapshot_id = req.snapshot_id;
         out.target_seq = req.target_seq;
-        out.robot_id = req.robot_id;
+        out.ee_link_name = req.ee_link_name;
         out.submitted_at = req.submitted_at;
         out.snapshot = req.snapshot;
 
@@ -410,6 +468,11 @@ void InteractiveIKGhostSession::WorkerLoop() {
             out.min_distance = ik.min_distance;
             out.collision_pair = ik.collision_pair;
             out.reason = ik.reason;
+            out.has_witness = ik.has_witness;
+            if (ik.has_witness) {
+                out.witness_a = ik.witness_a.template cast<RealType>();
+                out.witness_b = ik.witness_b.template cast<RealType>();
+            }
             if (ik.status == planning::PreviewIKStatus::Ok) {
                 out.status = IKGhostStatus::Ok;
             } else if (ik.status == planning::PreviewIKStatus::Collision) {
@@ -443,10 +506,11 @@ void InteractiveIKGhostSession::RebuildOverlayMeshesFromResult(const CompletedRe
     Color albedo;
     Color emissive;
     ColorsForGhostStatus(res.status, &albedo, &emissive);
+    const PlanningSceneBridge& bridge = GetBridge();
     if (res.snapshot) {
-        overlay_meshes_ = bridge_.BuildGhostOverlayMeshes(*res.snapshot, res.q, albedo, emissive);
+        overlay_meshes_ = bridge.BuildGhostOverlayMeshes(*res.snapshot, res.q, albedo, emissive);
     } else {
-        overlay_meshes_ = bridge_.BuildGhostOverlayMeshes(res.q, albedo, emissive);
+        overlay_meshes_ = bridge.BuildGhostOverlayMeshes(res.q, albedo, emissive);
     }
 #else
     (void)res;
@@ -473,10 +537,11 @@ bool InteractiveIKGhostSession::WaitForIdle(std::chrono::milliseconds timeout) {
 }
 
 IKGhostDiagnostics InteractiveIKGhostSession::GetDiagnostics() const {
+    const PlanningSceneBridge& bridge = GetBridge();
     IKGhostDiagnostics d;
     d.status = status_;
-    d.scene_epoch = bound_scene_epoch_;
-    d.world_version = last_synced_world_version_;
+    d.scene_epoch = bound_snapshot_id_.scene_epoch;
+    d.world_version = bound_snapshot_id_.world_version;
     d.target_seq = next_target_seq_;
     d.displayed_seq = displayed_target_seq_;
     d.pos_err = last_pos_err_;
@@ -486,8 +551,11 @@ IKGhostDiagnostics InteractiveIKGhostSession::GetDiagnostics() const {
     d.last_input_to_display_ms = last_input_to_display_ms_;
     d.collision_pair = last_collision_pair_;
     d.status_message = last_status_message_;
-    if (ee_link_id_ >= 0 && static_cast<std::size_t>(ee_link_id_) < bridge_.GetLinkNames().size()) {
-        d.end_effector_link = bridge_.GetLinkNames()[static_cast<std::size_t>(ee_link_id_)];
+    d.has_witness = last_has_witness_;
+    d.witness_a = last_witness_a_;
+    d.witness_b = last_witness_b_;
+    if (ee_link_id_ >= 0 && static_cast<std::size_t>(ee_link_id_) < bridge.GetLinkNames().size()) {
+        d.end_effector_link = bridge.GetLinkNames()[static_cast<std::size_t>(ee_link_id_)];
     }
     if (!latency_samples_ms_.empty()) {
         std::vector<double> sorted(latency_samples_ms_.begin(), latency_samples_ms_.end());

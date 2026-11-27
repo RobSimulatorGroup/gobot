@@ -313,7 +313,8 @@ inline bool project_onto_manifold(const WorldSnapshot& snap,
                                   Eigen::VectorXd& q_out,
                                   double max_disp = std::numeric_limits<double>::infinity(),
                                   double target_tol_scale = 0.35,
-                                  int max_iters = 25) {
+                                  int max_iters = 25,
+                                  const std::atomic<bool>* cancel_flag = nullptr) {
     const int J = snap.kin.num_joints();
     const int B = snap.kin.num_bodies();
     const auto& lo = snap.kin.lower();
@@ -340,6 +341,7 @@ inline bool project_onto_manifold(const WorldSnapshot& snap,
     double damping = 1e-3;
     const double w_stay = 1e-3;
     for (int it = 0; it < max_iters; ++it) {
+        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return false;
         const bool tight_ok = eval_stacked_manifold(
             snap, q_out, constraints, target_tol_scale, bpos, brot, jorig, jaxis, r, &Jm, antipodal);
         if (antipodal) return false;
@@ -440,14 +442,16 @@ inline bool is_constrained_segment_valid(const WorldSnapshot& snap,
                                          const Eigen::VectorXd& margins,
                                          double max_step,
                                          bool verify_original,
-                                         double esdf_margin = -1.0) {
-    if (!snap.is_segment_valid(qa, qb, margins, max_step, verify_original, esdf_margin)) return false;
+                                         double esdf_margin = -1.0,
+                                         const std::atomic<bool>* cancel_flag = nullptr) {
+    if (!snap.is_segment_valid(qa, qb, margins, max_step, verify_original, esdf_margin, cancel_flag)) return false;
     if (constraints.empty()) return true;
     if (!is_on_manifold(snap, qb.data(), constraints, 1.0)) return false;
     const double dist = (qb - qa).norm();
     const int steps = std::max(2, static_cast<int>(std::ceil(dist / std::max(1e-3, max_step))));
     Eigen::VectorXd q(qa.size());
     for (int i = 1; i < steps; ++i) {
+        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return false;
         const double alpha = static_cast<double>(i) / static_cast<double>(steps);
         q.noalias() = (1.0 - alpha) * qa + alpha * qb;
         if (!is_on_manifold(snap, q.data(), constraints, 1.0)) return false;
@@ -471,18 +475,20 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
                                      bool verify_original,
                                      int max_steps,
                                      std::vector<Eigen::VectorXd>& out_chain,
-                                     double esdf_margin = -1.0) {
+                                     double esdf_margin = -1.0,
+                                     const std::atomic<bool>* cancel_flag = nullptr) {
     out_chain.clear();
     const double proj_step = std::min(step_size, 0.15);
     const double connect_eps = std::max(1e-3, 0.5 * proj_step);
     Eigen::VectorXd q_cur = q_start;
 
     for (int s = 0; s < max_steps; ++s) {
+        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return 0;
         const Eigen::VectorXd diff = q_goal - q_cur;
         const double d = diff.norm();
         if (d <= 1e-9) return 2;
         if (d <= proj_step &&
-            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin)) {
+            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin, cancel_flag)) {
             out_chain.push_back(q_goal);
             return 2;
         }
@@ -496,9 +502,9 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
                                              : Eigen::VectorXd(q_cur + raw_step);
 
         Eigen::VectorXd q_proj;
-        if (!project_onto_manifold(snap, constraints, active_mask, q_cand, q_proj, 2.0 * h, 0.35, 20)) {
+        if (!project_onto_manifold(snap, constraints, active_mask, q_cand, q_proj, 2.0 * h, 0.35, 20, cancel_flag)) {
             // Fallback: try direct ambient step projection without tangent projection.
-            if (!project_onto_manifold(snap, constraints, active_mask, q_cur + raw_step, q_proj, 2.0 * h, 0.35, 20)) {
+            if (!project_onto_manifold(snap, constraints, active_mask, q_cur + raw_step, q_proj, 2.0 * h, 0.35, 20, cancel_flag)) {
                 break;
             }
         }
@@ -507,14 +513,14 @@ inline int trace_constrained_segment(const WorldSnapshot& snap,
         const double d_after = (q_goal - q_proj).norm();
         if (d_after >= d - 1e-5 && d > connect_eps) break;
 
-        if (!is_constrained_segment_valid(snap, q_cur, q_proj, constraints, margins, check_res, verify_original, esdf_margin)) {
+        if (!is_constrained_segment_valid(snap, q_cur, q_proj, constraints, margins, check_res, verify_original, esdf_margin, cancel_flag)) {
             break;
         }
         out_chain.push_back(q_proj);
         q_cur = std::move(q_proj);
 
         if (d_after <= connect_eps &&
-            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin)) {
+            is_constrained_segment_valid(snap, q_cur, q_goal, constraints, margins, check_res, verify_original, esdf_margin, cancel_flag)) {
             if (d_after > 1e-9) out_chain.push_back(q_goal);
             return 2;
         }
@@ -535,25 +541,28 @@ inline bool constrained_resample_path(
     double check_res,
     bool verify_original,
     std::vector<Eigen::VectorXd>& out_resampled,
-    double esdf_margin = -1.0) {
+    double esdf_margin = -1.0,
+    const std::atomic<bool>* cancel_flag = nullptr) {
     if (count < 2 || path.size() < 2) {
         out_resampled = path;
         return out_resampled.size() >= 2;
     }
-    out_resampled = WorldSnapshot::resample_path(path, count);
+    out_resampled = WorldSnapshot::resample_path(path, count, cancel_flag);
+    if (out_resampled.empty()) return false;
     if (constraints.empty()) {
         for (size_t k = 0; k + 1 < out_resampled.size(); ++k) {
-            if (!snap.is_segment_valid(out_resampled[k], out_resampled[k + 1], margins, check_res, verify_original, esdf_margin)) {
+            if (!snap.is_segment_valid(out_resampled[k], out_resampled[k + 1], margins, check_res, verify_original, esdf_margin, cancel_flag)) {
                 return false;
             }
         }
         return true;
     }
     for (int i = 1; i + 1 < static_cast<int>(out_resampled.size()); ++i) {
+        if (cancel_flag && cancel_flag->load(std::memory_order_relaxed)) return false;
         if (!is_on_manifold(snap, out_resampled[static_cast<size_t>(i)].data(), constraints, 0.5)) {
             Eigen::VectorXd q_proj;
             if (project_onto_manifold(snap, constraints, active_mask, out_resampled[static_cast<size_t>(i)],
-                                      q_proj, 0.35, 0.35, 20) &&
+                                      q_proj, 0.35, 0.35, 20, cancel_flag) &&
                 snap.is_config_valid(q_proj.data(), margins, verify_original, esdf_margin)) {
                 out_resampled[static_cast<size_t>(i)] = std::move(q_proj);
             }
@@ -561,7 +570,7 @@ inline bool constrained_resample_path(
     }
     for (size_t k = 0; k + 1 < out_resampled.size(); ++k) {
         if (!is_constrained_segment_valid(
-                snap, out_resampled[k], out_resampled[k + 1], constraints, margins, check_res, verify_original, esdf_margin)) {
+                snap, out_resampled[k], out_resampled[k + 1], constraints, margins, check_res, verify_original, esdf_margin, cancel_flag)) {
             return false;
         }
     }
@@ -871,16 +880,35 @@ inline RRTResultNative plan_constrained_birrt(
     uint64_t rng_seed,
     bool verify_original,
     int shortcut_iters,
-    int output_waypoints) {
+    int output_waypoints,
+    const std::atomic<bool>* cancel_flag = nullptr) {
     if (constraints.empty()) {
         return snap.plan_birrt(start, goal, active_mask, margin, world_margin,
                                step_size, max_iterations, timeout_s, rng_seed,
-                               verify_original, shortcut_iters, output_waypoints);
+                               verify_original, shortcut_iters, output_waypoints, cancel_flag);
     }
     manifold_detail::validate_manifold_specs(snap, constraints);
 
     const auto t0 = std::chrono::steady_clock::now();
     RRTResultNative out;
+    auto is_cancelled = [&]() -> bool {
+        return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+    };
+    if (is_cancelled()) {
+        out.cancelled = true;
+        out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        return out;
+    }
+    auto finish = [&]() -> RRTResultNative {
+        if (is_cancelled()) {
+            out.cancelled = true;
+            out.success = false;
+            out.waypoints.clear();
+            out.dense_waypoints.clear();
+        }
+        out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        return std::move(out);
+    };
     const int J = snap.kin.num_joints();
     const Eigen::VectorXd margins = snap.pair_margins(margin, world_margin);
     const Eigen::VectorXd& lo = snap.kin.lower();
@@ -891,7 +919,7 @@ inline RRTResultNative plan_constrained_birrt(
         !snap.is_config_valid(goal.data(), margins, verify_original, world_margin) ||
         !manifold_detail::is_on_manifold(snap, start.data(), constraints, 1.0) ||
         !manifold_detail::is_on_manifold(snap, goal.data(), constraints, 1.0)) {
-        return out;
+        return finish();
     }
 
     // Fast path: direct constrained geodesic trace from start to goal.
@@ -899,7 +927,7 @@ inline RRTResultNative plan_constrained_birrt(
         std::vector<Eigen::VectorXd> direct_chain;
         const int st = manifold_detail::trace_constrained_segment(
             snap, start, goal, constraints, active_mask, margins,
-            step_size, check_res, verify_original, 64, direct_chain, world_margin);
+            step_size, check_res, verify_original, 64, direct_chain, world_margin, cancel_flag);
         if (st == 2) {
             std::vector<Eigen::VectorXd> full;
             full.reserve(direct_chain.size() + 2);
@@ -915,15 +943,14 @@ inline RRTResultNative plan_constrained_birrt(
                 std::vector<Eigen::VectorXd> resampled;
                 const bool res_ok = manifold_detail::constrained_resample_path(
                     snap, full, output_waypoints, constraints, active_mask, margins, check_res, verify_original,
-                    resampled, world_margin);
+                    resampled, world_margin, cancel_flag);
                 out.waypoints = std::move(resampled);
                 out.success = res_ok;
             } else {
                 out.waypoints = std::move(full);
                 out.success = true;
             }
-            out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-            return out;
+            return finish();
         }
     }
 
@@ -970,7 +997,7 @@ inline RRTResultNative plan_constrained_birrt(
         const Eigen::VectorXd q_near = tree[static_cast<size_t>(near_id)].q;
         const int st = manifold_detail::trace_constrained_segment(
             snap, q_near, target, constraints, active_mask, margins,
-            step_size, check_res, verify_original, max_ext_steps, step_chain, world_margin);
+            step_size, check_res, verify_original, max_ext_steps, step_chain, world_margin, cancel_flag);
         if (st == 0) return 0;
         int parent = near_id;
         for (auto& q_node : step_chain) {
@@ -991,6 +1018,10 @@ inline RRTResultNative plan_constrained_birrt(
     bool swapped = false;
     Eigen::VectorXd sample(J);
     for (int it = 0; it < max_iterations; ++it) {
+        if (is_cancelled()) {
+            out.cancelled = true;
+            break;
+        }
         if ((it & 7) == 0 && timeout_s > 0.0) {
             const double elapsed_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             if (elapsed_s >= timeout_s) break;
@@ -1010,14 +1041,22 @@ inline RRTResultNative plan_constrained_birrt(
             Eigen::VectorXd q_proj;
             if (!manifold_detail::project_onto_manifold(
                     snap, constraints, active_mask, sample, q_proj,
-                    std::numeric_limits<double>::infinity(), 0.5, 20)) {
+                    std::numeric_limits<double>::infinity(), 0.5, 20, cancel_flag)) {
                 swapped = !swapped;
                 continue;
             }
             sample = std::move(q_proj);
         }
+        if (is_cancelled()) {
+            out.cancelled = true;
+            break;
+        }
 
         if (extend_tree(ta, sample, 4) != 0) {
+            if (is_cancelled()) {
+                out.cancelled = true;
+                break;
+            }
             const Eigen::VectorXd target_q = ta.back().q;
             if (extend_tree(tb, target_q, 48) == 2) {
                 std::vector<Eigen::VectorXd> pa, pb;
@@ -1035,6 +1074,10 @@ inline RRTResultNative plan_constrained_birrt(
                 // Unified constrained shortcutting: replace pa[i..j] ONLY with verified shorter constrained trace!
                 std::vector<Eigen::VectorXd> sc_chain;
                 for (int sc = 0; sc < shortcut_iters && pa.size() > 2; ++sc) {
+                    if (is_cancelled()) {
+                        out.cancelled = true;
+                        return finish();
+                    }
                     const int n = static_cast<int>(pa.size());
                     const int i = static_cast<int>(rng() % static_cast<uint64_t>(n - 2));
                     const int j = i + 2 + static_cast<int>(rng() % static_cast<uint64_t>(n - i - 2));
@@ -1042,7 +1085,7 @@ inline RRTResultNative plan_constrained_birrt(
                     const int st = manifold_detail::trace_constrained_segment(
                         snap, pa[static_cast<size_t>(i)], pa[static_cast<size_t>(j)],
                         constraints, active_mask, margins,
-                        step_size, check_res, verify_original, 32, sc_chain, world_margin);
+                        step_size, check_res, verify_original, 32, sc_chain, world_margin, cancel_flag);
                     if (st == 2 && !sc_chain.empty()) {
                         double new_len = (sc_chain.front() - pa[static_cast<size_t>(i)]).norm();
                         for (size_t k = 0; k + 1 < sc_chain.size(); ++k) {
@@ -1066,22 +1109,20 @@ inline RRTResultNative plan_constrained_birrt(
                     std::vector<Eigen::VectorXd> resampled;
                     const bool res_ok = manifold_detail::constrained_resample_path(
                         snap, pa, output_waypoints, constraints, active_mask, margins, check_res, verify_original,
-                        resampled, world_margin);
+                        resampled, world_margin, cancel_flag);
                     out.waypoints = std::move(resampled);
                     out.success = res_ok;
                 } else {
                     out.waypoints = std::move(pa);
                     out.success = true;
                 }
-                out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-                return out;
+                return finish();
             }
         }
         swapped = !swapped;
     }
 
-    out.elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    return out;
+    return finish();
 }
 
 }  // namespace gobot::planning

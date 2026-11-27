@@ -2842,3 +2842,115 @@ TEST(MotionPlanningCpp, PreviewIKPreservesCollidingCandidateAndESDF) {
     EXPECT_EQ(far_res.status, gp::PreviewIKStatus::PoseNotSolved);
     EXPECT_GT(far_res.pos_err, 1.0);
 }
+
+TEST(MotionPlanningCpp, CooperativeCancelAndSampledSplineClearance) {
+    auto world = make_planar_arm_world();
+    {
+        gp::WorldShape obs;
+        obs.name = "mid_obstacle";
+        obs.link_key = "::obs";
+        obs.body_id = -1;
+        obs.local_frame = gp::Frame::Zero();
+        obs.local_frame.leftCols<3>() = gp::Mat3::Identity();
+        obs.local_frame.col(3) = gp::Vec3(0.45, 0.45, 0.0);
+        obs.layer = 1;
+        obs.mask = 1;
+        obs.shape = gp::make_sphere_shape("mid_obstacle", 0.08);
+        world->add_shape(std::move(obs));
+    }
+    auto snap = world->snapshot();
+    gp::MotionPlannerNative planner(world);
+
+    const Eigen::VectorXd q_start = (Eigen::VectorXd(2) << -0.3, 0.2).finished();
+    const Eigen::VectorXd q_goal = (Eigen::VectorXd(2) << 1.1, 0.4).finished();
+
+    // 1. Pre-cancelled pose-goal request must cancel cleanly before endpoint IK / SQP.
+    {
+        std::atomic<bool> cancel{true};
+        gp::MotionPlanRequestNative req;
+        req.start_q = q_start;
+        req.goal_is_pose = true;
+        gp::PoseConstraintSpec tgt;
+        tgt.link_id = 3;
+        tgt.has_position = true;
+        tgt.position = gp::Vec3(0.2, 0.7, 0.0);
+        tgt.pos_tol = gp::Vec3::Constant(1e-3);
+        req.goal_pose_sets = {{tgt}};
+        req.config.num_seeds = 1;
+        const auto res = planner.plan_with_snapshot(*snap, req, nullptr, &cancel);
+        EXPECT_FALSE(res.success);
+        EXPECT_TRUE(res.diagnostics.cancelled);
+        EXPECT_FALSE(res.diagnostics.timed_out);
+    }
+
+    // 2. Single-seed SQP (B == 1) and BiRRT honor cancel_flag cleanly.
+    {
+        std::atomic<bool> cancel{true};
+        gp::MotionPlanRequestNative req;
+        req.start_q = q_start;
+        req.goal_qs = {q_goal};
+        req.config.num_seeds = 1;
+        const auto res = planner.plan_with_snapshot(*snap, req, nullptr, &cancel);
+        EXPECT_FALSE(res.success);
+        EXPECT_TRUE(res.diagnostics.cancelled);
+        EXPECT_FALSE(res.diagnostics.timed_out);
+
+        const std::vector<uint8_t> mask = {1, 1};
+        const auto rrt = snap->plan_birrt(q_start, q_goal, mask, 0.002, 0.01, 0.2, 1000, 1.0, 42, true, 16, 16, &cancel);
+        EXPECT_FALSE(rrt.success);
+        EXPECT_TRUE(rrt.cancelled);
+    }
+
+    // 3. Multi-seed race without external cancel succeeds with cancelled == false,
+    // and evaluate_trajectory_sampled_clearance reports finite clearance & world witnesses on the final spline.
+    {
+        std::atomic<bool> cancel{false};
+        gp::MotionPlanRequestNative req;
+        req.start_q = q_start;
+        req.goal_qs = {q_goal};
+        req.config.num_seeds = 3;
+        req.config.first_feasible = true;
+        req.config.strict_ccd = true;
+        req.config.margin = 0.002;
+        req.config.has_world_margin = true;
+        req.config.world_margin = 0.01;
+        const auto res = planner.plan_with_snapshot(*snap, req, nullptr, &cancel);
+        ASSERT_TRUE(res.success) << res.reason;
+        EXPECT_FALSE(res.diagnostics.cancelled);
+        EXPECT_FALSE(res.diagnostics.timed_out);
+
+        const auto clearance = gp::evaluate_trajectory_sampled_clearance(
+            *snap, res.trajectory, req.config.margin, req.config.world_margin, 8, true, &cancel);
+        EXPECT_TRUE(clearance.valid);
+        EXPECT_FALSE(clearance.mesh_intersection);
+        EXPECT_GT(clearance.min_distance, 0.0);
+        EXPECT_GE(clearance.worst_time, 0.0);
+        EXPECT_LE(clearance.worst_time, res.trajectory.duration() + 1e-9);
+        EXPECT_FALSE(clearance.shape_pair.empty());
+        EXPECT_TRUE(clearance.has_witness);
+        EXPECT_GT((clearance.witness_a - clearance.witness_b).norm(), 0.0);
+    }
+}
+
+TEST(MotionPlanningCpp, CancelDuringDirectManifoldResampling) {
+    const auto world = make_planar_arm_world();
+    const auto snap = world->snapshot();
+    gp::PoseConstraintSpec upright;
+    upright.link_id = 3;
+    upright.has_rotation = true;
+    upright.rotation = gp::Mat3::Identity();
+    upright.rot_tol = gp::Vec3(0.05, 0.05, std::numeric_limits<double>::infinity());
+    const Eigen::Vector2d start(0.0, 0.0), goal(0.1, 0.0);
+    std::atomic<bool> stop{false};
+    std::thread cancel([&stop] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        stop.store(true);
+    });
+    const auto result = gp::plan_constrained_birrt(*snap, start, goal, {upright}, {1, 1},
+            0.002, 0.01, 0.2, 1000, 5.0, 42, true, 16, 250000, &stop);
+    cancel.join();
+    EXPECT_TRUE(result.cancelled);
+    EXPECT_FALSE(result.success);
+    EXPECT_TRUE(result.waypoints.empty());
+    EXPECT_TRUE(result.dense_waypoints.empty());
+}

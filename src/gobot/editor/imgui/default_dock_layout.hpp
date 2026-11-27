@@ -24,6 +24,7 @@ inline void BuildDefaultEditorDockLayout(ImGuiID dockspace_id, ImVec2 size) {
     ImGui::DockBuilderDockWindow("###inspector", right);
     ImGui::DockBuilderDockWindow("###physics", simulation);
     ImGui::DockBuilderDockWindow("###tactile", simulation);
+    ImGui::DockBuilderDockWindow("###motion_planning", simulation);
     ImGui::DockBuilderDockWindow("###console", console);
     ImGui::DockBuilderDockWindow("###resources", resources);
     ImGui::DockBuilderDockWindow("###scene_editor", left);
@@ -36,6 +37,7 @@ inline void BuildDefaultEditorDockLayout(ImGuiID dockspace_id, ImVec2 size) {
     };
     set_tab_order("###physics", 0);
     set_tab_order("###tactile", 1);
+    set_tab_order("###motion_planning", 2);
     ImGui::DockBuilderGetNode(simulation)->SelectedTabId = ImHashStr("###physics");
     ImGui::DockBuilderFinish(dockspace_id);
 }
