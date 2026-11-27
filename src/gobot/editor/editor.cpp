@@ -36,6 +36,7 @@
 #include "gobot/editor/imgui/python_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/editor/ik_ghost_session.hpp"
 #include "gobot/editor/scene_play_session.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/main/main.hpp"
@@ -132,6 +133,7 @@ Editor::Editor() {
         return OpenSceneFromPath(path);
     });
     scene_play_session_ = std::make_unique<ScenePlaySession>();
+    ik_ghost_session_ = std::make_unique<InteractiveIKGhostSession>();
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
@@ -166,6 +168,7 @@ Editor::Editor() {
 
 Editor::~Editor() {
     project_hook_runner_.reset();
+    ik_ghost_session_.reset();
     SaveCurrentSceneViewState();
     if (scene_play_session_ != nullptr) {
         scene_play_session_->Stop();

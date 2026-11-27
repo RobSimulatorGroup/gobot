@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "gobot/core/object_id.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "imgui.h"
@@ -52,7 +53,7 @@ private:
                               bool viewport_input_blocked);
 
     std::unique_ptr<EditorViewportRenderer> viewport_renderer_;
-    Node* hovered_node_{nullptr};
+    ObjectID hovered_node_id_;
     Joint3D* motion_target_joint_{nullptr};
     Joint3D* pressed_joint_{nullptr};
     Joint3D* dragged_joint_{nullptr};

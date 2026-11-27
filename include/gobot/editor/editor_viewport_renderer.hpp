@@ -3,6 +3,7 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/rid.hpp"
 #include "gobot/rendering/renderer_debug_draw.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 
 #include "gobot_export.h"
 
@@ -26,7 +27,8 @@ public:
                 const PhysicsSceneState* physics_state = nullptr,
                 const PhysicsWorldSettings* physics_settings = nullptr,
                 const std::vector<DebugArrow>& debug_arrows = {},
-                bool show_collision_debug = true);
+                bool show_collision_debug = true,
+                const std::vector<VisualMeshRenderItem>& overlay_meshes = {});
 
     std::vector<DebugArrow> CollectVelocityCommandDebugArrows(const Node* scene_root) const;
 

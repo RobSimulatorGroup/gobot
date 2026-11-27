@@ -975,7 +975,7 @@ inline StepIKResult solve_cartesian_step_ik(
     if (out.status == StepIKStatus::Ok) return out;
 
     // 2. If pose & jump succeeded but collided, retry with collision-aware damped LM (for redundant nullspace).
-    if (out.status == StepIKStatus::Collision && cfg.avoid_collisions && P > 0) {
+    if (out.status == StepIKStatus::Collision && cfg.avoid_collisions && total_col > 0) {
         const Eigen::VectorXd q_col = run_lm(true);
         StepIKResult col_res = evaluate_candidate(q_col);
         if (col_res.status == StepIKStatus::Ok) return col_res;
@@ -2257,6 +2257,187 @@ inline CartesianPlanResultNative plan_cartesian_path_on_snapshot(
         }
     }
     res.total_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+    return res;
+}
+
+enum class PreviewIKStatus {
+    Ok = 0,            // Pose reached within tolerance and collision/margin free (green)
+    Collision = 1,     // Pose reached within tolerance but violates collision/margin/ESDF (orange)
+    PoseNotSolved = 2, // Local IK did not converge within pose tolerance (red)
+};
+
+struct PreviewIKConfigNative {
+    double pos_tol = 1e-3;
+    double rot_tol = 1e-2;
+    double margin = 0.0;
+    double world_margin = -1.0;  // < 0 => same as margin
+    int ik_iterations = 40;
+    double ik_damping = 1e-3;
+    bool avoid_collisions = true;
+    bool verify_original = true;
+    bool check_rotation = true;
+};
+
+struct PreviewIKResultNative {
+    PreviewIKStatus status = PreviewIKStatus::PoseNotSolved;
+    Eigen::VectorXd q;
+    double pos_err = 0.0;
+    double rot_err = 0.0;
+    double min_distance = std::numeric_limits<double>::infinity();
+    std::string collision_pair;
+    // World-space witnesses for the reported distance, valid only when has_witness is true.
+    Vec3 witness_a = Vec3::Zero();
+    Vec3 witness_b = Vec3::Zero();
+    bool has_witness = false;
+    std::string reason;
+};
+
+// Interactive IK preview helper built directly on cartesian_detail::solve_cartesian_step_ik().
+// Preserves colliding configurations (Collision -> orange ghost) and distinguishes
+// local IK non-convergence (PoseNotSolved -> red target) without throwing away q.
+inline PreviewIKResultNative solve_ik_preview_on_snapshot(
+    const WorldSnapshot& snap,
+    int link_id,
+    const Vec3& tcp_pos_local,
+    const Mat3& tcp_rot_local,
+    const Vec3& target_pos,
+    const Mat3& target_rot,
+    const Eigen::VectorXd& q_seed,
+    const std::vector<uint8_t>& active_mask,
+    const PreviewIKConfigNative& preview_cfg,
+    const std::vector<Eigen::VectorXd>& fallback_seeds = {}) {
+    PreviewIKResultNative res;
+    const int J = snap.kin.num_joints();
+    if (link_id < 0 || link_id >= snap.kin.num_bodies() || q_seed.size() != J ||
+        static_cast<int>(active_mask.size()) != J) {
+        res.reason = "Invalid preview IK inputs";
+        return res;
+    }
+
+    CartesianPlanConfigNative cfg;
+    cfg.max_pos_error = 4.0 * std::max(preview_cfg.pos_tol, 1e-6);
+    cfg.max_step = cfg.max_pos_error;
+    cfg.max_rot_error = 4.0 * std::max(preview_cfg.rot_tol, 1e-6);
+    cfg.max_rot_step = cfg.max_rot_error;
+    cfg.jump_threshold_revolute = std::numeric_limits<double>::infinity();
+    cfg.jump_threshold_prismatic = std::numeric_limits<double>::infinity();
+    cfg.margin = preview_cfg.margin;
+    cfg.has_world_margin = (preview_cfg.world_margin >= 0.0);
+    cfg.world_margin = cfg.has_world_margin ? preview_cfg.world_margin : preview_cfg.margin;
+    cfg.ik_iterations = std::max(1, preview_cfg.ik_iterations);
+    cfg.ik_damping = std::max(1e-8, preview_cfg.ik_damping);
+    cfg.avoid_collisions = preview_cfg.avoid_collisions;
+    cfg.verify_original = preview_cfg.verify_original;
+
+    const int P = static_cast<int>(snap.pairs.size());
+    const double eff_wm = cfg.effective_world_margin();
+    const Eigen::VectorXd margins = snap.pairs.empty()
+        ? Eigen::VectorXd()
+        : snap.pair_margins(cfg.margin, eff_wm);
+
+    auto run_for_seed = [&](const Eigen::VectorXd& seed) -> cartesian_detail::StepIKResult {
+        return cartesian_detail::solve_cartesian_step_ik(
+            snap, link_id, tcp_pos_local, tcp_rot_local,
+            target_pos, target_rot, preview_cfg.check_rotation,
+            seed, active_mask, cfg, margins);
+    };
+
+    cartesian_detail::StepIKResult best = run_for_seed(q_seed);
+    if (best.status != cartesian_detail::StepIKStatus::Ok && !fallback_seeds.empty()) {
+        for (const auto& fb : fallback_seeds) {
+            if (fb.size() != J) continue;
+            Eigen::VectorXd seed = fb;
+            for (int j = 0; j < J; ++j) {
+                if (!active_mask[static_cast<size_t>(j)]) seed(j) = q_seed(j);
+            }
+            cartesian_detail::StepIKResult cand = run_for_seed(seed);
+            if (cand.status == cartesian_detail::StepIKStatus::Ok) {
+                best = std::move(cand);
+                break;
+            }
+            if (cand.status == cartesian_detail::StepIKStatus::Collision &&
+                best.status != cartesian_detail::StepIKStatus::Collision) {
+                best = std::move(cand);
+            } else if (cand.status == best.status &&
+                       (cand.pos_err + cand.rot_err) < (best.pos_err + best.rot_err)) {
+                best = std::move(cand);
+            }
+        }
+    }
+
+    res.q = std::move(best.q);
+    res.pos_err = best.pos_err;
+    res.rot_err = best.rot_err;
+    res.reason = std::move(best.reason);
+    if (best.status == cartesian_detail::StepIKStatus::Ok) {
+        res.status = PreviewIKStatus::Ok;
+    } else if (best.status == cartesian_detail::StepIKStatus::Collision) {
+        res.status = PreviewIKStatus::Collision;
+    } else {
+        res.status = PreviewIKStatus::PoseNotSolved;
+    }
+
+    if (res.q.size() != J) return res;
+
+    // An original triangle intersection has no measured penetration depth. Prefer a
+    // confirmed intersection, ranking ties by the convex estimate of the margin violation.
+    std::pair<bool, double> best_rank{true, std::numeric_limits<double>::infinity()};
+    auto select_pair = [&](int64_t pair_id, double distance, double margin,
+                           bool mesh_intersection, double ranking_distance) {
+        const std::pair rank{!mesh_intersection, ranking_distance - margin};
+        if (rank >= best_rank) return false;
+        best_rank = rank;
+        res.min_distance = distance;
+        res.collision_pair = distance < margin ? snap.pair_display_name(pair_id) : std::string{};
+        res.has_witness = false;
+        res.witness_a.setZero();
+        res.witness_b.setZero();
+        return true;
+    };
+
+    if (P > 0) {
+        std::vector<double> frames(snap.shapes.size() * 12);
+        snap.compute_frames(res.q.data(), 1, frames.data());
+        const Eigen::VectorXd thresholds = margins.array() + 0.25;
+        std::vector<int64_t> rows, pairs;
+        snap.screen_aabbs(frames.data(), 1, thresholds.data(), false, 1, rows, pairs);
+        for (const int64_t p : pairs) {
+            const auto& pair = snap.pairs[static_cast<size_t>(p)];
+            const auto& a = *snap.shapes[pair.shape_a].shape;
+            const auto& b = *snap.shapes[pair.shape_b].shape;
+            const double* fa = frames.data() + pair.shape_a * 12;
+            const double* fb = frames.data() + pair.shape_b * 12;
+            double convex[10];
+            const double unlimited = std::numeric_limits<double>::infinity();
+            eval_coal_distance(a, b, fa, fb, false, unlimited, convex);
+            double original = unlimited;
+            if (preview_cfg.verify_original && (a.original != a.convex || b.original != b.convex)) {
+                // Verification writes only the distance, returning -inf on intersection.
+                eval_coal_distance(a, b, fa, fb, true, unlimited, &original);
+            }
+            const double distance = std::min(original, convex[0]);
+            const bool intersection = original == -unlimited;
+            if (select_pair(p, distance, margins(p), intersection, intersection ? convex[0] : distance)
+                && distance == convex[0] && distance < margins(p)) {
+                res.witness_a = transform_from(fa).transform(Eigen::Map<const Vec3>(convex + 1));
+                res.witness_b = transform_from(fb).transform(Eigen::Map<const Vec3>(convex + 4));
+                res.has_witness = true;
+            }
+        }
+    }
+    if (snap.has_esdf()) {
+        std::vector<Vec3> bpos(snap.kin.num_bodies());
+        std::vector<Mat3> brot(snap.kin.num_bodies());
+        snap.kin.fk_single(res.q.data(), bpos.data(), brot.data());
+        for (size_t si = 0; si < snap.esdf_spheres.size(); ++si) {
+            const auto& sphere = snap.esdf_spheres[si];
+            const Vec3 center = brot[sphere.body_id] * sphere.local_center + bpos[sphere.body_id];
+            const double distance = snap.esdf->collision_distance(center) - sphere.radius;
+            if (std::isfinite(distance)) {
+                select_pair(-static_cast<int64_t>(si + 1), distance, eff_wm, false, distance);
+            }
+        }
+    }
     return res;
 }
 

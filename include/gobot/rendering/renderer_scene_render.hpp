@@ -118,6 +118,13 @@ struct RendererRenderProductFrame {
     std::function<bool(std::uint32_t, void*, std::size_t)> copy_to_host;
 };
 
+struct OverlayMeshPassOptions {
+    bool depth_test = true;
+    bool depth_write = false;
+    bool sort_back_to_front = true;
+    bool frustum_culling = true;
+};
+
 class RendererSceneRender {
 public:
     virtual ~RendererSceneRender() = default;
@@ -125,6 +132,16 @@ public:
     virtual void RenderScene(const RID& render_target,
                              const RenderSceneSnapshot& scene,
                              const RenderViewSnapshot& view) = 0;
+
+    virtual void RenderOverlayMeshes(const RID& render_target,
+                                     const RenderViewSnapshot& view,
+                                     const std::vector<VisualMeshRenderItem>& items,
+                                     const OverlayMeshPassOptions& options = {}) {
+        (void)render_target;
+        (void)view;
+        (void)items;
+        (void)options;
+    }
 
     virtual void SetSettings(const SceneRendererSettings& settings) { settings_ = settings; }
 

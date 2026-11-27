@@ -175,6 +175,21 @@ void RenderServer::RenderSnapshotsToViewport(const RID& viewport,
     RSG::scene->RenderScene(render_target, scene, view);
 }
 
+void RenderServer::RenderOverlayMeshesToViewport(const RID& viewport,
+                                                 const Camera3D* camera,
+                                                 const std::vector<VisualMeshRenderItem>& items,
+                                                 const OverlayMeshPassOptions& options) {
+    GOBOT_PROFILE_ZONE("RenderServer::RenderOverlayMeshesToViewport");
+    if (items.empty()) {
+        return;
+    }
+    ERR_FAIL_COND(RSG::scene == nullptr);
+    ERR_FAIL_COND(camera == nullptr);
+    const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
+    ERR_FAIL_COND(render_target.IsNull());
+    RSG::scene->RenderOverlayMeshes(render_target, CaptureRenderViewSnapshot(*camera), items, options);
+}
+
 void RenderServer::SetSceneRendererSettings(const SceneRendererSettings& settings) {
     ERR_FAIL_COND(RSG::scene == nullptr);
     RSG::scene->SetSettings(settings);

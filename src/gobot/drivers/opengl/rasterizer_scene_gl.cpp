@@ -397,6 +397,8 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
     }
 
     ++frame_index_;
+    last_scene_environment_ = scene.environment;
+    last_scene_lights_ = scene.lights;
     const RenderDrawLists draw_lists = BuildRenderDrawLists(
             scene, view, settings_.raster.frustum_culling);
     stats_.visible_items = draw_lists.visible_count;
@@ -512,6 +514,159 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
             std::chrono::steady_clock::now() - raster_start).count();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     PruneCaches();
+}
+
+void GLRasterizerScene::RenderOverlayMeshes(const RID& render_target,
+                                            const RenderViewSnapshot& view,
+                                            const std::vector<VisualMeshRenderItem>& items,
+                                            const OverlayMeshPassOptions& options) {
+    GOBOT_PROFILE_ZONE("OpenGL::RenderOverlayMeshes");
+    if (items.empty()) {
+        return;
+    }
+
+    auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
+    ERR_FAIL_COND(rt == nullptr);
+    if (rt->fbo == 0 || rt->size.x() <= 0 || rt->size.y() <= 0 ||
+        !RenderOutputMaskContains(rt->output_mask, RenderOutputType::Rgb)) {
+        return;
+    }
+
+    EnsureDefaultProgram();
+    if (default_program_ == 0) {
+        return;
+    }
+
+    struct OverlayPrepared {
+        const VisualMeshRenderItem* item = nullptr;
+        RealType camera_depth = 0.0;
+    };
+    std::vector<OverlayPrepared> draw_items;
+    draw_items.reserve(items.size());
+    const RenderFrustum frustum = RenderFrustum::FromViewProjection(view.camera.view_projection);
+    for (const VisualMeshRenderItem& item : items) {
+        if (!item.visible_in_rgb) {
+            continue;
+        }
+        if (options.frustum_culling && item.world_bounds.IsValid() &&
+            !frustum.Intersects(item.world_bounds)) {
+            continue;
+        }
+        const Vector3 center = item.world_bounds.IsValid()
+                                       ? item.world_bounds.GetCenter()
+                                       : item.model.template block<3, 1>(0, 3);
+        const Vector4 view_center = view.camera.view * Vector4{center.x(), center.y(), center.z(), 1.0};
+        draw_items.push_back({&item, std::max<RealType>(0.0, -view_center.z())});
+    }
+    if (draw_items.empty()) {
+        return;
+    }
+
+    if (options.sort_back_to_front) {
+        std::stable_sort(draw_items.begin(), draw_items.end(),
+                         [](const OverlayPrepared& a, const OverlayPrepared& b) {
+                             return a.camera_depth > b.camera_depth;
+                         });
+    }
+
+    RenderSceneSnapshot lighting_scene;
+    lighting_scene.environment = last_scene_environment_;
+    lighting_scene.lights = last_scene_lights_;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+    glViewport(0, 0, rt->size.x(), rt->size.y());
+    ConfigureDrawBuffers(*rt, true);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    if (options.depth_test) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glFrontFace(GL_CCW);
+
+    glUseProgram(default_program_);
+    UploadFrameUniforms(lighting_scene, view);
+    glUniform1i(default_uniforms_.has_shadow_map, 0);
+    glUniform1i(default_uniforms_.shadow_light_index, -1);
+
+    for (const OverlayPrepared& prepared : draw_items) {
+        const VisualMeshRenderItem& item = *prepared.item;
+        MeshCacheEntry* mesh = GetOrCreateMesh(item);
+        if (mesh == nullptr || mesh->index_count <= 0) {
+            continue;
+        }
+        const RenderMaterialSnapshot& material = item.material;
+        const AlphaMode alpha_mode = material.alpha_mode;
+        if (alpha_mode == AlphaMode::Blend) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
+        glDepthMask(options.depth_write ? GL_TRUE : GL_FALSE);
+        if (material.double_sided) {
+            glDisable(GL_CULL_FACE);
+        } else {
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_BACK);
+        }
+
+        const Matrix3 linear = item.model.template block<3, 3>(0, 0);
+        Matrix3 normal_matrix = Matrix3::Identity();
+        if (std::abs(linear.determinant()) > CMP_EPSILON) {
+            normal_matrix = linear.inverse().transpose();
+        }
+        UploadMatrix4(default_uniforms_.model, item.model);
+        UploadMatrix3(default_uniforms_.normal_matrix, normal_matrix);
+        glUniform1ui(default_uniforms_.instance_id, 0u);
+        glUniform1ui(default_uniforms_.semantic_id, 0u);
+        glUniform4f(default_uniforms_.color,
+                    material.albedo.red(),
+                    material.albedo.green(),
+                    material.albedo.blue(),
+                    material.albedo.alpha());
+        glUniform1f(default_uniforms_.metallic, static_cast<float>(material.metallic));
+        glUniform1f(default_uniforms_.roughness, static_cast<float>(material.roughness));
+        glUniform1f(default_uniforms_.specular, static_cast<float>(material.specular));
+        glUniform1f(default_uniforms_.normal_scale, static_cast<float>(material.normal_scale));
+        glUniform1f(default_uniforms_.occlusion_strength, static_cast<float>(material.occlusion_strength));
+        glUniform3f(default_uniforms_.emissive,
+                    material.emissive.red(),
+                    material.emissive.green(),
+                    material.emissive.blue());
+        glUniform1i(default_uniforms_.alpha_mode, static_cast<int>(alpha_mode));
+        glUniform1f(default_uniforms_.alpha_cutoff, static_cast<float>(material.alpha_cutoff));
+
+        const std::array<RenderTextureSnapshot, 5> textures = {
+                material.albedo_texture,
+                material.metallic_roughness_texture,
+                material.normal_texture,
+                material.occlusion_texture,
+                material.emissive_texture};
+        std::array<GLuint, 5> handles{};
+        for (std::size_t i = 0; i < textures.size(); ++i) {
+            handles[i] = GetOrCreateTexture(textures[i]);
+            glBindTextureUnit(static_cast<GLuint>(i), handles[i]);
+        }
+        glUniform1i(default_uniforms_.has_albedo_texture, handles[0] != 0);
+        glUniform1i(default_uniforms_.has_metallic_roughness_texture, handles[1] != 0);
+        glUniform1i(default_uniforms_.has_normal_texture, handles[2] != 0);
+        glUniform1i(default_uniforms_.has_occlusion_texture, handles[3] != 0);
+        glUniform1i(default_uniforms_.has_emissive_texture, handles[4] != 0);
+
+        glBindVertexArray(mesh->vao);
+        glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, nullptr);
+    }
+
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    ConfigureDrawBuffers(*rt, false);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 bool GLRasterizerScene::TryLoadLuisaModule() {
